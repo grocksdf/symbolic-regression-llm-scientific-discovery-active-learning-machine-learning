@@ -8,8 +8,9 @@ classes, likelihood-power ambiguity set, representative safe set, and closed
 held-out state; it adds only a response-free predictive discrepancy envelope to
 PCPI candidate ranking. The P3C.1 audit is recorded in
 `docs/pcpi_p3c1_result_audit_20260813.md`. No P4/P5 or superiority claim is
-authorized. The next candidate is a correctness-only, task-independent
-posterior/decision repair; no new real-data run is authorized by this source.
+authorized. The task-independent P3D.1 decision repair has passed its isolated
+correctness Gate but is not integrated into the real runtime; no new real-data
+run is authorized by this source.
 
 Source synchronization warning: the public clean import at base commit
 `5fa4f3c9080c31208135dcada80a8f86121a199a` omitted the
@@ -535,8 +536,9 @@ contribution claim. None of these fixtures or real-development results supports
 open-grammar discovery superiority, motif safety, held-out confirmation, VED
 discovery, physical intervention, or a new scientific law.
 
-P3D.1 may support only the following statement after its clean-source
-correctness Gate passes:
+The clean-source P3D.1 Gate passed all 14/14 frozen decisions at commit
+`5d71f588398daac3a7c8d982ec3eac0b5834d73c`; its one-event registry and all
+seven exported file hashes verify. It supports only the following statement:
 
 > Given valid simultaneous intervals for the frozen class-EIG utility, the
 > implemented handover selects a target-seeking action only when its lower
@@ -545,3 +547,4 @@ correctness Gate passes:
 
 This is model-relative numerical decision correctness, not a posterior
 misspecification repair, real-data efficacy result, or realized no-harm claim.
+See `docs/pcpi_p3d1_result_audit_20260814.md` for the frozen identity.

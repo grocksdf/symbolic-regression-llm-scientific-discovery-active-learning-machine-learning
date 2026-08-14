@@ -499,6 +499,9 @@ P3D.1 is not imported by the real acquisition runtime. Its exact finite
 discrete fixture must first establish the information identity, entropy
 capacity bound, reference aggregation, interval handover, zero-capacity
 fallback, stable sampling, permutation invariance, and fail-closed validation.
+That controlled Gate passed 14/14 decisions at clean source commit
+`5d71f588398daac3a7c8d982ec3eac0b5834d73c` and supports only the conditional
+model-relative handover proposition.
 The existing Gauss--Jacobi fine/coarse discrepancy remains an asymptotic
 diagnostic, so a future real integration remains blocked until the required
 production interval guarantee is independently justified.

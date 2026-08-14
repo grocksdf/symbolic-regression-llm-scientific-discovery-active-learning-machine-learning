@@ -371,7 +371,8 @@ $L_t(\widehat a) > \sum_a q_t(a)R_t(a)+\tau_{\rm num}$; otherwise it samples
 from $q_t$. Thus an unresolved ranking abstains to the registered policy rather
 than switching to epistemic variance. P3D.1 is implemented only in an exactly
 enumerable finite-outcome diagnostic and is not imported by the real runtime.
-\evidencegate{P3D.1 correctness fixture only}
+Its clean-source controlled Gate passes all 14 frozen correctness decisions.
+\evidencegate{P3D.1 correctness fixture passed; real integration absent}
 
 \section{Theory and Scope}
 
@@ -562,8 +563,9 @@ development evidence. P3C.1 passed its controlled implementation Gate and
 completed a protocol-valid real run, but
 \texttt{formal\_efficacy\_evidence=false} and the registered status is
 \texttt{REAL\_ADVANTAGE\_NOT\_DEMONSTRATED}. The held-out was
-never opened. The reference-dominance repair introduced next is evaluated only
-as a correctness diagnostic. No current evidence supports matched-budget real
+never opened. The reference-dominance repair passes its controlled
+correctness diagnostic but remains absent from the real runtime. No current
+evidence supports matched-budget real
 superiority, motif invariance, VED discovery, unknown-law recovery, or held-out
 confirmation.
 
@@ -574,13 +576,14 @@ among predictive classes. The exact-reference engine makes posterior semantics
 and acquisition naming testable before the project invests in open-grammar
 SMC. After the corrected P2B, exact P3A.2, P3B.6 coordinate, and P3B.7 class
 Gates, the negative P3B.10 and P3C.1 real audits show that numerical validity
-does not imply acquisition efficacy. The next Gate is therefore a controlled
-test of the decision contract: select a target-seeking action only when its
+does not imply acquisition efficacy. The subsequent controlled Gate validates
+the decision contract: select a target-seeking action only when its
 interval lower bound dominates the registered reference policy's interval
 upper bound, and otherwise execute that reference policy. This establishes a
-model-relative correctness property, not a real-world no-harm guarantee.
-Another measured-pool run, motif transfer, and held-out confirmation remain
-downstream and independently blocked.
+model-relative correctness property, not a real-world no-harm guarantee. A
+production interval construction, full regression on the complete canonical
+source, another measured-pool run, motif transfer, and held-out confirmation
+remain downstream and independently blocked.
 
 \bibliographystyle{plain}
 \bibliography{references}

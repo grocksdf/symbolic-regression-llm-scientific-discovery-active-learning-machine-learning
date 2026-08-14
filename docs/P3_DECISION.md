@@ -129,10 +129,13 @@ switch from uncertified EIG to posterior epistemic variance and automatically
 falls back when class information capacity is zero.
 
 P3D.1 is implemented only in an exact finite-outcome correctness fixture and
-is not imported by the real acquisition runtime. A controlled PASS supports
-the interval-handover implementation and model-relative proposition only; it
-does not repair posterior misspecification or establish real-data safety or
-efficacy. See `docs/pcpi_p3d1_root_cause_and_repair.md`.
+is not imported by the real acquisition runtime. Its clean-Git controlled Gate
+passed 14/14 decisions at commit `5d71f588398daac3a7c8d982ec3eac0b5834d73c`.
+This supports the interval-handover implementation and model-relative
+proposition only; it does not repair posterior misspecification or establish
+real-data safety or efficacy. See
+`docs/pcpi_p3d1_root_cause_and_repair.md` and
+`docs/pcpi_p3d1_result_audit_20260814.md`.
 
 The public clean import also omits the manifest-listed `hypothesis_mvp.data`
 package, so full regression and every real entrypoint remain blocked until the

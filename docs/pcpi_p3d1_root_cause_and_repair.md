@@ -1,6 +1,6 @@
 # P3D.1 posterior/decision root-cause matrix and repair contract
 
-Status: **correctness-only development contract; no real-data run authorized**  
+Status: **controlled correctness Gate passed; no real-data run authorized**
 Stage: `P3D.1`  
 Method: **certified reference-dominance acquisition (CRDA)**  
 Primary estimand: the initial-frozen operational predictive class `C0`
@@ -139,7 +139,10 @@ must verify all of the following:
 12. evidence and exported diagnostics retain the
     `inference_correctness_diagnostic_fixture` claim boundary.
 
-Passing this Gate authorizes only the statement that the CRDA handover is
+The clean-Git Gate passed all 14/14 frozen decisions at source commit
+`5d71f588398daac3a7c8d982ec3eac0b5834d73c`; see
+`docs/pcpi_p3d1_result_audit_20260814.md`. Passing this Gate authorizes only the
+statement that the CRDA handover is
 implemented consistently with Propositions 1--2 on an exact fixture. It does
 not authorize integration into the real acquisition loop or a new CCPP/Gas
 run.
