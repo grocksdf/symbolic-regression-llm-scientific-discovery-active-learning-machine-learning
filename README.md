@@ -1,26 +1,27 @@
 # Hypothesis MVP — PCPI
 
-Current stage: **P3 repair required; P3C.1 efficacy NO-GO**. P3B.10 and P3C.1
-discrepancy-aware repair both completed 96/96 protocol-valid real runs but
-returned `REAL_ADVANTAGE_NOT_DEMONSTRATED`. P3C.1 preserves the frozen P3B.10
-data, splits, budgets, baselines, nominal reporting posterior, predictive
-classes, likelihood-power ambiguity set, representative safe set, and closed
-held-out state; it adds only a response-free predictive discrepancy envelope to
-PCPI candidate ranking. The P3C.1 audit is recorded in
-`docs/pcpi_p3c1_result_audit_20260813.md`. No P4/P5 or superiority claim is
-authorized. The task-independent P3D.1 decision repair passed its isolated
-correctness Gate. P3D.2 now supplies a frozen real-only integration using
-analytic information-inequality bounds and a registered uniform reference
-policy, but no P3D.2 real result exists in this repository. Its implementation
-is not evidence of efficacy.
+Current stage: **P3E.1 correctness passed; posterior adequacy and real efficacy
+remain NO-GO**. P3D.2 completed 96/96 protocol-valid heldout-closed real runs
+but returned `REAL_ADVANTAGE_NOT_DEMONSTRATED`. Its v2 archive has a valid
+97-event EvidenceRegistry and verified official-data, split, source, config,
+dependency, and export identities. CCPP PCPI-minus-random frozen-class gain is
+`-0.253805` with 95% interval `[-0.482951,-0.024660]`; grouped Gas does not
+exclude zero. No P4/P5, held-out, or superiority claim is authorized.
+
+The P3D.2 audit also exposes an exact semantic mismatch: for `eta<1`, ordinary
+class mutual information is not the expected entropy reduction of the actual
+power-likelihood update. P3E.1 repairs this loss/update alignment only on an
+isolated exact finite fixture and adds a positive-gain floor to reference
+dominance. It does not repair the CCPP `eta=1` negative transfer and does not
+authorize another real run.
 
 Source synchronization is resolved: upstream commit `81f7cde` restored all six
 manifest-listed `hypothesis_mvp.data` files with exact historical SHA-256 and
 byte counts. The P3D.2 implementation commit `cd05e1a` passes the expanded
 `199`-test suite. Source completeness and real-runtime integration blockers are
-closed; local execution on the official measured datasets and result audit
-remain pending. See `docs/pcpi_public_source_sync_audit_20260814.md` and
-`docs/pcpi_p3d2_real_protocol_audit_20260814.md`.
+closed. The P3D.2 result audit and P3E.1 root-cause matrix are in
+`docs/pcpi_p3d2_result_audit_20260814.md` and
+`docs/pcpi_p3e1_root_cause_and_update_coherence.md`.
 
 PCPI treats symbolic scientific discovery as sequential Bayesian discrimination
 among operational predictive-equivalence classes. The target is the joint
@@ -465,7 +466,7 @@ audited directory, so the fail-closed runner must refuse to overwrite it.
 ```powershell
 $project = "D:\01\666\hypothesis_mvp"
 $python = "D:\01\666\.venv_hypothesis_canonical\Scripts\python.exe"
-$dataRoot = "D:\01\666\data"
+$dataRoot = "D:\01\666\hypothesis_mvp\data"
 $output = "D:\01\666\hypothesis_mvp\outputs\p3c_1_real_discrepancy_d4b24b2_20260813"
 
 Set-Location $project
@@ -528,7 +529,7 @@ measured files:
 
 ```powershell
 $project = "D:\01\666\hypothesis_mvp"
-$dataRoot = "D:\01\666\data"
+$dataRoot = "D:\01\666\hypothesis_mvp\data"
 $python = "D:\01\666\.venv_hypothesis_canonical\Scripts\python.exe"
 $output = "D:\01\666\hypothesis_mvp\outputs\p3d_2_reference_dominance_real"
 
@@ -541,9 +542,33 @@ Set-Location $project
     --heldout-state closed
 ```
 
-The output directory must be new or empty. A protocol-valid run may still
-return `REAL_ADVANTAGE_NOT_DEMONSTRATED`; only its signed paired effects and
-registered assessment determine the efficacy conclusion.
+The returned v2 output is already protocol-valid and has status
+`REAL_ADVANTAGE_NOT_DEMONSTRATED`. Do not rerun this frozen experiment as a
+repair; the next work remains correctness/posterior-model research.
+
+## P3E.1 update-coherence diagnostic
+
+P3E.1 is an exact finite correctness fixture. It computes ordinary class MI
+and the signed expected frozen-class entropy change induced by the implemented
+`q(z)p(y|z)^eta` update. At `eta=1` the two agree exactly; the registered
+`eta=0.25` counterexample reverses their action rankings. Targeted handover is
+allowed only when the aligned utility lower bound exceeds both the registered
+reference upper bound and zero.
+
+```powershell
+$project = "D:\01\666\hypothesis_mvp"
+$python = "D:\01\666\.venv_hypothesis_canonical\Scripts\python.exe"
+$output = "D:\01\666\hypothesis_mvp\outputs\p3e_1_update_coherence_correctness"
+
+Set-Location $project
+& $python -B scripts/run_pcpi_p3e1_update_coherence_diagnostic.py `
+    --output-dir $output `
+    --config configs/p3e_1_update_coherence_diagnostic.json `
+    --phase P3E.1 `
+    --heldout-state not-applicable
+```
+
+This command reads no real dataset and produces no efficacy evidence.
 
 ## Current claim boundary
 
@@ -590,7 +615,7 @@ misspecification repair, real-data efficacy result, or realized no-harm claim.
 See `docs/pcpi_p3d1_result_audit_20260814.md` for the frozen identity.
 
 P3D.2 adds the production real-run surface at implementation commit `cd05e1a`.
-Its analytic bounds contain independent adaptive-quadrature references on the
-continuous correctness fixture, and the full source regression passes 199
-tests. No P3D.2 measured-pool output has yet been received, so no new empirical
-claim is supported.
+Its returned v2 measured-pool result is protocol-valid negative evidence, not
+superiority evidence. P3E.1 supports only the update-coherence correctness
+statement above. Posterior adequacy, another real rerun, and all downstream
+claims remain independently blocked.

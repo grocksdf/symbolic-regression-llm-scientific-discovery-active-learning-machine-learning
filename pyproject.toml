@@ -41,6 +41,7 @@ pcpi-p3b9-representative-safe = "scripts.run_pcpi_p3b9_representative_safe_diagn
 pcpi-p3b10-maximin-joint-eig = "scripts.run_pcpi_p3b10_maximin_joint_eig_diagnostic:main"
 pcpi-p3d1-reference-dominance = "scripts.run_pcpi_p3d1_reference_dominance_diagnostic:main"
 pcpi-p3d2-reference-dominance-real = "scripts.run_pcpi_p3d_real:main"
+pcpi-p3e1-update-coherence = "scripts.run_pcpi_p3e1_update_coherence_diagnostic:main"
 
 [tool.setuptools.packages.find]
 include = ["hypothesis_mvp*", "scripts*"]

@@ -1,9 +1,11 @@
 # P3 decision — representative-safe maximin joint acquisition
 
-Status: **P3B.10 and P3C.1 real efficacy failed. P3C.1 passed its controlled
-implementation Gate and completed the unchanged held-out-closed real run, but
-returned `REAL_ADVANTAGE_NOT_DEMONSTRATED`. Mainline remains NO-GO; P4/P5,
-held-out confirmation, and submission claims remain blocked.**
+Status: **P3B.10, P3C.1, and P3D.2 real efficacy failed. P3D.2 completed its
+held-out-closed 96/96 real run and returned
+`REAL_ADVANTAGE_NOT_DEMONSTRATED`. P3E.1 repairs an exact generalized-posterior
+decision-semantics mismatch on correctness fixtures only. Mainline remains
+NO-GO; another real rerun, P4/P5, held-out confirmation, and superiority claims
+remain blocked.**
 
 ## Evidence retained
 
@@ -153,10 +155,31 @@ resulting handover remains a numerically validated, model-relative decision
 contract rather than a real-world no-harm theorem.
 
 The real runner and frozen config were added at implementation commit
-`cd05e1a`. The expanded suite passes 199 tests, and the production static audit
-passes. P3D.2 retains the same real datasets, splits, budgets, baselines,
-calibrated common posterior, frozen class target, failure policy, and heldout
-closure. Its PCPI branch excludes joint EPIG, MMD, likelihood-power maximin,
-discrepancy, and epistemic fallback. No P3D.2 real output has been evaluated,
-so no efficacy or superiority status has changed. See
-`docs/pcpi_p3d2_real_protocol_audit_20260814.md`.
+`cd05e1a`. The returned v2 archive is bound to clean source commit `2effdee`.
+It completes 96/96 runs with zero failures, a valid 97-event EvidenceRegistry,
+verified official hashes, and closed held-out. The registered efficacy status
+is nevertheless `REAL_ADVANTAGE_NOT_DEMONSTRATED`. CCPP PCPI-minus-random
+frozen-class gain is `-0.253805` with 95% interval
+`[-0.482951,-0.024660]`; the grouped Gas effect is `-0.004906` with interval
+`[-0.223369,0.213557]`. See
+`docs/pcpi_p3d2_result_audit_20260814.md`.
+
+## P3E.1 update-coherence correctness repair
+
+The P3D.2 posterior is power-likelihood generalized Bayes. Its update uses
+`q(z)p(y|z)^eta`, while its ordinary class-MI score is computed from the
+nominal mixture `q(z)p(y|z)`. When `eta != 1`, that score is not the expected
+frozen-class entropy reduction induced by the actual update. Thirteen of the
+sixteen Gas target/seed calibrations used `eta < 1`.
+
+P3E.1 therefore enumerates the signed expected entropy change under the
+implemented update and requires a targeted lower bound to exceed both the
+registered reference upper bound and zero. At `eta=1` it recovers ordinary
+class-EIG exactly; at `eta=0.25` the frozen fixture proves that the two
+utilities can reverse the action ranking. The isolated correctness Gate passes
+10/10 decisions and has no real-data or held-out surface.
+
+This does not resolve CCPP, where every seed used `eta=1` and negative transfer
+still excludes zero. P3E.1 is thus a necessary semantic correction, not a
+posterior-adequacy repair and not authorization for another real experiment.
+See `docs/pcpi_p3e1_root_cause_and_update_coherence.md`.

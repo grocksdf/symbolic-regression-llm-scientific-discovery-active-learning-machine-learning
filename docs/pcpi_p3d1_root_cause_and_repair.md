@@ -1,10 +1,17 @@
 # P3D.1 posterior/decision root-cause matrix and repair contract
 
-Status: **P3D.1 controlled Gate passed; P3D.2 real-only protocol implemented,
-not yet executed**
+Status: **P3D.1 controlled Gate passed; P3D.2 real protocol passed but efficacy
+failed; P3E.1 supersedes the generalized-update interpretation**
 Stage: `P3D.1`  
 Method: **certified reference-dominance acquisition (CRDA)**  
 Primary estimand: the initial-frozen operational predictive class `C0`
+
+Historical note: this document records the repair chosen before P3D.2 was run.
+The returned P3D.2 result is audited in
+`docs/pcpi_p3d2_result_audit_20260814.md`. For `eta<1`, its ordinary class-EIG
+score is not the expected entropy reduction of the implemented generalized
+update; the corrected root-cause matrix is
+`docs/pcpi_p3e1_root_cause_and_update_coherence.md`.
 
 ## 1. Evidence boundary
 

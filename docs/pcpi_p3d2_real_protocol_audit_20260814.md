@@ -1,6 +1,6 @@
 # P3D.2 real reference-dominance protocol audit — 2026-08-14
 
-Decision: **IMPLEMENTATION AND CORRECTNESS GATES PASSED; REAL EXECUTION PENDING**
+Decision: **IMPLEMENTATION/PROTOCOL PASS; REAL EFFICACY NO-GO**
 
 ## Evidence identity
 
@@ -13,11 +13,17 @@ Decision: **IMPLEMENTATION AND CORRECTNESS GATES PASSED; REAL EXECUTION PENDING*
 - Frozen config:
   `configs/p3d_2_reference_dominance_real_acquisition.json`.
 - Runner: `scripts/run_pcpi_p3d_real.py`.
-- Real P3D.2 registry, manifest, and result identity: **not yet created**.
+- Real result source commit:
+  `2effdeec31faf630c31dad2e3b824774cbaf5e4a` (clean worktree).
+- Returned v2 archive SHA-256:
+  `df301fd2ec406747b2cc3437ee5fbbd3f4b2c1b324674109cb067655070c3e52`.
+- EvidenceRegistry: valid, 97 events, head
+  `47b4132278685fefccf6f415b79281514ee89ff78fa18371958ace728e7f492b`.
 
-The implementation commit is a source identity, not a result identity. No raw
-CCPP or Gas Turbine data were present or synthesized during this Gate, no real
-policy run was executed, and held-out data were not opened.
+The implementation commit remains distinct from the returned result identity.
+The later v2 archive used official measured CCPP and Gas Turbine data, completed
+96/96 real policy runs with zero failures, and kept held-out closed. See
+`docs/pcpi_p3d2_result_audit_20260814.md` for the independent result audit.
 
 ## Method contract
 
@@ -51,6 +57,14 @@ The real PCPI branch does not apply:
 The likelihood-power candidates remain only in the common
 initial-development SafeBayes calibration shared by every policy. They are not
 an acquisition ambiguity set in P3D.2.
+
+Post-result semantic correction: for `eta < 1`, this ordinary mutual
+information is a well-defined model-relative surrogate, but it is not the
+expected frozen-class entropy reduction of the implemented generalized update
+`q(z)p(y|z)^eta`. The immutable P3D.2 run identity remains unchanged; P3E.1
+isolates and corrects the interpretation on an exact finite fixture. This
+limitation affected 13/16 Gas target/seed calibrations and does not explain the
+CCPP failure, where every seed used `eta=1`.
 
 ## Correctness evidence
 
@@ -101,14 +115,15 @@ real-world no-harm guarantee.
 - failure handling: fail closed, record every failure, replace no seed;
 - held-out state: closed.
 
-Protocol validity and positive efficacy are exported separately. A complete
-96/96 run can still validly return `REAL_ADVANTAGE_NOT_DEMONSTRATED`.
+Protocol validity and positive efficacy are exported separately. The returned
+96/96 run is exactly such a case: protocol passed, while the preregistered
+efficacy status is `REAL_ADVANTAGE_NOT_DEMONSTRATED`.
 
 ## Local Windows command
 
 ```powershell
 $project = "D:\01\666\hypothesis_mvp"
-$dataRoot = "D:\01\666\data"
+$dataRoot = "D:\01\666\hypothesis_mvp\data"
 $python = "D:\01\666\.venv_hypothesis_canonical\Scripts\python.exe"
 $output = "D:\01\666\hypothesis_mvp\outputs\p3d_2_reference_dominance_real"
 
@@ -121,8 +136,7 @@ Set-Location $project
     --heldout-state closed
 ```
 
-The output directory must be new or empty. After completion, return the whole
-output directory without editing its JSON, JSONL, or CSV files. The result
-audit must verify the EvidenceRegistry chain, every evidence-export hash,
-source/config/dependency identity, all 96 run records, paired seed counts, and
-the registered assessment before changing any manuscript efficacy wording.
+This command is retained for reproduction only; another efficacy run is not
+currently authorized. The returned v2 result has already been audited and is
+negative. P3E.1 now addresses a generalized-update decision-semantics defect
+only on finite correctness fixtures; posterior adequacy remains unresolved.

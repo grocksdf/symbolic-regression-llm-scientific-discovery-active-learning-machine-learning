@@ -45,18 +45,19 @@ implementation repairs that failure mode, and an exact-reference diagnostic
 validates an explicit proposal-corrected collapsed trans-dimensional kernel.
 We validate a Student-t-measure Gauss--Jacobi class-EIG estimator against
 independent quadrature under the repaired operational-class definition. The
-latest 96-run measured-pool experiment passed every protocol and evidence
-check but did not establish predictive or structural advantage. On CCPP,
-frozen-class gain relative to random acquisition was $-0.2838$ (95\% interval
-$[-0.5047,-0.0629]$), with negative transfer in 7/8 seeds; the grouped Gas
-Turbine interval crossed zero. A discrepancy profile activated on Gas but did
-not repair the family-level result. We retain these outcomes as negative
-development evidence and use them to motivate a reference-dominance decision
-rule that acts target-seekingly only when its improvement over a registered
-reference policy is supported by analytic information-inequality bounds. The
-real-only implementation is frozen but has not yet been executed; its present
-evidence remains correctness-only. Real superiority, motif transfer, and
-held-out effectiveness claims remain blocked.
+latest 96-run measured-pool reference-dominance experiment passed every
+protocol and evidence check but did not establish predictive or structural
+advantage. On CCPP, frozen-class gain relative to random acquisition was
+$-0.2538$ (95\% interval $[-0.4830,-0.0247]$), with negative transfer in 6/8
+seeds; the grouped Gas Turbine interval crossed zero. The audit also exposes a
+decision-semantics mismatch: when the calibrated generalized-posterior power
+$\eta<1$, ordinary class mutual information is not the expected entropy change
+of the implemented power-likelihood update. An exactly enumerable diagnostic
+repairs this loss/update alignment and adds a positive-gain floor, but CCPP
+remains negative with $\eta=1$ in every seed. We retain the real outcome as
+negative development evidence and treat posterior adequacy as a separate
+unresolved blocker. Real superiority, motif transfer, and held-out
+effectiveness claims remain blocked.
 \end{abstract}
 
 \section{Introduction}
@@ -83,10 +84,10 @@ The paper is organized around three primary contributions.
   \item A target-correct SMC construction over symbolic structures,
   coefficients, and noise parameters, validated against an exactly enumerable
   posterior before any open-grammar claim is made. \evidencegate{P2}
-  \item A target-aware acquisition rule whose class-EIG semantics, numerical
-  ranking, and improvement over a registered reference policy are separately
-  certified; an uncertified decision returns to that policy instead of
-  switching to a different scientific objective. \evidencegate{P3}
+  \item A target-aware acquisition audit that separates numerical containment,
+  registered-reference dominance, and posterior-update/loss alignment; an
+  uncertified or nonpositive decision returns to the registered policy instead
+  of switching scientific objectives. \evidencegate{P3}
 \end{itemize}
 
 Reliability-gated motif proposals are optional. They enter the paper only if
@@ -162,7 +163,10 @@ y=f_S(a,x;\theta_S)+\varepsilon,
 \qquad \varepsilon\sim\mathcal N(0,\sigma^2),
 \]
 with $\theta_S\mid S,\sigma^2$ Gaussian and $\sigma^2$ Inverse-Gamma.
-Heteroscedastic and generalized-Bayes variants are outside the current target.
+Heteroscedastic variants are outside the current target. The production
+finite-bank path additionally uses the explicitly labelled generalized
+posterior defined below; ordinary-posterior identities are not transferred to
+that path without a separate alignment check.
 
 \subsection{Operational predictive classes}
 
@@ -385,9 +389,12 @@ of within-class mixture entropy give the upper bound
 The implementation expands these values by a frozen numerical tolerance and
 agrees with independent adaptive quadrature on continuous correctness
 fixtures. Student-$t$ CDF and entropy evaluations are not formal interval
-arithmetic. A frozen heldout-closed real runner now exists, but no P3D.2
-measured-pool result is reported.
-\evidencegate{P3D.1 and P3D.2 correctness passed; P3D.2 real result pending}
+arithmetic. The heldout-closed P3D.2 run completed 96/96 policies with zero
+failures and a valid evidence registry, but returned
+\texttt{REAL\_ADVANTAGE\_NOT\_DEMONSTRATED}. CCPP frozen-class gain relative to
+random is $-0.2538$ (95\% interval $[-0.4830,-0.0247]$); grouped Gas is
+$-0.0049$ (95\% interval $[-0.2234,0.2136]$).
+\evidencegate{P3D.2 protocol passed; real efficacy failed}
 
 \section{Theory and Scope}
 
@@ -411,6 +418,22 @@ log loss (R-log SafeBayes; \cite{grunwald2017inconsistency}) on the initial deve
 acquisition policy. Every closed basis term is centered and scaled from the
 initial-development covariates before the shared coefficient prior is applied.
 This target is not described as ordinary Bayes when $\eta<1$.
+This distinction also constrains acquisition semantics. P3D.2 constructs
+ordinary mutual information under the nominal joint distribution
+$q_t(z)p(y\mid z,a)$. However, its actual update is
+\[
+q_{t+1}^{(\eta)}(z\mid y,a)\propto
+q_t(z)p(y\mid z,a)^\eta.
+\]
+For $\eta=1$, the update is the conditional distribution induced by the
+nominal joint and class mutual information equals expected class-entropy
+reduction. For $\eta\ne1$, that identity generally fails: the implemented
+generalized update is not the conditional distribution used by ordinary
+mutual information. Thirteen of sixteen Gas target/seed calibrations in P3D.2
+used $\eta<1$. This is a loss/update-alignment defect, not a numerical-bound
+failure. It is also distinct from robust or generalized experimental-design
+objectives already studied under misspecification
+\cite{go2022robust,forster2025generalization,abdulsamad2026maximin}.
 The returned P3B.5 run cannot be used as efficacy evidence: fitting used the
 frozen preconditioned design while posterior prediction and acquisition rebuilt
 raw basis rows. P3B.6 makes the posterior engine's frozen design transform the
@@ -451,12 +474,40 @@ fitted entropy threshold.
 \end{proposition}
 
 Both statements are conditional on the frozen posterior and containing
-intervals. P3D.2's information inequalities hold in exact arithmetic, but its
-Student-$t$ special functions use ordinary floating-point evaluation with a
+intervals. They establish dominance for the declared ordinary-MI surrogate;
+they do not make that surrogate the expected loss reduction of a different
+generalized update. P3D.2's information inequalities hold in exact arithmetic,
+but its Student-$t$ special functions use ordinary floating-point evaluation with a
 registered outward tolerance rather than verified interval arithmetic.
 Moreover, posterior misspecification can invalidate model-based utility as a
 proxy for realized scientific gain. These propositions therefore do not
 authorize a real-world no-harm claim.
+
+P3E.1 instead defines the signed update-coherent utility
+\[
+V_{t,\eta}(a)=H_{q_t}(C_0)-
+\E_{Y\sim m_t(\cdot\mid a)}
+\left[H_{q_{t+1}^{(\eta)}(\cdot\mid Y,a)}(C_0)\right],
+\quad
+m_t(y\mid a)=\sum_z q_t(z)p(y\mid z,a).
+\]
+It is named by the loss/update contract rather than claimed as a generic
+generalized EIG. An exact finite counterexample at $\eta=0.25$ reverses the
+ordinary-MI and $V_{t,\eta}$ action rankings, while $\eta=1$ recovers ordinary
+class mutual information to numerical precision.
+
+\begin{proposition}[Update-coherent positive reference dominance]
+Suppose $L_t(a)\le V_{t,\eta}(a)\le R_t(a)$ simultaneously. If the selected
+leader satisfies
+$L_t(\widehat a)>\max\{\sum_a q_t(a)R_t(a),0\}+\tau_{\rm num}$, then it has
+strictly greater model-relative expected frozen-class entropy reduction than
+both the registered reference policy and zero. Otherwise P3E.1 executes the
+registered reference draw.
+\end{proposition}
+
+The proof is the same interval ordering and linearity argument as above. This
+correctness statement does not address posterior adequacy: all CCPP seeds use
+$\eta=1$, yet their P3D.2 structural effect is significantly negative.
 
 Under shared Gaussian observation noise, a maximum-entropy argument gives
 \[
@@ -550,6 +601,12 @@ $0.3281$ and $0.5801$), but grouped Gas frozen-class gain versus random is
 $0.0659$ with 95\% interval $[-0.2291,0.3609]$. The scalar discrepancy
 envelope is therefore an insufficient repair, not a no-op or a protocol
 failure.
+P3D.2 then removes those acquisition modules and uses certified ordinary
+class-MI reference dominance. Its returned 96/96 run is protocol-valid but
+again fails efficacy: CCPP frozen-class gain versus random is $-0.2538$ (95\%
+interval $[-0.4830,-0.0247]$), and grouped Gas is not significant. The P3E.1
+finite Gate identifies and repairs the generalized-update semantic mismatch,
+but supplies no real efficacy evidence and cannot explain CCPP at $\eta=1$.
 
 \paragraph{Optional RQ4: motif efficiency.}
 If retained, evaluate whether source-frozen memory improves ESS per second,
@@ -581,9 +638,10 @@ development evidence. P3C.1 passed its controlled implementation Gate and
 completed a protocol-valid real run, but
 \texttt{formal\_efficacy\_evidence=false} and the registered status is
 \texttt{REAL\_ADVANTAGE\_NOT\_DEMONSTRATED}. The held-out was
-never opened. The reference-dominance repair and its production inequality
-bounds pass controlled correctness checks, and a frozen real-only runtime is
-implemented. No P3D.2 measured-pool result is currently available. No current
+never opened. P3D.2 reference dominance completed a protocol-valid 96/96 real
+run, but \texttt{formal\_efficacy\_evidence=false}. P3E.1 passes an isolated
+finite loss/update-alignment Gate and has no real-data surface. Posterior
+adequacy remains unresolved, so another real rerun is blocked. No current
 evidence supports matched-budget real
 superiority, motif invariance, VED discovery, unknown-law recovery, or held-out
 confirmation.
@@ -594,15 +652,14 @@ confirmation.
 among predictive classes. The exact-reference engine makes posterior semantics
 and acquisition naming testable before the project invests in open-grammar
 SMC. After the corrected P2B, exact P3A.2, P3B.6 coordinate, and P3B.7 class
-Gates, the negative P3B.10 and P3C.1 real audits show that numerical validity
-does not imply acquisition efficacy. The subsequent controlled Gate validates
-the decision contract: select a target-seeking action only when its
-interval lower bound dominates the registered reference policy's interval
-upper bound, and otherwise execute that reference policy. This establishes a
-model-relative correctness property, not a real-world no-harm guarantee. The
-production inequality interval construction and complete-source regression are
-implemented; another measured-pool run, result audit, motif transfer, and
-held-out confirmation remain downstream and independently blocked.
+Gates, the negative P3B.10, P3C.1, and P3D.2 real audits show that numerical
+validity does not imply acquisition efficacy. The subsequent controlled Gates
+validate numerical reference dominance and expose that ordinary class-EIG is
+not automatically loss-aligned with a power-likelihood update. P3E.1 corrects
+this exact semantic defect and requires positive model-relative expected
+entropy change, but it does not repair the posterior. Posterior adequacy,
+another measured-pool run, motif transfer, and held-out confirmation remain
+downstream and independently blocked.
 
 \bibliographystyle{plain}
 \bibliography{references}

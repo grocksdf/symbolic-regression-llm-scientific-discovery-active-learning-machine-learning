@@ -127,6 +127,7 @@ def run(args: argparse.Namespace) -> int:
             "pcpi-p3b10-maximin-joint-eig",
             "pcpi-p3d1-reference-dominance",
             "pcpi-p3d2-reference-dominance-real",
+            "pcpi-p3e1-update-coherence",
             "hypothesis-discover",
             "hypothesis-llm-preflight",
         ],
@@ -200,9 +201,12 @@ def run(args: argparse.Namespace) -> int:
             "P3C.1 controlled correctness cannot establish real-data efficacy",
             "P3C.1 is protocol-valid negative real-development evidence and does not establish superiority",
             "P3D.1 reference dominance is correctness-only",
-            "P3D.2 real reference dominance is implemented but has no measured-pool result",
+            "P3D.2 is protocol-valid negative real-development evidence and does not establish superiority",
             "P3D.2 analytic information inequalities use floating-point special functions rather than verified interval arithmetic",
             "P3D.2 model-relative dominance requires containing utility intervals and does not repair posterior misspecification",
+            "for eta below one, P3D.2 ordinary class mutual information is not the expected entropy reduction of the implemented generalized update",
+            "P3E.1 update coherence is validated only on an exact finite correctness fixture",
+            "P3E.1 does not repair the eta-one CCPP posterior-adequacy failure or authorize a real rerun",
             "P3B.6 uses one preconditioned R-log SafeBayes posterior for every policy",
             "P3B.6 calibration and basis transforms use initial development data only",
             "P3B.6 epistemic fallback is a posterior surrogate and is not class EIG",
@@ -231,7 +235,8 @@ def run(args: argparse.Namespace) -> int:
             "P3C.1 controlled diagnostics support discrepancy-aware decision-rule correctness only",
             "P3C.1 real evidence is protocol-valid but negative",
             "P3D.1 diagnostics support reference-dominance decision correctness only",
-            "P3D.2 runner and protocol tests support integration correctness only until a real registry is returned",
+            "P3D.2 supports a protocol-valid negative real-development conclusion only",
+            "P3E.1 supports generalized-update loss-alignment correctness only",
             "no motif superiority held-out or VED claim",
         ],
         "files": rows,
@@ -247,9 +252,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--stage", default="P3D.1")
+    parser.add_argument("--stage", default="P3E.1")
     parser.add_argument(
-        "--task", default="certified_reference_dominance_correctness"
+        "--task", default="update_coherent_reference_dominance_correctness"
     )
     parser.add_argument("--tests-passed", type=int, required=True)
     parser.add_argument("--tests-failed", type=int, default=0)
