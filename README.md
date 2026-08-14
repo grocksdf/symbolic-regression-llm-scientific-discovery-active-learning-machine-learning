@@ -1,6 +1,6 @@
 # Hypothesis MVP — PCPI
 
-Current stage: **P3 repair required**. P3B.10 and the controlled P3C.1
+Current stage: **P3 repair required; P3C.1 efficacy NO-GO**. P3B.10 and P3C.1
 discrepancy-aware repair both completed 96/96 protocol-valid real runs but
 returned `REAL_ADVANTAGE_NOT_DEMONSTRATED`. P3C.1 preserves the frozen P3B.10
 data, splits, budgets, baselines, nominal reporting posterior, predictive
@@ -8,7 +8,15 @@ classes, likelihood-power ambiguity set, representative safe set, and closed
 held-out state; it adds only a response-free predictive discrepancy envelope to
 PCPI candidate ranking. The P3C.1 audit is recorded in
 `docs/pcpi_p3c1_result_audit_20260813.md`. No P4/P5 or superiority claim is
-authorized.
+authorized. The next candidate is a correctness-only, task-independent
+posterior/decision repair; no new real-data run is authorized by this source.
+
+Source synchronization warning: the public clean import at base commit
+`5fa4f3c9080c31208135dcada80a8f86121a199a` omitted the
+`hypothesis_mvp.data` Python package even though the imported delivery manifest
+lists it. Full regression and all real entrypoints are therefore blocked until
+the six provenance-verified files are restored. See
+`docs/pcpi_public_source_sync_audit_20260814.md`.
 
 PCPI treats symbolic scientific discovery as sequential Bayesian discrimination
 among operational predictive-equivalence classes. The target is the joint
@@ -425,13 +433,17 @@ ten finite-family decisions: exact lower-envelope agreement, interval
 containment, safe-set winner agreement, least-favorable-model auditing,
 model-order invariance, singleton recovery, and deterministic tie handling.
 
-## P3B.10 real measured-pool acquisition
+## P3B.10 returned real measured-pool acquisition
 
-The real entrypoint remains `scripts.run_pcpi_p3b_real`. It may run only after
-the 27/27 P3B.10 correctness Gate passes. Registered CCPP/Gas data, eight
-seeds, budgets, baselines, splits, representative guard, nominal posterior,
-and held-out-closed efficacy rules are unchanged; only PCPI candidate ranking
-uses the frozen four-model lower envelope.
+The 27/27 controlled P3B.10 correctness Gate passed. Its subsequent
+held-out-closed run completed 96/96 policy runs with zero failures and an
+independently valid 97-event EvidenceRegistry, but returned
+`REAL_ADVANTAGE_NOT_DEMONSTRATED`. On CCPP, frozen-class gain versus random was
+`-0.28378374200721335` with 95% interval
+`[-0.5046926179404461, -0.06287486607398057]` and 7/8 negative-transfer seeds.
+The grouped Gas-family interval crossed zero. P3B.10 is therefore retained as
+protocol-valid negative development evidence, not as pending or positive
+efficacy evidence.
 
 ## P3C.1 discrepancy-aware real measured-pool acquisition
 
@@ -442,15 +454,19 @@ pass the preregistered efficacy Gate; it is retained as negative development
 evidence. Do not rerun P3C.1 or promote the mainline without a new
 task-independent repair and controlled Gate.
 
+The following command is an **archived identity record**, not an instruction to
+rerun the failed candidate. Its output directory is intentionally the existing
+audited directory, so the fail-closed runner must refuse to overwrite it.
+
 ```powershell
 $project = "D:\01\666\hypothesis_mvp"
 $python = "D:\01\666\.venv_hypothesis_canonical\Scripts\python.exe"
-$data = "$project\data"
-$output = "$project\outputs\p3c_1_real_discrepancy_9b3cc46_20260813"
+$dataRoot = "D:\01\666\data"
+$output = "D:\01\666\hypothesis_mvp\outputs\p3c_1_real_discrepancy_d4b24b2_20260813"
 
 Set-Location $project
 & $python -B scripts/run_pcpi_p3c_real.py `
-    --data-root $data `
+    --data-root $dataRoot `
     --output-dir $output `
     --config configs/p3c_1_discrepancy_real_acquisition.json `
     --phase P3C.1 `
@@ -460,6 +476,33 @@ Set-Location $project
 This command is an efficacy evaluation, not a guarantee of improvement. A
 protocol-valid run with `REAL_ADVANTAGE_NOT_DEMONSTRATED` remains negative
 development evidence and does not permit promotion to P4/P5.
+
+## P3D.1 certified reference-dominance diagnostic
+
+P3D.1 is a correctness-only decision repair. It evaluates exact finite
+class-EIG and hands over from a registered reference policy only when the
+candidate's utility lower bound exceeds the reference policy's utility upper
+bound. Overlapping intervals and zero class capacity execute the registered
+reference policy; they never switch to posterior variance or another target.
+
+The diagnostic has no real-data, validation, held-out, LLM, motif, or discovery
+surface. Passing it does not integrate P3D.1 into
+`hypothesis_mvp.pcpi.real_acquisition` and does not authorize another CCPP/Gas
+run. The mathematical and evidence contract is in
+`docs/pcpi_p3d1_root_cause_and_repair.md`.
+
+```powershell
+$project = "D:\01\666\hypothesis_mvp"
+$python = "D:\01\666\.venv_hypothesis_canonical\Scripts\python.exe"
+$output = "D:\01\666\hypothesis_mvp\outputs\p3d_1_reference_dominance_correctness"
+
+Set-Location $project
+& $python -B scripts/run_pcpi_p3d1_reference_dominance_diagnostic.py `
+    --output-dir $output `
+    --config configs/p3d_1_reference_dominance_diagnostic.json `
+    --phase P3D.1 `
+    --heldout-state not-applicable
+```
 
 ## Current claim boundary
 
@@ -483,10 +526,22 @@ Supported when the frozen P2B and P3A.2 Gates are subsequently revalidated:
 
 The audited P3B.2--P3B.4 results are negative development evidence. P3B.5 is
 invalid efficacy evidence because of the coordinate mismatch. P3B.6--P3B.9
-are protocol-valid but do not pass the efficacy Gate. P3B.10 has only
-controlled correctness evidence until a new heldout-closed real run is returned
-and audited; the source does not support real acquisition superiority. P3B.10
-remains explicitly generalized Bayes, not an
-ordinary-likelihood posterior. Neither its controlled fixture nor P3A.2 supports open-grammar discovery
-superiority, motif safety, held-out confirmation, VED discovery, physical
-intervention, or a new scientific law.
+are protocol-valid but do not pass the efficacy Gate. P3B.10 and P3C.1 both
+have controlled correctness evidence and protocol-valid negative real results;
+neither supports acquisition superiority. P3B.10 remains explicitly
+generalized Bayes, not an ordinary-likelihood posterior. P3C.1's scalar,
+distance-shaped discrepancy envelope is a documented failed repair, not a
+contribution claim. None of these fixtures or real-development results supports
+open-grammar discovery superiority, motif safety, held-out confirmation, VED
+discovery, physical intervention, or a new scientific law.
+
+P3D.1 may support only the following statement after its clean-source
+correctness Gate passes:
+
+> Given valid simultaneous intervals for the frozen class-EIG utility, the
+> implemented handover selects a target-seeking action only when its lower
+> bound strictly exceeds the registered reference policy's upper bound;
+> otherwise it executes that reference policy.
+
+This is model-relative numerical decision correctness, not a posterior
+misspecification repair, real-data efficacy result, or realized no-harm claim.

@@ -116,3 +116,25 @@ CCPP remains negative-transfer relative to random, while the Gas-family result
 does not exclude zero and does not establish a family-uniform structural gain.
 See `docs/pcpi_p3c1_result_audit_20260813.md`. No P4/P5 or superiority claim
 is authorized.
+
+## P3D.1 correctness-only decision repair
+
+The next task-independent candidate is certified reference-dominance
+acquisition. It returns to the initial-frozen class-EIG and registers a
+response-free reference policy over the same visible candidates. A targeted
+action is authorized only when its valid numerical lower bound strictly
+exceeds the reference policy's probability-weighted upper bound; otherwise the
+rule samples from the reference policy. This removes the earlier semantic
+switch from uncertified EIG to posterior epistemic variance and automatically
+falls back when class information capacity is zero.
+
+P3D.1 is implemented only in an exact finite-outcome correctness fixture and
+is not imported by the real acquisition runtime. A controlled PASS supports
+the interval-handover implementation and model-relative proposition only; it
+does not repair posterior misspecification or establish real-data safety or
+efficacy. See `docs/pcpi_p3d1_root_cause_and_repair.md`.
+
+The public clean import also omits the manifest-listed `hypothesis_mvp.data`
+package, so full regression and every real entrypoint remain blocked until the
+six provenance-verified files are restored. See
+`docs/pcpi_public_source_sync_audit_20260814.md`.

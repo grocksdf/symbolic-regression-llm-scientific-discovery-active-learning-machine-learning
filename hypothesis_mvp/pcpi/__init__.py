@@ -78,6 +78,13 @@ from .real_acquisition import (
     select_stable_argmax,
     stable_derived_seed,
 )
+from .decision import (
+    REFERENCE_DOMINANCE_METHOD,
+    REFERENCE_FALLBACK_MODE,
+    TARGETED_HANDOVER_MODE,
+    ReferenceDominanceDecision,
+    certified_reference_dominance,
+)
 from .smc import (
     CollapsedStructureKernel,
     FixedUniverseSMC,
@@ -173,4 +180,9 @@ __all__ = [
     "score_discrepancy_aware_actions",
     "select_stable_argmax",
     "stable_derived_seed",
+    "REFERENCE_DOMINANCE_METHOD",
+    "REFERENCE_FALLBACK_MODE",
+    "TARGETED_HANDOVER_MODE",
+    "ReferenceDominanceDecision",
+    "certified_reference_dominance",
 ]

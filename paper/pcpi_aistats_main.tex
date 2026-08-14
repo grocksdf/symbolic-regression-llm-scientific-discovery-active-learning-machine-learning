@@ -18,7 +18,7 @@
 \newtheorem{proposition}{Proposition}
 \newtheorem{assumption}{Assumption}
 
-\title{\method: Sequential Bayesian Discrimination for Symbolic Scientific Discovery}
+\title{\method: Targeted Bayesian Experimental Design for Symbolic Discovery}
 \author{Anonymous Authors}
 \date{}
 
@@ -43,12 +43,19 @@ its preregistered exact-posterior thresholds but exposed severe long-horizon
 particle genealogy coalescence. A Rao--Blackwellized, adaptively tempered
 implementation repairs that failure mode, and an exact-reference diagnostic
 validates an explicit proposal-corrected collapsed trans-dimensional kernel.
-We implement exact-reference validation of a Student-t-measure Gauss--Jacobi
-EIG estimator under the repaired operational-class definition. A 96-run real
-matched-budget experiment passed its full protocol but did not establish
-predictive or structural advantage. It exposed a changing-target mismatch,
-which motivates a fixed-class posterior-discriminative repair. Motif transfer
-and held-out effectiveness claims remain pending.
+We validate a Student-t-measure Gauss--Jacobi class-EIG estimator against
+independent quadrature under the repaired operational-class definition. The
+latest 96-run measured-pool experiment passed every protocol and evidence
+check but did not establish predictive or structural advantage. On CCPP,
+frozen-class gain relative to random acquisition was $-0.2838$ (95\% interval
+$[-0.5047,-0.0629]$), with negative transfer in 7/8 seeds; the grouped Gas
+Turbine interval crossed zero. A discrepancy profile activated on Gas but did
+not repair the family-level result. We retain these outcomes as negative
+development evidence and use them to motivate a reference-dominance decision
+rule that acts target-seekingly only when its improvement over a registered
+reference policy is numerically certified. Its present evidence is restricted
+to exact-reference correctness; real superiority, motif transfer, and
+held-out effectiveness claims remain blocked.
 \end{abstract}
 
 \section{Introduction}
@@ -75,9 +82,10 @@ The paper is organized around three primary contributions.
   \item A target-correct SMC construction over symbolic structures,
   coefficients, and noise parameters, validated against an exactly enumerable
   posterior before any open-grammar claim is made. \evidencegate{P2}
-  \item A posterior-discriminative acquisition rule positioned as class EIG,
-  an EIG bound, or an explicitly named surrogate according to exact-reference
-  validation. \evidencegate{P3}
+  \item A target-aware acquisition rule whose class-EIG semantics, numerical
+  ranking, and improvement over a registered reference policy are separately
+  certified; an uncertified decision returns to that policy instead of
+  switching to a different scientific objective. \evidencegate{P3}
 \end{itemize}
 
 Reliability-gated motif proposals are optional. They enter the paper only if
@@ -105,6 +113,18 @@ Expected information gain provides a decision-theoretic reference for
 measurement selection \cite{chaloner1995bayesian,foster2021bax}. Predictive
 uncertainty is not generally equivalent to structural information: high
 aleatoric noise can increase the former without separating symbolic laws.
+Robust BED instead optimizes information under an explicit ambiguity set
+\cite{go2022robust,abdulsamad2026maximin}; this is distinct from treating a
+small collection of likelihood powers as a universal misspecification model.
+
+\paragraph{Reference-relative decisions.}
+Conservative exploration and safe policy improvement return to a registered
+baseline when an alternative is not sufficiently supported
+\cite{katariya2019interleaving,laroche2019spibb}. Our use is narrower: the
+reference is an acquisition policy over the same visible pool, and the
+handover certificate concerns model-based information about the frozen
+scientific estimand. It is not a physical-safety or misspecification-robustness
+guarantee.
 
 \paragraph{Reusable symbolic structure.}
 Library learning and compositional program induction motivate reusable motifs
@@ -339,8 +359,19 @@ bandwidth. Candidate, validation, and held-out responses do not enter this
 profile. Student-$t$ component scales are moment-matched to the inflated
 variance before applying the unchanged finite maximin joint utility and MMD
 safe set. Controlled tests support implementation correctness only; the
-heldout-closed P3C.1 real-development result is pending.
-\evidencegate{P3C.1 discrepancy exact-reference and protocol Gate passed; real efficacy pending}
+heldout-closed P3C.1 run completes 96/96 policies but fails the efficacy Gate.
+The discrepancy is effectively zero on CCPP and active but insufficient on
+Gas; it is retained as a failed repair rather than promoted as robustness.
+\evidencegate{P3C.1 protocol passed; real efficacy failed}
+
+P3D.1 returns to the primary class-EIG and registers a reference action policy
+$q_t$ over the same visible pool. Given containing utility intervals
+$[L_t(a),R_t(a)]$, it selects the action with largest lower bound only when
+$L_t(\widehat a) > \sum_a q_t(a)R_t(a)+\tau_{\rm num}$; otherwise it samples
+from $q_t$. Thus an unresolved ranking abstains to the registered policy rather
+than switching to epistemic variance. P3D.1 is implemented only in an exactly
+enumerable finite-outcome diagnostic and is not imported by the real runtime.
+\evidencegate{P3D.1 correctness fixture only}
 
 \section{Theory and Scope}
 
@@ -379,6 +410,34 @@ returned real run also fails efficacy despite certified joint rankings. P3B.9
 adds a covariate-only representative safe set but its returned run still fails
 efficacy. P3B.10 retains the nominal posterior and every protocol commitment,
 changing only PCPI ranking to the finite lower envelope described above.
+
+\begin{proposition}[Reference-policy dominance]
+Let $U_t(a)=I(C_0;Y_a\mid H_t)$ and suppose
+$L_t(a)\le U_t(a)\le R_t(a)$ simultaneously for all visible actions. Define
+$U_t(q)=\sum_a q_t(a)U_t(a)$ and analogously $R_t(q)$. If P3D.1 hands over to
+$\widehat a$ because
+$L_t(\widehat a)>R_t(q)+\tau_{\rm num}$, then
+$U_t(\widehat a)>U_t(q)$. If it does not hand over, its expected utility equals
+$U_t(q)$.
+\end{proposition}
+
+\begin{proof}
+In the handover branch,
+$U_t(\widehat a)\ge L_t(\widehat a)>R_t(q)\ge U_t(q)$. In the reference branch,
+linearity of expectation under $A\sim q_t$ gives
+$\E[U_t(A)]=\sum_a q_t(a)U_t(a)=U_t(q)$.
+\end{proof}
+
+\begin{proposition}[Zero-capacity abstention]
+If $H(C_0\mid H_t)=0$, every class-EIG is zero and no valid interval system can
+certify strict reference dominance. P3D.1 therefore executes $q_t$ without a
+fitted entropy threshold.
+\end{proposition}
+
+Both statements are conditional on the frozen posterior and valid simultaneous
+intervals. The current Gauss--Jacobi fine/coarse discrepancy is an asymptotic
+diagnostic, not a rigorous bound; consequently these propositions do not yet
+authorize a real-run no-harm claim.
 
 Under shared Gaussian observation noise, a maximum-entropy argument gives
 \[
@@ -463,6 +522,15 @@ random is $-0.2838$ (95\% CI $[-0.5047,-0.0629]$), with negative transfer in
 7/8 seeds; grouped Gas Turbine gain is not significant. Thus no real
 superiority result is claimed, and the next repair must address general
 posterior or decision-model misspecification rather than tune the data.
+P3C.1 adds a scalar distance-shaped discrepancy variance while preserving the
+same splits, budgets, policies, ambiguity set, safe set, and closed held-out.
+Its 96/96 run is also protocol-valid and returns the same CCPP paired effect,
+because the registered residual-excess variance is at most $6.88\times10^{-13}$
+there. The discrepancy is nonzero on Gas CO and NOX (mean selected variances
+$0.3281$ and $0.5801$), but grouped Gas frozen-class gain versus random is
+$0.0659$ with 95\% interval $[-0.2291,0.3609]$. The scalar discrepancy
+envelope is therefore an insufficient repair, not a no-op or a protocol
+failure.
 
 \paragraph{Optional RQ4: motif efficiency.}
 If retained, evaluate whether source-frozen memory improves ESS per second,
@@ -490,10 +558,14 @@ real result. P3B.8 supports joint-score correctness and a valid negative real
 result. P3B.9 supports representative-guard correctness and a valid negative
 real result. P3B.10 controlled evidence supports correctness of the finite
 maximin decision, while its real rerun supports only protocol-valid negative
-development evidence. No current evidence supports matched-budget real
-superiority, motif invariance, VED discovery, or unknown-law recovery. P3C.1
-has passed its controlled implementation Gate but has not yet produced real
-efficacy evidence.
+development evidence. P3C.1 passed its controlled implementation Gate and
+completed a protocol-valid real run, but
+\texttt{formal\_efficacy\_evidence=false} and the registered status is
+\texttt{REAL\_ADVANTAGE\_NOT\_DEMONSTRATED}. The held-out was
+never opened. The reference-dominance repair introduced next is evaluated only
+as a correctness diagnostic. No current evidence supports matched-budget real
+superiority, motif invariance, VED discovery, unknown-law recovery, or held-out
+confirmation.
 
 \section{Conclusion}
 
@@ -501,9 +573,14 @@ efficacy evidence.
 among predictive classes. The exact-reference engine makes posterior semantics
 and acquisition naming testable before the project invests in open-grammar
 SMC. After the corrected P2B, exact P3A.2, P3B.6 coordinate, and P3B.7 class
-Gates and the negative P3B.10 real audit, the next empirical decision is one
-frozen heldout-closed P3C.1 real matched-budget run; motif
-transfer and held-out confirmation remain downstream and independently frozen.
+Gates, the negative P3B.10 and P3C.1 real audits show that numerical validity
+does not imply acquisition efficacy. The next Gate is therefore a controlled
+test of the decision contract: select a target-seeking action only when its
+interval lower bound dominates the registered reference policy's interval
+upper bound, and otherwise execute that reference policy. This establishes a
+model-relative correctness property, not a real-world no-harm guarantee.
+Another measured-pool run, motif transfer, and held-out confirmation remain
+downstream and independently blocked.
 
 \bibliographystyle{plain}
 \bibliography{references}

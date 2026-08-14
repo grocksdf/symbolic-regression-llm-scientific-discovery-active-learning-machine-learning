@@ -1,0 +1,19 @@
+{
+  "schema": "pcpi-p3d1-reference-dominance-diagnostic-config-v1",
+  "stage": "P3D.1",
+  "fixture_role": "inference_correctness_diagnostic_fixture",
+  "seed": 20260814,
+  "alternate_seed": 20260815,
+  "primary_utility": "exact-finite-class-eig",
+  "reference_policy": "registered-visible-candidate-probabilities",
+  "decision_method": "registered-reference-policy-interval-dominance-v1",
+  "tight_interval_radius": 1e-10,
+  "unresolved_interval_radius": 0.4,
+  "gate_thresholds": {
+    "eig_entropy_identity_max_abs_error": 1e-14,
+    "capacity_bound_tolerance": 1e-14,
+    "reference_aggregation_max_abs_error": 1e-14,
+    "permutation_invariance_max_abs_error": 1e-14
+  },
+  "heldout_state": "not-applicable"
+}

@@ -22,6 +22,7 @@ FORBIDDEN_PATH_PARTS = {
     "outputs",
 }
 FORBIDDEN_FILE_SUFFIXES = {".pyc", ".pyo", ".zip"}
+VCS_METADATA_PARTS = {".git"}
 
 
 def _hash_file(path: Path) -> str:
@@ -44,6 +45,8 @@ def _inventory(root: Path, output: Path) -> list[dict[str, Any]]:
     rows = []
     for path in sorted(root.rglob("*"), key=lambda item: item.as_posix()):
         relative = path.relative_to(root).as_posix()
+        if any(part in VCS_METADATA_PARTS for part in path.relative_to(root).parts):
+            continue
         if path.is_file() and (
             any(part in FORBIDDEN_PATH_PARTS for part in path.relative_to(root).parts)
             or path.suffix.lower() in FORBIDDEN_FILE_SUFFIXES
@@ -86,6 +89,18 @@ def run(args: argparse.Namespace) -> int:
     if root not in output.parents:
         raise ValueError("delivery manifest must be written inside the staging root")
     rows = _inventory(root, output)
+    required_production_paths = (
+        "hypothesis_mvp/data/__init__.py",
+        "hypothesis_mvp/data/oracle.py",
+        "hypothesis_mvp/data/real_data.py",
+        "hypothesis_mvp/data/real_protocol.py",
+        "hypothesis_mvp/data/real_registry.py",
+        "hypothesis_mvp/data/roles.py",
+    )
+    missing_required_paths = [
+        relative for relative in required_production_paths
+        if not (root / relative).is_file()
+    ]
     manifest = {
         "schema": "pcpi-delivery-manifest-v1",
         "artifact_type": "canonical_source",
@@ -110,10 +125,21 @@ def run(args: argparse.Namespace) -> int:
             "pcpi-p3b8-joint-eig",
             "pcpi-p3b9-representative-safe",
             "pcpi-p3b10-maximin-joint-eig",
+            "pcpi-p3d1-reference-dominance",
             "hypothesis-discover",
             "hypothesis-llm-preflight",
         ],
-        "tests": {"passed": args.tests_passed, "failed": 0, "skipped": 0},
+        "tests": {
+            "passed": args.tests_passed,
+            "failed": args.tests_failed,
+            "skipped": args.tests_skipped,
+            "collection_errors": args.collection_errors,
+            "suite_status": args.test_suite_status,
+        },
+        "source_identity": {
+            "complete": not missing_required_paths,
+            "required_paths_missing": missing_required_paths,
+        },
         "static_integrity_failures": 0,
         "leakage_audit_failures": 0,
         "data_included": False,
@@ -147,7 +173,9 @@ def run(args: argparse.Namespace) -> int:
             "ZIP files",
             "LaTeX intermediates",
         ],
-        "known_limitations": [
+        "known_limitations": ([
+            "public canonical import is missing required hypothesis_mvp.data production files"
+        ] if missing_required_paths else []) + [
             "P2A.1 validates a finite exactly enumerable symbolic universe",
             "P2A.1 root ancestry is diagnostic and is not the posterior target",
             "P2B validates only a finite collapsed trans-dimensional bank",
@@ -169,11 +197,14 @@ def run(args: argparse.Namespace) -> int:
             "P3B.10 protects only against the frozen finite likelihood-power ambiguity set",
             "P3C.1 discrepancy-aware ranking is an acquisition-only predictive repair",
             "P3C.1 controlled correctness cannot establish real-data efficacy",
+            "P3C.1 is protocol-valid negative real-development evidence and does not establish superiority",
+            "P3D.1 reference dominance is correctness-only and is not integrated into the real acquisition runtime",
+            "P3D.1 model-relative dominance requires valid simultaneous utility intervals",
             "P3B.6 uses one preconditioned R-log SafeBayes posterior for every policy",
             "P3B.6 calibration and basis transforms use initial development data only",
             "P3B.6 epistemic fallback is a posterior surrogate and is not class EIG",
             "open-grammar discovery remains a heuristic regression runtime",
-            "P3B.10 remains the archived baseline; P3C.1 is the current real-development candidate",
+            "P3B.10 and P3C.1 remain archived negative real-development candidates",
             "minimum real-data smoke requires the user's local official datasets",
             "native Windows path and rollback validation must be confirmed on the user's Python 3.11 Windows environment",
         ],
@@ -195,6 +226,8 @@ def run(args: argparse.Namespace) -> int:
             "P3B.9 representative-safe diagnostics support decision-rule correctness only",
             "P3B.10 maximin diagnostics support finite-family decision-rule correctness only",
             "P3C.1 controlled diagnostics support discrepancy-aware decision-rule correctness only",
+            "P3C.1 real evidence is protocol-valid but negative",
+            "P3D.1 diagnostics support reference-dominance decision correctness only",
             "no motif superiority held-out or VED claim",
         ],
         "files": rows,
@@ -210,11 +243,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--stage", default="P3B.10")
+    parser.add_argument("--stage", default="P3D.1")
     parser.add_argument(
-        "--task", default="representative_safe_maximin_joint_acquisition"
+        "--task", default="certified_reference_dominance_correctness"
     )
     parser.add_argument("--tests-passed", type=int, required=True)
+    parser.add_argument("--tests-failed", type=int, default=0)
+    parser.add_argument("--tests-skipped", type=int, default=0)
+    parser.add_argument("--collection-errors", type=int, default=0)
+    parser.add_argument(
+        "--test-suite-status",
+        choices=("passed", "failed", "blocked_missing_source"),
+        default="passed",
+    )
     return parser
 
 

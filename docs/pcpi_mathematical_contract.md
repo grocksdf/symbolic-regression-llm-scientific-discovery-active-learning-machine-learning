@@ -1,9 +1,8 @@
 # PCPI mathematical contract (P0 freeze)
 
-Status: **P3B.10 controlled correctness passed; P3B.10 real protocol valid but
-efficacy failed; general posterior/decision repair required before another
-real run**
-Contract version: `pcpi-p3b10-representative-safe-maximin-joint-contract-v1`  
+Status: **P3C.1 real efficacy failed; P3D.1 reference-dominance repair is
+correctness-only and not integrated into the real runtime**
+Contract version: `pcpi-p3d1-reference-dominance-correctness-v1`
 Primary target: predictive-equivalence-class identification  
 Secondary target: posterior predictive risk
 
@@ -458,6 +457,52 @@ variances, leaving the parameter-induced cross-covariance unchanged. P3C.1
 then applies the same finite likelihood-power lower envelope, numerical rank
 certificate, representative safe set, and fallback rules as P3B.10.
 
+P3D.1 freezes P3C.1 as negative evidence and tests a decision-layer repair on
+an isolated exact fixture. Let the primary utility return to the declared
+estimand,
+
+\[
+U_t(a)=I(C_0;Y_a\mid H_t),
+\]
+
+and let $q_t$ be a response-free reference policy registered over the same
+visible candidate set. For a matched random reference, $q_t$ is uniform. Given
+valid simultaneous numerical intervals
+
+\[
+L_t(a)\le U_t(a)\le R_t(a),
+\]
+
+define
+
+\[
+L_t(q)=\sum_a q_t(a)L_t(a),\qquad
+R_t(q)=\sum_a q_t(a)R_t(a).
+\]
+
+The candidate leader maximizes the lower bound, with stable candidate identity
+as the tie break. PCPI hands over to this target-seeking action only when
+
+\[
+L_t(\widehat a)>R_t(q)+\tau_{\rm num}.
+\]
+
+Otherwise it samples from $q_t$. The reference branch is an abstention from an
+uncertified target decision, not an EIG failure rebranded as epistemic variance.
+If the intervals contain the utilities, the targeted branch has strictly
+higher model-based utility than the reference and the fallback branch has
+equal reference utility in expectation. This statement is conditional on the
+frozen model and valid intervals; it is not a real-world no-harm guarantee
+under model misspecification.
+
+P3D.1 is not imported by the real acquisition runtime. Its exact finite
+discrete fixture must first establish the information identity, entropy
+capacity bound, reference aggregation, interval handover, zero-capacity
+fallback, stable sampling, permutation invariance, and fail-closed validation.
+The existing Gauss--Jacobi fine/coarse discrepancy remains an asymptotic
+diagnostic, so a future real integration remains blocked until the required
+production interval guarantee is independently justified.
+
 ## 9. Terminal decision
 
 The primary decision is a predictive class. For a preregistered class loss,
@@ -499,7 +544,14 @@ repairs that contract and passes its protocol Gate, but its fixed one-SD class
 resolution leaves the class variable largely degenerate and does not pass the
 efficacy Gate. P3B.7 introduces and validates the budget-resolved primary class
 definition, but its returned 96/96 real run fails the unchanged efficacy Gate.
-P3B.8 adds the response-free joint class--predictive information target; its
-controlled correctness Gate remains pending. Motif invariance, open-grammar
-superiority, physical intervention, VED discovery, and held-out confirmation
-remain outside the established evidence boundary.
+P3B.8 adds the response-free joint class--predictive information target and
+passes its controlled diagnostic, while its returned real run remains negative.
+P3B.9 and P3B.10 likewise pass their controlled decision-rule diagnostics but
+return protocol-valid negative real-development evidence. P3C.1 activates its
+scalar discrepancy profile on the Gas family yet still returns
+`REAL_ADVANTAGE_NOT_DEMONSTRATED`; on CCPP its profile is effectively zero and
+frozen-class gain versus random is significantly negative. This identifies the
+P3C.1 discrepancy envelope as an insufficient repair, not a protocol failure.
+Motif invariance, open-grammar superiority, physical intervention, VED
+discovery, and held-out confirmation remain outside the established evidence
+boundary.
