@@ -50,4 +50,7 @@ paper_locked_outputs/
 *.out
 *.synctex.gz
 texput.log
-data/
+
+# Local measured datasets only; the Python package hypothesis_mvp/data is source
+/data/
+!hypothesis_mvp/data/
