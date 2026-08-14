@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcpi-run-manifest-v1",
+  "type": "object",
+  "required": [
+    "stage",
+    "experiment",
+    "source_package_hash",
+    "source_tree_hash",
+    "dataset_raw_hashes",
+    "split_hashes",
+    "config_hash",
+    "dependency_lock_hash",
+    "seeds",
+    "budgets",
+    "heldout_opened",
+    "selection_used_heldout",
+    "failure_policy",
+    "primary_metrics",
+    "claim_boundary"
+  ],
+  "properties": {
+    "dataset_raw_hashes": {
+      "type": "object",
+      "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+    },
+    "heldout_opened": {"type": "boolean"},
+    "selection_used_heldout": {"type": "boolean"}
+  },
+  "additionalProperties": true
+}

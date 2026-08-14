@@ -1,0 +1,59 @@
+{
+  "schema": "rd0.1-development-freeze-v1",
+  "stage": "development_only",
+  "dataset_id": "uci_airfoil",
+  "task_name": "uci_airfoil_real_mechanism_discovery",
+  "random_seed": 42,
+  "split_strategy": "pca1",
+  "split_ratios": {
+    "development": 0.7,
+    "acquisition_pool": 0.15,
+    "untouched_heldout": 0.15
+  },
+  "result_archive": {
+    "file_name": "uci_airfoil_glm52_fixed_20260807_014252.zip",
+    "sha256": "9e317c6c52a26a5df1226551c439ae94af8c9b6307819c09767be824bceee480"
+  },
+  "execution_source_archive": {
+    "file_name": "hypothesis_mvp_source_20260807_100112.zip",
+    "sha256": "eb9d455d5e2cdcc8224bf677dced1429d992675e0801c22bea0feeea6e4e2df4"
+  },
+  "frozen_hypothesis": {
+    "hypothesis_id": "hyp-f33c71c2fbf8aa0048f33d4f",
+    "expression_sha256": "b6b2f6d8d3207b5ae6036d7fb15a5a8f4f82fa4bf3dd4b15971710c4110d364b",
+    "lineage_protocol_valid": true,
+    "selected_source": "llm_proposal_2_tail"
+  },
+  "immutable_member_hashes": {
+    "discovery_result.json": "523a95933f3c1ba15bfda401ab811f2e9ede07dac564fdfd70c4dd77ace291a2",
+    "evidence_registry.jsonl": "f196803f1f7d65024777ad958bb4b866542f61f8abbe0bd82b98f2c2d2e2df22",
+    "hypotheses/hyp-f33c71c2fbf8aa0048f33d4f.json": "3aaf93faaf813a57072d9dddd23affe68e89828f8bf57974406a6683ae891c1e",
+    "knowledge/runtime_ledger.jsonl": "8b9ec0ed5f75ac4709137c2e26eae73573e231bf7ff44f11e088b06116fc1adf",
+    "knowledge/structure_library.staged.jsonl": "6b1e73d1d8f7f06cd8344c2f0998b7833b1f5e7e4859332667e39d0aeebc58a9"
+  },
+  "internal_validation": {
+    "best_val_nmse": 0.4278997178516896,
+    "best_val_relative_error_p99": 0.07837094199283531,
+    "best_val_strict_max_relative_error": 0.08425799759353303,
+    "independent_confirmation": false
+  },
+  "heldout_policy": {
+    "registered": true,
+    "opened": false,
+    "used_for_selection": false,
+    "confirmation_gate_preregistered": false,
+    "action": "seal_until_a_future_preregistered_confirmation_contract"
+  },
+  "knowledge_policy": {
+    "stage_id": "e36829d31eb6bd297e4caee179464cb0",
+    "status": "staged",
+    "promotion_allowed": false,
+    "promotion_condition": "passing_independent_untouched_confirmation_only"
+  },
+  "prohibited_actions": [
+    "overwrite_or_delete_the_result_archive",
+    "reuse_airfoil_heldout_for_development_or_threshold_selection",
+    "promote_staged_airfoil_knowledge_before_passing_confirmation",
+    "describe_internal_validation_as_independent_confirmation"
+  ]
+}

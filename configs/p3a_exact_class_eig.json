@@ -1,0 +1,43 @@
+{
+  "schema": "pcpi-p3a-operational-class-eig-config-v4",
+  "stage": "P3A.2",
+  "fixture_role": "inference_correctness_diagnostic_fixture",
+  "scenarios": [
+    {"scenario_id": "seed07_n04", "data_seed": 20260807, "observation_count": 4},
+    {"scenario_id": "seed07_n06", "data_seed": 20260807, "observation_count": 6},
+    {"scenario_id": "seed07_n12", "data_seed": 20260807, "observation_count": 12},
+    {"scenario_id": "seed07_n20", "data_seed": 20260807, "observation_count": 20},
+    {"scenario_id": "seed08_n04", "data_seed": 20260808, "observation_count": 4},
+    {"scenario_id": "seed08_n06", "data_seed": 20260808, "observation_count": 6},
+    {"scenario_id": "seed08_n12", "data_seed": 20260808, "observation_count": 12},
+    {"scenario_id": "seed08_n20", "data_seed": 20260808, "observation_count": 20}
+  ],
+  "action_count": 25,
+  "action_min": -2.0,
+  "action_max": 2.0,
+  "operational_class_metric": "pooled-predictive-sd-quantile-rms",
+  "operational_class_linkage": "complete",
+  "operational_class_distance_threshold": 1.0,
+  "operational_class_quantile_levels": [0.1, 0.5, 0.9],
+  "estimator_integration_method": "posterior-predictive-gauss-jacobi-antithetic-quadrature",
+  "error_safety_factor": 4.0,
+  "rank_certificate_method": "nested-gauss-jacobi-asymptotic-error-envelope",
+  "quadrature_epsabs": 1e-10,
+  "quadrature_epsrel": 1e-9,
+  "evaluation_counts": [32, 64, 128, 256, 512],
+  "gate_thresholds": {
+    "quadrature_error_max": 1e-7,
+    "posterior_entropy_orders_of_magnitude_min": 4.0,
+    "largest_overall_mean_spearman_min": 0.95,
+    "largest_worst_scenario_mean_spearman_min": 0.90,
+    "largest_worst_scenario_top1_agreement_min": 0.95,
+    "all_budget_false_certification_rate_max": 0.0,
+    "largest_error_envelope_coverage_min": 1.0,
+    "largest_rank_certification_rate_min": 1.0,
+    "largest_worst_scenario_normalized_rmse_max": 1e-8,
+    "largest_worst_scenario_normalized_simple_regret_max": 0.0,
+    "largest_to_smallest_normalized_rmse_ratio_max": 1e-6,
+    "log_log_convergence_slope_max": -3.0
+  },
+  "heldout_state": "not-applicable"
+}

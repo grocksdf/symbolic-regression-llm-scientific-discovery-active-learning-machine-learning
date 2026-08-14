@@ -1,0 +1,33 @@
+{
+  "schema": "pcpi-p3b6-predictive-consistency-diagnostic-config-v1",
+  "stage": "P3B.6",
+  "fixture_role": "inference_correctness_diagnostic_fixture",
+  "seed": 20260811,
+  "observation_count": 48,
+  "likelihood_power_candidates": [
+    0.125,
+    0.25,
+    0.5,
+    1.0
+  ],
+  "calibration_method": "prequential-r-log-safebayes",
+  "calibration_role": "initial-development-only",
+  "calibration_tie_break": "largest-likelihood-power",
+  "basis_preconditioning_method": "termwise-center-scale",
+  "basis_preconditioning_role": "initial-development-covariates-only",
+  "predictive_design_transform": "posterior-target-frozen",
+  "gate_thresholds": {
+    "batch_sequential_probability_max_abs_error": 2e-12,
+    "quadrature_log_marginal_max_abs_error": 2e-11,
+    "ordinary_bayes_regression_max_abs_error": 1e-14,
+    "preconditioned_column_mean_max_abs": 2e-14,
+    "preconditioned_column_sd_max_abs_error": 2e-14,
+    "unit_reparameterization_probability_max_abs_error": 2e-12,
+    "predictive_location_max_abs_error": 2e-12,
+    "predictive_variance_max_abs_error": 2e-12,
+    "epistemic_variance_max_abs_error": 2e-12,
+    "policy_unit_reparameterization_score_max_abs_error": 2e-12,
+    "raw_basis_coordinate_mismatch_min": 0.001
+  },
+  "heldout_state": "not-applicable"
+}

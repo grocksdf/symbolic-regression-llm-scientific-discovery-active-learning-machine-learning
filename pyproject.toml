@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hypothesis-mvp"
+version = "1.3.3"
+description = "Auditable real-only scientific hypothesis discovery agent"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.24",
+  "scipy>=1.11",
+  "sympy>=1.12",
+  "scikit-learn>=1.3",
+  "requests>=2.31",
+  "pandas>=2.1",
+  "matplotlib>=3.8",
+  "openpyxl>=3.1",
+  "xlrd>=2.0.1"
+]
+
+[project.optional-dependencies]
+symbolic = ["pysr>=0.15.1"]
+test = ["pytest>=7.4"]
+
+[project.scripts]
+hypothesis-discover = "scripts.run_real_discovery:main"
+hypothesis-llm-preflight = "scripts.preflight_llm_provider:main"
+hypothesis-rd1-development = "scripts.run_rd1_1_real_development:main"
+hypothesis-rd1-analyze = "scripts.analyze_rd1_1_ablation:main"
+pcpi-p2a-real = "scripts.run_pcpi_p2a_real:main"
+pcpi-p2a1-diagnostic = "scripts.run_pcpi_p2a1_diagnostic:main"
+pcpi-p2b-diagnostic = "scripts.run_pcpi_p2b_diagnostic:main"
+pcpi-p3a-eig = "scripts.run_pcpi_p3a_eig:main"
+pcpi-p3b-real = "scripts.run_pcpi_p3b_real:main"
+pcpi-p3b3-diagnostic = "scripts.run_pcpi_p3b3_diagnostic:main"
+pcpi-p3b6-predictive-consistency = "scripts.run_pcpi_p3b6_predictive_consistency_diagnostic:main"
+pcpi-p3b7-budget-resolved-classes = "scripts.run_pcpi_p3b7_budget_resolved_classes_diagnostic:main"
+pcpi-p3b8-joint-eig = "scripts.run_pcpi_p3b8_joint_eig_diagnostic:main"
+pcpi-p3b9-representative-safe = "scripts.run_pcpi_p3b9_representative_safe_diagnostic:main"
+pcpi-p3b10-maximin-joint-eig = "scripts.run_pcpi_p3b10_maximin_joint_eig_diagnostic:main"
+
+[tool.setuptools.packages.find]
+include = ["hypothesis_mvp*", "scripts*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

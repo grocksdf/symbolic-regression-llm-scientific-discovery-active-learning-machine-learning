@@ -1,0 +1,30 @@
+{
+  "schema": "pcpi-p3b3-decision-rule-diagnostic-config-v1",
+  "stage": "P3B.3",
+  "fixture_role": "inference_correctness_diagnostic_fixture",
+  "seed": 20260807,
+  "initial_observation_count": 8,
+  "updated_observation_count": 10,
+  "action_count": 9,
+  "action_min": -1.5,
+  "action_max": 1.5,
+  "operational_class_quantile_levels": [
+    0.1,
+    0.5,
+    0.9
+  ],
+  "certified_class_distance_threshold": 1.0,
+  "uncertified_class_distance_threshold": 0.05,
+  "singleton_class_distance_threshold": 1000000.0,
+  "eig_quadrature_min_evaluations": 32,
+  "eig_quadrature_max_evaluations": 512,
+  "eig_quadrature_growth_factor": 2,
+  "eig_quadrature_error_safety_factor": 4.0,
+  "exact_quadrature_epsabs": 1e-09,
+  "exact_quadrature_epsrel": 1e-08,
+  "qbc_committee_size": 16,
+  "gate_thresholds": {
+    "fallback_score_max_abs_error": 1e-12
+  },
+  "heldout_state": "not-applicable"
+}

@@ -1,0 +1,20 @@
+---
+description: PCPI AISTATS research integrity, evidence gates, and experiment handoff rules
+alwaysApply: true
+---
+
+# PCPI AISTATS Mainline Guardrails
+
+- Treat PCPI as sequential Bayesian discrimination among predictive equivalence classes of symbolic laws.
+- Keep C1--C3 primary: Bayesian formulation/classes, target-correct SMC, and defensible acquisition. Motifs, LLM orchestration, and VED are extensions and must not delay or inflate C1--C3.
+- Efficacy experiments must use provenance-audited real measured data (for example Airfoil, CCPP, Gas Turbine, NIST ASD, or audited VED). Never use simulated or synthetic data to support superiority or discovery claims.
+- Tiny controlled fixtures are allowed only for numerical correctness (posterior, likelihood, SMC, resampling, convergence, EIG estimator). Label them `inference correctness diagnostic fixture`.
+- Preserve development, validation, acquisition-pool, and untouched-heldout roles. Algorithm code must never access held-out arrays, paths, shapes, ranges, statistics, metadata, or results before the registered one-time confirmation.
+- Codex changes and verifies code only. Do not launch formal experiments or consume experiment budgets; give the user exact reproducible commands to run.
+- A smoke test or dry-run is allowed only when it does not constitute a formal experiment or inspect held-out data; state this clearly.
+- Do not advance the paper phase when evidence misses a declared gate or paper-quality threshold. Report NO-GO and diagnose the methodological cause.
+- Improve weak results through principled algorithmic changes grounded in theory and current primary literature/source code. Never hard-code answers, dataset identities, task-specific formulas, seeds, thresholds, or post-hoc regularizers chosen from evaluation/held-out outcomes.
+- Do not tune against untouched-heldout or repeatedly inspect it. Freeze algorithm, dependencies, priors, likelihood, kernels, acquisition, budgets, seeds, splits, failure policy, metrics, and go/no-go conditions before one-time confirmation.
+- Require matched observation and compute budgets, shared posterior engine, fixed splits/seeds, multi-seed reporting, paired uncertainty, failure accounting, and claim--code--evidence traceability.
+- Call acquisition EIG only after exact-reference validation; otherwise name it honestly (for example posterior-disagreement acquisition). Call weights/posteriors Bayesian only when the implemented probabilistic target justifies it.
+- Gates are sequential: exact reference -> target-correct fixed/trans-dimensional SMC -> acquisition validation -> real-data evidence -> submission evidence. Do not bypass a failed gate.

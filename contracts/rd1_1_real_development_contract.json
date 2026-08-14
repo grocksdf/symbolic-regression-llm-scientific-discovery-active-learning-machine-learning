@@ -1,0 +1,93 @@
+{
+  "schema": "rd1.1-real-development-contract-v1",
+  "stage": "development_and_ablation_only",
+  "datasets": [
+    "uci_ccpp",
+    "uci_gas_turbine_co",
+    "uci_gas_turbine_nox"
+  ],
+  "development_seeds": [42],
+  "paired_ablation_seeds": [42, 31415, 27182, 16180],
+  "split": {
+    "strategy": "pca1",
+    "development_ratio": 0.7,
+    "acquisition_pool_ratio": 0.15,
+    "untouched_heldout_ratio": 0.15
+  },
+  "full_system_budget": {
+    "engines": ["polynomial_lasso", "mcts"],
+    "engine_repeats": 2,
+    "engine_jobs_per_cycle": 4,
+    "engine_evaluation_budget_per_cycle": 8,
+    "engine_workers": 2,
+    "engine_timeout_s": 300.0,
+    "search_iterations": 120,
+    "discovery_evaluation_budget_per_cycle": 600,
+    "cycles": 3,
+    "acquisition_batch_size": 3
+  },
+  "variants": {
+    "full": {
+      "purpose": "complete_agent"
+    },
+    "no_llm": {
+      "purpose": "llm_contribution",
+      "matched_budget_basis": "same_engine_and_candidate_evaluation_limits; provider_calls_are_structurally_absent"
+    },
+    "single_engine": {
+      "purpose": "multi_engine_contribution",
+      "engine": "polynomial_lasso",
+      "engine_repeats": 4,
+      "matched_budget_basis": "four_engine_jobs_per_cycle"
+    },
+    "no_acquisition": {
+      "purpose": "closed_loop_acquisition_contribution",
+      "cycles": 3,
+      "matched_budget_basis": "same_cycles_and_evaluation_limits_without_querying_pool_labels"
+    },
+    "knowledge_on": {
+      "purpose": "confirmed_source_only_knowledge_contribution",
+      "requires_confirmed_source_knowledge": true
+    },
+    "knowledge_off": {
+      "purpose": "confirmed_source_only_knowledge_contribution",
+      "requires_confirmed_source_knowledge": true,
+      "matched_budget_basis": "same_confirmed_library_bytes_present_but_runtime_read_and_write_disabled"
+    }
+  },
+  "metrics": {
+    "primary": "best_val_nmse",
+    "secondary": [
+      "best_val_relative_error_p99",
+      "best_val_strict_max_relative_error",
+      "best_complexity",
+      "evaluation_budget_used",
+      "llm_call_count",
+      "provider_attempt_count"
+    ],
+    "paired_effect_direction": "ablation_metric_minus_full_metric; positive_error_effect_supports_full_system"
+  },
+  "paired_analysis": {
+    "minimum_complete_pairs_per_core_ablation": 12,
+    "test": "one_sided_wilcoxon_signed_rank_greater_than_zero",
+    "familywise_alpha": 0.05,
+    "multiplicity": "holm_for_no_llm_single_engine_no_acquisition",
+    "bootstrap_resamples": 10000,
+    "bootstrap_seed": 20260807,
+    "support_rule": "positive_median_effect_and_holm_adjusted_p_below_0.05",
+    "knowledge_pair_analyzed_separately": true
+  },
+  "knowledge_rules": {
+    "airfoil_staged_knowledge_allowed": false,
+    "unconfirmed_knowledge_allowed": false,
+    "missing_confirmation_attestation_action": "block_knowledge_ablation",
+    "source_library_must_exclude_current_target_heldout": true
+  },
+  "heldout_policy": {
+    "available_to_selection": false,
+    "opened": false,
+    "confirmation_threshold_selection": false,
+    "confirmation_deferred_until_algorithm_freeze": true
+  },
+  "claim_boundary": "RD1.1 is real-data algorithm development and matched-budget component analysis, not independent confirmation or evidence of a new physical mechanism."
+}

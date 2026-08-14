@@ -1,0 +1,83 @@
+{
+  "schema": "pcpi-p3b-real-acquisition-config-v13",
+  "stage": "P3B.10",
+  "datasets": [
+    "uci_ccpp",
+    "uci_gas_turbine_co",
+    "uci_gas_turbine_nox"
+  ],
+  "policies": [
+    "random",
+    "uncertainty",
+    "qbc",
+    "pcpi_representative_safe_maximin_joint_eig"
+  ],
+  "seeds": [
+    2026080701,
+    2026080702,
+    2026080703,
+    2026080704,
+    2026080705,
+    2026080706,
+    2026080707,
+    2026080708
+  ],
+  "initial_observation_budget": 32,
+  "acquisition_observation_budget": 32,
+  "candidate_pool_budget": 128,
+  "validation_budget": 256,
+  "eig_quadrature_min_evaluations": 32,
+  "eig_quadrature_max_evaluations": 512,
+  "eig_quadrature_growth_factor": 2,
+  "eig_quadrature_error_safety_factor": 4.0,
+  "eig_rank_certificate_method": "finite-model-lower-envelope-nested-gauss-jacobi-interval-dominance",
+  "qbc_committee_size": 32,
+  "operational_class_metric": "pooled-predictive-sd-quantile-rms",
+  "operational_class_linkage": "complete",
+  "operational_class_resolution_method": "one-unit-aggregate-predictive-separation",
+  "operational_class_aggregate_separation": 1.0,
+  "operational_class_quantile_levels": [
+    0.1,
+    0.5,
+    0.9
+  ],
+  "class_evaluation_partition": "initial-frozen",
+  "pcpi_class_target_partition": "initial-frozen",
+  "pcpi_uncertified_eig_action": "posterior-epistemic-variance",
+  "pcpi_joint_target": "initial-frozen-class-and-target-prediction",
+  "predictive_target_distribution": "registered-action-domain-uniform",
+  "conditional_predictive_information_method": "class-conditional-gaussian-moment-epig",
+  "representative_guard": "covariate-only-registered-domain",
+  "representative_target_distribution": "registered-action-domain-uniform",
+  "representative_discrepancy": "registered-domain-standardized-rbf-biased-mmd-nonincreasing",
+  "representative_kernel_bandwidth": "median-positive-registered-target-squared-distance",
+  "representative_safe_set_rule": "augmented-mmd-nonincreasing-with-roundoff-tolerance",
+  "representative_empty_safe_set_action": "minimum-augmented-mmd",
+  "pcpi_ambiguity_set": "frozen-likelihood-power-candidates",
+  "pcpi_robust_utility": "maximin-joint-class-predictive-information",
+  "pcpi_least_favorable_tie_break": "smallest-likelihood-power",
+  "split_seed": 20260807,
+  "hash_verification": "mandatory",
+  "heldout_state": "closed",
+  "failure_policy": "fail_closed_record_all_no_seed_replacement",
+  "posterior_type": "power-likelihood-generalized-bayes",
+  "likelihood_power_candidates": [
+    0.125,
+    0.25,
+    0.5,
+    1.0
+  ],
+  "likelihood_power_calibration_method": "prequential-r-log-safebayes",
+  "likelihood_power_calibration_role": "initial-development-only",
+  "likelihood_power_tie_break": "largest-likelihood-power",
+  "basis_preconditioning_method": "termwise-center-scale",
+  "basis_preconditioning_role": "initial-development-covariates-only",
+  "predictive_design_transform": "posterior-target-frozen",
+  "assessment_rules": {
+    "paired_confidence_level": 0.95,
+    "pcpi_decision_rule_valid_rate_min": 1.0,
+    "negative_transfer_rate_max": 0.25,
+    "strong_requires_positive_frozen_class_gain_vs_random_in_every_dataset_family": true,
+    "strong_requires_nonpositive_mean_vs_each_baseline_in_every_dataset_family": true
+  }
+}

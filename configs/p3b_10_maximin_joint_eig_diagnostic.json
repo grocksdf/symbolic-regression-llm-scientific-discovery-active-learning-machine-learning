@@ -1,0 +1,42 @@
+{
+  "schema": "pcpi-p3b10-maximin-joint-eig-diagnostic-config-v1",
+  "stage": "P3B.10",
+  "fixture_role": "inference_correctness_diagnostic_fixture",
+  "seed": 20260812,
+  "observation_count": 40,
+  "candidate_action_count": 17,
+  "target_action_count": 41,
+  "likelihood_power": 0.5,
+  "likelihood_power_candidates": [
+    0.125,
+    0.25,
+    0.5,
+    1.0
+  ],
+  "measurement_budget": 32,
+  "aggregate_predictive_separation": 1.0,
+  "predictive_target_distribution": "registered-action-domain-uniform",
+  "conditional_predictive_information_method": "class-conditional-gaussian-moment-epig",
+  "eig_quadrature_min_evaluations": 32,
+  "eig_quadrature_max_evaluations": 512,
+  "representative_discrepancy": "registered-domain-standardized-rbf-biased-mmd-nonincreasing",
+  "representative_safe_set_rule": "augmented-mmd-nonincreasing-with-roundoff-tolerance",
+  "representative_empty_safe_set_action": "minimum-augmented-mmd",
+  "pcpi_ambiguity_set": "frozen-likelihood-power-candidates",
+  "pcpi_robust_utility": "maximin-joint-class-predictive-information",
+  "pcpi_least_favorable_tie_break": "smallest-likelihood-power",
+  "gate_thresholds": {
+    "probability_sum_max_abs_error": 1e-13,
+    "singleton_gaussian_identity_max_abs_error": 2e-12,
+    "unit_reparameterization_score_max_abs_error": 3e-12,
+    "target_permutation_score_max_abs_error": 2e-13,
+    "joint_decomposition_max_abs_error": 2e-15,
+    "exact_joint_reference_max_abs_error": 2e-6,
+    "mmd_update_identity_max_abs_error": 2e-13,
+    "mmd_invariance_max_abs_error": 3e-13,
+    "maximin_exact_lower_envelope_max_abs_error": 2e-6,
+    "maximin_model_order_max_abs_error": 2e-13,
+    "maximin_singleton_recovery_max_abs_error": 2e-13
+  },
+  "heldout_state": "not-applicable"
+}

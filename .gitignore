@@ -1,0 +1,53 @@
+# Python and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local environments and installed artifacts
+.venv*/
+venv/
+env/
+*.egg-info/
+build/
+dist/
+
+# Runtime state and generated results
+outputs/
+results/
+tmp/
+logs/
+paper_locked_outputs/
+*.log
+*.lock
+
+# Local secrets and editor state
+.env
+.env.*
+!.env.example
+.cursor/*
+!.cursor/rules/
+.cursor/rules/*
+!.cursor/rules/aistats-research-guardrails.mdc
+.idea/
+.vscode/
+
+# Patch/install debris
+.patch_backups/
+*.bak
+*.tmp
+.pcpi-patch-*.tmp
+
+# LaTeX intermediates
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.out
+*.synctex.gz
+texput.log
+data/

@@ -1,0 +1,511 @@
+\documentclass[10pt,twocolumn]{article}
+
+% Development wrapper. Replace with the official AISTATS style only after the
+% target-year author kit is frozen. Page compliance is not claimed here.
+\usepackage[letterpaper,margin=0.72in,columnsep=0.24in]{geometry}
+\usepackage{amsmath,amssymb,amsfonts,amsthm}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\newcommand{\method}{PCPI}
+\newcommand{\E}{\mathbb E}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\KL}{\mathrm{KL}}
+\newcommand{\evidencegate}[1]{\textcolor{red}{[Evidence gate: #1]}}
+\newtheorem{proposition}{Proposition}
+\newtheorem{assumption}{Assumption}
+
+\title{\method: Sequential Bayesian Discrimination for Symbolic Scientific Discovery}
+\author{Anonymous Authors}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Scientific laws are rarely identifiable from a single observational fit:
+distinct symbolic structures can be predictively equivalent on the available
+domain, while equally accurate interpolants can disagree under a targeted
+measurement. We formulate symbolic scientific discovery as sequential
+Bayesian discrimination among operational predictive-equivalence classes.
+The inferential target is a joint posterior over symbolic structure,
+continuous parameters, and observation-noise parameters. \method{} is designed
+to approximate this posterior with target-correct sequential Monte Carlo and
+to select measurements by their expected information about predictive
+classes. An exactly enumerable finite bank supplies a reference posterior on
+provenance-verified measured observations. A fixed-universe resample--move SMC
+implementation is compared with that reference before any open-grammar claim.
+The original 72-run CCPP and grouped Gas Turbine CO/NOX finite-bank check passed
+its preregistered exact-posterior thresholds but exposed severe long-horizon
+particle genealogy coalescence. A Rao--Blackwellized, adaptively tempered
+implementation repairs that failure mode, and an exact-reference diagnostic
+validates an explicit proposal-corrected collapsed trans-dimensional kernel.
+We implement exact-reference validation of a Student-t-measure Gauss--Jacobi
+EIG estimator under the repaired operational-class definition. A 96-run real
+matched-budget experiment passed its full protocol but did not establish
+predictive or structural advantage. It exposed a changing-target mismatch,
+which motivates a fixed-class posterior-discriminative repair. Motif transfer
+and held-out effectiveness claims remain pending.
+\end{abstract}
+
+\section{Introduction}
+
+Symbolic regression is often evaluated as one-shot expression fitting. That
+view hides two statistical difficulties. First, algebraic syntax is not the
+scientific estimand: several structures may induce the same predictions over
+the domain where decisions are made. Second, new measurements are chosen
+adaptively, so uncertainty must be updated along the realized action--outcome
+history rather than recomputed from an opaque fitness population.
+
+We instead treat discovery as sequential Bayesian discrimination. At each
+round the learner maintains uncertainty over symbolic structure, coefficients,
+and nuisance parameters; maps structure mass to predictive classes; selects an
+action intended to separate posterior-supported classes; and incorporates only
+the newly observed likelihood factor. The terminal output is a Bayes decision
+over predictive classes. Posterior predictive risk is reported separately as
+external validity.
+
+The paper is organized around three primary contributions.
+\begin{itemize}[leftmargin=*,itemsep=1pt,topsep=2pt]
+  \item A sequential Bayesian formulation whose primary estimand is an
+  operational predictive-equivalence class rather than an expression string.
+  \item A target-correct SMC construction over symbolic structures,
+  coefficients, and noise parameters, validated against an exactly enumerable
+  posterior before any open-grammar claim is made. \evidencegate{P2}
+  \item A posterior-discriminative acquisition rule positioned as class EIG,
+  an EIG bound, or an explicitly named surrogate according to exact-reference
+  validation. \evidencegate{P3}
+\end{itemize}
+
+Reliability-gated motif proposals are optional. They enter the paper only if
+their complete proposal correction preserves the posterior target. LLMs and
+multi-engine orchestration remain proposal and systems mechanisms, not parts
+of the statistical target.
+
+\section{Related Work}
+
+\paragraph{Bayesian symbolic inference.}
+Bayesian symbolic regression and probabilistic program induction place priors
+over structured programs and integrate or sample their parameters. Our focus
+is the adaptive sequence of posterior targets and the pushforward from
+structures to predictive classes, while distinguishing a normalized posterior
+from heuristic fitness normalization.
+
+\paragraph{Sequential Monte Carlo.}
+SMC combines incremental importance weights, unbiased resampling, and
+target-invariant move kernels for a sequence of distributions
+\cite{doucet2001smc,delmoral2006smc}. We use these results only after the
+symbolic implementation verifies support, correction, and genealogy.
+
+\paragraph{Bayesian experimental design.}
+Expected information gain provides a decision-theoretic reference for
+measurement selection \cite{chaloner1995bayesian,foster2021bax}. Predictive
+uncertainty is not generally equivalent to structural information: high
+aleatoric noise can increase the former without separating symbolic laws.
+
+\paragraph{Reusable symbolic structure.}
+Library learning and compositional program induction motivate reusable motifs
+\cite{ellis2021dreamcoder,lake2015humanlevel}. In \method{}, reuse is restricted
+to a corrected proposal mixture with source-only reliability; it cannot alter
+the likelihood or posterior target.
+
+\section{Problem Formulation}
+
+\subsection{Adaptive history and posterior}
+
+Let $S\in\mathcal S$ be a canonical symbolic structure,
+$\theta_S$ its continuous parameters, and $\psi$ observation-noise or nuisance
+parameters. The history after $t$ acquired measurements is
+\[
+H_t=H_0\cup\{(a_i,x_i,y_i)\}_{i=1}^t.
+\]
+Untouched-heldout observations are not part of $H_t$ and are unavailable to
+the algorithm. The joint posterior is
+\[
+\pi_t(S,\theta_S,\psi)
+=p(S,\theta_S,\psi\mid H_t)
+\propto p(S)p(\theta_S\mid S,\psi)p(\psi)
+\prod_{o\in H_t}p(y_o\mid a_o,x_o,S,\theta_S,\psi).
+\]
+The structure marginal is
+\[
+p_t(S)=\int\pi_t(S,\theta_S,\psi)\,d\theta_S\,d\psi.
+\]
+
+The first target-correct implementation uses
+\[
+y=f_S(a,x;\theta_S)+\varepsilon,
+\qquad \varepsilon\sim\mathcal N(0,\sigma^2),
+\]
+with $\theta_S\mid S,\sigma^2$ Gaussian and $\sigma^2$ Inverse-Gamma.
+Heteroscedastic and generalized-Bayes variants are outside the current target.
+
+\subsection{Operational predictive classes}
+
+At round $t$, let $\mathcal A_t^{\mathrm{op}}$ be a frozen, selection-visible
+action domain. We compare posterior-predictive 0.1/0.5/0.9 quantiles over this
+domain using their root-mean-square difference, standardized pointwise by the
+pooled posterior-predictive standard deviation. Deterministic complete-link
+clustering with preregistered diameter $\epsilon_B$ yields disjoint operational
+classes without epsilon chaining. For future measurement budget $B$, the real
+protocol sets $\epsilon_B=1/\sqrt{B}$, so equivalent laws have root-budget
+aggregate standardized separation at most one. This resolution is independent
+of dataset and target identity. The
+initial posterior and visible action domain define a frozen map $C_0(S)$. If
+$P_t^{(0)}$ is its posterior pushforward, then
+\[
+P_t^{(0)}(c)=\sum_{S:C_0(S)=c}p_t(S).
+\]
+Exact predictive equivalence and alternative thresholds are sensitivity
+analyses rather than result-conditioned replacements for the primary
+definition. Both acquisition and the comparative endpoint target this same
+random variable. The endpoint is
+$H(C_0\mid H_0)-H(C_0\mid H_B)$. Recomputed dynamic partitions are
+diagnostics only.
+
+For a Student-$t_\nu$ predictive variable $T$,
+$\nu/(\nu+T^2)\sim\mathrm{Beta}(\nu/2,1/2)$. We therefore integrate the
+antithetic sign average directly with a Gauss--Jacobi rule. The real-pool
+policy doubles its evaluation budget from 32 to at most 512. The point-estimate
+leader is certified only when its lower nested-quadrature error envelope
+exceeds every competitor's upper envelope. This is an exact-reference-validated
+asymptotic numerical diagnostic, not a rigorous quadrature bound or a
+finite-sample confidence sequence. If a unique EIG maximizer is not certified,
+the repaired rule uses posterior epistemic variance of the latent mean,
+excluding observation noise, and records that the utility is not EIG.
+
+\subsection{Terminal decision}
+
+For preregistered structural loss $L$, the terminal decision after budget $B$
+is
+\[
+\widehat c_B\in\arg\min_{\widehat c}
+\E_{c\sim P_B}[L(c,\widehat c)].
+\]
+The default is $0$--$1$ class loss. Predictive risk is a secondary estimand and
+cannot retroactively alter this decision rule.
+
+\section{Posterior Computation}
+
+\subsection{Exact finite-universe reference}
+
+Before SMC, define a small finite bank
+$\mathcal S_{\mathrm{ref}}=\{S_1,\ldots,S_K\}$ in which every structure is
+linear in its coefficients,
+$f_S(x;\theta_S)=\phi_S(x)^\top\theta_S$. With
+\[
+\theta_S\mid\sigma^2\sim
+\mathcal N(m_0,\sigma^2\Lambda_0^{-1}),\qquad
+\sigma^2\sim\mathrm{IG}(\alpha_0,\beta_0),
+\]
+the marginal likelihood is available analytically. Let
+\[
+\begin{aligned}
+\Lambda_n&=\Lambda_0+\Phi^\top\Phi,\\
+m_n&=\Lambda_n^{-1}(\Lambda_0m_0+\Phi^\top y),\\
+\alpha_n&=\alpha_0+n/2,\\
+\beta_n&=\beta_0+\tfrac12(y^\top y+m_0^\top\Lambda_0m_0
+-m_n^\top\Lambda_nm_n).
+\end{aligned}
+\]
+Then
+\[
+\log p(y\mid S)=
+-\frac n2\log(2\pi)+\frac12(\log|\Lambda_0|-\log|\Lambda_n|)
++\alpha_0\log\beta_0-\alpha_n\log\beta_n
++\log\Gamma(\alpha_n)-\log\Gamma(\alpha_0).
+\]
+The implementation cross-checks this expression by integrating $\sigma^2$
+numerically after independently integrating the coefficients.
+
+The bank is generated only from input dimension and is identical for tasks
+with the same number of covariates. Dataset and target names do not select its
+structures. Exact-reference comparison on registered measured observations is
+kept separate from small controlled correctness fixtures. The latter may
+support only normalization, integration, SMC, and EIG correctness and are
+never real-data efficacy evidence. Historical generated-observation efficacy
+runs are excluded. Even a passed finite-bank check cannot by itself support
+scientific-discovery efficacy or comparison with external methods.
+
+\subsection{SMC target sequence}
+
+For $z=(S,\theta_S,\psi)$ and newly acquired likelihood factor
+$g_t(z)=p(y_t\mid a_t,x_t,z)$, define
+\[
+\pi_t(z)\propto p_0(z)\prod_{r=1}^{t}g_r(z).
+\]
+Particles initialized from $q_0$ receive corrected initial weights. Later
+weights multiply only by $g_t$. ESS-triggered unbiased resampling records
+ancestor indices, after which a rejuvenation kernel leaves $\pi_t$ invariant.
+Birth, death, and structural replacement moves require explicit forward and
+reverse probabilities, dimension matching, and any Jacobian term.
+\evidencegate{P2A exact-posterior convergence and P2B trans-dimensional correction}
+
+For the robust finite-bank implementation, $(\theta_S,\sigma^2)$ are
+Rao--Blackwellized and
+$g_t(S)=p(y_t\mid a_t,x_t,S,H_{t-1})$ is computed from independent conjugate
+sufficient statistics. An informative observation is bridged through
+\[
+\eta_{t,\beta}(S)\propto p_{t-1}(S)g_t(S)^\beta,
+\qquad 0=\beta_0<\cdots<\beta_B=1,
+\]
+with temperatures selected by a frozen conditional-ESS target. Conditional
+coefficient and noise draws at $\beta=1$ reconstruct joint posterior
+particles. This changes the numerical path but not the terminal target.
+
+For P2B, the collapsed structure proposal contains explicit birth, death, and
+equal-dimensional replacement edges. If $q(S'\mid S)$ denotes the catalog
+probability, the rejuvenation acceptance probability is
+\[
+\alpha(S,S')=\min\!\left\{1,
+\frac{\eta_{t,\beta}(S')q(S\mid S')}
+     {\eta_{t,\beta}(S)q(S'\mid S)}|J|\right\}.
+\]
+Coefficients and noise are integrated out during the move, so dimension
+matching is the empty auxiliary map and $|J|=1$. This is a corrected finite
+collapsed trans-dimensional kernel; it is not yet a claim about arbitrary
+open-grammar subtree RJ moves. \evidencegate{P2B frozen exact-reference Gate}
+
+\section{Predictive-Class Acquisition}
+
+The acquisition objective is class information gain,
+\[
+\mathrm{EIG}^{(0)}_t(a)=H(C_0\mid H_t)-
+\E_{Y\sim p_t(Y\mid a)}[H(C_0\mid H_t,a,Y)].
+\]
+In the finite conjugate bank, each structure-conditional predictive density is
+Student-$t$. Hence
+\[
+I(C_0;Y_a\mid H_t)=
+\sum_c P_t^{(0)}(c)\int p_t(y\mid c,a)
+\log\frac{p_t(y\mid c,a)}{p_t(y\mid a)}\,dy,
+\]
+where $p_t(y\mid c,a)$ is the posterior-weighted mixture over structures in
+class $c$. We compute the reference by adaptive integration on the real line.
+The production estimator pushes each Student-$t$ predictive measure to its
+Beta square transform and applies an antithetic Gauss--Jacobi rule, allocating
+half of the node budget uniformly over structures and the remainder by
+posterior mass. Exact mixture densities are used in the log ratio. The P3A.2
+Gate compares normalized error, error-envelope coverage, rank correlation,
+top-one agreement, false certification, and convergence against the independent
+reference over increasing quadrature budgets.
+
+P3B.7 activates this class score at every PCPI query, yet its returned real
+run does not pass the efficacy Gate. This is consistent with the distinction
+between information about a model index and information about predictions on
+the target input distribution \cite{bickfordsmith2023prediction}, and with
+recent BOED analyses of selection-induced covariate shift under
+misspecification \cite{forster2025generalization}. P3B.8 therefore lets
+$X^\star$ be uniform on the registered selection-visible action domain and
+targets the chain rule
+\[
+I(C_0,Y^\star;Y_a\mid H_t)
+=I(C_0;Y_a\mid H_t)+I(Y^\star;Y_a\mid C_0,H_t).
+\]
+The first term remains the validated class-EIG. For the second, we match the
+first two moments of each class-conditional finite posterior mixture and
+average the resulting bivariate-Gaussian mutual information over $X^\star$.
+This is exact for a Gaussian class-conditional predictive and is explicitly
+named a Gaussian-moment surrogate for the production Student-$t$ mixture. The
+terms share information units, so no result-fitted tradeoff weight is added.
+If the adaptive envelope cannot certify the joint-score leader, the rule
+maximizes $\Var_{S,\theta_S\mid H_t}[f_S(a;\theta_S)]$, excluding observation
+noise and reporting the branch as posterior-epistemic acquisition.
+The returned P3B.8 run uses a certified joint score throughout but fails the
+efficacy Gate. P3B.9 therefore constrains this unchanged score to candidates
+whose addition does not increase biased RBF-kernel MMD between the observed
+design and the fixed registered action domain. Coordinates and the
+median-distance bandwidth use covariates only. If the safe set is empty, the
+minimum-MMD candidate is selected and recorded as an explicit fallback.
+The returned P3B.9 run applies this guard throughout but still fails efficacy.
+P3B.10 therefore ranks each safe candidate by the minimum P3B.9 joint utility
+over the likelihood-power family $\{0.125,0.25,0.5,1\}$ frozen before this
+repair. The calibrated nominal posterior remains the reporting and evaluation
+posterior; the finite family changes PCPI ranking only. A robust leader is
+certified by lower-envelope interval dominance, and least-favorable-model ties
+are resolved toward the smaller likelihood power.
+\evidencegate{P3B.10 maximin correctness diagnostic and heldout-closed real rerun}
+
+Because that real rerun remains negative, P3C.1 treats the next repair as a
+predictive model-discrepancy problem. It reconstructs a posterior-weighted
+residual mean square from acquired-history sufficient statistics, subtracts
+the prior mean noise variance with a zero floor, and distributes the resulting
+extra variance according to covariate distance from the acquired design. The
+registered target domain fixes both coordinate scaling and the median-distance
+bandwidth. Candidate, validation, and held-out responses do not enter this
+profile. Student-$t$ component scales are moment-matched to the inflated
+variance before applying the unchanged finite maximin joint utility and MMD
+safe set. Controlled tests support implementation correctness only; the
+heldout-closed P3C.1 real-development result is pending.
+\evidencegate{P3C.1 discrepancy exact-reference and protocol Gate passed; real efficacy pending}
+
+\section{Theory and Scope}
+
+\begin{assumption}[Predictable acquisition]
+$a_t$ is measurable with respect to $H_{t-1}$ and does not depend on an
+unobserved future outcome.
+\end{assumption}
+
+Conditioned on the realized predictable actions, the likelihood factorization
+above remains valid. The theory section will separate this adaptive-posterior
+validity statement from SMC approximation error.
+
+P3B.5 introduced the explicitly named
+generalized posterior
+\[
+\pi_{t,\eta}(z)\propto p(z)\prod_{i=1}^t p(y_i\mid x_i,z)^\eta,
+\qquad 0<\eta\le1.
+\]
+One $\eta$ is chosen by prequential posterior-expected posterior-randomized
+log loss (R-log SafeBayes; \cite{grunwald2017inconsistency}) on the initial development observations and then shared by every
+acquisition policy. Every closed basis term is centered and scaled from the
+initial-development covariates before the shared coefficient prior is applied.
+This target is not described as ordinary Bayes when $\eta<1$.
+The returned P3B.5 run cannot be used as efficacy evidence: fitting used the
+frozen preconditioned design while posterior prediction and acquisition rebuilt
+raw basis rows. P3B.6 makes the posterior engine's frozen design transform the
+single coordinate map for fitting, posterior predictive distributions,
+validation metrics, operational classes, and all acquisition policies.
+Its returned real run passes the protocol Gate but not the efficacy Gate: the
+one-SD operational radius collapses most initial class mass. P3B.7 derives the
+radius from the registered future measurement budget and activates class-EIG
+throughout, but its returned 96/96 real run still fails the family-level
+efficacy Gate. P3B.8 changes the acquisition estimand, not the posterior,
+structure bank, class radius, budgets, seeds, splits, or assessment rule. Its
+returned real run also fails efficacy despite certified joint rankings. P3B.9
+adds a covariate-only representative safe set but its returned run still fails
+efficacy. P3B.10 retains the nominal posterior and every protocol commitment,
+changing only PCPI ranking to the finite lower envelope described above.
+
+Under shared Gaussian observation noise, a maximum-entropy argument gives
+\[
+I(Z;Y_a\mid H_t)\le
+\frac12\log\left(1+\frac{\Var(\mu_Z(a)\mid H_t)}{\sigma^2(a)}\right).
+\]
+The final theorem must distinguish information about the full latent state
+$Z$ from information about its predictive-class coarsening. A low-signal
+expansion will be included only if its regularity and scaling conditions are
+proved. \evidencegate{theorem proofs and counterexample}
+
+Standard SMC consistency is invoked only after the implementation verifies
+incremental potentials, support, unbiased resampling, and invariant moves.
+No generic Monte Carlo rate is presented as a novel theorem.
+
+\section{Experiments}
+
+\paragraph{RQ1: matched-budget closed-loop effectiveness.}
+Compare one-shot fitting, sequential random acquisition, predictive
+uncertainty, query by committee, and PCPI under identical observation,
+candidate-evaluation, particle, and compute budgets. Report normalized AULC,
+final risk, posterior entropy, class concentration, and failure runs.
+
+\paragraph{RQ2: posterior correctness.}
+Compare exact posterior and SMC over increasing particle counts. Report class
+TV/KL, structure posterior error, predictive NLL, credible coverage, ESS,
+ancestor diversity, bridge CESS, immediate-parent concentration, weight
+entropy, seed stability, and time. The original P2A run used official CCPP and
+Gas Turbine CO/NOX measurements; CO and NOX count as one data family. Its
+finite-bank agreement check passed with a genealogy warning. P2B separately
+uses a labelled, exactly enumerable diagnostic fixture to test proposal-ratio
+correction, detailed balance, invariance, and particle convergence. That
+fixture is correctness evidence only and is excluded from real-data efficacy
+claims.
+
+\paragraph{RQ3: acquisition effectiveness.}
+All policies share one posterior engine. Compare realized entropy reduction,
+class-mass gain, score--gain correlation, nAULC, predictive risk, and compute;
+use exact class EIG where enumeration is possible.
+
+The P3B protocol uses 32 initial observations, 32 acquired measurements, a
+frozen 128-action pool, 256 validation observations, and eight paired seeds.
+All four policies share one conjugate finite-bank target to isolate the
+acquisition effect. Results are reported with paired 95\% seed confidence
+intervals; Gas Turbine CO and NOX count as one dataset family.
+P3B.2 completed all 96 policies without leakage and passed every protocol
+check, but it did not demonstrate a consistent advantage. All family-level
+predictive intervals crossed zero, and frozen-class gain was nonpositive
+against every baseline. CCPP class entropy was already numerically zero. That
+run is retained as development negative evidence. It also revealed that the
+query utility targeted a recomputed $C_t$ while the endpoint targeted $C_0$.
+P3B.3 fixed $C_0$ throughout the sequence and passed its protocol and decision
+validity checks, but still failed the family-level efficacy Gate. CCPP used the
+fallback for 98.8\% of PCPI queries; all grouped Gas efficacy intervals crossed
+zero. P3B.4 replaced the adjacent-column bank and added generalized-likelihood
+calibration, but its returned 96/96 run also failed efficacy: all CCPP seeds
+selected $\eta=1$, CCPP began with collapsed class entropy, and no primary
+family-level interval excluded zero. P3B.5 replaced mixture-log-score
+calibration with R-log SafeBayes and preconditioned all bank terms using only
+initial-development covariates, but its returned efficacy run is invalid due
+to the predictive-coordinate mismatch above. P3B.6 repairs that mismatch, then
+returns 96/96 protocol-valid runs without strong efficacy evidence: CCPP initial
+frozen-class entropy is $7.33\times10^{-12}$ and class-EIG is used in only
+0.78\% of PCPI queries. P3B.7 replaces the fixed one-SD radius by the
+budget-resolved definition above and uses class-EIG for 100\% of PCPI queries,
+but it still fails efficacy. Against random, mean predictive nAULC differences
+are $-0.0173$ for CCPP and $-0.0510$ for grouped Gas, with both paired 95\%
+intervals crossing zero. Only grouped Gas versus QBC excludes zero
+($-0.0262$, 95\% CI $[-0.0501,-0.0023]$); structural-gain intervals are not
+consistently positive across families and baselines. P3B.8 addresses the
+target-mismatch diagnosis with the joint class--predictive score, but its
+returned CCPP frozen-class gain versus random is $-0.3050$ with 95\% CI
+$[-0.4652,-0.1447]$. Its selected joint score has pooled Spearman correlation
+$0.0571$ with realized local class gain on CCPP. P3B.9 adds the representative
+safe set, but its returned CCPP class-gain difference versus random is
+$-0.2510$ with 95\% CI $[-0.4617,-0.0403]$, and its pooled selected-score versus
+realized-gain Spearman correlation is $-0.0079$. P3B.10 evaluates the frozen
+finite lower envelope inside that same guard. Budgets, seeds, nominal models,
+and efficacy Gates remain unchanged. The returned P3B.10 run is protocol-valid
+with 96/96 completed runs and closed held-out, but CCPP frozen-class gain versus
+random is $-0.2838$ (95\% CI $[-0.5047,-0.0629]$), with negative transfer in
+7/8 seeds; grouped Gas Turbine gain is not significant. Thus no real
+superiority result is claimed, and the next repair must address general
+posterior or decision-model misspecification rather than tune the data.
+
+\paragraph{Optional RQ4: motif efficiency.}
+If retained, evaluate whether source-frozen memory improves ESS per second,
+mixing, acceptance, and time to concentration while preserving posterior
+expectations. General negative-transfer or safety claims require independent
+held-out evidence.
+
+Real experiments use provenance-audited measured data. Pool replay is called
+active query or measurement selection, not physical intervention. The
+untouched-heldout confirmation is opened once only after code, configuration,
+splits, seeds, budgets, and claim gates are frozen.
+
+\section{Current Evidence Boundary}
+
+The source implements analytic and sequential finite-bank posterior paths,
+operational-class aggregation, Rao--Blackwellized SMC weights, adaptive CESS
+bridges, systematic resampling, genealogy, and an explicit proposal-corrected
+collapsed trans-dimensional kernel. The P2B fixture supports only RQ2
+finite-bank correctness and cannot support real-data efficacy. P3A.2 is the
+matching exact-quadrature check for the production EIG estimator and is
+likewise a correctness diagnostic. P3B.5 is invalid efficacy evidence; P3B.6
+supports coordinate correctness and a valid but insufficient real-development
+result. P3B.7 supports budget-resolved class correctness and a valid negative
+real result. P3B.8 supports joint-score correctness and a valid negative real
+result. P3B.9 supports representative-guard correctness and a valid negative
+real result. P3B.10 controlled evidence supports correctness of the finite
+maximin decision, while its real rerun supports only protocol-valid negative
+development evidence. No current evidence supports matched-budget real
+superiority, motif invariance, VED discovery, or unknown-law recovery. P3C.1
+has passed its controlled implementation Gate but has not yet produced real
+efficacy evidence.
+
+\section{Conclusion}
+
+\method{} reframes symbolic discovery as sequential Bayesian discrimination
+among predictive classes. The exact-reference engine makes posterior semantics
+and acquisition naming testable before the project invests in open-grammar
+SMC. After the corrected P2B, exact P3A.2, P3B.6 coordinate, and P3B.7 class
+Gates and the negative P3B.10 real audit, the next empirical decision is one
+frozen heldout-closed P3C.1 real matched-budget run; motif
+transfer and held-out confirmation remain downstream and independently frozen.
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

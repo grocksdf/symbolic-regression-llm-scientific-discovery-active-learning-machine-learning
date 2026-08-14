@@ -1,0 +1,91 @@
+{
+  "schema_version": "hd1.1-nist-asd-hypothesis-discovery-contract-v1",
+  "status": "frozen_before_hd1.1_execution",
+  "experiment": "HD1.1 NIST ASD alkali-ns controlled hypothesis-discovery pilot",
+  "purpose": "Validate the auditable hypothesis lifecycle on real measurements before attempting novel open-ended discovery.",
+  "scientific_novelty_boundary": "Rydberg-series structure is established physics. Recovering it validates system behavior, not discovery of a new scientific law.",
+  "source": {
+    "name": "NIST Atomic Spectra Database",
+    "version": "5.12",
+    "doi": "10.18434/T4W30F",
+    "snapshot_date": "2026-08-05",
+    "strict_real_table": "nist_asd_alkali_ns_strict_real.csv",
+    "strict_real_table_sha256": "b58000a911eebfc821f61e0d0c2c82fbe17a401f214e6f2697fefeec1114a6a7",
+    "provenance_manifest_sha256": "7c8a1342525b7f99ca42312f69f65932e62cd60867e7b4cbff6c8d7956bbfeac",
+    "rows": 121,
+    "spectra": ["Li I", "Na I", "K I", "Rb I", "Cs I", "Fr I"],
+    "excluded": "all NIST parenthesized theoretical, bracketed semi-empirical, and question-marked rows"
+  },
+  "data_roles": {
+    "unit": "spectrum-specific ns Rydberg series sorted by principal quantum number n",
+    "discovery": "lowest 70 percent of n values, with at least six rows",
+    "heldout_falsification": "highest remaining 30 percent of n values, with at least two rows",
+    "split_uses_labels": false,
+    "heldout_used_for_candidate_selection": false,
+    "extrapolation_test": true
+  },
+  "candidate_grammar": [
+    {
+      "candidate_id": "constant_limit",
+      "expression": "limit_cm1",
+      "parameter_count": 1
+    },
+    {
+      "candidate_id": "linear_n",
+      "expression": "intercept_cm1 + slope_cm1_per_n * n",
+      "parameter_count": 2
+    },
+    {
+      "candidate_id": "inverse_n",
+      "expression": "limit_cm1 - amplitude_cm1 / n",
+      "parameter_count": 2
+    },
+    {
+      "candidate_id": "inverse_square",
+      "expression": "limit_cm1 - amplitude_cm1 / n ** 2",
+      "parameter_count": 2
+    },
+    {
+      "candidate_id": "quantum_defect_square",
+      "expression": "limit_cm1 - amplitude_cm1 / (n - quantum_defect) ** 2",
+      "parameter_count": 3
+    },
+    {
+      "candidate_id": "quantum_defect_power",
+      "expression": "limit_cm1 - amplitude_cm1 / (n - quantum_defect) ** exponent",
+      "parameter_count": 4
+    }
+  ],
+  "selection": {
+    "data": "discovery rows only",
+    "validation": "rolling-origin one-step-ahead extrapolation within each discovery series",
+    "score": "mean across six spectra of median absolute prediction error divided by discovery energy range, plus 0.005 per fitted parameter",
+    "tie_break": "declared candidate order",
+    "heldout_access": false
+  },
+  "fitting": {
+    "loss": "deterministic unweighted soft-L1 nonlinear least squares",
+    "reason_unweighted": "NIST measurement uncertainty is far smaller than expected model discrepancy and must not dominate structural selection",
+    "free_exponent_bounds": [0.5, 5.0],
+    "quantum_defect_upper_bound": "minimum discovery n minus 0.25",
+    "random_restarts": false
+  },
+  "pilot_readiness_gates": {
+    "finite_converged_selected_fits": "6 of 6 spectra",
+    "heldout_win_over_constant": ">= 5 of 6 spectra",
+    "heldout_win_over_linear_n": ">= 5 of 6 spectra",
+    "median_heldout_nrmse": "<= 0.05",
+    "registry_chain_valid": true
+  },
+  "artifacts": [
+    "typed HypothesisSpec records",
+    "safe AST audit",
+    "data-role hashes",
+    "candidate selection scores",
+    "held-out predictions and falsification metrics",
+    "append-only hash-chained evidence registry",
+    "evidence manifest"
+  ],
+  "claim_boundary": "HD1.1 is a controlled calibration pilot on known alkali-series physics. It cannot support a claim of novel scientific discovery or general hypothesis-discovery superiority. Any future confirmation must use untouched orbital/transition families and a separately frozen contract."
+}
+

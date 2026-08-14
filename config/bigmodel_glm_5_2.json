@@ -1,0 +1,19 @@
+{
+    "provider":  "zhipu_bigmodel",
+    "api_base_url":  "https://open.bigmodel.cn/api/paas/v4",
+    "api_path":  "/chat/completions",
+    "api_method":  "POST",
+    "model":  "glm-5.2",
+    "api_key":  "REPLACE_WITH_BIGMODEL_API_KEY",
+    "attempts":  3,
+    "connect_timeout_s":  15,
+    "read_timeout_s":  300,
+    "retry_backoff_s":  4,
+    "rate_limit_backoff_s":  30,
+    "min_request_interval_s":  2,
+    "thinking_type":  "enabled",
+    "reasoning_effort":  "max",
+    "do_sample":  true,
+    "temperature":  0.3,
+    "max_tokens":  8192
+}

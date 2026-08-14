@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcpi-delivery-manifest-v1",
+  "type": "object",
+  "required": [
+    "artifact_type",
+    "stage",
+    "task",
+    "source_tree_sha256",
+    "python_version",
+    "entrypoints",
+    "tests",
+    "data_included",
+    "credentials_included",
+    "heldout_opened",
+    "included_paths",
+    "excluded_paths",
+    "known_limitations",
+    "claim_boundaries",
+    "files"
+  ],
+  "properties": {
+    "artifact_type": {"const": "canonical_source"},
+    "stage": {"type": "string"},
+    "task": {"type": "string"},
+    "source_tree_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "python_version": {"const": "3.11"},
+    "tests": {
+      "type": "object",
+      "required": ["passed", "failed", "skipped"]
+    },
+    "data_included": {"type": "boolean"},
+    "credentials_included": {"type": "boolean"},
+    "heldout_opened": {"type": "boolean"},
+    "files": {"type": "array"}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,21 @@
+{
+  "schema": "pcpi-p3b7-budget-resolved-classes-diagnostic-config-v1",
+  "stage": "P3B.7",
+  "fixture_role": "inference_correctness_diagnostic_fixture",
+  "seed": 20260811,
+  "observation_count": 24,
+  "action_count": 64,
+  "measurement_budgets": [1, 4, 16, 32, 64, 256],
+  "aggregate_predictive_separation": 1.0,
+  "resolution_method": "one-unit-aggregate-predictive-separation",
+  "quantile_levels": [0.1, 0.5, 0.9],
+  "eig_quadrature_min_evaluations": 32,
+  "eig_quadrature_max_evaluations": 512,
+  "gate_thresholds": {
+    "root_budget_identity_max_abs_error": 1e-14,
+    "probability_sum_max_abs_error": 1e-13,
+    "unit_reparameterization_score_max_abs_error": 2e-12,
+    "exact_quadrature_error_max": 1e-7
+  },
+  "heldout_state": "not-applicable"
+}
