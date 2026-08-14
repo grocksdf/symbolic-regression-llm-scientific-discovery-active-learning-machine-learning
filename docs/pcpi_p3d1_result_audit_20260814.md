@@ -51,10 +51,15 @@ independently recomputed from the returned output.
 - P3D.1 plus the isolated inference/integrity regression subset: `69 passed`.
 - Python syntax preflight: `114` files, zero failures.
 - production static audit: `56` Python files and `14,017` lines, zero failures.
-- Full test collection remains blocked with 14 import errors because the
-  public Git import is missing the six manifest-listed
-  `hypothesis_mvp.data` files. This is a source-completeness failure, not a
-  P3D.1 test failure.
+- Subsequent source synchronization restored the six manifest-listed
+  `hypothesis_mvp.data` files at upstream commit `81f7cde`; all hashes and byte
+  counts match the historical manifest. The merged branch then passed the
+  complete suite: `186 passed`, with zero failures or collection errors. This
+  later regression does not rewrite the frozen identity of the original
+  P3D.1 formal diagnostic.
+- Post-restoration syntax preflight: `120` Python files, zero failures.
+- Post-restoration production static audit: `62` Python files and `14,993`
+  lines, zero failures.
 
 ## Statistical claim boundary
 

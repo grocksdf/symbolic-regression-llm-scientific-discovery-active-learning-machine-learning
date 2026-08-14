@@ -1,7 +1,7 @@
 # Public canonical-source synchronization audit — 2026-08-14
 
-Decision: **P3D.1 correctness work may proceed in isolation; full-source
-regression and any real run remain blocked by an incomplete public import.**
+Decision: **SOURCE SYNCHRONIZATION RESOLVED; FULL REGRESSION PASSED. REAL P3D
+INTEGRATION REMAINS A SEPARATE METHOD GATE.**
 
 ## Git identity
 
@@ -12,8 +12,11 @@ regression and any real run remain blocked by an incomplete public import.**
   diffed against this import.
 - P3C.1 result identity remains the audited historical identity; it is not
   rewritten as the current source identity.
+- Upstream restoration commit:
+  `81f7cde` (`Restore hypothesis_mvp.data package excluded by overbroad data ignore`).
+- Merge commit on the P3D branch: `bb69853`.
 
-## Manifest/source mismatch
+## Manifest/source mismatch and resolution
 
 The imported `DELIVERY_MANIFEST.json` lists six production files that are not
 present in the Git tree. The repository-level `.gitignore` used the recursive
@@ -30,23 +33,23 @@ reconstruct missing source from tests or from memory.
 | `hypothesis_mvp/data/real_registry.py` | `a1bf21c4630416771fffdd628056c795c7ec6096724ee3146a9f2f9baa680999` | 10,321 |
 | `hypothesis_mvp/data/roles.py` | `9da8ed319a61ebe59ca98b978c1f4351c7291e8b46d655a811f446d8c139453a` | 7,473 |
 
-These exact files must be restored from the user's canonical Windows source or
-another provenance-verified artifact and checked against the recorded hashes.
-Creating replacements from test expectations would destroy source identity.
+Upstream commit `81f7cde` restores these exact files. Each returned SHA-256 and
+byte count matches the table, so the files are accepted as the canonical
+historical source rather than reconstructions from test expectations.
 
-## Test consequence
+## Test consequence and closure
 
-The full suite reaches collection and stops with 14 import errors, principally
-`ModuleNotFoundError: hypothesis_mvp.data`. Therefore the old manifest's
-`146 passed` field is historical and cannot be represented as a current-HEAD
-rerun. P3D.1's isolated test module does not import the missing package and is
-reported separately. A regenerated manifest must mark the full suite
-`blocked_missing_source` until the six files are restored and all tests are
-rerun.
+Before restoration, collection stopped with 14 import errors, principally
+`ModuleNotFoundError: hypothesis_mvp.data`. After merging the verified files,
+the complete current suite returns `186 passed` with zero failures, skips, or
+collection errors. The regenerated delivery manifest therefore records
+`source_identity.complete=true` and `suite_status=passed`.
 
 ## Gate boundary
 
-- Static AST/source integrity may be evaluated on the files actually present.
-- P3D.1 exact finite fixture and its isolated tests may be evaluated.
-- Full regression, real-data smoke, CCPP/Gas development, held-out
-  confirmation, P4/P5, motif efficacy, and VED remain blocked.
+- Static AST/source integrity and full regression are now evaluable.
+- P3D.1 exact finite fixture and its isolated tests remain correctness evidence.
+- A new CCPP/Gas run is not authorized merely by source restoration. It still
+  requires a production interval Gate, real-runtime integration, a frozen
+  real-only protocol, and closed held-out. P4/P5, motif efficacy, VED, and
+  held-out confirmation remain blocked.

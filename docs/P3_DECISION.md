@@ -137,7 +137,9 @@ real-data safety or efficacy. See
 `docs/pcpi_p3d1_root_cause_and_repair.md` and
 `docs/pcpi_p3d1_result_audit_20260814.md`.
 
-The public clean import also omits the manifest-listed `hypothesis_mvp.data`
-package, so full regression and every real entrypoint remain blocked until the
-six provenance-verified files are restored. See
-`docs/pcpi_public_source_sync_audit_20260814.md`.
+Upstream commit `81f7cde` restored the manifest-listed `hypothesis_mvp.data`
+package. All six files match their historical SHA-256 and byte counts, and the
+merged branch passes the complete `186`-test suite. The source-completeness
+blocker is closed. Real P3D integration remains independently blocked by the
+absence of a validated production interval constructor and a frozen real-only
+runner. See `docs/pcpi_public_source_sync_audit_20260814.md`.

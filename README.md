@@ -12,12 +12,12 @@ authorized. The task-independent P3D.1 decision repair has passed its isolated
 correctness Gate but is not integrated into the real runtime; no new real-data
 run is authorized by this source.
 
-Source synchronization warning: the public clean import at base commit
-`5fa4f3c9080c31208135dcada80a8f86121a199a` omitted the
-`hypothesis_mvp.data` Python package even though the imported delivery manifest
-lists it. Full regression and all real entrypoints are therefore blocked until
-the six provenance-verified files are restored. See
-`docs/pcpi_public_source_sync_audit_20260814.md`.
+Source synchronization is resolved: upstream commit `81f7cde` restored all six
+manifest-listed `hypothesis_mvp.data` files with exact historical SHA-256 and
+byte counts. The merged P3D branch passes the complete `186`-test suite. This
+removes the source-completeness blocker, but it does not integrate P3D.1 into
+the real acquisition runtime or validate a production interval constructor.
+See `docs/pcpi_public_source_sync_audit_20260814.md`.
 
 PCPI treats symbolic scientific discovery as sequential Bayesian discrimination
 among operational predictive-equivalence classes. The target is the joint
