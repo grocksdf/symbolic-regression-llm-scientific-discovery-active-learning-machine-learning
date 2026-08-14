@@ -1,0 +1,80 @@
+{
+  "schema": "pcpi-p3d2-real-acquisition-config-v1",
+  "stage": "P3D.2",
+  "datasets": [
+    "uci_ccpp",
+    "uci_gas_turbine_co",
+    "uci_gas_turbine_nox"
+  ],
+  "policies": [
+    "random",
+    "uncertainty",
+    "qbc",
+    "pcpi_reference_dominance_class_eig"
+  ],
+  "seeds": [
+    2026080701,
+    2026080702,
+    2026080703,
+    2026080704,
+    2026080705,
+    2026080706,
+    2026080707,
+    2026080708
+  ],
+  "initial_observation_budget": 32,
+  "acquisition_observation_budget": 32,
+  "candidate_pool_budget": 128,
+  "validation_budget": 256,
+  "qbc_committee_size": 32,
+  "operational_class_metric": "pooled-predictive-sd-quantile-rms",
+  "operational_class_linkage": "complete",
+  "operational_class_resolution_method": "one-unit-aggregate-predictive-separation",
+  "operational_class_aggregate_separation": 1.0,
+  "operational_class_quantile_levels": [
+    0.1,
+    0.5,
+    0.9
+  ],
+  "class_evaluation_partition": "initial-frozen",
+  "pcpi_class_target_partition": "initial-frozen",
+  "split_seed": 20260807,
+  "hash_verification": "mandatory",
+  "heldout_state": "closed",
+  "failure_policy": "fail_closed_record_all_no_seed_replacement",
+  "posterior_type": "power-likelihood-generalized-bayes",
+  "likelihood_power_candidates": [
+    0.125,
+    0.25,
+    0.5,
+    1.0
+  ],
+  "likelihood_power_calibration_method": "prequential-r-log-safebayes",
+  "likelihood_power_calibration_role": "initial-development-only",
+  "likelihood_power_tie_break": "largest-likelihood-power",
+  "basis_preconditioning_method": "termwise-center-scale",
+  "basis_preconditioning_role": "initial-development-covariates-only",
+  "predictive_design_transform": "posterior-target-frozen",
+  "pcpi_primary_utility": "initial-frozen-class-mutual-information",
+  "pcpi_information_bound_method": "quantized-data-processing-lower-gaussian-maximum-entropy-upper-v1",
+  "pcpi_response_quantization_probability_levels": [
+    0.05,
+    0.15,
+    0.3,
+    0.5,
+    0.7,
+    0.85,
+    0.95
+  ],
+  "pcpi_numerical_outward_tolerance": 1e-10,
+  "pcpi_reference_policy": "visible-candidate-uniform-response-free",
+  "pcpi_reference_seed_method": "sha256-dataset-seed-round-reference-policy-v1",
+  "pcpi_decision_method": "registered-reference-policy-interval-dominance-v1",
+  "assessment_rules": {
+    "paired_confidence_level": 0.95,
+    "negative_transfer_rate_max": 0.25,
+    "pcpi_decision_rule_valid_rate_min": 1.0,
+    "strong_requires_positive_frozen_class_gain_vs_random_in_every_dataset_family": true,
+    "strong_requires_nonpositive_mean_vs_each_baseline_in_every_dataset_family": true
+  }
+}

@@ -9,7 +9,7 @@ import math
 
 import numpy as np
 from scipy.integrate import quad
-from scipy.special import logsumexp
+from scipy.special import betaln, digamma, logsumexp, ndtri
 from scipy.special import roots_jacobi
 from scipy.stats import t as student_t
 
@@ -80,6 +80,25 @@ class PredictiveComponents:
 class ExactEIGResult:
     scores: np.ndarray
     quadrature_errors: np.ndarray
+
+
+@dataclass(frozen=True)
+class AnalyticClassEIGBounds:
+    """Information-inequality bounds for finite Student-t class mixtures.
+
+    The lower bound is the mutual information after a registered deterministic
+    quantization of the response. The upper bound combines the Gaussian
+    maximum-entropy inequality with concavity of differential entropy inside
+    each operational class. The inequalities are analytic; Student-t CDFs and
+    elementary functions are evaluated numerically with a registered outward
+    tolerance.
+    """
+
+    lower_bounds: np.ndarray
+    upper_bounds: np.ndarray
+    quantization_probability_levels: tuple[float, ...]
+    numerical_outward_tolerance: float
+    method: str
 
 
 @dataclass(frozen=True)
@@ -183,6 +202,19 @@ GAUSSIAN_CLASS_CONDITIONAL_EPIG = (
 REPRESENTATIVE_MMD_METHOD = (
     "registered-domain-standardized-rbf-biased-mmd-nonincreasing"
 )
+ANALYTIC_CLASS_EIG_BOUNDS_METHOD = (
+    "quantized-data-processing-lower-gaussian-maximum-entropy-upper-v1"
+)
+DEFAULT_CLASS_EIG_QUANTIZATION_LEVELS = (
+    0.05,
+    0.15,
+    0.30,
+    0.50,
+    0.70,
+    0.85,
+    0.95,
+)
+DEFAULT_CLASS_EIG_OUTWARD_TOLERANCE = 1e-10
 
 
 def class_partition(
@@ -381,6 +413,165 @@ def exact_class_eig(
         scores.append(score)
         errors.append(error)
     return ExactEIGResult(np.asarray(scores), np.asarray(errors))
+
+
+def _validated_quantization_levels(
+    probability_levels: tuple[float, ...],
+) -> np.ndarray:
+    levels = np.asarray(probability_levels, dtype=float).reshape(-1)
+    if (
+        len(levels) == 0
+        or not np.all(np.isfinite(levels))
+        or np.any(levels <= 0.0)
+        or np.any(levels >= 1.0)
+        or np.any(np.diff(levels) <= 0.0)
+    ):
+        raise ValueError(
+            "class-EIG quantization levels must be strictly increasing in (0, 1)"
+        )
+    return levels
+
+
+def _student_t_entropy(degrees: np.ndarray, scales: np.ndarray) -> np.ndarray:
+    half_degrees = 0.5 * degrees
+    return (
+        0.5 * np.log(degrees)
+        + betaln(half_degrees, 0.5)
+        + 0.5 * (degrees + 1.0)
+        * (digamma(0.5 * (degrees + 1.0)) - digamma(half_degrees))
+        + np.log(scales)
+    )
+
+
+def _quantized_action_class_information(
+    components: PredictiveComponents,
+    action_index: int,
+    levels: np.ndarray,
+    mixture_mean: float,
+    mixture_standard_deviation: float,
+) -> float:
+    thresholds = mixture_mean + mixture_standard_deviation * ndtri(levels)
+    component_cdf = student_t.cdf(
+        thresholds[None, :],
+        df=components.degrees_freedom[:, None],
+        loc=components.locations[:, action_index, None],
+        scale=components.scales[:, action_index, None],
+    )
+    component_bins = np.diff(
+        np.column_stack((
+            np.zeros(len(component_cdf)),
+            component_cdf,
+            np.ones(len(component_cdf)),
+        )),
+        axis=1,
+    )
+    roundoff = 64.0 * np.finfo(float).eps
+    if np.any(component_bins < -roundoff) or not np.all(np.isfinite(component_bins)):
+        raise FloatingPointError("Student-t quantization probabilities are invalid")
+    component_bins = np.maximum(component_bins, 0.0)
+    component_bins /= np.sum(component_bins, axis=1, keepdims=True)
+
+    class_count = len(components.partition.class_ids)
+    joint = np.zeros((class_count, component_bins.shape[1]), dtype=float)
+    weights = components.structure_probabilities
+    for structure_index, class_index in enumerate(
+        components.partition.structure_to_class
+    ):
+        joint[class_index] += weights[structure_index] * component_bins[structure_index]
+    class_probabilities = np.sum(joint, axis=1)
+    bin_probabilities = np.sum(joint, axis=0)
+    expected_classes = np.asarray(components.partition.class_probabilities)
+    if not np.allclose(
+        class_probabilities, expected_classes, rtol=0.0, atol=roundoff
+    ):
+        raise FloatingPointError("quantized joint law changed class probabilities")
+    product = class_probabilities[:, None] * bin_probabilities[None, :]
+    positive = joint > 0.0
+    information = np.sum(joint[positive] * np.log(joint[positive] / product[positive]))
+    return float(information)
+
+
+def analytic_class_eig_bounds(
+    components: PredictiveComponents,
+    *,
+    quantization_probability_levels: tuple[float, ...] = (
+        DEFAULT_CLASS_EIG_QUANTIZATION_LEVELS
+    ),
+    numerical_outward_tolerance: float = DEFAULT_CLASS_EIG_OUTWARD_TOLERANCE,
+) -> AnalyticClassEIGBounds:
+    """Bound class EIG without sampling or observing candidate responses.
+
+    For every action, ``I(C; Q(Y)) <= I(C; Y)`` gives the lower bound for a
+    fixed response quantizer ``Q``. For the upper bound,
+
+    ``h(Y) <= 0.5 log(2 pi e Var(Y))`` and
+    ``h(Y | C) >= sum_s p(s) h(Y | S=s)``.
+
+    The result is model-relative and conditional on the supplied finite-bank
+    posterior predictive distribution. It is not a guarantee under posterior
+    misspecification or a real-world no-harm certificate.
+    """
+
+    levels = _validated_quantization_levels(quantization_probability_levels)
+    tolerance = float(numerical_outward_tolerance)
+    if not np.isfinite(tolerance) or tolerance <= 0.0:
+        raise ValueError("class-EIG outward tolerance must be positive and finite")
+    degrees = components.degrees_freedom
+    if np.any(degrees <= 2.0):
+        raise FloatingPointError(
+            "analytic class-EIG upper bound requires finite Student-t variance"
+        )
+
+    weights = components.structure_probabilities[:, None]
+    component_variances = (
+        np.square(components.scales)
+        * degrees[:, None]
+        / (degrees[:, None] - 2.0)
+    )
+    mixture_means = np.sum(weights * components.locations, axis=0)
+    mixture_variances = np.sum(
+        weights * (component_variances + np.square(components.locations)), axis=0
+    ) - np.square(mixture_means)
+    if np.any(mixture_variances <= 0.0) or not np.all(np.isfinite(mixture_variances)):
+        raise FloatingPointError("predictive mixture variance must be positive and finite")
+
+    component_entropies = _student_t_entropy(
+        degrees[:, None], components.scales
+    )
+    conditional_entropy_floor = np.sum(weights * component_entropies, axis=0)
+    marginal_entropy_ceiling = 0.5 * np.log(
+        2.0 * math.pi * math.e * mixture_variances
+    )
+    class_entropy = max(0.0, components.partition.entropy)
+    raw_upper = marginal_entropy_ceiling - conditional_entropy_floor
+    upper = np.minimum(class_entropy, np.maximum(0.0, raw_upper + tolerance))
+
+    lower_values = []
+    for action_index in range(components.locations.shape[1]):
+        information = _quantized_action_class_information(
+            components,
+            action_index,
+            levels,
+            float(mixture_means[action_index]),
+            float(np.sqrt(mixture_variances[action_index])),
+        )
+        lower_values.append(max(0.0, information - tolerance))
+    lower = np.asarray(lower_values, dtype=float)
+    violation = lower - upper
+    if np.any(violation > tolerance):
+        raise FloatingPointError(
+            "class-EIG information inequalities are numerically inconsistent"
+        )
+    lower = np.minimum(lower, upper)
+    lower.setflags(write=False)
+    upper.setflags(write=False)
+    return AnalyticClassEIGBounds(
+        lower_bounds=lower,
+        upper_bounds=upper,
+        quantization_probability_levels=tuple(float(value) for value in levels),
+        numerical_outward_tolerance=tolerance,
+        method=ANALYTIC_CLASS_EIG_BOUNDS_METHOD,
+    )
 
 
 def _stratum_allocations(probabilities: np.ndarray, sample_count: int) -> np.ndarray:
@@ -1061,10 +1252,14 @@ def fixed_partition_probabilities(
 
 
 __all__ = [
+    "ANALYTIC_CLASS_EIG_BOUNDS_METHOD",
     "ASYMPTOTIC_RANK_CERTIFICATE",
+    "AnalyticClassEIGBounds",
     "ClassPartition",
     "DiscrepancyPredictiveProfile",
     "DEFAULT_QUADRATURE_SAFETY_FACTOR",
+    "DEFAULT_CLASS_EIG_OUTWARD_TOLERANCE",
+    "DEFAULT_CLASS_EIG_QUANTIZATION_LEVELS",
     "AdaptiveEIGEstimate",
     "EIGEstimate",
     "ExactEIGResult",
@@ -1073,6 +1268,7 @@ __all__ = [
     "PredictiveComponents",
     "REPRESENTATIVE_MMD_METHOD",
     "RepresentativeSafeSet",
+    "analytic_class_eig_bounds",
     "categorical_entropy",
     "class_conditional_predictive_eig",
     "class_conditional_predictive_eig_with_discrepancy",

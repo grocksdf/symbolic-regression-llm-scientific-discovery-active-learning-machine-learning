@@ -29,10 +29,14 @@ from .reference import (
     fit_bank_preconditioner,
 )
 from .acquisition import (
+    ANALYTIC_CLASS_EIG_BOUNDS_METHOD,
     ASYMPTOTIC_RANK_CERTIFICATE,
+    AnalyticClassEIGBounds,
     ClassPartition,
     DiscrepancyPredictiveProfile,
     DEFAULT_QUADRATURE_SAFETY_FACTOR,
+    DEFAULT_CLASS_EIG_OUTWARD_TOLERANCE,
+    DEFAULT_CLASS_EIG_QUANTIZATION_LEVELS,
     AdaptiveEIGEstimate,
     EIGEstimate,
     ExactEIGResult,
@@ -41,6 +45,7 @@ from .acquisition import (
     PredictiveComponents,
     REPRESENTATIVE_MMD_METHOD,
     RepresentativeSafeSet,
+    analytic_class_eig_bounds,
     categorical_entropy,
     class_conditional_predictive_eig,
     class_conditional_predictive_eig_with_discrepancy,
@@ -85,6 +90,15 @@ from .decision import (
     ReferenceDominanceDecision,
     certified_reference_dominance,
 )
+from .reference_acquisition import (
+    P3D_ACQUISITION_POLICIES,
+    REFERENCE_DOMINANCE_POLICY,
+    REFERENCE_POLICY,
+    REFERENCE_SEED_METHOD,
+    ReferenceDominanceScores,
+    score_reference_dominance_actions,
+    stable_reference_policy_seed,
+)
 from .smc import (
     CollapsedStructureKernel,
     FixedUniverseSMC,
@@ -101,10 +115,14 @@ from .smc import (
 )
 
 __all__ = [
+    "ANALYTIC_CLASS_EIG_BOUNDS_METHOD",
     "ASYMPTOTIC_RANK_CERTIFICATE",
+    "AnalyticClassEIGBounds",
     "ClassPartition",
     "DiscrepancyPredictiveProfile",
     "DEFAULT_QUADRATURE_SAFETY_FACTOR",
+    "DEFAULT_CLASS_EIG_OUTWARD_TOLERANCE",
+    "DEFAULT_CLASS_EIG_QUANTIZATION_LEVELS",
     "AdaptiveEIGEstimate",
     "EIGEstimate",
     "ExactEIGResult",
@@ -144,6 +162,7 @@ __all__ = [
     "budget_resolved_distance_threshold",
     "calibrate_likelihood_power",
     "fit_bank_preconditioner",
+    "analytic_class_eig_bounds",
     "categorical_entropy",
     "class_conditional_predictive_eig",
     "class_conditional_predictive_eig_with_discrepancy",
@@ -185,4 +204,11 @@ __all__ = [
     "TARGETED_HANDOVER_MODE",
     "ReferenceDominanceDecision",
     "certified_reference_dominance",
+    "P3D_ACQUISITION_POLICIES",
+    "REFERENCE_DOMINANCE_POLICY",
+    "REFERENCE_POLICY",
+    "REFERENCE_SEED_METHOD",
+    "ReferenceDominanceScores",
+    "score_reference_dominance_actions",
+    "stable_reference_policy_seed",
 ]

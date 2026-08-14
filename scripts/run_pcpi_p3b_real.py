@@ -36,13 +36,25 @@ from hypothesis_mvp.hypotheses import (
 )
 from hypothesis_mvp.pcpi import (
     ACQUISITION_POLICIES,
+    ANALYTIC_CLASS_EIG_BOUNDS_METHOD,
+    AcquisitionScores,
     BUDGET_RESOLUTION_METHOD,
+    DEFAULT_CLASS_EIG_OUTWARD_TOLERANCE,
+    DEFAULT_CLASS_EIG_QUANTIZATION_LEVELS,
     DISCREPANCY_AWARE_POLICY,
     DISCREPANCY_PROFILE_METHOD,
     GAUSSIAN_CLASS_CONDITIONAL_EPIG,
     MAXIMIN_RANK_CERTIFICATE,
+    P3D_ACQUISITION_POLICIES,
     PosteriorModel,
+    REFERENCE_DOMINANCE_METHOD,
+    REFERENCE_DOMINANCE_POLICY,
+    REFERENCE_FALLBACK_MODE,
+    REFERENCE_POLICY,
+    REFERENCE_SEED_METHOD,
+    ReferenceDominanceScores,
     REPRESENTATIVE_MMD_METHOD,
+    TARGETED_HANDOVER_MODE,
     SequentialReferencePosterior,
     aggregate_operational_classes,
     budget_resolved_distance_threshold,
@@ -52,8 +64,10 @@ from hypothesis_mvp.pcpi import (
     posterior_metrics,
     score_acquisition_actions,
     score_discrepancy_aware_actions,
+    score_reference_dominance_actions,
     select_stable_argmax,
     stable_derived_seed,
+    stable_reference_policy_seed,
 )
 from hypothesis_mvp.pcpi.reference import (
     CALIBRATION_METHOD,
@@ -91,6 +105,7 @@ class RealAcquisitionProtocol:
     claim_boundary: str
     parent_lineage: tuple[str, ...]
     discrepancy_profile_method: str | None = None
+    reference_dominance_method: str | None = None
 
 
 CLAIM_BOUNDARY = (
@@ -162,6 +177,105 @@ def _hash_json(value: Any) -> str:
     return sha256(encoded).hexdigest()
 
 
+def _validate_reference_dominance_config(
+    config: dict[str, Any],
+    protocol: RealAcquisitionProtocol,
+) -> dict[str, Any]:
+    """Validate the clean P3D real-only protocol surface."""
+
+    required = {
+        "schema", "stage", "datasets", "policies", "seeds",
+        "initial_observation_budget", "acquisition_observation_budget",
+        "candidate_pool_budget", "validation_budget", "qbc_committee_size",
+        "operational_class_metric", "operational_class_linkage",
+        "operational_class_resolution_method",
+        "operational_class_aggregate_separation",
+        "operational_class_quantile_levels", "class_evaluation_partition",
+        "pcpi_class_target_partition", "split_seed", "hash_verification",
+        "heldout_state", "failure_policy", "assessment_rules",
+        "posterior_type", "likelihood_power_candidates",
+        "likelihood_power_calibration_method",
+        "likelihood_power_calibration_role", "likelihood_power_tie_break",
+        "basis_preconditioning_method", "basis_preconditioning_role",
+        "predictive_design_transform", "pcpi_primary_utility",
+        "pcpi_information_bound_method",
+        "pcpi_response_quantization_probability_levels",
+        "pcpi_numerical_outward_tolerance", "pcpi_reference_policy",
+        "pcpi_reference_seed_method", "pcpi_decision_method",
+    }
+    if set(config) != required:
+        raise ValueError(
+            "P3D config fields differ from schema: "
+            f"{sorted(set(config) ^ required)}"
+        )
+    if config["schema"] != protocol.schema or config["stage"] != protocol.stage:
+        raise ValueError("unsupported P3D real-acquisition config schema or stage")
+    if tuple(config["datasets"]) != P2A_REAL_DATASETS:
+        raise ValueError("P3D datasets must be the frozen CCPP and Gas targets")
+    if tuple(config["policies"]) != protocol.policies:
+        raise ValueError("P3D requires its frozen matched-budget policy set")
+    if tuple(config["seeds"]) != FROZEN_SEEDS:
+        raise ValueError("P3D requires the eight frozen registered seeds")
+    frozen_values = {
+        "initial_observation_budget": 32,
+        "acquisition_observation_budget": 32,
+        "candidate_pool_budget": 128,
+        "validation_budget": 256,
+        "qbc_committee_size": 32,
+        "split_seed": SPLIT_SEED,
+        "hash_verification": "mandatory",
+        "heldout_state": "closed",
+        "failure_policy": "fail_closed_record_all_no_seed_replacement",
+        "operational_class_metric": "pooled-predictive-sd-quantile-rms",
+        "operational_class_linkage": "complete",
+        "operational_class_resolution_method": BUDGET_RESOLUTION_METHOD,
+        "operational_class_aggregate_separation": 1.0,
+        "class_evaluation_partition": "initial-frozen",
+        "pcpi_class_target_partition": "initial-frozen",
+        "posterior_type": "power-likelihood-generalized-bayes",
+        "likelihood_power_calibration_method": CALIBRATION_METHOD,
+        "likelihood_power_calibration_role": CALIBRATION_ROLE,
+        "likelihood_power_tie_break": CALIBRATION_TIE_BREAK,
+        "basis_preconditioning_method": DESIGN_PRECONDITIONING_METHOD,
+        "basis_preconditioning_role": DESIGN_PRECONDITIONING_ROLE,
+        "predictive_design_transform": "posterior-target-frozen",
+        "pcpi_primary_utility": "initial-frozen-class-mutual-information",
+        "pcpi_information_bound_method": ANALYTIC_CLASS_EIG_BOUNDS_METHOD,
+        "pcpi_numerical_outward_tolerance": (
+            DEFAULT_CLASS_EIG_OUTWARD_TOLERANCE
+        ),
+        "pcpi_reference_policy": REFERENCE_POLICY,
+        "pcpi_reference_seed_method": REFERENCE_SEED_METHOD,
+        "pcpi_decision_method": protocol.reference_dominance_method,
+    }
+    if any(config[key] != value for key, value in frozen_values.items()):
+        raise ValueError("P3D frozen method, budget, or provenance contract changed")
+    if tuple(float(value) for value in config["operational_class_quantile_levels"]) != (
+        0.1, 0.5, 0.9
+    ):
+        raise ValueError("P3D operational-class quantiles changed")
+    if tuple(float(value) for value in config["likelihood_power_candidates"]) != (
+        0.125, 0.25, 0.5, 1.0
+    ):
+        raise ValueError("P3D likelihood-power calibration candidates changed")
+    if tuple(
+        float(value)
+        for value in config["pcpi_response_quantization_probability_levels"]
+    ) != DEFAULT_CLASS_EIG_QUANTIZATION_LEVELS:
+        raise ValueError("P3D response quantizer changed")
+    rules = config["assessment_rules"]
+    expected_rules = {
+        "paired_confidence_level": 0.95,
+        "negative_transfer_rate_max": 0.25,
+        "pcpi_decision_rule_valid_rate_min": 1.0,
+        "strong_requires_positive_frozen_class_gain_vs_random_in_every_dataset_family": True,
+        "strong_requires_nonpositive_mean_vs_each_baseline_in_every_dataset_family": True,
+    }
+    if rules != expected_rules:
+        raise ValueError("P3D assessment rules changed")
+    return config
+
+
 def _load_config(
     path: Path,
     root: Path,
@@ -170,6 +284,8 @@ def _load_config(
     if not path.is_file() or (path != root and root not in path.parents):
         raise ValueError("P3B config must be an existing file inside the project root")
     config = json.loads(path.read_text(encoding="utf-8"))
+    if protocol.reference_dominance_method is not None:
+        return _validate_reference_dominance_config(config, protocol)
     required = {
         "schema", "stage", "datasets", "policies", "seeds",
         "initial_observation_budget", "acquisition_observation_budget",
@@ -414,6 +530,60 @@ def _fit_posterior_models(
     )
 
 
+def _reference_score_audit_adapter(
+    result: ReferenceDominanceScores,
+) -> AcquisitionScores:
+    """Expose P3D values through the shared export shape, without recombination."""
+
+    midpoints = result.utility_interval_midpoints
+    lower = result.utility_bounds.lower_bounds
+    upper = result.utility_bounds.upper_bounds
+    radii = 0.5 * (upper - lower)
+    zeros = np.zeros(len(midpoints), dtype=float)
+    return AcquisitionScores(
+        policy=result.policy,
+        scores=midpoints,
+        integration_error_bounds=radii,
+        class_count=result.class_count,
+        estimator_samples=0,
+        ranking_certified=result.decision.targeted_handover,
+        ranking_margin=(
+            result.decision.leader_lower_bound
+            - result.decision.reference_upper_bound
+        ),
+        ranking_error_bound=result.decision.reference_upper_bound,
+        ranking_certificate_gap=result.decision.dominance_gap,
+        ranking_error_safety_factor=0.0,
+        ranking_planned_looks=1,
+        ranking_looks_used=1,
+        ranking_certificate_method=result.decision.method,
+        estimator_coarse_samples=0,
+        estimator_integration_method=result.utility_bounds.method,
+        utility_mode=result.decision.utility_mode,
+        target_partition_hash=result.target_partition_hash,
+        class_eig_scores=midpoints,
+        class_eig_error_bounds=radii,
+        conditional_predictive_eig_scores=zeros,
+        joint_class_predictive_scores=zeros,
+        representative_guard_applied=False,
+        representative_current_mmd_squared=0.0,
+        representative_augmented_mmd_squared=zeros,
+        representative_safe_mask=np.ones(len(midpoints), dtype=bool),
+        representative_safe_set_nonempty=True,
+        representative_safe_set_size=len(midpoints),
+        representative_fallback_used=False,
+        representative_mmd_tolerance=0.0,
+        representative_kernel_bandwidth_squared=0.0,
+        representative_mmd_method="not-applied-reference-dominance",
+        robust_likelihood_powers=(),
+        robust_model_count=0,
+        least_favorable_likelihood_powers=zeros,
+        robust_joint_scores_by_model=np.empty((0, len(midpoints))),
+        robust_lower_bounds=zeros,
+        robust_upper_bounds=zeros,
+    )
+
+
 def _run_policy(
     *,
     dataset_id: str,
@@ -444,9 +614,14 @@ def _run_policy(
     engine = SequentialReferencePosterior(
         bank, likelihood_power, design_preconditioner
     )
-    ambiguity_powers = tuple(
-        float(value)
-        for value in config.get("likelihood_power_candidates", [likelihood_power])
+    is_reference_protocol = protocol.reference_dominance_method is not None
+    ambiguity_powers = (
+        (float(likelihood_power),)
+        if is_reference_protocol
+        else tuple(
+            float(value)
+            for value in config.get("likelihood_power_candidates", [likelihood_power])
+        )
     )
     ambiguity_engines = tuple(
         SequentialReferencePosterior(bank, power, design_preconditioner)
@@ -470,6 +645,7 @@ def _run_policy(
     initial_partition_hash = frozen_partition.stable_hash
     partition_hashes: set[str] = set()
     is_pcpi = policy == protocol.pcpi_policy
+    is_reference_pcpi = is_pcpi and is_reference_protocol
     run_started = time.perf_counter()
     for round_index in range(int(config["acquisition_observation_budget"]) + 1):
         posterior = engine.fit_batch(train_X, train_y)
@@ -503,25 +679,51 @@ def _run_policy(
         if round_index == int(config["acquisition_observation_budget"]):
             break
         visible_actions = standardizer.transform_X(pool_X[available])
-        derived_seed = stable_derived_seed(seed, policy, round_index)
+        derived_seed = (
+            stable_reference_policy_seed(seed, round_index)
+            if is_reference_pcpi
+            else stable_derived_seed(seed, policy, round_index)
+        )
         score_kwargs = {
             "seed": derived_seed,
-            "eig_min_samples": int(config["eig_quadrature_min_evaluations"]),
-            "eig_max_samples": int(config["eig_quadrature_max_evaluations"]),
+            "eig_min_samples": int(config.get("eig_quadrature_min_evaluations", 32)),
+            "eig_max_samples": int(config.get("eig_quadrature_max_evaluations", 32)),
             "eig_error_safety_factor": float(
-                config["eig_quadrature_error_safety_factor"]
+                config.get("eig_quadrature_error_safety_factor", 4.0)
             ),
-            "eig_growth_factor": int(config["eig_quadrature_growth_factor"]),
+            "eig_growth_factor": int(config.get("eig_quadrature_growth_factor", 2)),
             "qbc_committee_size": int(config["qbc_committee_size"]),
             "predictive_target_actions": fixed_domain_X,
-            "representative_observed_actions": train_X if is_pcpi else None,
+            "representative_observed_actions": (
+                train_X if is_pcpi and not is_reference_pcpi else None
+            ),
             "target_partition": frozen_partition if is_pcpi else None,
             "posterior_models": (
                 _fit_posterior_models(ambiguity_engines, train_X, train_y)
-                if is_pcpi else None
+                if is_pcpi and not is_reference_pcpi else None
             ),
         }
-        if is_pcpi and protocol.discrepancy_profile_method is not None:
+        reference_result: ReferenceDominanceScores | None = None
+        if is_reference_pcpi:
+            reference_result = score_reference_dominance_actions(
+                engine,
+                posterior,
+                visible_actions,
+                available,
+                target_partition=frozen_partition,
+                reference_seed=derived_seed,
+                quantization_probability_levels=tuple(
+                    float(value)
+                    for value in config[
+                        "pcpi_response_quantization_probability_levels"
+                    ]
+                ),
+                numerical_outward_tolerance=float(
+                    config["pcpi_numerical_outward_tolerance"]
+                ),
+            )
+            scores = _reference_score_audit_adapter(reference_result)
+        elif is_pcpi and protocol.discrepancy_profile_method is not None:
             scores = score_discrepancy_aware_actions(
                 engine, posterior, classes, visible_actions, **score_kwargs
             )
@@ -534,7 +736,11 @@ def _run_policy(
                 policy=policy,
                 **score_kwargs,
             )
-        selected = select_stable_argmax(scores.scores, available)
+        selected = (
+            reference_result.decision.selected_candidate_id
+            if reference_result is not None
+            else select_stable_argmax(scores.scores, available)
+        )
         local_index = int(np.flatnonzero(available == selected)[0])
         selected_score = float(scores.scores[local_index])
         selected_error = float(scores.integration_error_bounds[local_index])
@@ -566,6 +772,69 @@ def _run_policy(
             rtol=0.0,
             atol=scores.representative_mmd_tolerance,
         ))
+        if reference_result is not None:
+            decision = reference_result.decision
+            reference_audit = {
+                "reference_dominance_applied": True,
+                "reference_policy": reference_result.reference_policy,
+                "reference_seed_method": reference_result.reference_seed_method,
+                "reference_seed": derived_seed,
+                "reference_decision_method": decision.method,
+                "reference_information_bound_method": (
+                    reference_result.utility_bounds.method
+                ),
+                "reference_quantization_probability_levels": list(
+                    reference_result.utility_bounds.quantization_probability_levels
+                ),
+                "reference_numerical_outward_tolerance": (
+                    reference_result.utility_bounds.numerical_outward_tolerance
+                ),
+                "reference_targeted_handover": decision.targeted_handover,
+                "reference_sample_candidate_id": (
+                    decision.reference_sample_candidate_id
+                ),
+                "reference_leader_candidate_id": decision.leader_candidate_id,
+                "reference_leader_estimate": decision.leader_estimate,
+                "reference_leader_lower_bound": decision.leader_lower_bound,
+                "reference_leader_upper_bound": decision.leader_upper_bound,
+                "reference_estimate": decision.reference_estimate,
+                "reference_lower_bound": decision.reference_lower_bound,
+                "reference_upper_bound": decision.reference_upper_bound,
+                "reference_dominance_gap": decision.dominance_gap,
+                "reference_decision_numerical_tolerance": (
+                    decision.numerical_tolerance
+                ),
+                "selected_class_eig_lower_bound": float(
+                    reference_result.utility_bounds.lower_bounds[local_index]
+                ),
+                "selected_class_eig_upper_bound": float(
+                    reference_result.utility_bounds.upper_bounds[local_index]
+                ),
+            }
+        else:
+            reference_audit = {
+                "reference_dominance_applied": False,
+                "reference_policy": "not-applied",
+                "reference_seed_method": "not-applied",
+                "reference_seed": 0,
+                "reference_decision_method": "not-applied",
+                "reference_information_bound_method": "not-applied",
+                "reference_quantization_probability_levels": [],
+                "reference_numerical_outward_tolerance": 0.0,
+                "reference_targeted_handover": False,
+                "reference_sample_candidate_id": -1,
+                "reference_leader_candidate_id": -1,
+                "reference_leader_estimate": 0.0,
+                "reference_leader_lower_bound": 0.0,
+                "reference_leader_upper_bound": 0.0,
+                "reference_estimate": 0.0,
+                "reference_lower_bound": 0.0,
+                "reference_upper_bound": 0.0,
+                "reference_dominance_gap": 0.0,
+                "reference_decision_numerical_tolerance": 0.0,
+                "selected_class_eig_lower_bound": 0.0,
+                "selected_class_eig_upper_bound": 0.0,
+            }
         revealed_X, revealed_y, revealed_indices = oracle.acquire_indices(
             np.asarray([selected])
         )
@@ -634,12 +903,19 @@ def _run_policy(
             ),
             "predictive_target_distribution": config.get(
                 "predictive_target_distribution",
-                "registered-action-domain-uniform",
+                (
+                    "not-applicable-class-only"
+                    if is_reference_protocol
+                    else "registered-action-domain-uniform"
+                ),
             ),
             "predictive_target_subset_hash": subset_commitments["candidate"],
             "conditional_predictive_information_method": config.get(
                 "conditional_predictive_information_method",
-                GAUSSIAN_CLASS_CONDITIONAL_EPIG,
+                (
+                    "not-applied-class-only"
+                    if is_reference_protocol else GAUSSIAN_CLASS_CONDITIONAL_EPIG
+                ),
             ),
             "representative_guard_applied": scores.representative_guard_applied,
             "representative_mmd_method": scores.representative_mmd_method,
@@ -675,6 +951,7 @@ def _run_policy(
             "eig_coarse_evaluations": scores.estimator_coarse_samples,
             "eig_integration_method": scores.estimator_integration_method,
             "remaining_candidates_before_query": len(available),
+            **reference_audit,
         })
         available = available[available != selected]
         reporter.emit(
@@ -702,13 +979,17 @@ def _run_policy(
         row for row in query_rows
         if row["policy"] == protocol.pcpi_policy
     ]
-    eig_modes = {
-        (
-            "representative-safe-discrepancy-robust-maximin-joint-eig-surrogate"
-            if protocol.discrepancy_profile_method is not None
-            else "representative-safe-maximin-joint-eig-surrogate"
-        )
-    }
+    eig_modes = (
+        {TARGETED_HANDOVER_MODE, REFERENCE_FALLBACK_MODE}
+        if is_reference_protocol
+        else {
+            (
+                "representative-safe-discrepancy-robust-maximin-joint-eig-surrogate"
+                if protocol.discrepancy_profile_method is not None
+                else "representative-safe-maximin-joint-eig-surrogate"
+            )
+        }
+    )
     epistemic_modes = {
         "representative-safe-posterior-epistemic-variance-uncertified-maximin-joint-eig",
     }
@@ -716,32 +997,64 @@ def _run_policy(
         "representative-minimum-mmd-no-nonincreasing-action",
     }
     valid_modes = eig_modes | epistemic_modes | representative_fallback_modes
-    decision_valid = [
-        row["utility_mode"] in valid_modes
-        and row["acquisition_target_partition_hash"] == initial_partition_hash
-        and row["representative_guard_applied"]
-        and (
-            (
-                row["representative_safe_set_nonempty"]
-                and not row["representative_fallback_used"]
-                and row["representative_selected_in_safe_set"]
-                and row["representative_selected_mmd_nonincrease"]
-                and (
-                    row["eig_ranking_certified"]
-                    if row["utility_mode"] in eig_modes
-                    else not row["eig_ranking_certified"]
+    if is_reference_protocol:
+        decision_valid = [
+            row["utility_mode"] in eig_modes
+            and row["acquisition_target_partition_hash"] == initial_partition_hash
+            and row["reference_dominance_applied"]
+            and row["reference_policy"] == REFERENCE_POLICY
+            and row["reference_decision_method"] == protocol.reference_dominance_method
+            and row["reference_information_bound_method"]
+            == ANALYTIC_CLASS_EIG_BOUNDS_METHOD
+            and row["selected_class_eig_lower_bound"]
+            <= row["selected_class_eig_upper_bound"]
+            and (
+                (
+                    row["reference_targeted_handover"]
+                    and row["selected_pool_index"]
+                    == row["reference_leader_candidate_id"]
+                    and row["reference_leader_lower_bound"]
+                    > row["reference_upper_bound"]
+                    + row["reference_decision_numerical_tolerance"]
+                )
+                or (
+                    not row["reference_targeted_handover"]
+                    and row["selected_pool_index"]
+                    == row["reference_sample_candidate_id"]
+                    and row["reference_leader_lower_bound"]
+                    <= row["reference_upper_bound"]
+                    + row["reference_decision_numerical_tolerance"]
                 )
             )
-            if row["utility_mode"] not in representative_fallback_modes
-            else (
-                not row["representative_safe_set_nonempty"]
-                and row["representative_fallback_used"]
-                and not row["representative_selected_in_safe_set"]
-                and row["representative_selected_is_minimum_mmd"]
+            for row in pcpi_queries
+        ]
+    else:
+        decision_valid = [
+            row["utility_mode"] in valid_modes
+            and row["acquisition_target_partition_hash"] == initial_partition_hash
+            and row["representative_guard_applied"]
+            and (
+                (
+                    row["representative_safe_set_nonempty"]
+                    and not row["representative_fallback_used"]
+                    and row["representative_selected_in_safe_set"]
+                    and row["representative_selected_mmd_nonincrease"]
+                    and (
+                        row["eig_ranking_certified"]
+                        if row["utility_mode"] in eig_modes
+                        else not row["eig_ranking_certified"]
+                    )
+                )
+                if row["utility_mode"] not in representative_fallback_modes
+                else (
+                    not row["representative_safe_set_nonempty"]
+                    and row["representative_fallback_used"]
+                    and not row["representative_selected_in_safe_set"]
+                    and row["representative_selected_is_minimum_mmd"]
+                )
             )
-        )
-        for row in pcpi_queries
-    ]
+            for row in pcpi_queries
+        ]
     policy_wall_time = time.perf_counter() - run_started
     summary = {
         "dataset_id": dataset_id,
@@ -761,7 +1074,12 @@ def _run_policy(
         "posterior_target_hash": engine.target_hash,
         "pcpi_ambiguity_set": list(ambiguity_powers),
         "pcpi_robust_utility": config.get(
-            "pcpi_robust_utility", "maximin-joint-class-predictive-information"
+            "pcpi_robust_utility",
+            (
+                "not-applied-reference-dominance-class-eig"
+                if is_reference_protocol
+                else "maximin-joint-class-predictive-information"
+            ),
         ),
         "pcpi_discrepancy_profile": config.get(
             "pcpi_discrepancy_profile", "not-applied"
@@ -783,15 +1101,26 @@ def _run_policy(
         "initial_frozen_class_partition_hash": initial_partition_hash,
         "predictive_target_distribution": config.get(
             "predictive_target_distribution",
-            "registered-action-domain-uniform",
+            (
+                "not-applicable-class-only"
+                if is_reference_protocol
+                else "registered-action-domain-uniform"
+            ),
         ),
         "predictive_target_subset_hash": subset_commitments["candidate"],
         "conditional_predictive_information_method": config.get(
             "conditional_predictive_information_method",
-            GAUSSIAN_CLASS_CONDITIONAL_EPIG,
+            (
+                "not-applied-class-only"
+                if is_reference_protocol else GAUSSIAN_CLASS_CONDITIONAL_EPIG
+            ),
         ),
         "representative_mmd_method": config.get(
-            "representative_discrepancy", REPRESENTATIVE_MMD_METHOD
+            "representative_discrepancy",
+            (
+                "not-applied-reference-dominance"
+                if is_reference_protocol else REPRESENTATIVE_MMD_METHOD
+            ),
         ),
         "operational_class_distance_threshold": class_distance_threshold,
         "operational_class_resolution_method": BUDGET_RESOLUTION_METHOD,
@@ -806,7 +1135,7 @@ def _run_policy(
         ])) if pcpi_queries else 0.0,
         "pcpi_maximin_joint_eig_used_rate": float(np.mean([
             row["utility_mode"] in eig_modes for row in pcpi_queries
-        ])) if pcpi_queries else 0.0,
+        ])) if pcpi_queries and not is_reference_protocol else 0.0,
         "pcpi_epistemic_fallback_rate": float(np.mean([
             row["utility_mode"] in epistemic_modes for row in pcpi_queries
         ])) if pcpi_queries else 0.0,
@@ -831,6 +1160,15 @@ def _run_policy(
         if decision_valid else (
             1.0 if not is_pcpi else 0.0
         ),
+        "pcpi_targeted_handover_rate": float(np.mean([
+            row["reference_targeted_handover"] for row in pcpi_queries
+        ])) if pcpi_queries and is_reference_protocol else 0.0,
+        "pcpi_reference_fallback_rate": float(np.mean([
+            not row["reference_targeted_handover"] for row in pcpi_queries
+        ])) if pcpi_queries and is_reference_protocol else 0.0,
+        "pcpi_mean_reference_dominance_gap": float(np.mean([
+            row["reference_dominance_gap"] for row in pcpi_queries
+        ])) if pcpi_queries and is_reference_protocol else 0.0,
         "pcpi_mean_selected_discrepancy_variance": float(np.mean([
             row["selected_discrepancy_candidate_variance"] for row in pcpi_queries
         ])) if pcpi_queries else 0.0,
@@ -878,6 +1216,8 @@ def _aggregates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         "pcpi_mean_representative_safe_set_size",
         "pcpi_mean_selected_discrepancy_variance",
         "pcpi_decision_rule_valid_rate",
+        "pcpi_targeted_handover_rate", "pcpi_reference_fallback_rate",
+        "pcpi_mean_reference_dominance_gap",
         "score_realized_gain_spearman", "wall_time_seconds",
     )
     output: list[dict[str, Any]] = []
@@ -1126,6 +1466,51 @@ def _aggregate_context(
         "selection_used_heldout": False,
         "parent_lineage": list(protocol.parent_lineage),
         "claim_boundary": protocol.claim_boundary,
+    }
+
+
+def _manifest_method_contract(
+    config: dict[str, Any],
+    protocol: RealAcquisitionProtocol,
+) -> dict[str, Any]:
+    if protocol.reference_dominance_method is not None:
+        keys = (
+            "pcpi_class_target_partition", "pcpi_primary_utility",
+            "pcpi_information_bound_method",
+            "pcpi_response_quantization_probability_levels",
+            "pcpi_numerical_outward_tolerance", "pcpi_reference_policy",
+            "pcpi_reference_seed_method", "pcpi_decision_method",
+        )
+        return {
+            key: config[key] for key in keys
+        } | {
+            "likelihood_power_calibration_candidates": config[
+                "likelihood_power_candidates"
+            ]
+        }
+    keys = (
+        "eig_quadrature_min_evaluations", "eig_quadrature_max_evaluations",
+        "eig_quadrature_growth_factor", "eig_quadrature_error_safety_factor",
+        "eig_rank_certificate_method", "pcpi_class_target_partition",
+        "pcpi_uncertified_eig_action", "pcpi_joint_target",
+        "predictive_target_distribution",
+        "conditional_predictive_information_method", "representative_guard",
+        "representative_target_distribution", "representative_discrepancy",
+        "representative_kernel_bandwidth", "representative_safe_set_rule",
+        "representative_empty_safe_set_action", "pcpi_ambiguity_set",
+        "pcpi_robust_utility", "pcpi_least_favorable_tie_break",
+    )
+    return {key: config[key] for key in keys} | {
+        "pcpi_discrepancy_profile": config.get(
+            "pcpi_discrepancy_profile", "not-applied"
+        ),
+        "pcpi_discrepancy_scale": config.get(
+            "pcpi_discrepancy_scale", "not-applied"
+        ),
+        "pcpi_discrepancy_support_rule": config.get(
+            "pcpi_discrepancy_support_rule", "not-applied"
+        ),
+        "robust_likelihood_powers": config["likelihood_power_candidates"],
     }
 
 
@@ -1706,15 +2091,15 @@ def run(
             predictive_target_groups
         ) and all(len(values) == 1 for values in predictive_target_groups.values()),
         "predictive_target_distribution_uses_registered_action_domain": (
-            config["predictive_target_distribution"]
+            config.get("predictive_target_distribution")
             == "registered-action-domain-uniform"
         ),
-        "conditional_predictive_information_method": config[
-            "conditional_predictive_information_method"
-        ],
+        "conditional_predictive_information_method": config.get(
+            "conditional_predictive_information_method", "not-applied"
+        ),
         "representative_guard_matches_frozen_contract": (
-            config["representative_discrepancy"] == REPRESENTATIVE_MMD_METHOD
-            and config["representative_target_distribution"]
+            config.get("representative_discrepancy") == REPRESENTATIVE_MMD_METHOD
+            and config.get("representative_target_distribution")
             == "registered-action-domain-uniform"
         ),
         "representative_guard_applied_to_all_pcpi_queries": bool(
@@ -1730,14 +2115,14 @@ def run(
         "maximin_decisions_auditable": maximin_decisions_auditable,
         "maximin_ambiguity_set_matches_frozen_contract": (
             ambiguity_powers == (0.125, 0.25, 0.5, 1.0)
-            and config["pcpi_ambiguity_set"]
+            and config.get("pcpi_ambiguity_set")
             == "frozen-likelihood-power-candidates"
-            and config["pcpi_robust_utility"] == (
+            and config.get("pcpi_robust_utility") == (
                 "discrepancy-aware-maximin-joint-class-predictive-information"
                 if discrepancy_expected
                 else "maximin-joint-class-predictive-information"
             )
-            and config["pcpi_least_favorable_tie_break"]
+            and config.get("pcpi_least_favorable_tie_break")
             == "smallest-likelihood-power"
         ),
         "discrepancy_profile_matches_frozen_contract": (
@@ -1768,6 +2153,92 @@ def run(
         ],
         "basis_preconditioning_method": config["basis_preconditioning_method"],
     }
+    if protocol.reference_dominance_method is not None:
+        for key in (
+            "predictive_target_distribution_shared_across_policies",
+            "predictive_target_distribution_uses_registered_action_domain",
+            "conditional_predictive_information_method",
+            "representative_guard_matches_frozen_contract",
+            "representative_guard_applied_to_all_pcpi_queries",
+            "representative_guard_not_applied_to_baselines",
+            "representative_decisions_auditable",
+            "maximin_decisions_auditable",
+            "maximin_ambiguity_set_matches_frozen_contract",
+            "discrepancy_profile_matches_frozen_contract",
+            "discrepancy_values_auditable",
+            "discrepancy_not_applied_to_baselines",
+        ):
+            protocol_decisions.pop(key)
+        reference_decisions_auditable = bool(pcpi_query_rows) and all(
+            row["reference_dominance_applied"]
+            and row["reference_policy"] == config["pcpi_reference_policy"]
+            and row["reference_seed_method"]
+            == config["pcpi_reference_seed_method"]
+            and row["reference_decision_method"]
+            == config["pcpi_decision_method"]
+            and row["reference_information_bound_method"]
+            == config["pcpi_information_bound_method"]
+            and tuple(row["reference_quantization_probability_levels"])
+            == tuple(config["pcpi_response_quantization_probability_levels"])
+            and row["reference_numerical_outward_tolerance"]
+            == config["pcpi_numerical_outward_tolerance"]
+            and row["selected_class_eig_lower_bound"]
+            <= row["selected_class_eig"]
+            <= row["selected_class_eig_upper_bound"]
+            and (
+                (
+                    row["reference_targeted_handover"]
+                    and row["selected_pool_index"]
+                    == row["reference_leader_candidate_id"]
+                    and row["reference_dominance_gap"]
+                    > row["reference_decision_numerical_tolerance"]
+                )
+                or (
+                    not row["reference_targeted_handover"]
+                    and row["selected_pool_index"]
+                    == row["reference_sample_candidate_id"]
+                    and row["reference_dominance_gap"]
+                    <= row["reference_decision_numerical_tolerance"]
+                )
+            )
+            for row in pcpi_query_rows
+        )
+        protocol_decisions.update({
+            "reference_dominance_contract_matches_frozen_config": (
+                config["pcpi_primary_utility"]
+                == "initial-frozen-class-mutual-information"
+                and config["pcpi_information_bound_method"]
+                == ANALYTIC_CLASS_EIG_BOUNDS_METHOD
+                and config["pcpi_reference_policy"] == REFERENCE_POLICY
+                and config["pcpi_reference_seed_method"] == REFERENCE_SEED_METHOD
+                and config["pcpi_decision_method"] == REFERENCE_DOMINANCE_METHOD
+            ),
+            "reference_dominance_decisions_auditable": (
+                reference_decisions_auditable
+            ),
+            "reference_dominance_not_applied_to_baselines": bool(
+                baseline_query_rows
+            ) and all(
+                not row["reference_dominance_applied"]
+                for row in baseline_query_rows
+            ),
+            "initial_frozen_class_target_used_for_all_pcpi_queries": bool(
+                pcpi_query_rows
+            ) and all(
+                row["acquisition_target_partition_hash"]
+                == row["initial_frozen_class_partition_hash"]
+                for row in pcpi_query_rows
+            ),
+            "p3b_p3c_acquisition_modules_not_applied": bool(pcpi_query_rows)
+            and all(
+                not row["representative_guard_applied"]
+                and row["robust_model_count"] == 0
+                and row["discrepancy_method"] == "not-applied"
+                and row["selected_conditional_predictive_eig"] == 0.0
+                and row["selected_joint_class_predictive_score"] == 0.0
+                for row in pcpi_query_rows
+            ),
+        })
     protocol_gate = all(protocol_decisions.values())
     aggregates = _aggregates(run_rows) if run_rows else []
     paired = (
@@ -1826,61 +2297,7 @@ def run(
             "acquired_observations": config["acquisition_observation_budget"],
             "candidate_pool": config["candidate_pool_budget"],
             "validation_observations": config["validation_budget"],
-            "eig_quadrature_min_evaluations": config[
-                "eig_quadrature_min_evaluations"
-            ],
-            "eig_quadrature_max_evaluations": config[
-                "eig_quadrature_max_evaluations"
-            ],
-            "eig_quadrature_growth_factor": config[
-                "eig_quadrature_growth_factor"
-            ],
-            "eig_quadrature_error_safety_factor": config[
-                "eig_quadrature_error_safety_factor"
-            ],
-            "eig_rank_certificate_method": config["eig_rank_certificate_method"],
-            "pcpi_class_target_partition": config["pcpi_class_target_partition"],
-            "pcpi_uncertified_eig_action": config[
-                "pcpi_uncertified_eig_action"
-            ],
-            "pcpi_joint_target": config["pcpi_joint_target"],
-            "predictive_target_distribution": config[
-                "predictive_target_distribution"
-            ],
-            "conditional_predictive_information_method": config[
-                "conditional_predictive_information_method"
-            ],
-            "representative_guard": config["representative_guard"],
-            "representative_target_distribution": config[
-                "representative_target_distribution"
-            ],
-            "representative_discrepancy": config[
-                "representative_discrepancy"
-            ],
-            "representative_kernel_bandwidth": config[
-                "representative_kernel_bandwidth"
-            ],
-            "representative_safe_set_rule": config[
-                "representative_safe_set_rule"
-            ],
-            "representative_empty_safe_set_action": config[
-                "representative_empty_safe_set_action"
-            ],
-            "pcpi_ambiguity_set": config["pcpi_ambiguity_set"],
-            "pcpi_robust_utility": config["pcpi_robust_utility"],
-            "pcpi_least_favorable_tie_break": config[
-                "pcpi_least_favorable_tie_break"
-            ],
-            "pcpi_discrepancy_profile": config.get(
-                "pcpi_discrepancy_profile", "not-applied"
-            ),
-            "pcpi_discrepancy_scale": config.get(
-                "pcpi_discrepancy_scale", "not-applied"
-            ),
-            "pcpi_discrepancy_support_rule": config.get(
-                "pcpi_discrepancy_support_rule", "not-applied"
-            ),
-            "robust_likelihood_powers": config["likelihood_power_candidates"],
+            **_manifest_method_contract(config, protocol),
             "operational_class_resolution_method": config[
                 "operational_class_resolution_method"
             ],
@@ -1922,6 +2339,9 @@ def run(
             "pcpi_representative_selected_nonincrease_rate",
             "pcpi_mean_representative_safe_set_size",
             "pcpi_mean_selected_discrepancy_variance",
+            "pcpi_targeted_handover_rate",
+            "pcpi_reference_fallback_rate",
+            "pcpi_mean_reference_dominance_gap",
         ],
         "protocol_gate_passed": protocol_gate,
         "effectiveness_assessment": assessment,
