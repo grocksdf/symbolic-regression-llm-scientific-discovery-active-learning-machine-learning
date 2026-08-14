@@ -50,6 +50,7 @@ paper_locked_outputs/
 *.out
 *.synctex.gz
 texput.log
-# Ignore only the repository-level measured-data directory.  A recursive
-# ``data/`` rule also hides the tracked ``hypothesis_mvp.data`` Python package.
+# Ignore only local repository-level measured datasets; the
+# hypothesis_mvp/data Python package is canonical source.
 /data/
+!hypothesis_mvp/data/
