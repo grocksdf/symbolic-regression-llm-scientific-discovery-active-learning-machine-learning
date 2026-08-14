@@ -54,10 +54,14 @@ decision-semantics mismatch: when the calibrated generalized-posterior power
 $\eta<1$, ordinary class mutual information is not the expected entropy change
 of the implemented power-likelihood update. An exactly enumerable diagnostic
 repairs this loss/update alignment and adds a positive-gain floor, but CCPP
-remains negative with $\eta=1$ in every seed. We retain the real outcome as
-negative development evidence and treat posterior adequacy as a separate
-unresolved blocker. Real superiority, motif transfer, and held-out
-effectiveness claims remain blocked.
+remains negative with $\eta=1$ in every seed. A subsequent correctness-only
+diagnostic constructs a response-free discrepancy basis orthogonal to the
+union of candidate designs and couples its exact marginal likelihood to a
+prequential Bayes-factor e-process. This tests algebra and fail-closed decision
+semantics only: it has not accessed real data or validated an augmented
+posterior. We retain the real outcome as negative development evidence. Real
+posterior adequacy, superiority, motif transfer, and held-out effectiveness
+claims remain blocked.
 \end{abstract}
 
 \section{Introduction}
@@ -127,6 +131,16 @@ reference is an acquisition policy over the same visible pool, and the
 handover certificate concerns model-based information about the frozen
 scientific estimand. It is not a physical-safety or misspecification-robustness
 guarantee.
+
+\paragraph{Model discrepancy and anytime-valid evidence.}
+Orthogonal Gaussian-process discrepancy separates a flexible residual from
+the span of a calibrated mean model, addressing a standard identifiability
+failure in model calibration \cite{plumlee2018orthogonal}. Bayes factors are
+also classical test martingales, and e-processes provide anytime-valid
+evidence under optional continuation \cite{shafer2011test,ramdas2023gametheoretic}.
+We claim neither construction as new. Their role here is to make the
+discrepancy construction response-free and posterior ineligibility an explicit,
+fail-closed prerequisite for later acquisition experiments.
 
 \paragraph{Reusable symbolic structure.}
 Library learning and compositional program induction motivate reusable motifs
@@ -509,6 +523,65 @@ The proof is the same interval ordering and linearity argument as above. This
 correctness statement does not address posterior adequacy: all CCPP seeds use
 $\eta=1$, yet their P3D.2 structural effect is significantly negative.
 
+\subsection{Posterior-adequacy evidence contract}
+
+P3E.2 freezes a finite registered action domain before observing its responses.
+For candidate structure $s$, let $D_s$ be its design matrix on that domain and
+let $\mathcal U=\operatorname{span}([D_1,\ldots,D_S])$. From registered
+covariates only, construct an RBF covariance $K$ using response-free
+standardization and the median positive squared-distance bandwidth. With
+$P_{\mathcal U}$ the projector onto $\mathcal U$, define
+\[
+K_\perp=(I-P_{\mathcal U})K(I-P_{\mathcal U}),\qquad
+K_{\perp,r}=BB^\top,
+\qquad D_s^\top B=0\quad\text{for every }s,
+\]
+where $B$ contains the retained positive eigenspace after the registered
+relative-eigenvalue truncation. The exact finite diagnostic
+compares
+\[
+M_0:\ y=D_s\beta_s+\varepsilon,
+\qquad
+M_1:\ y=D_s\beta_s+B\gamma+\varepsilon,
+\qquad \varepsilon\sim\mathcal N(0,\sigma^2I),
+\]
+under proper conjugate Gaussian--inverse-Gamma priors and the same prior over
+structures. Orthogonalization prevents the registered residual basis from
+reassigning full-domain variation already spanned by any candidate structure.
+It does not prove that this basis or its prior is appropriate on real data.
+
+Let $m_j(y_{1:t})$ denote the exact structure-averaged marginal under $M_j$.
+The diagnostic records
+\[
+E_t=\frac{m_1(y_{1:t})}{m_0(y_{1:t})}
+=\prod_{i=1}^t
+\frac{m_1(y_i\mid y_{<i})}{m_0(y_i\mid y_{<i})},
+\qquad E_0=1.
+\]
+
+\begin{proposition}[Registered adequacy e-process]
+Conditional on a predictable registered covariate/action sequence, if $M_0$
+is the declared data-generating marginal and both marginals are proper, then
+$(E_t)$ is a nonnegative unit-initialized martingale. Consequently,
+$\Pr_{0}(\sup_t E_t\ge 1/\alpha)\le\alpha$.
+\end{proposition}
+
+\begin{proof}
+For every observed history with positive null density,
+$E_t/E_{t-1}=m_1(Y_t\mid Y_{<t})/m_0(Y_t\mid Y_{<t})$. Its conditional
+expectation under $M_0$ is the integral of the proper $M_1$ predictive density,
+which equals one. Nonnegativity and $E_0=1$ then give Ville's inequality.
+\end{proof}
+
+The frozen fixture uses $\alpha=0.01$. Crossing $E_t\ge100$ makes the nominal
+posterior ineligible for targeted acquisition and forces the registered
+reference-only mode. The exact linear null ends at log Bayes factor $-0.7134$
+without crossing; a registered in-model orthogonal residual ends at $4.9366$
+and first crosses at round 16. These are deterministic algebraic correctness
+cases, not simulated efficacy data. Non-crossing means only failure to reject
+$M_0$ against this one alternative; crossing does not validate $M_1$ for
+acquisition. No real response is read by P3E.2.
+
 Under shared Gaussian observation noise, a maximum-entropy argument gives
 \[
 I(Z;Y_a\mid H_t)\le
@@ -542,6 +615,10 @@ uses a labelled, exactly enumerable diagnostic fixture to test proposal-ratio
 correction, detailed balance, invariance, and particle convergence. That
 fixture is correctness evidence only and is excluded from real-data efficacy
 claims.
+P3E.2 separately checks a response-free union-orthogonal discrepancy basis,
+exact spike/slab marginal likelihoods, predictive-ratio telescoping, and the
+registered e-process decision on two deterministic finite cases. This is not a
+real posterior-adequacy experiment.
 
 \paragraph{RQ3: acquisition effectiveness.}
 All policies share one posterior engine. Compare realized entropy reduction,
@@ -640,9 +717,12 @@ completed a protocol-valid real run, but
 \texttt{REAL\_ADVANTAGE\_NOT\_DEMONSTRATED}. The held-out was
 never opened. P3D.2 reference dominance completed a protocol-valid 96/96 real
 run, but \texttt{formal\_efficacy\_evidence=false}. P3E.1 passes an isolated
-finite loss/update-alignment Gate and has no real-data surface. Posterior
-adequacy remains unresolved, so another real rerun is blocked. No current
-evidence supports matched-budget real
+finite loss/update-alignment Gate and has no real-data surface. P3E.2 passes an
+11-decision orthogonal-discrepancy/e-process correctness Gate, also with no
+real-data surface. Its non-rejection branch is not an adequacy certificate,
+and the augmented posterior is not authorized for acquisition. Real posterior
+adequacy therefore remains unresolved, so another acquisition rerun is
+blocked. No current evidence supports matched-budget real
 superiority, motif invariance, VED discovery, unknown-law recovery, or held-out
 confirmation.
 
@@ -657,9 +737,13 @@ validity does not imply acquisition efficacy. The subsequent controlled Gates
 validate numerical reference dominance and expose that ordinary class-EIG is
 not automatically loss-aligned with a power-likelihood update. P3E.1 corrects
 this exact semantic defect and requires positive model-relative expected
-entropy change, but it does not repair the posterior. Posterior adequacy,
-another measured-pool run, motif transfer, and held-out confirmation remain
-downstream and independently blocked.
+entropy change, but it does not repair the posterior. P3E.2 then validates,
+only on deterministic finite fixtures, the algebra and false-alarm semantics of
+a union-orthogonal discrepancy alternative. The next admissible evidence is a
+frozen initial-development real adequacy audit, not an acquisition comparison.
+Augmented-posterior calibration, another measured-pool acquisition run, motif
+transfer, and held-out confirmation remain downstream and independently
+blocked.
 
 \bibliographystyle{plain}
 \bibliography{references}

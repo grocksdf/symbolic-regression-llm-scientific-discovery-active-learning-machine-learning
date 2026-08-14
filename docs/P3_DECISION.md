@@ -1,11 +1,10 @@
 # P3 decision — representative-safe maximin joint acquisition
 
-Status: **P3B.10, P3C.1, and P3D.2 real efficacy failed. P3D.2 completed its
-held-out-closed 96/96 real run and returned
-`REAL_ADVANTAGE_NOT_DEMONSTRATED`. P3E.1 repairs an exact generalized-posterior
-decision-semantics mismatch on correctness fixtures only. Mainline remains
-NO-GO; another real rerun, P4/P5, held-out confirmation, and superiority claims
-remain blocked.**
+Status: **P3B.10, P3C.1, and P3D.2 real efficacy failed. P3E.1 repairs an exact
+generalized-update decision mismatch, and P3E.2 adds a union-orthogonal
+posterior-adequacy e-process. Both pass correctness fixtures only. Real
+posterior adequacy remains untested; another acquisition run, P4/P5, held-out
+confirmation, and superiority claims remain blocked.**
 
 ## Evidence retained
 
@@ -183,3 +182,26 @@ This does not resolve CCPP, where every seed used `eta=1` and negative transfer
 still excludes zero. P3E.1 is thus a necessary semantic correction, not a
 posterior-adequacy repair and not authorization for another real experiment.
 See `docs/pcpi_p3e1_root_cause_and_update_coherence.md`.
+
+## P3E.2 posterior-adequacy correctness repair
+
+P3E.2 addresses the remaining CCPP `eta=1` blocker without modifying the real
+runner. It constructs a response-free RBF discrepancy basis orthogonal to the
+union of every candidate structure design on a frozen finite domain. Exact
+conjugate marginal likelihoods compare the nominal spike with this structured
+residual slab. Their prequential Bayes factor is a unit-initialized test
+martingale under the declared nominal marginal; crossing the frozen
+`1/alpha=100` boundary makes nominal targeted acquisition ineligible and
+forces the registered reference-only mode.
+
+The deterministic fixture passes 11/11 decisions. Its exact null has log Bayes
+factor `-0.713366` and remains eligible; the registered structured residual has
+log Bayes factor `4.936581` and crosses at round 16. Orthogonality preserves
+the structural coefficient posterior means exactly to numerical tolerance.
+
+This does not show that CCPP or Gas passes or fails the adequacy Gate.
+Non-rejection would not prove adequacy, and rejection would not by itself
+validate the discrepancy-augmented posterior for acquisition. A separately
+frozen, initial-development-only real adequacy diagnostic is the next possible
+evidence step; another acquisition-efficacy run remains blocked. See
+`docs/pcpi_p3e2_posterior_adequacy_repair.md`.

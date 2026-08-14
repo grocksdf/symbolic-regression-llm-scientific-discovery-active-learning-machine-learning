@@ -110,7 +110,10 @@ The defensible contribution at this stage is narrower: an auditable
 counterexample and a loss/update-alignment Gate for the exact inference and
 decision pipeline.
 
-Before any real rerun, a separate task-independent posterior-adequacy repair
-must be stated and pass its own correctness/calibration Gate. In particular,
-the CCPP `eta=1` negative transfer cannot be fixed by P3E.1. P4/P5, held-out,
-motif, VED, intervention, and superiority claims remain blocked.
+P3E.2 now states one task-independent generative repair: a response-free RBF
+discrepancy basis orthogonal to the union of all candidate designs, paired with
+an exact spike/null Bayes-factor e-process. Its finite correctness Gate passes,
+but it has not accessed real data, calibrated an augmented real posterior, or
+authorized acquisition. Thus it closes only the algebraic part of this blocker.
+The CCPP `eta=1` negative transfer remains unexplained on real data. P4/P5,
+held-out, motif, VED, intervention, and superiority claims remain blocked.

@@ -1,6 +1,6 @@
 # Hypothesis MVP — PCPI
 
-Current stage: **P3E.1 correctness passed; posterior adequacy and real efficacy
+Current stage: **P3E.2 correctness passed; real posterior adequacy and efficacy
 remain NO-GO**. P3D.2 completed 96/96 protocol-valid heldout-closed real runs
 but returned `REAL_ADVANTAGE_NOT_DEMONSTRATED`. Its v2 archive has a valid
 97-event EvidenceRegistry and verified official-data, split, source, config,
@@ -15,13 +15,23 @@ isolated exact finite fixture and adds a positive-gain floor to reference
 dominance. It does not repair the CCPP `eta=1` negative transfer and does not
 authorize another real run.
 
+P3E.2 addresses the independent CCPP `eta=1` blocker at the correctness level.
+It builds a response-free discrepancy basis orthogonal to the union of all
+candidate structure designs and compares the nominal/discrepancy exact
+marginals with a prequential Bayes-factor e-process. Its 11/11 finite Gate
+passes, but it has not accessed real data and does not establish real posterior
+adequacy. Another acquisition experiment is still prohibited.
+
 Source synchronization is resolved: upstream commit `81f7cde` restored all six
 manifest-listed `hypothesis_mvp.data` files with exact historical SHA-256 and
 byte counts. The P3D.2 implementation commit `cd05e1a` passes the expanded
 `199`-test suite. Source completeness and real-runtime integration blockers are
 closed. The P3D.2 result audit and P3E.1 root-cause matrix are in
 `docs/pcpi_p3d2_result_audit_20260814.md` and
-`docs/pcpi_p3e1_root_cause_and_update_coherence.md`.
+`docs/pcpi_p3e1_root_cause_and_update_coherence.md`. The subsequent
+posterior-adequacy contract is in
+`docs/pcpi_p3e2_posterior_adequacy_repair.md`.
+The current P3E.2 source tree passes all 234 collected tests.
 
 PCPI treats symbolic scientific discovery as sequential Bayesian discrimination
 among operational predictive-equivalence classes. The target is the joint
@@ -38,8 +48,9 @@ bridge, and reconstructs coefficient/noise particles from the exact final
 conditional posterior.
 
 Historical generated-observation efficacy runs remain revoked. Controlled
-fixtures may enter the separately labelled correctness evidence namespace for
-P1/P2A.1/P2B/P3A.2 only. They may never enter the real-data efficacy namespace or
+fixtures may enter only a separately labelled, stage-registered correctness
+evidence namespace; the current list includes P1, P2A.1, P2B, P3A.2, P3D.1,
+P3E.1, and P3E.2. They may never enter the real-data efficacy namespace or
 support a scientific-discovery advantage, new-law, or real-measurement claim.
 The P2A.1/P2B/P3A.2 numerical fixture is isolated under
 `pcpi/reference/inference_fixture.py` and is never imported by real-data
@@ -570,6 +581,30 @@ Set-Location $project
 
 This command reads no real dataset and produces no efficacy evidence.
 
+## P3E.2 posterior-adequacy diagnostic
+
+P3E.2 is also correctness-only. Its exact-null fixture must remain below the
+registered e-value boundary, while a union-orthogonal structured residual must
+cross that boundary and force reference-only mode. The diagnostic has no data
+root, validation, policy, or held-out option.
+
+```powershell
+$project = "D:\01\666\hypothesis_mvp"
+$python = "D:\01\666\.venv_hypothesis_canonical\Scripts\python.exe"
+$output = "D:\01\666\hypothesis_mvp\outputs\p3e_2_posterior_adequacy_correctness"
+
+Set-Location $project
+& $python -B scripts/run_pcpi_p3e2_posterior_adequacy_diagnostic.py `
+    --output-dir $output `
+    --config configs/p3e_2_posterior_adequacy_diagnostic.json `
+    --phase P3E.2 `
+    --heldout-state not-applicable
+```
+
+Passing this command does not authorize CCPP/Gas acquisition. The next
+possible real work is a separately frozen initial-development adequacy audit,
+not another efficacy run.
+
 ## Current claim boundary
 
 Supported when the frozen P2A.1 Gate passes:
@@ -617,5 +652,6 @@ See `docs/pcpi_p3d1_result_audit_20260814.md` for the frozen identity.
 P3D.2 adds the production real-run surface at implementation commit `cd05e1a`.
 Its returned v2 measured-pool result is protocol-valid negative evidence, not
 superiority evidence. P3E.1 supports only the update-coherence correctness
-statement above. Posterior adequacy, another real rerun, and all downstream
-claims remain independently blocked.
+statement above. P3E.2 supports only orthogonal-discrepancy and adequacy
+e-process correctness. Real posterior adequacy, another acquisition rerun, and
+all downstream claims remain independently blocked.

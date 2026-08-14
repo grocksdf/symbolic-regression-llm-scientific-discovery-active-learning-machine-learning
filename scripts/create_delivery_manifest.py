@@ -128,6 +128,7 @@ def run(args: argparse.Namespace) -> int:
             "pcpi-p3d1-reference-dominance",
             "pcpi-p3d2-reference-dominance-real",
             "pcpi-p3e1-update-coherence",
+            "pcpi-p3e2-posterior-adequacy",
             "hypothesis-discover",
             "hypothesis-llm-preflight",
         ],
@@ -207,6 +208,10 @@ def run(args: argparse.Namespace) -> int:
             "for eta below one, P3D.2 ordinary class mutual information is not the expected entropy reduction of the implemented generalized update",
             "P3E.1 update coherence is validated only on an exact finite correctness fixture",
             "P3E.1 does not repair the eta-one CCPP posterior-adequacy failure or authorize a real rerun",
+            "P3E.2 orthogonal-discrepancy evidence is validated only on an exact finite correctness fixture",
+            "P3E.2 null non-rejection does not prove posterior adequacy",
+            "P3E.2 has not accessed real data or selected a real discrepancy prior",
+            "P3E.2 does not authorize the discrepancy-augmented posterior for acquisition",
             "P3B.6 uses one preconditioned R-log SafeBayes posterior for every policy",
             "P3B.6 calibration and basis transforms use initial development data only",
             "P3B.6 epistemic fallback is a posterior surrogate and is not class EIG",
@@ -237,6 +242,8 @@ def run(args: argparse.Namespace) -> int:
             "P3D.1 diagnostics support reference-dominance decision correctness only",
             "P3D.2 supports a protocol-valid negative real-development conclusion only",
             "P3E.1 supports generalized-update loss-alignment correctness only",
+            "P3E.2 supports union-orthogonal discrepancy and adequacy e-process correctness only",
+            "real posterior adequacy and discrepancy-augmented predictive calibration remain untested",
             "no motif superiority held-out or VED claim",
         ],
         "files": rows,
@@ -252,9 +259,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--stage", default="P3E.1")
+    parser.add_argument("--stage", default="P3E.2")
     parser.add_argument(
-        "--task", default="update_coherent_reference_dominance_correctness"
+        "--task", default="orthogonal_discrepancy_posterior_adequacy_correctness"
     )
     parser.add_argument("--tests-passed", type=int, required=True)
     parser.add_argument("--tests-failed", type=int, default=0)

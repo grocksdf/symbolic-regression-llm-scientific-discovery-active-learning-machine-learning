@@ -1,10 +1,10 @@
 {
   "schema": "pcpi-delivery-manifest-v1",
   "artifact_type": "canonical_source",
-  "stage": "P3E.1",
-  "task": "update_coherent_reference_dominance_correctness",
-  "source_tree_sha256": "0f604fd59b3e926fcca4e8f9eafca6fdac37211f17c530d7467e7b2cf5fe2738",
-  "production_code_hash": "902b91249cb1e75e3013ebb45c8f1967b2041d54d224ad8d49db59af3f6ad902",
+  "stage": "P3E.2",
+  "task": "orthogonal_discrepancy_posterior_adequacy_correctness",
+  "source_tree_sha256": "7b1c6a673b5c305d3ebde49e2eaa793aae155014ccc01b92638ca639602b5283",
+  "production_code_hash": "2b90dad35e0d7ea0a04c53daefdfd1f8ff84b3dc563570f82f8cf8e9ef51483e",
   "python_version": "3.11",
   "validation_runtime": {
     "python_version": "3.12.13",
@@ -25,11 +25,12 @@
     "pcpi-p3d1-reference-dominance",
     "pcpi-p3d2-reference-dominance-real",
     "pcpi-p3e1-update-coherence",
+    "pcpi-p3e2-posterior-adequacy",
     "hypothesis-discover",
     "hypothesis-llm-preflight"
   ],
   "tests": {
-    "passed": 215,
+    "passed": 234,
     "failed": 0,
     "skipped": 0,
     "collection_errors": 0,
@@ -107,6 +108,10 @@
     "for eta below one, P3D.2 ordinary class mutual information is not the expected entropy reduction of the implemented generalized update",
     "P3E.1 update coherence is validated only on an exact finite correctness fixture",
     "P3E.1 does not repair the eta-one CCPP posterior-adequacy failure or authorize a real rerun",
+    "P3E.2 orthogonal-discrepancy evidence is validated only on an exact finite correctness fixture",
+    "P3E.2 null non-rejection does not prove posterior adequacy",
+    "P3E.2 has not accessed real data or selected a real discrepancy prior",
+    "P3E.2 does not authorize the discrepancy-augmented posterior for acquisition",
     "P3B.6 uses one preconditioned R-log SafeBayes posterior for every policy",
     "P3B.6 calibration and basis transforms use initial development data only",
     "P3B.6 epistemic fallback is a posterior surrogate and is not class EIG",
@@ -137,6 +142,8 @@
     "P3D.1 diagnostics support reference-dominance decision correctness only",
     "P3D.2 supports a protocol-valid negative real-development conclusion only",
     "P3E.1 supports generalized-update loss-alignment correctness only",
+    "P3E.2 supports union-orthogonal discrepancy and adequacy e-process correctness only",
+    "real posterior adequacy and discrepancy-augmented predictive calibration remain untested",
     "no motif superiority held-out or VED claim"
   ],
   "files": [
@@ -157,8 +164,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "7101151eac3bb0a6da73c34022c7c9c81754b0f1b81a0b6472701d7bba46a196",
-      "size_bytes": 28452
+      "sha256": "dc37a3f3c04745c2212a1e5c90fc5d66bce1d7cb6cc97700ef985618b999d787",
+      "size_bytes": 30154
     },
     {
       "path": "configs/p2a_1_correctness_diagnostic.json",
@@ -236,6 +243,11 @@
       "size_bytes": 302
     },
     {
+      "path": "configs/p3e_2_posterior_adequacy_diagnostic.json",
+      "sha256": "18767af75669f63ed67670568a30e7c19d5acbc9d72d82b5c9625dedc4f06bf1",
+      "size_bytes": 442
+    },
+    {
       "path": "contracts/rd0_1_airfoil_freeze.json",
       "sha256": "3a3a468f5717a8b5b77d8ed041a045c682c30b6245b87b1115441eab8572d943",
       "size_bytes": 2446
@@ -277,8 +289,8 @@
     },
     {
       "path": "docs/P3_DECISION.md",
-      "sha256": "5c8fc3457d04f57dce44a31584c27cd4cda7bbebe44c9df65546a0691d50de24",
-      "size_bytes": 9772
+      "sha256": "8e8fe00b4933a688b5ea88a7458738afd786e87fe2f6607d4624de4b5252a548",
+      "size_bytes": 11098
     },
     {
       "path": "docs/hd1_1_nist_asd_hypothesis_discovery_contract.json",
@@ -287,8 +299,8 @@
     },
     {
       "path": "docs/pcpi_claim_code_evidence_matrix.csv",
-      "sha256": "f2c2a32b68c97acb9484b0a4e5d00a21e69b54665a5af123749707238870aa1a",
-      "size_bytes": 4830
+      "sha256": "8b4b31a54d66f81e81ffe6362c712c7b926d556120dab72691aed66da0e923ea",
+      "size_bytes": 5588
     },
     {
       "path": "docs/pcpi_data_leakage_audit.md",
@@ -402,8 +414,13 @@
     },
     {
       "path": "docs/pcpi_p3e1_root_cause_and_update_coherence.md",
-      "sha256": "6bfd13d7c80a5d6b47f45ae9126a9ead5b216c622456893da99121b1ac5b353e",
-      "size_bytes": 5739
+      "sha256": "3e72c883beaded219d64263d3852302abfa65eb039e5e9de245ae93bb309e6b5",
+      "size_bytes": 5988
+    },
+    {
+      "path": "docs/pcpi_p3e2_posterior_adequacy_repair.md",
+      "sha256": "963a3618dc349fa4c888726da7a8a5be9dc11f2777ba3b93b929e8cba1b5d558",
+      "size_bytes": 5600
     },
     {
       "path": "docs/pcpi_paper_completion_assessment.md",
@@ -641,6 +658,11 @@
       "size_bytes": 3654
     },
     {
+      "path": "hypothesis_mvp/pcpi/reference/orthogonal_discrepancy.py",
+      "sha256": "b0bc28b9502f38b0d74e277fcbaece016f2011f5a9944ff19f14a6e0faa9b2f4",
+      "size_bytes": 18242
+    },
+    {
       "path": "hypothesis_mvp/pcpi/reference/posterior.py",
       "sha256": "88deca766377e938bbb136bea7e1d123be28311d8c84251297c0ace56205d818",
       "size_bytes": 17331
@@ -752,18 +774,18 @@
     },
     {
       "path": "paper/pcpi_aistats_main.tex",
-      "sha256": "6511e0edee44cf16fd843239aeac19dcfb9daa534f2a1cc84632f060f9c9c878",
-      "size_bytes": 35383
+      "sha256": "981e2e60455c6e81c011e8cd97755c842e38a22d3f849597f34b4e5cf27aebd9",
+      "size_bytes": 39770
     },
     {
       "path": "paper/references.bib",
-      "sha256": "70743cae90ec849718cc9c3ab3c53a03ee3b5bc53373dd9ce91952667a7fc5ec",
-      "size_bytes": 6556
+      "sha256": "6473ab7a0f6f76f5fb3cb5bebd54f6578316eecc335846c1d099457e7b93b240",
+      "size_bytes": 7432
     },
     {
       "path": "pyproject.toml",
-      "sha256": "0ddc7dff395e517a84574bc9b35cbbb7666e49e72916ea0ebeac3d5dd0eafacd",
-      "size_bytes": 1954
+      "sha256": "9a0bf957da295a3cb91f83d3bd451ae7cee54f623e84e41b06f0d5d9dbcc84d8",
+      "size_bytes": 2044
     },
     {
       "path": "pytest.ini",
@@ -812,8 +834,8 @@
     },
     {
       "path": "scripts/create_delivery_manifest.py",
-      "sha256": "4493143ccbb6d910c6e36552c726d0a3ba0811685833aa7c7a94a5b9a5c99f89",
-      "size_bytes": 12557
+      "sha256": "1d67f31ae099a5570e71767c0d2329917d5dba8a4640d24f764efae11831d37a",
+      "size_bytes": 13171
     },
     {
       "path": "scripts/package_source.ps1",
@@ -934,6 +956,11 @@
       "path": "scripts/run_pcpi_p3e1_update_coherence_diagnostic.py",
       "sha256": "96501a14cde3b889ec539dd2fe9034e6fb57ffdc4506fa275996ccd9912b6f2c",
       "size_bytes": 8212
+    },
+    {
+      "path": "scripts/run_pcpi_p3e2_posterior_adequacy_diagnostic.py",
+      "sha256": "9d968edf3200a513dd3be08b9638ce7cc1e0184bc94146353a81ac04c1f5fa5a",
+      "size_bytes": 11689
     },
     {
       "path": "scripts/run_rd1_1_real_development.py",
@@ -1079,6 +1106,11 @@
       "path": "tests/test_pcpi_p3e1_update_coherence.py",
       "sha256": "2664c9641762e3da32feb628893ec039ec37f6c84974488f533ca873af4a7ba8",
       "size_bytes": 7305
+    },
+    {
+      "path": "tests/test_pcpi_p3e2_posterior_adequacy.py",
+      "sha256": "821c8a9a30fe132934825076f198667405a94889966f8bb175d2a2e967108fa0",
+      "size_bytes": 8880
     },
     {
       "path": "tests/test_polynomial_lasso.py",

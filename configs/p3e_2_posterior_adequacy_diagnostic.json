@@ -1,0 +1,11 @@
+{
+  "schema": "pcpi-p3e2-posterior-adequacy-diagnostic-config-v1",
+  "stage": "P3E.2",
+  "fixture_role": "inference_correctness_diagnostic_fixture",
+  "discrepancy_method": "response-free-union-orthogonal-rbf-discrepancy-v1",
+  "adequacy_method": "prequential-orthogonal-discrepancy-bayes-factor-e-process-v1",
+  "false_alarm_level": 0.01,
+  "eigenvalue_tolerance": 1e-10,
+  "identity_tolerance": 1e-10,
+  "heldout_state": "not-applicable"
+}
