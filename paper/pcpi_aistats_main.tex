@@ -53,8 +53,9 @@ Turbine interval crossed zero. A discrepancy profile activated on Gas but did
 not repair the family-level result. We retain these outcomes as negative
 development evidence and use them to motivate a reference-dominance decision
 rule that acts target-seekingly only when its improvement over a registered
-reference policy is numerically certified. Its present evidence is restricted
-to exact-reference correctness; real superiority, motif transfer, and
+reference policy is supported by analytic information-inequality bounds. The
+real-only implementation is frozen but has not yet been executed; its present
+evidence remains correctness-only. Real superiority, motif transfer, and
 held-out effectiveness claims remain blocked.
 \end{abstract}
 
@@ -369,10 +370,24 @@ $q_t$ over the same visible pool. Given containing utility intervals
 $[L_t(a),R_t(a)]$, it selects the action with largest lower bound only when
 $L_t(\widehat a) > \sum_a q_t(a)R_t(a)+\tau_{\rm num}$; otherwise it samples
 from $q_t$. Thus an unresolved ranking abstains to the registered policy rather
-than switching to epistemic variance. P3D.1 is implemented only in an exactly
-enumerable finite-outcome diagnostic and is not imported by the real runtime.
-Its clean-source controlled Gate passes all 14 frozen correctness decisions.
-\evidencegate{P3D.1 correctness fixture passed; real integration absent}
+than switching to epistemic variance. Its exactly enumerable finite-outcome
+diagnostic passes all 14 frozen correctness decisions.
+
+P3D.2 constructs production intervals without the earlier fine/coarse
+quadrature envelope. A fixed response quantizer gives the data-processing
+lower bound $I(C_0;Q_a(Y_a)\mid H_t)$. Gaussian maximum entropy and concavity
+of within-class mixture entropy give the upper bound
+\[
+\min\!\left\{H(C_0\mid H_t),
+\tfrac12\log(2\pi e\operatorname{Var}(Y_a))
+-\sum_s p_t(s)h(t_{\nu_s,\sigma_s(a)})\right\}.
+\]
+The implementation expands these values by a frozen numerical tolerance and
+agrees with independent adaptive quadrature on continuous correctness
+fixtures. Student-$t$ CDF and entropy evaluations are not formal interval
+arithmetic. A frozen heldout-closed real runner now exists, but no P3D.2
+measured-pool result is reported.
+\evidencegate{P3D.1 and P3D.2 correctness passed; P3D.2 real result pending}
 
 \section{Theory and Scope}
 
@@ -435,10 +450,13 @@ certify strict reference dominance. P3D.1 therefore executes $q_t$ without a
 fitted entropy threshold.
 \end{proposition}
 
-Both statements are conditional on the frozen posterior and valid simultaneous
-intervals. The current Gauss--Jacobi fine/coarse discrepancy is an asymptotic
-diagnostic, not a rigorous bound; consequently these propositions do not yet
-authorize a real-run no-harm claim.
+Both statements are conditional on the frozen posterior and containing
+intervals. P3D.2's information inequalities hold in exact arithmetic, but its
+Student-$t$ special functions use ordinary floating-point evaluation with a
+registered outward tolerance rather than verified interval arithmetic.
+Moreover, posterior misspecification can invalidate model-based utility as a
+proxy for realized scientific gain. These propositions therefore do not
+authorize a real-world no-harm claim.
 
 Under shared Gaussian observation noise, a maximum-entropy argument gives
 \[
@@ -563,8 +581,9 @@ development evidence. P3C.1 passed its controlled implementation Gate and
 completed a protocol-valid real run, but
 \texttt{formal\_efficacy\_evidence=false} and the registered status is
 \texttt{REAL\_ADVANTAGE\_NOT\_DEMONSTRATED}. The held-out was
-never opened. The reference-dominance repair passes its controlled
-correctness diagnostic but remains absent from the real runtime. No current
+never opened. The reference-dominance repair and its production inequality
+bounds pass controlled correctness checks, and a frozen real-only runtime is
+implemented. No P3D.2 measured-pool result is currently available. No current
 evidence supports matched-budget real
 superiority, motif invariance, VED discovery, unknown-law recovery, or held-out
 confirmation.
@@ -580,10 +599,10 @@ does not imply acquisition efficacy. The subsequent controlled Gate validates
 the decision contract: select a target-seeking action only when its
 interval lower bound dominates the registered reference policy's interval
 upper bound, and otherwise execute that reference policy. This establishes a
-model-relative correctness property, not a real-world no-harm guarantee. A
-production interval construction, full regression on the complete canonical
-source, another measured-pool run, motif transfer, and held-out confirmation
-remain downstream and independently blocked.
+model-relative correctness property, not a real-world no-harm guarantee. The
+production inequality interval construction and complete-source regression are
+implemented; another measured-pool run, result audit, motif transfer, and
+held-out confirmation remain downstream and independently blocked.
 
 \bibliographystyle{plain}
 \bibliography{references}

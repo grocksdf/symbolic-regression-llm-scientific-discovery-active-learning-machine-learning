@@ -1,6 +1,7 @@
 # P3D.1 posterior/decision root-cause matrix and repair contract
 
-Status: **controlled correctness Gate passed; no real-data run authorized**
+Status: **P3D.1 controlled Gate passed; P3D.2 real-only protocol implemented,
+not yet executed**
 Stage: `P3D.1`  
 Method: **certified reference-dominance acquisition (CRDA)**  
 Primary estimand: the initial-frozen operational predictive class `C0`
@@ -29,7 +30,7 @@ would require new development evidence.
 | Estimand | Frozen-class information may have little action-dependent headroom in some posterior states. Since `I(C0; Ya | Ht) <= H(C0 | Ht)`, a collapsed or nearly flat target cannot support reliable directed acquisition. | Established as a general capacity bound; low capacity occurred in earlier CCPP stages, but its exact P3C.1 round-wise role is not identified by the aggregate audit. | Optimizing numerical differences near zero can select an extreme action without meaningful primary-target benefit. | No fitted entropy threshold. A directed action must instead certify improvement over the registered reference policy; flat or zero-capacity utilities automatically return to the reference.
 | Decision target | P3B.8--P3C.1 rank a joint class--predictive score, while the primary efficacy endpoint is frozen-class gain. | Structural fact in code and contract. | A candidate can win through the predictive term without improving the primary class target. | P3D.1 uses class-EIG alone for the primary handover Gate. Predictive risk remains a separately reported endpoint, not an additive term chosen without a registered loss.
 | Decision fallback | An uncertified joint-EIG ranking switches to posterior epistemic variance. | Structural fact in code. | Numerical uncertainty changes the scientific objective instead of abstaining from an unsupported decision. | An uncertified decision executes the registered reference policy. It is never relabelled EIG.
-| Numerical approximation | Existing fine/coarse Gauss--Jacobi envelopes are asymptotic diagnostics rather than rigorous finite-error bounds. | Established limitation. | Their interval-dominance label cannot by itself support a mathematical no-harm theorem on real runs. | P3D.1 proves the rule conditional on valid intervals and tests it on an exactly enumerable discrete fixture. A later real Gate remains blocked until the production interval construction is independently validated for the stated guarantee.
+| Numerical approximation | Existing fine/coarse Gauss--Jacobi envelopes are asymptotic diagnostics rather than rigorous finite-error bounds. | Established limitation. | Their interval-dominance label cannot by itself support a mathematical no-harm theorem on real runs. | P3D.1 proves the rule conditional on valid intervals. P3D.2 replaces the fine/coarse envelope with analytic information-inequality bounds and checks them against independent adaptive quadrature on continuous correctness fixtures. Numerical Student-t special functions remain ordinary floating-point evaluations, not formal interval arithmetic.
 | Predictive utility | The class-conditional predictive term is a Gaussian-moment surrogate for finite Student-t mixtures. | Structural fact; exact only under the matched Gaussian case. | Joint-score rankings can differ from the intended `I(C0,Y*;Ya)` ranking. | The surrogate is excluded from the P3D.1 primary decision. Exact joint information remains a separate future estimator problem.
 | Posterior model | A finite polynomial bank with one generalized-likelihood power and scalar noise/discrepancy mechanisms may omit regimes, covariates, heteroskedasticity, correlated bias, or cross-target structure. | Plausible and consistent with the failure, but the omitted mechanism is not identified by P3C.1. | Model-based EIG can be confidently wrong under the real sampling law. | P3D.1 makes no posterior repair claim and no real-world safety claim. A future generative repair must be independently specified and exact-reference tested rather than tuned from CCPP/Gas outcomes.
 | Robustness set | P3B.10 varies only four likelihood powers; P3C.1 adds independent scalar variance. | Structural fact and documented limitation. | The lower envelope does not cover general likelihood or structural misspecification. | P3D.1 does not call this ambiguity set a universal robustness set. Its correctness fixture is posterior-family agnostic.
@@ -144,10 +145,55 @@ The clean-Git Gate passed all 14/14 frozen decisions at source commit
 `docs/pcpi_p3d1_result_audit_20260814.md`. Passing this Gate authorizes only the
 statement that the CRDA handover is
 implemented consistently with Propositions 1--2 on an exact fixture. It does
-not authorize integration into the real acquisition loop or a new CCPP/Gas
-run.
+did not by itself authorize integration into the real acquisition loop or a
+CCPP/Gas efficacy claim. P3D.2 separately freezes that integration and still
+requires a new measured-pool run before any empirical conclusion.
 
-## 5. Relation to prior work and novelty boundary
+## 5. P3D.2 production interval construction
+
+For each action, P3D.2 registers probability levels
+`(0.05, 0.15, 0.30, 0.50, 0.70, 0.85, 0.95)`. They define deterministic
+thresholds from the action's response-free predictive mixture mean and
+standard deviation. If `Q_a(Y_a)` denotes the resulting bin, data processing
+gives the lower bound
+
+\[
+L_t(a)=I(C_0;Q_a(Y_a)\mid H_t)\le I(C_0;Y_a\mid H_t).
+\]
+
+Let `S` index the finite structure bank and let each conditional predictive
+component be Student-t with scale `sigma_s(a)` and degrees of freedom `nu_s`.
+Maximum entropy at fixed variance and concavity of differential entropy give
+
+\[
+h(Y_a)\le \tfrac12\log(2\pi e\,\operatorname{Var}(Y_a)),
+\qquad
+h(Y_a\mid C_0)\ge \sum_s p_t(s)h(t_{\nu_s,\sigma_s(a)}).
+\]
+
+Therefore
+
+\[
+R_t(a)=\min\!\left\{H(C_0\mid H_t),
+\tfrac12\log(2\pi e\,\operatorname{Var}(Y_a))
+-\sum_s p_t(s)h(t_{\nu_s,\sigma_s(a)})\right\}
+\]
+
+is an upper bound in exact arithmetic. The implementation evaluates Student-t
+CDFs and entropy terms in floating point and expands outward by the frozen
+`1e-10` tolerance. Correctness tests verify `L <= exact class-EIG <= R` against
+independent adaptive quadrature, positive-affine response invariance, one-class
+zero capacity, stable candidate permutation behavior, and malformed-input
+failure. This is strong numerical validation, not a proof that SciPy special
+functions are correctly rounded.
+
+P3D.2 registers the uniform distribution over currently visible candidate
+identifiers as `q_t`. It applies no P3B/P3C EPIG, MMD, likelihood-power maximin,
+discrepancy, or epistemic-fallback term. Implementation commit `cd05e1a` passed
+the expanded 199-test regression and the production static audit. No real P3D.2
+result is currently attached.
+
+## 6. Relation to prior work and novelty boundary
 
 Robust EIG based on ambiguity sets studies sensitivity of information utility
 to prior or model perturbations, including Go and Isaac's
@@ -169,5 +215,6 @@ policy.
 The AISTATS contribution is therefore not “a safe wrapper.” It is the combined
 statistical contract: operational-class Bayes risk, target-correct posterior
 approximation, and reference-relative certified handover with explicit
-abstention semantics. Any real-data claim still requires a later frozen,
-matched-budget experiment.
+abstention semantics. Any real-data claim still requires the frozen P3D.2
+matched-budget experiment to be executed on the official local measurements
+and audited without changing the method contract.

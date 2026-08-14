@@ -128,18 +128,35 @@ rule samples from the reference policy. This removes the earlier semantic
 switch from uncertified EIG to posterior epistemic variance and automatically
 falls back when class information capacity is zero.
 
-P3D.1 is implemented only in an exact finite-outcome correctness fixture and
-is not imported by the real acquisition runtime. Its clean-Git controlled Gate
-passed 14/14 decisions at commit `5d71f588398daac3a7c8d982ec3eac0b5834d73c`.
-This supports the interval-handover implementation and model-relative
-proposition only; it does not repair posterior misspecification or establish
-real-data safety or efficacy. See
+P3D.1's exact finite-outcome controlled Gate passed 14/14 decisions at commit
+`5d71f588398daac3a7c8d982ec3eac0b5834d73c`. This supports the
+interval-handover implementation and model-relative proposition only; it does
+not repair posterior misspecification or establish real-data safety or
+efficacy. See
 `docs/pcpi_p3d1_root_cause_and_repair.md` and
 `docs/pcpi_p3d1_result_audit_20260814.md`.
 
 Upstream commit `81f7cde` restored the manifest-listed `hypothesis_mvp.data`
 package. All six files match their historical SHA-256 and byte counts, and the
-merged branch passes the complete `186`-test suite. The source-completeness
-blocker is closed. Real P3D integration remains independently blocked by the
-absence of a validated production interval constructor and a frozen real-only
-runner. See `docs/pcpi_public_source_sync_audit_20260814.md`.
+merged branch passed the complete `186`-test suite and closed the
+source-completeness blocker.
+
+## P3D.2 frozen real-only integration
+
+P3D.2 implements analytic class-EIG inequality bounds. Deterministic response
+quantization gives a data-processing lower bound; Gaussian maximum entropy and
+within-class mixture-entropy concavity give an upper bound. The numerical
+implementation uses a frozen outward tolerance and agrees with independent
+adaptive quadrature on continuous correctness fixtures. Because the Student-t
+special functions are not evaluated by formal interval arithmetic, the
+resulting handover remains a numerically validated, model-relative decision
+contract rather than a real-world no-harm theorem.
+
+The real runner and frozen config were added at implementation commit
+`cd05e1a`. The expanded suite passes 199 tests, and the production static audit
+passes. P3D.2 retains the same real datasets, splits, budgets, baselines,
+calibrated common posterior, frozen class target, failure policy, and heldout
+closure. Its PCPI branch excludes joint EPIG, MMD, likelihood-power maximin,
+discrepancy, and epistemic fallback. No P3D.2 real output has been evaluated,
+so no efficacy or superiority status has changed. See
+`docs/pcpi_p3d2_real_protocol_audit_20260814.md`.

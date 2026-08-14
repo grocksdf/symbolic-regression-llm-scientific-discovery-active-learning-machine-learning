@@ -1,7 +1,7 @@
 # Public canonical-source synchronization audit — 2026-08-14
 
-Decision: **SOURCE SYNCHRONIZATION RESOLVED; FULL REGRESSION PASSED. REAL P3D
-INTEGRATION REMAINS A SEPARATE METHOD GATE.**
+Decision: **SOURCE SYNCHRONIZATION RESOLVED; P3D.2 REAL INTEGRATION IMPLEMENTED;
+LOCAL MEASURED-POOL EXECUTION REMAINS PENDING.**
 
 ## Git identity
 
@@ -49,7 +49,10 @@ collection errors. The regenerated delivery manifest therefore records
 
 - Static AST/source integrity and full regression are now evaluable.
 - P3D.1 exact finite fixture and its isolated tests remain correctness evidence.
-- A new CCPP/Gas run is not authorized merely by source restoration. It still
-  requires a production interval Gate, real-runtime integration, a frozen
-  real-only protocol, and closed held-out. P4/P5, motif efficacy, VED, and
-  held-out confirmation remain blocked.
+- P3D.2 adds analytic information-inequality bounds, a real-runtime integration,
+  a frozen real-only protocol, and explicit closed-heldout enforcement at
+  implementation commit `cd05e1a`; the expanded suite passes 199 tests.
+- These source changes do not constitute a real result. A new CCPP/Gas run must
+  be executed on the user's official local measurements without changing the
+  frozen config, then audited before any efficacy statement. P4/P5, motif
+  efficacy, VED, and held-out confirmation remain blocked.

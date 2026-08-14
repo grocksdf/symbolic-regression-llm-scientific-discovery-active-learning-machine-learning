@@ -8,16 +8,19 @@ classes, likelihood-power ambiguity set, representative safe set, and closed
 held-out state; it adds only a response-free predictive discrepancy envelope to
 PCPI candidate ranking. The P3C.1 audit is recorded in
 `docs/pcpi_p3c1_result_audit_20260813.md`. No P4/P5 or superiority claim is
-authorized. The task-independent P3D.1 decision repair has passed its isolated
-correctness Gate but is not integrated into the real runtime; no new real-data
-run is authorized by this source.
+authorized. The task-independent P3D.1 decision repair passed its isolated
+correctness Gate. P3D.2 now supplies a frozen real-only integration using
+analytic information-inequality bounds and a registered uniform reference
+policy, but no P3D.2 real result exists in this repository. Its implementation
+is not evidence of efficacy.
 
 Source synchronization is resolved: upstream commit `81f7cde` restored all six
 manifest-listed `hypothesis_mvp.data` files with exact historical SHA-256 and
-byte counts. The merged P3D branch passes the complete `186`-test suite. This
-removes the source-completeness blocker, but it does not integrate P3D.1 into
-the real acquisition runtime or validate a production interval constructor.
-See `docs/pcpi_public_source_sync_audit_20260814.md`.
+byte counts. The P3D.2 implementation commit `cd05e1a` passes the expanded
+`199`-test suite. Source completeness and real-runtime integration blockers are
+closed; local execution on the official measured datasets and result audit
+remain pending. See `docs/pcpi_public_source_sync_audit_20260814.md` and
+`docs/pcpi_p3d2_real_protocol_audit_20260814.md`.
 
 PCPI treats symbolic scientific discovery as sequential Bayesian discrimination
 among operational predictive-equivalence classes. The target is the joint
@@ -487,9 +490,9 @@ bound. Overlapping intervals and zero class capacity execute the registered
 reference policy; they never switch to posterior variance or another target.
 
 The diagnostic has no real-data, validation, held-out, LLM, motif, or discovery
-surface. Passing it does not integrate P3D.1 into
-`hypothesis_mvp.pcpi.real_acquisition` and does not authorize another CCPP/Gas
-run. The mathematical and evidence contract is in
+surface. Passing it did not itself authorize a CCPP/Gas efficacy claim. Its
+decision contract is now consumed by the separately frozen P3D.2 real runner;
+the mathematical and evidence contract is in
 `docs/pcpi_p3d1_root_cause_and_repair.md`.
 
 ```powershell
@@ -504,6 +507,43 @@ Set-Location $project
     --phase P3D.1 `
     --heldout-state not-applicable
 ```
+
+## P3D.2 real-only reference-dominance run
+
+P3D.2 reuses only the provenance-verified real-data loader, frozen roles and
+splits, common calibrated posterior, operational-class construction, baselines,
+and evidence exports. Its PCPI policy does not use P3B/P3C joint EPIG, MMD,
+finite likelihood-power maximin, discrepancy inflation, or epistemic fallback.
+
+For each candidate, a deterministic response quantizer supplies the lower
+bound `I(C0;Q(Y_a)) <= I(C0;Y_a)`. The upper bound combines the Gaussian
+maximum-entropy inequality with within-class mixture-entropy concavity. These
+are analytic inequalities in exact arithmetic. Student-t CDF and entropy
+functions are numerical and use a frozen outward tolerance; they are not
+formal interval arithmetic. The resulting decision remains conditional on the
+finite-bank posterior and does not repair model misspecification.
+
+The official datasets remain outside Git. Run this only on the user's local
+measured files:
+
+```powershell
+$project = "D:\01\666\hypothesis_mvp"
+$dataRoot = "D:\01\666\data"
+$python = "D:\01\666\.venv_hypothesis_canonical\Scripts\python.exe"
+$output = "D:\01\666\hypothesis_mvp\outputs\p3d_2_reference_dominance_real"
+
+Set-Location $project
+& $python -B scripts/run_pcpi_p3d_real.py `
+    --data-root $dataRoot `
+    --output-dir $output `
+    --config configs/p3d_2_reference_dominance_real_acquisition.json `
+    --phase P3D.2 `
+    --heldout-state closed
+```
+
+The output directory must be new or empty. A protocol-valid run may still
+return `REAL_ADVANTAGE_NOT_DEMONSTRATED`; only its signed paired effects and
+registered assessment determine the efficacy conclusion.
 
 ## Current claim boundary
 
@@ -548,3 +588,9 @@ seven exported file hashes verify. It supports only the following statement:
 This is model-relative numerical decision correctness, not a posterior
 misspecification repair, real-data efficacy result, or realized no-harm claim.
 See `docs/pcpi_p3d1_result_audit_20260814.md` for the frozen identity.
+
+P3D.2 adds the production real-run surface at implementation commit `cd05e1a`.
+Its analytic bounds contain independent adaptive-quadrature references on the
+continuous correctness fixture, and the full source regression passes 199
+tests. No P3D.2 measured-pool output has yet been received, so no new empirical
+claim is supported.

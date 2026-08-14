@@ -1,8 +1,8 @@
 # PCPI mathematical contract (P0 freeze)
 
-Status: **P3C.1 real efficacy failed; P3D.1 reference-dominance repair is
-correctness-only and not integrated into the real runtime**
-Contract version: `pcpi-p3d1-reference-dominance-correctness-v1`
+Status: **P3C.1 real efficacy failed; P3D.1 correctness passed; P3D.2 real-only
+reference-dominance protocol implemented and awaiting local execution**
+Contract version: `pcpi-p3d2-reference-dominance-real-v1`
 Primary target: predictive-equivalence-class identification  
 Secondary target: posterior predictive risk
 
@@ -495,16 +495,39 @@ equal reference utility in expectation. This statement is conditional on the
 frozen model and valid intervals; it is not a real-world no-harm guarantee
 under model misspecification.
 
-P3D.1 is not imported by the real acquisition runtime. Its exact finite
-discrete fixture must first establish the information identity, entropy
-capacity bound, reference aggregation, interval handover, zero-capacity
-fallback, stable sampling, permutation invariance, and fail-closed validation.
-That controlled Gate passed 14/14 decisions at clean source commit
-`5d71f588398daac3a7c8d982ec3eac0b5834d73c` and supports only the conditional
-model-relative handover proposition.
-The existing Gauss--Jacobi fine/coarse discrepancy remains an asymptotic
-diagnostic, so a future real integration remains blocked until the required
-production interval guarantee is independently justified.
+P3D.1's exact finite discrete fixture establishes the information identity,
+entropy capacity bound, reference aggregation, interval handover,
+zero-capacity fallback, stable sampling, permutation invariance, and
+fail-closed validation. That controlled Gate passed 14/14 decisions at clean
+source commit `5d71f588398daac3a7c8d982ec3eac0b5834d73c` and supports only the
+conditional model-relative handover proposition.
+
+P3D.2 supplies actionwise bounds without using the Gauss--Jacobi fine/coarse
+diagnostic. Let `Q_a` be the deterministic response quantizer frozen by the
+registered probability levels. Data processing gives
+
+\[
+L_t(a)=I(C_0;Q_a(Y_a)\mid H_t)\le U_t(a).
+\]
+
+For the finite Student-t mixture, Gaussian maximum entropy and concavity of
+differential entropy give
+
+\[
+U_t(a)\le R_t(a)=\min\left\{H(C_0\mid H_t),
+\frac12\log(2\pi e\operatorname{Var}(Y_a))
+-\sum_s p_t(s)h(t_{\nu_s,\sigma_s(a)})\right\}.
+\]
+
+These inequalities hold in exact arithmetic. The implementation evaluates
+Student-t CDFs and entropy terms numerically and expands the interval by a
+frozen `1e-10` tolerance; it does not use verified interval arithmetic. The
+bounds contain independent adaptive-quadrature class-EIG values on continuous
+correctness fixtures and are invariant to positive affine response changes.
+Implementation commit `cd05e1a` integrates this rule into a real-only runner
+without importing P3B/P3C EPIG, MMD, maximin, discrepancy, or epistemic
+fallback terms. No measured P3D.2 result exists yet, so the integration adds no
+efficacy evidence.
 
 ## 9. Terminal decision
 
