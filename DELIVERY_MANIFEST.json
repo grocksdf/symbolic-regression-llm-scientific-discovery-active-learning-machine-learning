@@ -3,7 +3,7 @@
   "artifact_type": "canonical_source",
   "stage": "P3E.2",
   "task": "orthogonal_discrepancy_posterior_adequacy_correctness",
-  "source_tree_sha256": "ccc24721c51acc0d173237226429f2ee1875a42f1d798b7e1d7d1cef60ad074f",
+  "source_tree_sha256": "fe3fb031f4020d58f1631ee5cfa5661638fc811d6a3f4ff63ab1a25e914cc543",
   "production_code_hash": "243a81829eff28088a583ef893f6aae6101df686600c386e7ea202e7154d47b0",
   "python_version": "3.11",
   "validation_runtime": {
@@ -414,8 +414,8 @@
     },
     {
       "path": "docs/pcpi_p3e1_root_cause_and_update_coherence.md",
-      "sha256": "3e72c883beaded219d64263d3852302abfa65eb039e5e9de245ae93bb309e6b5",
-      "size_bytes": 5988
+      "sha256": "5556c3ba13b78f6c689c9455c8d97740a37f257d41dad5043e1a9c2a4eab1c4c",
+      "size_bytes": 6459
     },
     {
       "path": "docs/pcpi_p3e2_posterior_adequacy_repair.md",
