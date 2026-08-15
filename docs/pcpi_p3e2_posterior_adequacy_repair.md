@@ -106,6 +106,20 @@ predictive likelihood ratios, structure-coefficient invariance,
 malformed-input rejection, and absence from every real runtime. All 11 frozen
 diagnostic decisions pass.
 
+## Numerical reproducibility repair
+
+The first canonical implementation exposed a floating-point portability issue:
+an eigensolver could retain nearly-null modes of the projected covariance whose
+small union components made the strict orthogonality check depend on the BLAS
+implementation. The retained basis columns are now reprojected into the
+registered orthogonal complement before the contract is checked. This is a
+task-independent numerical-stability repair; it uses no response, dataset
+name, target label, validation result, or held-out value, and it does not alter
+the real acquisition runtime. On the canonical fixture the maximum recorded
+orthogonality error is `3.885780586188048e-16`, while the exact-null and
+structured-residual log Bayes factors remain `-0.713366` and `4.936581`,
+respectively.
+
 These fixed outcomes are algebraic correctness fixtures. They are not
 simulated efficacy data, do not count as a dataset family, and cannot enter a
 real-performance table.

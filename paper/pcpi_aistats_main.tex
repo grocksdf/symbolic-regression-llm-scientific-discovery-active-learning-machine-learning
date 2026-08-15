@@ -549,6 +549,11 @@ under proper conjugate Gaussian--inverse-Gamma priors and the same prior over
 structures. Orthogonalization prevents the registered residual basis from
 reassigning full-domain variation already spanned by any candidate structure.
 It does not prove that this basis or its prior is appropriate on real data.
+Because a floating-point eigensolver can return tiny components in the
+numerically null eigenspace of $K_\perp$, the implementation reprojects the
+retained columns into the registered orthogonal complement before evaluating
+the contract. This is a numerical reproducibility safeguard, not a new
+statistical model or a scientific-discovery claim.
 
 Let $m_j(y_{1:t})$ denote the exact structure-averaged marginal under $M_j$.
 The diagnostic records
