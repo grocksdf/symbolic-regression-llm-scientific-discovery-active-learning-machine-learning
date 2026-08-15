@@ -220,6 +220,13 @@ def orthogonal_rbf_discrepancy_basis(
         pivot = int(np.argmax(np.abs(basis[:, column])))
         if basis[pivot, column] < 0.0:
             basis[:, column] *= -1.0
+    # The eigensolver may return tiny components in the numerically null
+    # eigenspace of ``projector @ kernel @ projector``.  Those components are
+    # harmless for the covariance calculation but can make the strict
+    # union-orthogonality contract depend on the BLAS/NumPy implementation.
+    # Reprojecting the retained columns is response-free and restores the
+    # defining identifiability constraint in the floating-point output.
+    basis = np.ascontiguousarray(projector @ basis)
     error = float(np.max(np.abs(union.T @ basis)))
     return OrthogonalDiscrepancyBasis(
         matrix=np.ascontiguousarray(basis),
