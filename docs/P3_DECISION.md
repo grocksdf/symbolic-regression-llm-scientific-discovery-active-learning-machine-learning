@@ -199,9 +199,41 @@ factor `-0.713366` and remains eligible; the registered structured residual has
 log Bayes factor `4.936581` and crosses at round 16. Orthogonality preserves
 the structural coefficient posterior means exactly to numerical tolerance.
 
-This does not show that CCPP or Gas passes or fails the adequacy Gate.
-Non-rejection would not prove adequacy, and rejection would not by itself
-validate the discrepancy-augmented posterior for acquisition. A separately
-frozen, initial-development-only real adequacy diagnostic is the next possible
-evidence step; another acquisition-efficacy run remains blocked. See
-`docs/pcpi_p3e2_posterior_adequacy_repair.md`.
+The frozen initial-development-only real audit was then executed on official
+UCI CCPP data and its uploaded archive passed the archive-level identity and
+structure checks: 8/8 seeds completed, all 97 e-process rounds per seed are
+present, source/config/runner hashes match the clean canonical tree, and the
+held-out and acquisition flags remain closed. No seed crossed the registered
+`E_t >= 100` boundary. This is protocol-valid **non-rejection** against one
+registered discrepancy alternative, not a posterior-adequacy certificate;
+`formal_real_posterior_adequacy_evidence=false` and
+`formal_efficacy_evidence=false` remain binding.
+
+The result is recorded in
+`docs/pcpi_p3e2_real_posterior_adequacy_result_20260815.md`. It does not
+validate the discrepancy-augmented posterior, does not authorize another
+acquisition comparison, and does not open held-out data. Gas remains outside
+this audit because its `eta<1` branches need a separately proved
+update-coherent adequacy contract. A predictive-calibration Gate is still
+required before any downstream acquisition decision is revisited.
+
+## P3E.3 predictive-calibration compatibility audit
+
+P3E.3 is a task-independent diagnostic of the finite-bank posterior predictive
+CDF. Its correctness fixture passes all five registered decisions: fixed PIT
+basis moments, balanced-fixture non-rejection, concentrated-fixture
+rejection, predictive-CDF row-order equivariance, and prequential prefix
+isolation. This is implementation evidence only; the fixture contains no
+measured data and cannot support a calibration, adequacy, or efficacy claim.
+
+The real protocol is frozen to CCPP, eight registered seeds, 32
+initial-development rows for power selection, and 256 validation-role rows for
+the PIT e-process. The validation role is opened only for this diagnostic;
+the untouched held-out role remains closed and acquisition comparison and
+authorization remain false. A selected `eta<1` is fail-closed for the proper
+nominal-marginal interpretation of the e-process. A no-crossing real result
+would therefore be only non-rejection against the fixed PIT betting family,
+not a predictive-calibration or posterior-adequacy certificate. The local
+execution is specified in
+`docs/pcpi_p3e3_predictive_calibration_protocol_20260815.md`; no real result
+has yet been ingested into this source tree.

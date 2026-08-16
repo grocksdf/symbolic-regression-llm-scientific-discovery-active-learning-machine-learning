@@ -115,10 +115,12 @@ implementation. The retained basis columns are now reprojected into the
 registered orthogonal complement before the contract is checked. This is a
 task-independent numerical-stability repair; it uses no response, dataset
 name, target label, validation result, or held-out value, and it does not alter
-the real acquisition runtime. On the canonical fixture the maximum recorded
-orthogonality error is `3.885780586188048e-16`, while the exact-null and
-structured-residual log Bayes factors remain `-0.713366` and `4.936581`,
-respectively.
+the real acquisition runtime. The fresh canonical Windows artifact records a
+maximum orthogonality error of `4.440892098500626e-16`; an independent Linux
+run records `3.885780586188048e-16`. Both are within the registered tolerance,
+while the exact-null and structured-residual log Bayes factors remain
+`-0.713366` and `4.936581`, respectively. The execution identity and archive
+hash are recorded in `docs/pcpi_p3e2_result_audit_20260815.md`.
 
 These fixed outcomes are algebraic correctness fixtures. They are not
 simulated efficacy data, do not count as a dataset family, and cannot enter a
@@ -126,10 +128,10 @@ real-performance table.
 
 ## Current boundary and required next evidence
 
-P3E.2 has not accessed CCPP or Gas data and has not tested whether their
-nominal posterior is rejected. It has not selected a real discrepancy prior,
-shown real predictive improvement, or authorized the augmented posterior for
-acquisition. Therefore:
+The finite P3E.2 correctness fixture did not access CCPP or Gas data. The
+separate real CCPP audit tested only the registered discrepancy alternative;
+it did not select a real discrepancy prior, show predictive improvement, or
+authorize the augmented posterior for acquisition. Therefore:
 
 - `formal_correctness_evidence=true` for the finite Gate only;
 - `formal_real_posterior_adequacy_evidence=false`;
@@ -137,9 +139,14 @@ acquisition. Therefore:
 - held-out remains unavailable;
 - no new real acquisition run is authorized.
 
-The next admissible experiment is a separately frozen, initial-development-only
-real posterior-adequacy diagnostic. It must use the existing official data
-roles and fixed response order, report the entire e-process for every seed and
-family, and make no acquisition comparison. Only after that audit may we decide
-whether the augmented posterior deserves a new exact predictive-calibration
-Gate and, later, one preregistered real acquisition run.
+The separately frozen initial-development-only CCPP audit has now completed
+8/8 seeds with zero e-process threshold crossings. Its archive identity and
+per-seed values are recorded in
+`docs/pcpi_p3e2_real_posterior_adequacy_result_20260815.md`. This is
+non-rejection against one registered discrepancy alternative, not an adequacy
+certificate: the discrepancy basis is not exhaustive, no discrepancy-prior
+calibration has been established, and the augmented posterior remains
+unauthorized for acquisition. Gas remains excluded until an update-coherent
+$\eta<1$ adequacy contract is proved. A separate predictive-calibration Gate
+is the next admissible evidence step; another real acquisition run remains
+blocked.

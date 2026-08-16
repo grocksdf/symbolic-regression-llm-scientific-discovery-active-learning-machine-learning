@@ -1,10 +1,10 @@
 {
   "schema": "pcpi-delivery-manifest-v1",
   "artifact_type": "canonical_source",
-  "stage": "P3E.2",
-  "task": "orthogonal_discrepancy_posterior_adequacy_correctness",
-  "source_tree_sha256": "fe3fb031f4020d58f1631ee5cfa5661638fc811d6a3f4ff63ab1a25e914cc543",
-  "production_code_hash": "243a81829eff28088a583ef893f6aae6101df686600c386e7ea202e7154d47b0",
+  "stage": "P3E.3",
+  "task": "real_initial_development_predictive_calibration_audit",
+  "source_tree_sha256": "235b728af35525f16c2f083436dc80e34582ecbd12909c2a9aec6dc2395f0d65",
+  "production_code_hash": "a57bc56feeebde576af7b2204e3c3e752a00e3cffc26fb75db7854727f2c842c",
   "python_version": "3.11",
   "validation_runtime": {
     "python_version": "3.12.13",
@@ -26,11 +26,14 @@
     "pcpi-p3d2-reference-dominance-real",
     "pcpi-p3e1-update-coherence",
     "pcpi-p3e2-posterior-adequacy",
+    "pcpi-p3e2-real-adequacy-audit",
+    "pcpi-p3e3-predictive-calibration",
+    "pcpi-p3e3-real-calibration-audit",
     "hypothesis-discover",
     "hypothesis-llm-preflight"
   ],
   "tests": {
-    "passed": 234,
+    "passed": 249,
     "failed": 0,
     "skipped": 0,
     "collection_errors": 0,
@@ -110,8 +113,16 @@
     "P3E.1 does not repair the eta-one CCPP posterior-adequacy failure or authorize a real rerun",
     "P3E.2 orthogonal-discrepancy evidence is validated only on an exact finite correctness fixture",
     "P3E.2 null non-rejection does not prove posterior adequacy",
-    "P3E.2 has not accessed real data or selected a real discrepancy prior",
+    "P3E.2 correctness runner has not accessed real data or selected a real discrepancy prior",
+    "P3E.2 initial-development-only real-audit protocol is frozen, but no local real result has been ingested",
+    "P3E.2 real audit initially covers CCPP only because the e-process null requires eta=1",
+    "Gas Turbine eta<1 adequacy requires a separate update-coherent contract",
     "P3E.2 does not authorize the discrepancy-augmented posterior for acquisition",
+    "P3E.3 PIT e-process correctness is validated only on a deterministic fixture",
+    "P3E.3 real non-rejection against the fixed PIT betting family is not a calibration proof",
+    "P3E.3 eta below one blocks the proper nominal-marginal interpretation of the PIT e-process",
+    "P3E.3 validation is opened only for a calibration diagnostic, with held-out closed",
+    "P3E.3 does not authorize acquisition comparison or acquisition policy execution",
     "P3B.6 uses one preconditioned R-log SafeBayes posterior for every policy",
     "P3B.6 calibration and basis transforms use initial development data only",
     "P3B.6 epistemic fallback is a posterior surrogate and is not class EIG",
@@ -143,7 +154,12 @@
     "P3D.2 supports a protocol-valid negative real-development conclusion only",
     "P3E.1 supports generalized-update loss-alignment correctness only",
     "P3E.2 supports union-orthogonal discrepancy and adequacy e-process correctness only",
-    "real posterior adequacy and discrepancy-augmented predictive calibration remain untested",
+    "P3E.2 real-audit runner supports a protocol-bound diagnostic only; real posterior adequacy remains unreported",
+    "P3E.3 supports PIT predictive-calibration diagnostic correctness only",
+    "P3E.3 real non-rejection is not predictive-calibration or posterior-adequacy evidence",
+    "P3E.3 proper nominal-marginal interpretation requires eta equal to one",
+    "P3E.3 validation-role responses are diagnostic only; held-out and acquisition remain blocked",
+    "discrepancy-augmented predictive calibration remains untested",
     "no motif superiority held-out or VED claim"
   ],
   "files": [
@@ -151,6 +167,11 @@
       "path": ".cursor/rules/aistats-research-guardrails.mdc",
       "sha256": "91bc132dc26a5100330c9b10277fe1df24de49b978fde5f163211f6084020791",
       "size_bytes": 2679
+    },
+    {
+      "path": ".gitattributes",
+      "sha256": "931869a9ea5e21cee471463e611eec6e974546b5fc00b7067250f0bb0689e7ef",
+      "size_bytes": 119
     },
     {
       "path": ".gitignore",
@@ -164,8 +185,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "dc37a3f3c04745c2212a1e5c90fc5d66bce1d7cb6cc97700ef985618b999d787",
-      "size_bytes": 30154
+      "sha256": "cfe41d54fabe295f32a931e256c42d85e22819e7b64918d00f6900eaa1adcf4e",
+      "size_bytes": 33698
     },
     {
       "path": "configs/p2a_1_correctness_diagnostic.json",
@@ -248,6 +269,21 @@
       "size_bytes": 442
     },
     {
+      "path": "configs/p3e_2_real_posterior_adequacy_audit.json",
+      "sha256": "dd5659ac65393c2ffe280579e887d56ec12bc337d4dce83740111336ca138923",
+      "size_bytes": 1175
+    },
+    {
+      "path": "configs/p3e_3_predictive_calibration_diagnostic.json",
+      "sha256": "294d40ed30d242a146098acf679921364e7e8366e1d8b66fa99003b61412031e",
+      "size_bytes": 485
+    },
+    {
+      "path": "configs/p3e_3_real_predictive_calibration_audit.json",
+      "sha256": "2df76ba5ab577894f055244c96c819d704d136dc0e87ce193e3fdb01326fb3d9",
+      "size_bytes": 1489
+    },
+    {
       "path": "contracts/rd0_1_airfoil_freeze.json",
       "sha256": "3a3a468f5717a8b5b77d8ed041a045c682c30b6245b87b1115441eab8572d943",
       "size_bytes": 2446
@@ -289,8 +325,8 @@
     },
     {
       "path": "docs/P3_DECISION.md",
-      "sha256": "8e8fe00b4933a688b5ea88a7458738afd786e87fe2f6607d4624de4b5252a548",
-      "size_bytes": 11098
+      "sha256": "e9962d2434e5cd4e4d514399ddf88351692e7a8d0aa7f68df99825b2220f8c2c",
+      "size_bytes": 13018
     },
     {
       "path": "docs/hd1_1_nist_asd_hypothesis_discovery_contract.json",
@@ -414,13 +450,38 @@
     },
     {
       "path": "docs/pcpi_p3e1_root_cause_and_update_coherence.md",
-      "sha256": "5556c3ba13b78f6c689c9455c8d97740a37f257d41dad5043e1a9c2a4eab1c4c",
-      "size_bytes": 6459
+      "sha256": "cebb40064cd2f5c8dc9a993108f1554c1758cf7a188d00083e9fa1800a12ef2a",
+      "size_bytes": 6529
     },
     {
       "path": "docs/pcpi_p3e2_posterior_adequacy_repair.md",
-      "sha256": "deb67ad3216f7d5b05046f5652351ddd7b211d81ea578643146118f87987923c",
-      "size_bytes": 6412
+      "sha256": "154f3a44704ff1461352e4807cee12ab13fc0ac8e279225d0b7940696ddc230f",
+      "size_bytes": 6924
+    },
+    {
+      "path": "docs/pcpi_p3e2_real_audit_protocol_20260815.md",
+      "sha256": "bc57b6b193aa0de1e12b12bebf596798d8e0a30c04626736068a8abd6fc0e45b",
+      "size_bytes": 4930
+    },
+    {
+      "path": "docs/pcpi_p3e2_real_posterior_adequacy_result_20260815.md",
+      "sha256": "07b8feecc41d9154560f360c32ce8400232655b0dffd1c6796dca81858c1289b",
+      "size_bytes": 5674
+    },
+    {
+      "path": "docs/pcpi_p3e2_result_audit_20260815.md",
+      "sha256": "447cd450f394c127c39f48b81b1c8329cabb65e9ef2e9bace3b523b6fbd9e768",
+      "size_bytes": 3540
+    },
+    {
+      "path": "docs/pcpi_p3e3_predictive_calibration_correctness_20260815.md",
+      "sha256": "1d165b64e375fad1bddf7538be06dcbc500f941bd148a69f2197aa8118fadc1d",
+      "size_bytes": 2113
+    },
+    {
+      "path": "docs/pcpi_p3e3_predictive_calibration_protocol_20260815.md",
+      "sha256": "7ad61e7fd0bccc399196b6bcab001581041ccb958ade0e7bbd7c3996999db129",
+      "size_bytes": 4129
     },
     {
       "path": "docs/pcpi_paper_completion_assessment.md",
@@ -624,8 +685,8 @@
     },
     {
       "path": "hypothesis_mvp/pcpi/reference/__init__.py",
-      "sha256": "b6f2a3cb44509111e799a664685fa5218b7fa5efde9cb2dff13cccf7fec78545",
-      "size_bytes": 1979
+      "sha256": "5a8b63cb36172d2774104f388254cf76d22d797d16b2890812c70bf229557111",
+      "size_bytes": 2435
     },
     {
       "path": "hypothesis_mvp/pcpi/reference/basis.py",
@@ -666,6 +727,11 @@
       "path": "hypothesis_mvp/pcpi/reference/posterior.py",
       "sha256": "88deca766377e938bbb136bea7e1d123be28311d8c84251297c0ace56205d818",
       "size_bytes": 17331
+    },
+    {
+      "path": "hypothesis_mvp/pcpi/reference/predictive_calibration.py",
+      "sha256": "3adc73870b4ad08427f259d111c1f5daa3aa8c35eb813f38d38ec522fa52e3e7",
+      "size_bytes": 7186
     },
     {
       "path": "hypothesis_mvp/pcpi/reference/real_bank.py",
@@ -774,8 +840,8 @@
     },
     {
       "path": "paper/pcpi_aistats_main.tex",
-      "sha256": "a68bb4bf46dd826a7cf960ef204677ff198293ac6322a5dfa5e31430df7a4c05",
-      "size_bytes": 40116
+      "sha256": "822399d49ce35465effb13ccc59cf1bc6735298d926e1b77c163141a3e8406c0",
+      "size_bytes": 41986
     },
     {
       "path": "paper/references.bib",
@@ -834,8 +900,8 @@
     },
     {
       "path": "scripts/create_delivery_manifest.py",
-      "sha256": "1d67f31ae099a5570e71767c0d2329917d5dba8a4640d24f764efae11831d37a",
-      "size_bytes": 13171
+      "sha256": "9c2b0e8a4f281bdd329745d012fd37aa9070ac70230e46f86e2018471241ae88",
+      "size_bytes": 14612
     },
     {
       "path": "scripts/package_source.ps1",
@@ -961,6 +1027,21 @@
       "path": "scripts/run_pcpi_p3e2_posterior_adequacy_diagnostic.py",
       "sha256": "9d968edf3200a513dd3be08b9638ce7cc1e0184bc94146353a81ac04c1f5fa5a",
       "size_bytes": 11689
+    },
+    {
+      "path": "scripts/run_pcpi_p3e2_real_posterior_adequacy_audit.py",
+      "sha256": "cead87be1891d4473711b3ac5477af181b0c6940263c15955d19f67e9c7d24d7",
+      "size_bytes": 15805
+    },
+    {
+      "path": "scripts/run_pcpi_p3e3_predictive_calibration_diagnostic.py",
+      "sha256": "9c82ec64357870e51c9cffa016df7036fed976045803132a5d156b4861fdc1ab",
+      "size_bytes": 7723
+    },
+    {
+      "path": "scripts/run_pcpi_p3e3_real_predictive_calibration_audit.py",
+      "sha256": "8d308a1fa8a545685716cdfd91942f792b35da384084cfaf071f4cca1774a411",
+      "size_bytes": 16793
     },
     {
       "path": "scripts/run_rd1_1_real_development.py",
@@ -1111,6 +1192,21 @@
       "path": "tests/test_pcpi_p3e2_posterior_adequacy.py",
       "sha256": "821c8a9a30fe132934825076f198667405a94889966f8bb175d2a2e967108fa0",
       "size_bytes": 8880
+    },
+    {
+      "path": "tests/test_pcpi_p3e2_real_posterior_adequacy_audit.py",
+      "sha256": "9396cc707819e6e0db5f85b87ab0d94b7b921d91e065c2f551fc6bbd61497510",
+      "size_bytes": 2879
+    },
+    {
+      "path": "tests/test_pcpi_p3e3_real_predictive_calibration_audit.py",
+      "sha256": "52594b2b5e5aabc70150961c3f9ec3256fc5be5e1a96d57cfdf9d30bb5389b0b",
+      "size_bytes": 2284
+    },
+    {
+      "path": "tests/test_pcpi_predictive_calibration.py",
+      "sha256": "1e66bbbf9219070ad11ede019642bc0627a55e27abb9150101d186c2c50c6197",
+      "size_bytes": 3150
     },
     {
       "path": "tests/test_polynomial_lasso.py",

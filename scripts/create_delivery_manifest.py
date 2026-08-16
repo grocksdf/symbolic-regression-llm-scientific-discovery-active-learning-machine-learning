@@ -129,6 +129,9 @@ def run(args: argparse.Namespace) -> int:
             "pcpi-p3d2-reference-dominance-real",
             "pcpi-p3e1-update-coherence",
             "pcpi-p3e2-posterior-adequacy",
+            "pcpi-p3e2-real-adequacy-audit",
+            "pcpi-p3e3-predictive-calibration",
+            "pcpi-p3e3-real-calibration-audit",
             "hypothesis-discover",
             "hypothesis-llm-preflight",
         ],
@@ -210,8 +213,16 @@ def run(args: argparse.Namespace) -> int:
             "P3E.1 does not repair the eta-one CCPP posterior-adequacy failure or authorize a real rerun",
             "P3E.2 orthogonal-discrepancy evidence is validated only on an exact finite correctness fixture",
             "P3E.2 null non-rejection does not prove posterior adequacy",
-            "P3E.2 has not accessed real data or selected a real discrepancy prior",
+            "P3E.2 correctness runner has not accessed real data or selected a real discrepancy prior",
+            "P3E.2 initial-development-only real-audit protocol is frozen, but no local real result has been ingested",
+            "P3E.2 real audit initially covers CCPP only because the e-process null requires eta=1",
+            "Gas Turbine eta<1 adequacy requires a separate update-coherent contract",
             "P3E.2 does not authorize the discrepancy-augmented posterior for acquisition",
+            "P3E.3 PIT e-process correctness is validated only on a deterministic fixture",
+            "P3E.3 real non-rejection against the fixed PIT betting family is not a calibration proof",
+            "P3E.3 eta below one blocks the proper nominal-marginal interpretation of the PIT e-process",
+            "P3E.3 validation is opened only for a calibration diagnostic, with held-out closed",
+            "P3E.3 does not authorize acquisition comparison or acquisition policy execution",
             "P3B.6 uses one preconditioned R-log SafeBayes posterior for every policy",
             "P3B.6 calibration and basis transforms use initial development data only",
             "P3B.6 epistemic fallback is a posterior surrogate and is not class EIG",
@@ -243,7 +254,12 @@ def run(args: argparse.Namespace) -> int:
             "P3D.2 supports a protocol-valid negative real-development conclusion only",
             "P3E.1 supports generalized-update loss-alignment correctness only",
             "P3E.2 supports union-orthogonal discrepancy and adequacy e-process correctness only",
-            "real posterior adequacy and discrepancy-augmented predictive calibration remain untested",
+            "P3E.2 real-audit runner supports a protocol-bound diagnostic only; real posterior adequacy remains unreported",
+            "P3E.3 supports PIT predictive-calibration diagnostic correctness only",
+            "P3E.3 real non-rejection is not predictive-calibration or posterior-adequacy evidence",
+            "P3E.3 proper nominal-marginal interpretation requires eta equal to one",
+            "P3E.3 validation-role responses are diagnostic only; held-out and acquisition remain blocked",
+            "discrepancy-augmented predictive calibration remains untested",
             "no motif superiority held-out or VED claim",
         ],
         "files": rows,
@@ -259,9 +275,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--stage", default="P3E.2")
+    parser.add_argument("--stage", default="P3E.3")
     parser.add_argument(
-        "--task", default="orthogonal_discrepancy_posterior_adequacy_correctness"
+        "--task", default="real_initial_development_predictive_calibration_audit"
     )
     parser.add_argument("--tests-passed", type=int, required=True)
     parser.add_argument("--tests-failed", type=int, default=0)

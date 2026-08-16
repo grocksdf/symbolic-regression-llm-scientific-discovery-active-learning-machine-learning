@@ -1,7 +1,11 @@
 # Hypothesis MVP — PCPI
 
-Current stage: **P3E.2 correctness passed; real posterior adequacy and efficacy
-remain NO-GO**. P3D.2 completed 96/96 protocol-valid heldout-closed real runs
+Current stage: **P3E.3 predictive-calibration correctness passed; the frozen
+CCPP validation-role predictive-calibration audit is ready for local
+execution**. The P3E.2 real posterior-adequacy audit completed with
+protocol-valid non-rejection, not an adequacy certificate; acquisition remains
+blocked.
+P3D.2 completed 96/96 protocol-valid heldout-closed real runs
 but returned `REAL_ADVANTAGE_NOT_DEMONSTRATED`. Its v2 archive has a valid
 97-event EvidenceRegistry and verified official-data, split, source, config,
 dependency, and export identities. CCPP PCPI-minus-random frozen-class gain is
@@ -19,8 +23,30 @@ P3E.2 addresses the independent CCPP `eta=1` blocker at the correctness level.
 It builds a response-free discrepancy basis orthogonal to the union of all
 candidate structure designs and compares the nominal/discrepancy exact
 marginals with a prequential Bayes-factor e-process. Its 11/11 finite Gate
-passes, but it has not accessed real data and does not establish real posterior
-adequacy. Another acquisition experiment is still prohibited.
+passes. The frozen real audit subsequently completed 8/8 CCPP seeds with zero
+crossings of the registered `E_t >= 100` boundary; held-out remained closed,
+and no acquisition policy was compared. This is non-rejection against one
+registered discrepancy alternative, not an adequacy certificate, so another
+acquisition experiment remains prohibited.
+
+The real-audit archive identity and per-seed result are recorded in
+`docs/pcpi_p3e2_real_posterior_adequacy_result_20260815.md`.
+
+P3E.3 adds a fixed PIT betting-family e-process for sequential predictive-CDF
+calibration. Its five-decision correctness fixture passes, including the
+balanced non-rejection control, concentrated-PIT rejection control,
+predictive-CDF order equivariance, and no-future-response sequencing. This is
+correctness evidence only. The CCPP real audit selects the likelihood power on
+32 initial-development rows and tests 256 registered validation responses;
+`eta<1` is fail-closed for the proper nominal-marginal interpretation, and no
+acquisition policy is compared. See
+`docs/pcpi_p3e3_predictive_calibration_protocol_20260815.md`.
+
+The fresh canonical execution is audited in
+`docs/pcpi_p3e2_result_audit_20260815.md`. Its output archive SHA-256 is
+`3cee2b87b222ec228b3f0db5770dbae5936cf42cc821a4215026761ae000285b` and its
+source/config identities match commit `ca4bfce8`; this records correctness-run
+reproducibility only, not a real-data adequacy result.
 
 Source synchronization is resolved: upstream commit `81f7cde` restored all six
 manifest-listed `hypothesis_mvp.data` files with exact historical SHA-256 and
@@ -31,7 +57,14 @@ closed. The P3D.2 result audit and P3E.1 root-cause matrix are in
 `docs/pcpi_p3e1_root_cause_and_update_coherence.md`. The subsequent
 posterior-adequacy contract is in
 `docs/pcpi_p3e2_posterior_adequacy_repair.md`.
-The current P3E.2 source tree passes all 234 collected tests.
+The current P3E.3 source tree passes the full collected test suite; the exact
+count is recorded in `DELIVERY_MANIFEST.json`.
+
+The frozen real-audit protocol covers CCPP only, because the
+registered P3E.2 e-process guarantee requires the proper `eta=1` nominal
+marginal. Gas Turbine seeds with `eta<1` require a separate update-coherent
+adequacy contract and are not silently pooled into this audit. See
+`docs/pcpi_p3e2_real_audit_protocol_20260815.md`.
 
 PCPI treats symbolic scientific discovery as sequential Bayesian discrimination
 among operational predictive-equivalence classes. The target is the joint
@@ -581,6 +614,11 @@ Set-Location $project
 
 This command reads no real dataset and produces no efficacy evidence.
 
+Canonical source identity is byte-sensitive. The repository pins tracked text
+sources to LF through `.gitattributes`; on Windows, use a fresh clone/import
+of the canonical bundle after this file is present rather than reusing a
+working tree checked out with CRLF conversion.
+
 ## P3E.2 posterior-adequacy diagnostic
 
 P3E.2 is also correctness-only. Its exact-null fixture must remain below the
@@ -601,9 +639,29 @@ Set-Location $project
     --heldout-state not-applicable
 ```
 
-Passing this command does not authorize CCPP/Gas acquisition. The next
-possible real work is a separately frozen initial-development adequacy audit,
-not another efficacy run.
+Passing this command does not authorize CCPP/Gas acquisition. The frozen
+initial-development-only real-audit protocol and runner are documented in
+`docs/pcpi_p3e2_real_audit_protocol_20260815.md`; the uploaded local result is
+audited in `docs/pcpi_p3e2_real_posterior_adequacy_result_20260815.md`. It does
+not compare acquisition policies and keeps held-out closed.
+
+## P3E.3 predictive-calibration compatibility audit
+
+P3E.3 is a separate predictive-calibration diagnostic for the frozen finite
+bank. Its correctness fixture passes five registered decisions: PIT-basis
+moment control, balanced non-rejection, concentrated-fixture rejection,
+predictive-CDF row-order equivariance, and prequential prefix isolation. The
+fixture is deterministic and does not access a dataset.
+
+The frozen real surface is CCPP-only and validation-role-only: 32 initial
+development rows select the likelihood power and 256 ordered validation rows
+are used only for the PIT diagnostic, across seeds `2026080701`--`2026080708`.
+Held-out remains closed and no acquisition policy is scored or authorized. If
+power selection returns `eta<1`, the run is recorded but is ineligible for the
+proper nominal-marginal e-process interpretation. Even a complete real run
+with no PIT crossing is non-rejection against the registered betting family,
+not a calibration or posterior-adequacy certificate. Run the local protocol
+from `docs/pcpi_p3e3_predictive_calibration_protocol_20260815.md`.
 
 ## Current claim boundary
 
@@ -652,6 +710,7 @@ See `docs/pcpi_p3d1_result_audit_20260814.md` for the frozen identity.
 P3D.2 adds the production real-run surface at implementation commit `cd05e1a`.
 Its returned v2 measured-pool result is protocol-valid negative evidence, not
 superiority evidence. P3E.1 supports only the update-coherence correctness
-statement above. P3E.2 supports only orthogonal-discrepancy and adequacy
-e-process correctness. Real posterior adequacy, another acquisition rerun, and
-all downstream claims remain independently blocked.
+statement above. P3E.2 supports orthogonal-discrepancy and adequacy e-process
+correctness plus the audited CCPP non-rejection diagnostic; non-rejection is
+not a posterior-adequacy certificate. Real posterior adequacy, another
+acquisition rerun, and all downstream claims remain independently blocked.

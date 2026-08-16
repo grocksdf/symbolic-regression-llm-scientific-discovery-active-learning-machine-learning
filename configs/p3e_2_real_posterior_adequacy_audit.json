@@ -1,0 +1,35 @@
+{
+  "schema": "pcpi-p3e2-real-posterior-adequacy-audit-config-v1",
+  "stage": "P3E.2",
+  "experiment": "real_initial_development_posterior_adequacy_audit",
+  "datasets": [
+    "uci_ccpp"
+  ],
+  "seeds": [
+    2026080701,
+    2026080702,
+    2026080703,
+    2026080704,
+    2026080705,
+    2026080706,
+    2026080707,
+    2026080708
+  ],
+  "split_seed": 20260807,
+  "registered_domain_budget": 96,
+  "domain_selection_method": "stable-row-id-sha256-covariate-only-v1",
+  "response_order_method": "stable-row-id-sha256-predictable-v1",
+  "target_transform": "initial-development-only-standardization-v1",
+  "posterior_bank": "generic-real-bank-v1",
+  "design_preconditioning_method": "termwise-center-scale",
+  "discrepancy_method": "response-free-union-orthogonal-rbf-discrepancy-v1",
+  "adequacy_method": "prequential-orthogonal-discrepancy-bayes-factor-e-process-v1",
+  "false_alarm_level": 0.01,
+  "eigenvalue_tolerance": 1e-10,
+  "identity_tolerance": 1e-10,
+  "hash_verification": "mandatory",
+  "heldout_state": "closed",
+  "acquisition_comparison": "not-run",
+  "acquisition_authorization": "blocked",
+  "failure_policy": "fail-closed-record-all-no-seed-replacement"
+}

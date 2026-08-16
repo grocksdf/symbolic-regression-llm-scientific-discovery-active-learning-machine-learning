@@ -39,6 +39,17 @@ from .real_bank import (
     generic_real_bank,
     stable_budget_indices,
 )
+from .predictive_calibration import (
+    PIT_BASIS_NAMES,
+    PIT_EPROCESS_METHOD,
+    PIT_EPROCESS_ROLE,
+    PIT_LAMBDAS,
+    PitEProcess,
+    pit_basis,
+    pit_e_process,
+    predictive_cdf,
+    prequential_predictive_pit_e_process,
+)
 
 __all__ = [
     "ConditionalPosteriorParameters",
@@ -70,4 +81,13 @@ __all__ = [
     "aggregate_operational_classes",
     "budget_resolved_distance_threshold",
     "calibrate_likelihood_power",
+    "PIT_BASIS_NAMES",
+    "PIT_EPROCESS_METHOD",
+    "PIT_EPROCESS_ROLE",
+    "PIT_LAMBDAS",
+    "PitEProcess",
+    "pit_basis",
+    "pit_e_process",
+    "predictive_cdf",
+    "prequential_predictive_pit_e_process",
 ]
