@@ -5,3 +5,4 @@
 *.tex text eol=lf
 *.csv text eol=lf
 *.ps1 text eol=lf
+*.mdc -text
