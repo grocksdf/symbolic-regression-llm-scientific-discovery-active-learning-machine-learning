@@ -3,7 +3,7 @@
   "artifact_type": "canonical_source",
   "stage": "P3E.3",
   "task": "real_initial_development_predictive_calibration_audit",
-  "source_tree_sha256": "235b728af35525f16c2f083436dc80e34582ecbd12909c2a9aec6dc2395f0d65",
+  "source_tree_sha256": "269799a64bfa2ab154c28db4560dc4f543d26d69d14a07b64f58e84b35bf7c3c",
   "production_code_hash": "a57bc56feeebde576af7b2204e3c3e752a00e3cffc26fb75db7854727f2c842c",
   "python_version": "3.11",
   "validation_runtime": {
@@ -170,8 +170,8 @@
     },
     {
       "path": ".gitattributes",
-      "sha256": "931869a9ea5e21cee471463e611eec6e974546b5fc00b7067250f0bb0689e7ef",
-      "size_bytes": 119
+      "sha256": "93dbb1d4a46760cf89cb288ddc85741211f96055eac5bb4404785f93639f11fc",
+      "size_bytes": 294
     },
     {
       "path": ".gitignore",
