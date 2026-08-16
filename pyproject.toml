@@ -16,7 +16,9 @@ dependencies = [
   "pandas>=2.1",
   "matplotlib>=3.8",
   "openpyxl>=3.1",
-  "xlrd>=2.0.1"
+  "xlrd>=2.0.1",
+  "beautifulsoup4>=4.12",
+  "rich>=13.7"
 ]
 
 [project.optional-dependencies]
@@ -43,6 +45,9 @@ pcpi-p3d1-reference-dominance = "scripts.run_pcpi_p3d1_reference_dominance_diagn
 pcpi-p3d2-reference-dominance-real = "scripts.run_pcpi_p3d_real:main"
 pcpi-p3e1-update-coherence = "scripts.run_pcpi_p3e1_update_coherence_diagnostic:main"
 pcpi-p3e2-posterior-adequacy = "scripts.run_pcpi_p3e2_posterior_adequacy_diagnostic:main"
+pcpi-p3e2-real-adequacy-audit = "scripts.run_pcpi_p3e2_real_posterior_adequacy_audit:main"
+pcpi-p3e3-predictive-calibration = "scripts.run_pcpi_p3e3_predictive_calibration_diagnostic:main"
+pcpi-p3e3-real-calibration-audit = "scripts.run_pcpi_p3e3_real_predictive_calibration_audit:main"
 
 [tool.setuptools.packages.find]
 include = ["hypothesis_mvp*", "scripts*"]

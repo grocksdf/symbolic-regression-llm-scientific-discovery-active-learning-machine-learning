@@ -3,8 +3,8 @@
   "artifact_type": "canonical_source",
   "stage": "P3E.3",
   "task": "real_initial_development_predictive_calibration_audit",
-  "source_tree_sha256": "269799a64bfa2ab154c28db4560dc4f543d26d69d14a07b64f58e84b35bf7c3c",
-  "production_code_hash": "a57bc56feeebde576af7b2204e3c3e752a00e3cffc26fb75db7854727f2c842c",
+  "source_tree_sha256": "b232ba2f9c540e6428eeaaa8f4a11427fa9ab03a3bf319f2de8b39b11c58505e",
+  "production_code_hash": "18bf81436a95947a28b1e7b29e5290061e32bee1b868dacdd7c91bdb7638bc0c",
   "python_version": "3.11",
   "validation_runtime": {
     "python_version": "3.12.13",
@@ -114,7 +114,7 @@
     "P3E.2 orthogonal-discrepancy evidence is validated only on an exact finite correctness fixture",
     "P3E.2 null non-rejection does not prove posterior adequacy",
     "P3E.2 correctness runner has not accessed real data or selected a real discrepancy prior",
-    "P3E.2 initial-development-only real-audit protocol is frozen, but no local real result has been ingested",
+    "P3E.2 CCPP real audit completed 8/8 without threshold crossing; this non-rejection is not a posterior-adequacy certificate",
     "P3E.2 real audit initially covers CCPP only because the e-process null requires eta=1",
     "Gas Turbine eta<1 adequacy requires a separate update-coherent contract",
     "P3E.2 does not authorize the discrepancy-augmented posterior for acquisition",
@@ -123,6 +123,7 @@
     "P3E.3 eta below one blocks the proper nominal-marginal interpretation of the PIT e-process",
     "P3E.3 validation is opened only for a calibration diagnostic, with held-out closed",
     "P3E.3 does not authorize acquisition comparison or acquisition policy execution",
+    "P3E.3 real validation-role audit is frozen, but no local result has been ingested",
     "P3B.6 uses one preconditioned R-log SafeBayes posterior for every policy",
     "P3B.6 calibration and basis transforms use initial development data only",
     "P3B.6 epistemic fallback is a posterior surrogate and is not class EIG",
@@ -154,7 +155,7 @@
     "P3D.2 supports a protocol-valid negative real-development conclusion only",
     "P3E.1 supports generalized-update loss-alignment correctness only",
     "P3E.2 supports union-orthogonal discrepancy and adequacy e-process correctness only",
-    "P3E.2 real-audit runner supports a protocol-bound diagnostic only; real posterior adequacy remains unreported",
+    "P3E.2 real-audit result supports protocol-valid non-rejection against the registered discrepancy alternative only; real posterior adequacy remains unproven",
     "P3E.3 supports PIT predictive-calibration diagnostic correctness only",
     "P3E.3 real non-rejection is not predictive-calibration or posterior-adequacy evidence",
     "P3E.3 proper nominal-marginal interpretation requires eta equal to one",
@@ -325,8 +326,8 @@
     },
     {
       "path": "docs/P3_DECISION.md",
-      "sha256": "e9962d2434e5cd4e4d514399ddf88351692e7a8d0aa7f68df99825b2220f8c2c",
-      "size_bytes": 13018
+      "sha256": "d958e4c0877219aa7c67677259f87f7cbd482e7dc8c27df0de26d40718b5ef50",
+      "size_bytes": 13167
     },
     {
       "path": "docs/hd1_1_nist_asd_hypothesis_discovery_contract.json",
@@ -335,8 +336,8 @@
     },
     {
       "path": "docs/pcpi_claim_code_evidence_matrix.csv",
-      "sha256": "8b4b31a54d66f81e81ffe6362c712c7b926d556120dab72691aed66da0e923ea",
-      "size_bytes": 5588
+      "sha256": "8a341e532cc5187b32d365eca2799557c8a1925bbc28df1f75f265668bd257b7",
+      "size_bytes": 6226
     },
     {
       "path": "docs/pcpi_data_leakage_audit.md",
@@ -474,6 +475,11 @@
       "size_bytes": 3540
     },
     {
+      "path": "docs/pcpi_p3e3_canonical_sync_audit_20260816.md",
+      "sha256": "6476f164ce1cff310571126eafeb93137e025f3593ab0f906661a75fb2828f9a",
+      "size_bytes": 3392
+    },
+    {
       "path": "docs/pcpi_p3e3_predictive_calibration_correctness_20260815.md",
       "sha256": "1d165b64e375fad1bddf7538be06dcbc500f941bd148a69f2197aa8118fadc1d",
       "size_bytes": 2113
@@ -485,8 +491,8 @@
     },
     {
       "path": "docs/pcpi_paper_completion_assessment.md",
-      "sha256": "58ff4ddc05b760a933ae2df9da03e2cbb6402db2be7313fe5e36be58e44724ab",
-      "size_bytes": 1909
+      "sha256": "a1f5ca3cf6fa0dec529934a426482f2027b9710db45e8b473feefcd8d3941682",
+      "size_bytes": 3064
     },
     {
       "path": "docs/pcpi_public_source_sync_audit_20260814.md",
@@ -850,8 +856,8 @@
     },
     {
       "path": "pyproject.toml",
-      "sha256": "9a0bf957da295a3cb91f83d3bd451ae7cee54f623e84e41b06f0d5d9dbcc84d8",
-      "size_bytes": 2044
+      "sha256": "b4d8595068baa06ce101d500ca2b2a4108d93dc53aa99d1a694215ec19b517b1",
+      "size_bytes": 2373
     },
     {
       "path": "pytest.ini",
@@ -900,8 +906,8 @@
     },
     {
       "path": "scripts/create_delivery_manifest.py",
-      "sha256": "9c2b0e8a4f281bdd329745d012fd37aa9070ac70230e46f86e2018471241ae88",
-      "size_bytes": 14612
+      "sha256": "ee70f482b36e06929b5d8cfc5887bcfa16be1327a0d8bf56022cbdf83548d0b3",
+      "size_bytes": 14773
     },
     {
       "path": "scripts/package_source.ps1",

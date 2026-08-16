@@ -1,9 +1,11 @@
 # P3 decision — representative-safe maximin joint acquisition
 
 Status: **P3B.10, P3C.1, and P3D.2 real efficacy failed. P3E.1 repairs an exact
-generalized-update decision mismatch, and P3E.2 adds a union-orthogonal
-posterior-adequacy e-process. Both pass correctness fixtures only. Real
-posterior adequacy remains untested; another acquisition run, P4/P5, held-out
+generalized-update decision mismatch. P3E.2 passes its union-orthogonal
+posterior-adequacy correctness Gate and completes a protocol-valid CCPP audit
+without rejection, but this is not a posterior-adequacy certificate. P3E.3
+passes predictive-calibration correctness; its frozen CCPP validation-role
+audit awaits local execution. Another acquisition run, P4/P5, held-out
 confirmation, and superiority claims remain blocked.**
 
 ## Evidence retained
