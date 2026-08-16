@@ -12,3 +12,4 @@ LICENSE text eol=lf
 *.bib text eol=lf
 *.ini text eol=lf
 requirements*.txt text eol=lf
+pyproject.toml text eol=lf
