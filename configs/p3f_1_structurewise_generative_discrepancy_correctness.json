@@ -1,0 +1,29 @@
+{
+  "schema": "pcpi-p3f1-structurewise-generative-discrepancy-correctness-v1",
+  "stage": "P3F.1",
+  "fixture_role": "hand_constructed_algebraic_correctness_fixture",
+  "real_data_access": "forbidden",
+  "heldout_state": "not-applicable",
+  "discrepancy_prior_probability": 0.35,
+  "discrepancy_precision": 1.0,
+  "kernel_states": [
+    {
+      "state_id": "short",
+      "prior_probability": 0.4,
+      "length_scale": 0.55
+    },
+    {
+      "state_id": "long",
+      "prior_probability": 0.6,
+      "length_scale": 1.4
+    }
+  ],
+  "thresholds": {
+    "probability_normalization_max_abs_error": 1e-12,
+    "orthogonality_max_abs_error": 2e-12,
+    "minimum_covariance_eigenvalue": -2e-12,
+    "batch_sequential_max_abs_error": 2e-12,
+    "permutation_max_abs_error": 2e-11,
+    "predictive_density_normalization_max_abs_error": 1e-8
+  }
+}

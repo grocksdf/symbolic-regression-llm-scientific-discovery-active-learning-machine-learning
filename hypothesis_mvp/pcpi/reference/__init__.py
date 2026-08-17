@@ -50,6 +50,18 @@ from .predictive_calibration import (
     predictive_cdf,
     prequential_predictive_pit_e_process,
 )
+from .structurewise_discrepancy import (
+    P3F1_FIXTURE_ROLE,
+    P3F1_METHOD,
+    DiscrepancyKernelState,
+    ExactStructurewiseDiscrepancyPosterior,
+    GenerativeDiscrepancyComponent,
+    StructurewiseDiscrepancyPrior,
+    StructurewiseProjectedBasis,
+    fit_structurewise_discrepancy_posterior,
+    p3f1_contract_hash,
+    structurewise_projected_rbf_basis,
+)
 
 __all__ = [
     "ConditionalPosteriorParameters",
@@ -90,4 +102,14 @@ __all__ = [
     "pit_e_process",
     "predictive_cdf",
     "prequential_predictive_pit_e_process",
+    "P3F1_FIXTURE_ROLE",
+    "P3F1_METHOD",
+    "DiscrepancyKernelState",
+    "ExactStructurewiseDiscrepancyPosterior",
+    "GenerativeDiscrepancyComponent",
+    "StructurewiseDiscrepancyPrior",
+    "StructurewiseProjectedBasis",
+    "fit_structurewise_discrepancy_posterior",
+    "p3f1_contract_hash",
+    "structurewise_projected_rbf_basis",
 ]
