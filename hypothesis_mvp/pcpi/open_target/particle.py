@@ -101,6 +101,7 @@ class OpenTargetParticleDiagnostics:
     effective_sample_size_after: float
     weight_entropy: float
     resampled: bool
+    pre_bridge_resampled: bool
     resampling_threshold_ess: float
     log_evidence_increment: float
     distinct_root_ancestors: int
@@ -147,8 +148,10 @@ class OpenTargetParticleDiagnostics:
             or self.parent_particle_ids != self.child_particle_ids
         ):
             raise ValueError("non-resampled bridge must preserve particle identity")
-        if self.resampled != (
-            self.effective_sample_size_before < self.resampling_threshold_ess
+        if (
+            not self.pre_bridge_resampled
+            and self.resampled
+            != (self.effective_sample_size_before < self.resampling_threshold_ess)
         ):
             raise ValueError("resampling decision is inconsistent with the ESS threshold")
         if not math.isfinite(self.log_evidence_increment):
@@ -367,12 +370,17 @@ class ScalableOpenTargetResult:
             "bridge_count": len(self.diagnostics),
             "bridge_schedule": [
                 {
-                    "observation_step": step,
-                    "bridge_step": bridge,
-                    "beta_previous": beta_previous,
-                    "beta_current": beta_current,
+                    "observation_step": item.step,
+                    "bridge_step": item.bridge_step,
+                    "beta_previous": item.beta_previous,
+                    "beta_current": item.beta_current,
+                    "conditional_ess": item.conditional_ess,
+                    "effective_sample_size_before": item.effective_sample_size_before,
+                    "effective_sample_size_after": item.effective_sample_size_after,
+                    "resampled": item.resampled,
+                    "pre_bridge_resampled": item.pre_bridge_resampled,
                 }
-                for step, bridge, beta_previous, beta_current in self.bridge_schedule
+                for item in self.diagnostics
             ],
             "heldout_state": "not-applicable",
             "real_data_access": "forbidden",
@@ -1019,43 +1027,50 @@ class ScalableOpenTargetSMC:
         for step, target in enumerate(y, start=1):
             beta = 0.0
             bridge_step = 0
-            # A CESS target is defined relative to the current normalized
-            # population.  If the previous observation left the global ESS
-            # below that target, no positive beta increment can satisfy the
-            # next bridge's CESS constraint.  Resample once at the boundary
-            # so the new bridge starts from a valid Feynman--Kac population;
-            # the genealogy is carried into the first bridge diagnostic.
-            pre_bridge_resampled = False
-            pre_bridge_ancestor_indices = tuple(range(count))
-            pre_bridge_parent_particle_ids = tuple(
-                particle.particle_id for particle in particles
-            )
-            pre_bridge_child_particle_ids = pre_bridge_parent_particle_ids
-            current_ess = effective_sample_size(log_weights)
             cess_floor = self.config.cess_target_fraction * count
-            if current_ess + 1e-12 < cess_floor:
-                indices = systematic_resample(np.exp(log_weights), self.rng)
-                previous = particles
-                pre_bridge_ancestor_indices = tuple(int(index) for index in indices)
-                pre_bridge_parent_particle_ids = tuple(
-                    previous[int(index)].particle_id for index in indices
-                )
-                particles = []
-                for index in indices:
-                    parent = previous[int(index)]
-                    child = parent.clone(particle_id=next_particle_id)
-                    child.log_weight = -math.log(count)
-                    particles.append(child)
-                    next_particle_id += 1
-                pre_bridge_child_particle_ids = tuple(
-                    particle.particle_id for particle in particles
-                )
-                log_weights = np.full(count, -math.log(count), dtype=float)
-                pre_bridge_resampled = True
-
             while beta < 1.0:
                 if bridge_step >= self.config.maximum_bridge_steps:
                     raise RuntimeError("adaptive tempering exceeded the frozen bridge limit")
+
+                # CESS is measured relative to the current normalized
+                # population.  A previous bridge may leave that population
+                # below the next bridge's CESS target, in which case no
+                # positive beta increment is feasible.  Resample at every
+                # bridge boundary when necessary and carry the event into
+                # this bridge's genealogy record.
+                bridge_pre_resampled = False
+                bridge_pre_ancestor_indices = tuple(range(count))
+                bridge_pre_parent_particle_ids = tuple(
+                    particle.particle_id for particle in particles
+                )
+                bridge_pre_child_particle_ids = bridge_pre_parent_particle_ids
+                current_ess = effective_sample_size(log_weights)
+                # Include the numerical boundary itself.  A bisection step
+                # can land at CESS == target to machine precision; treating
+                # that as strictly above the floor leaves no positive next
+                # increment because every larger beta is infeasible.
+                if current_ess <= cess_floor * (1.0 + 1e-12):
+                    indices = systematic_resample(np.exp(log_weights), self.rng)
+                    previous = particles
+                    bridge_pre_ancestor_indices = tuple(
+                        int(index) for index in indices
+                    )
+                    bridge_pre_parent_particle_ids = tuple(
+                        previous[int(index)].particle_id for index in indices
+                    )
+                    particles = []
+                    for index in indices:
+                        parent = previous[int(index)]
+                        child = parent.clone(particle_id=next_particle_id)
+                        child.log_weight = -math.log(count)
+                        particles.append(child)
+                        next_particle_id += 1
+                    bridge_pre_child_particle_ids = tuple(
+                        particle.particle_id for particle in particles
+                    )
+                    log_weights = np.full(count, -math.log(count), dtype=float)
+                    bridge_pre_resampled = True
+
                 next_beta, conditional_ess, next_logs = self._adaptive_bridge_beta(
                     particles,
                     log_weights,
@@ -1098,10 +1113,10 @@ class ScalableOpenTargetSMC:
                     )
                     log_weights = np.full(count, -math.log(count), dtype=float)
                 else:
-                    if bridge_step == 0 and pre_bridge_resampled:
-                        ancestor_indices = pre_bridge_ancestor_indices
-                        parent_particle_ids = pre_bridge_parent_particle_ids
-                        child_particle_ids = pre_bridge_child_particle_ids
+                    if bridge_pre_resampled:
+                        ancestor_indices = bridge_pre_ancestor_indices
+                        parent_particle_ids = bridge_pre_parent_particle_ids
+                        child_particle_ids = bridge_pre_child_particle_ids
                     else:
                         ancestor_indices = tuple(range(count))
                         parent_particle_ids = tuple(
@@ -1111,7 +1126,7 @@ class ScalableOpenTargetSMC:
                     for particle, value in zip(particles, log_weights, strict=True):
                         particle.log_weight = float(value)
                 resampled = (
-                    (bridge_step == 0 and pre_bridge_resampled)
+                    bridge_pre_resampled
                     or resampled_after_bridge
                 )
 
@@ -1145,6 +1160,7 @@ class ScalableOpenTargetSMC:
                         effective_sample_size_after=effective_sample_size(log_weights),
                         weight_entropy=weight_entropy(log_weights),
                         resampled=resampled,
+                        pre_bridge_resampled=bridge_pre_resampled,
                         resampling_threshold_ess=threshold,
                         log_evidence_increment=float(log_increment),
                         distinct_root_ancestors=len(unique),

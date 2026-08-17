@@ -87,12 +87,12 @@ prior-independence and complete-uniform. Both include their exact forward and
 reverse probabilities in the MH ratio; a deterministic finite-support
 certificate checks row stochasticity, detailed balance, and stationarity over
 every integer prequential prefix. The CESS scheduler never inserts a
-budget-sized beta increment. If the previous observation leaves the global ESS
-below the registered CESS target, the next observation begins with one
-explicit systematic resampling event; that event is included in the first
-bridge genealogy record. If the registered bridge budget still cannot reach
-the terminal state under the CESS path, it fails closed and records a NO-GO
-rather than changing the target path.
+budget-sized beta increment. If a previous fractional bridge leaves the global
+ESS below the registered CESS target, the next bridge begins with one explicit
+systematic resampling event; that event is included in that bridge's genealogy
+record. If the registered bridge budget still cannot reach the terminal state
+under the CESS path, it fails closed and records a NO-GO rather than changing
+the target path.
 
 ## 3. Exact-reference Gate
 
