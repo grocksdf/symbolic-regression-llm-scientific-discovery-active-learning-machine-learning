@@ -204,6 +204,28 @@ same four seeds, particle counts `[512, 2048]`, and one rejuvenation step.  A
 favorable mixture result cannot define a fidelity envelope; its first required
 check is the exact finite-slice detailed-balance/stationarity certificate.
 
+## 5.3 Random-scan kernel mixture
+
+The independent mixture above uses the full mixture density in one MH ratio.
+Because its audit result was intermediate rather than uniformly dominant, the
+next candidate is a distinct construction:
+
+\[
+K_{\mathrm{scan}}
+ = \omega K_{\mathrm{prior}}
+ + (1-\omega)K_{\mathrm{uniform}},
+ \qquad \omega=1/2.
+\]
+
+At each rejuvenation attempt, one already-valid reversible kernel is selected
+first.  The selected component then uses its own exact MH ratio: prior-ratio
+for the prior-independence kernel and the symmetric ratio for complete-uniform.
+The result is a convex combination of invariant kernels, not a new learned
+target and not an adaptive response-dependent proposal.  The certificate
+constructs both component transition matrices and verifies the convex
+combination directly.  Its audit is separate from the independent-mixture
+audit and remains diagnostic-only.
+
 ## 6. Implementation boundaries
 
 - Extend the canonical `hypothesis_mvp.pcpi.open_target` path; do not create a

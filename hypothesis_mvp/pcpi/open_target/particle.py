@@ -79,10 +79,11 @@ class OpenTargetParticleConfig:
             "prior-independence",
             "complete-uniform",
             "prior-uniform-mixture",
+            "prior-uniform-kernel-mixture",
         }:
             raise ValueError(
                 "P3F.3 registers prior-independence, complete-uniform, and "
-                "prior-uniform-mixture proposals"
+                "prior-uniform-mixture and prior-uniform-kernel-mixture proposals"
             )
         if (
             not math.isfinite(self.proposal_mixture_weight)
@@ -218,6 +219,7 @@ class OpenTargetMoveDiagnostic:
             "prior-independence",
             "complete-uniform",
             "prior-uniform-mixture",
+            "prior-uniform-kernel-mixture",
         }:
             raise ValueError("move proposal kind is not registered")
         if self.proposal_component not in {"prior-independence", "complete-uniform"}:
@@ -1109,13 +1111,17 @@ class ScalableOpenTargetSMC:
             if self.config.proposal_kind in {
                 "complete-uniform",
                 "prior-uniform-mixture",
+                "prior-uniform-kernel-mixture",
             }
             else None
         )
         for index, current in enumerate(particles):
             for _ in range(self.config.rejuvenation_steps):
                 proposals += 1
-                if self.config.proposal_kind == "prior-uniform-mixture":
+                if self.config.proposal_kind in {
+                    "prior-uniform-mixture",
+                    "prior-uniform-kernel-mixture",
+                }:
                     proposal_component = (
                         "prior-independence"
                         if self.rng.random() < self.config.proposal_mixture_weight
@@ -1168,7 +1174,7 @@ class ScalableOpenTargetSMC:
                     # Complete-uniform includes self-transitions and is exactly
                     # symmetric over the finite registered component support.
                     log_q_ratio = 0.0
-                else:
+                elif self.config.proposal_kind == "prior-uniform-mixture":
                     assert component_count is not None
                     weight = self.config.proposal_mixture_weight
                     current_q = (
@@ -1183,6 +1189,17 @@ class ScalableOpenTargetSMC:
                     # but neither component cancels on its own.  The exact
                     # mixture probability is therefore required in q(x)/q(x').
                     log_q_ratio = math.log(current_q) - math.log(proposed_q)
+                else:
+                    # This is a random-scan convex combination of two
+                    # individually reversible kernels.  The selected
+                    # component owns its MH correction; do not use the
+                    # independent-mixture q ratio above.
+                    if proposal_component == "prior-independence":
+                        log_q_ratio = math.log(current.joint_prior_probability) - math.log(
+                            proposed.joint_prior_probability
+                        )
+                    else:
+                        log_q_ratio = 0.0
                 log_acceptance = proposed_target - current_target + log_q_ratio
                 accepted = math.log(self.rng.random()) < min(0.0, log_acceptance)
                 (
@@ -1519,6 +1536,7 @@ def proposal_invariance_certificate(
             "prior-independence",
             "complete-uniform",
             "prior-uniform-mixture",
+            "prior-uniform-kernel-mixture",
         )
     }
     for prefix_length in range(len(y) + 1):
@@ -1548,7 +1566,12 @@ def proposal_invariance_certificate(
         priors = np.asarray([item.joint_prior_probability for item in catalog], dtype=float)
         priors /= float(priors.sum())
         count = len(catalog)
-        for kind in maximums:
+        transitions_by_kind: dict[str, np.ndarray] = {}
+        for kind in (
+            "prior-independence",
+            "complete-uniform",
+            "prior-uniform-mixture",
+        ):
             if kind == "prior-independence":
                 proposal = np.tile(priors, (count, 1))
             elif kind == "complete-uniform":
@@ -1574,6 +1597,7 @@ def proposal_invariance_certificate(
                     )
                     transition[source, destination] = forward * math.exp(log_acceptance)
                 transition[source, source] = 1.0 - float(transition[source].sum())
+            transitions_by_kind[kind] = transition
             flow = stationary[:, None] * transition
             maximums[kind]["maximum_row_normalization_error"] = max(
                 maximums[kind]["maximum_row_normalization_error"],
@@ -1587,6 +1611,24 @@ def proposal_invariance_certificate(
                 maximums[kind]["maximum_stationarity_error"],
                 float(np.max(np.abs(stationary @ transition - stationary))),
             )
+        transition = (
+            mixture_weight * transitions_by_kind["prior-independence"]
+            + (1.0 - mixture_weight) * transitions_by_kind["complete-uniform"]
+        )
+        flow = stationary[:, None] * transition
+        kind = "prior-uniform-kernel-mixture"
+        maximums[kind]["maximum_row_normalization_error"] = max(
+            maximums[kind]["maximum_row_normalization_error"],
+            float(np.max(np.abs(transition.sum(axis=1) - 1.0))),
+        )
+        maximums[kind]["maximum_detailed_balance_error"] = max(
+            maximums[kind]["maximum_detailed_balance_error"],
+            float(np.max(np.abs(flow - flow.T))),
+        )
+        maximums[kind]["maximum_stationarity_error"] = max(
+            maximums[kind]["maximum_stationarity_error"],
+            float(np.max(np.abs(stationary @ transition - stationary))),
+        )
     return {
         "component_count": len(component_specs),
         "prefix_count": len(y) + 1,

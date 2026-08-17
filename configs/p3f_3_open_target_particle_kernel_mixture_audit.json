@@ -1,0 +1,24 @@
+{
+  "schema": "pcpi-p3f3-open-target-particle-kernel-mixture-audit-v1",
+  "stage": "P3F.3",
+  "experiment": "open_target_particle_kernel_mixture_audit",
+  "fixture_role": "hand_constructed_exact_reference_kernel_mixture_audit",
+  "real_data_access": "forbidden",
+  "heldout_state": "not-applicable",
+  "acquisition_state": "blocked",
+  "particle_counts": [512, 2048],
+  "proposal_kinds": ["prior-independence", "complete-uniform", "prior-uniform-kernel-mixture"],
+  "rejuvenation_steps": [1],
+  "seeds": [2026081704, 2026081705, 2026081706, 2026081707],
+  "ess_threshold_fraction": 0.5,
+  "cess_target_fraction": 0.8,
+  "tempering_tolerance": 1e-6,
+  "maximum_bridge_steps": 64,
+  "proposal_mixture_weight": 0.5,
+  "fidelity_envelope": {
+    "status": "not_preregistered",
+    "formal_gate": false,
+    "reason": "The random-scan convex combination is a target-invariant mechanism candidate; its fidelity is not accepted until the fixed comparison is audited."
+  },
+  "claim_boundary": "This is a diagnostic-only exact-slice reversible-kernel-mixture audit. It is not simulated or real-data efficacy, calibration, acquisition, heldout, discovery, or law evidence."
+}

@@ -555,9 +555,13 @@ def _evaluate(config: dict[str, Any], target_config: dict[str, Any]) -> dict[str
     if config["proposal_kinds"] not in (
         ["prior-independence", "complete-uniform"],
         ["prior-independence", "complete-uniform", "prior-uniform-mixture"],
+        ["prior-independence", "complete-uniform", "prior-uniform-kernel-mixture"],
     ):
         raise ValueError("mechanism audit requires the registered proposal set")
-    if config["schema"] == "pcpi-p3f3-open-target-particle-mixture-audit-v1":
+    if config["schema"] in {
+        "pcpi-p3f3-open-target-particle-mixture-audit-v1",
+        "pcpi-p3f3-open-target-particle-kernel-mixture-audit-v1",
+    }:
         if config["rejuvenation_steps"] != [1]:
             raise ValueError("mixture audit requires rejuvenation steps [1]")
     elif config["rejuvenation_steps"] != [0, 1]:
@@ -637,6 +641,7 @@ def main() -> int:
     if config.get("schema") not in {
         "pcpi-p3f3-open-target-particle-mechanism-audit-v1",
         "pcpi-p3f3-open-target-particle-mixture-audit-v1",
+        "pcpi-p3f3-open-target-particle-kernel-mixture-audit-v1",
     }:
         raise ValueError("unexpected P3F.3 mechanism-audit schema")
     if target_config.get("schema") != "pcpi-p3f2-open-target-correctness-v1":
