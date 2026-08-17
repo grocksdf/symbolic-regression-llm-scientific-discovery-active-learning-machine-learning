@@ -31,11 +31,13 @@ from .grammar import (
     CountablyOpenTypedGrammar,
     TypedExpression,
     aggregate_equivalence_mass,
+    equivalence_class_id,
     evaluate_expression,
     add,
     mul,
     neg,
     one,
+    polynomial_key,
     variable,
 )
 from .posterior import OpenTargetContract
@@ -53,6 +55,7 @@ class OpenTargetParticleConfig:
     tempering_tolerance: float = 1e-6
     maximum_bridge_steps: int = 64
     proposal_kind: str = "prior-independence"
+    proposal_mixture_weight: float = 0.5
 
     def __post_init__(self) -> None:
         if self.particle_count < 2:
@@ -72,10 +75,20 @@ class OpenTargetParticleConfig:
             raise ValueError("tempering_tolerance must lie in (0, 1)")
         if self.maximum_bridge_steps < 1:
             raise ValueError("maximum_bridge_steps must be positive")
-        if self.proposal_kind not in {"prior-independence", "complete-uniform"}:
+        if self.proposal_kind not in {
+            "prior-independence",
+            "complete-uniform",
+            "prior-uniform-mixture",
+        }:
             raise ValueError(
-                "P3F.3 registers only prior-independence and complete-uniform proposals"
+                "P3F.3 registers prior-independence, complete-uniform, and "
+                "prior-uniform-mixture proposals"
             )
+        if (
+            not math.isfinite(self.proposal_mixture_weight)
+            or not 0.0 < self.proposal_mixture_weight < 1.0
+        ):
+            raise ValueError("proposal_mixture_weight must lie strictly inside (0, 1)")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -87,6 +100,7 @@ class OpenTargetParticleConfig:
             "tempering_tolerance": self.tempering_tolerance,
             "maximum_bridge_steps": self.maximum_bridge_steps,
             "proposal_kind": self.proposal_kind,
+            "proposal_mixture_weight": self.proposal_mixture_weight,
         }
 
 
@@ -162,6 +176,77 @@ class OpenTargetParticleDiagnostics:
             raise ValueError("proposal and acceptance counts are inconsistent")
 
 
+@dataclass(frozen=True)
+class OpenTargetMoveDiagnostic:
+    """Response-free audit record for one MH rejuvenation proposal.
+
+    This record is observational only: it does not enter the target density,
+    proposal probability, or acceptance decision.  Keeping the raw and
+    semantic identifiers together lets a mechanism audit distinguish a
+    rejected long jump from an accepted within-equivalence-class move.
+    """
+
+    observation_step: int
+    bridge_step: int
+    particle_index: int
+    particle_id: int
+    proposal_index: int
+    proposal_kind: str
+    proposal_component: str
+    accepted: bool
+    log_acceptance: float
+    current_raw_ast_id: str
+    proposed_raw_ast_id: str
+    current_equivalence_class_id: str
+    proposed_equivalence_class_id: str
+    current_node_count: int
+    proposed_node_count: int
+    ast_structural_distance: int
+    semantic_polynomial_l1_distance: float
+    current_discrepancy_active: bool
+    proposed_discrepancy_active: bool
+    current_kernel_state_id: str
+    proposed_kernel_state_id: str
+    move_type: str
+
+    def __post_init__(self) -> None:
+        if self.observation_step < 1 or self.bridge_step < 1:
+            raise ValueError("move step identifiers must be positive")
+        if self.particle_index < 0 or self.particle_id < 0 or self.proposal_index < 0:
+            raise ValueError("move identifiers must be non-negative")
+        if self.proposal_kind not in {
+            "prior-independence",
+            "complete-uniform",
+            "prior-uniform-mixture",
+        }:
+            raise ValueError("move proposal kind is not registered")
+        if self.proposal_component not in {"prior-independence", "complete-uniform"}:
+            raise ValueError("move proposal component is not registered")
+        if not math.isfinite(self.log_acceptance):
+            raise ValueError("move log acceptance must be finite")
+        if self.current_node_count < 1 or self.proposed_node_count < 1:
+            raise ValueError("move AST node counts must be positive")
+        if self.ast_structural_distance < 0:
+            raise ValueError("move AST structural distance must be non-negative")
+        if (
+            not math.isfinite(self.semantic_polynomial_l1_distance)
+            or self.semantic_polynomial_l1_distance < 0.0
+        ):
+            raise ValueError("move semantic polynomial distance must be finite and non-negative")
+        if not self.current_raw_ast_id or not self.proposed_raw_ast_id:
+            raise ValueError("move AST identifiers must be non-empty")
+        if not self.current_equivalence_class_id or not self.proposed_equivalence_class_id:
+            raise ValueError("move equivalence identifiers must be non-empty")
+        if self.move_type not in {
+            "self-transition",
+            "within-equivalence-class",
+            "cross-equivalence-class",
+            "discrepancy-state-change",
+            "cross-equivalence-and-state-change",
+        }:
+            raise ValueError("move type is not registered")
+
+
 @dataclass
 class _Particle:
     expression: TypedExpression
@@ -200,6 +285,79 @@ class _Particle:
             particle_id=particle_id,
             root_ancestor_id=self.root_ancestor_id,
         )
+
+
+def _ast_structural_distance(
+    left: TypedExpression,
+    right: TypedExpression,
+) -> int:
+    """Return a deterministic typed-tree edit proxy for mechanism audits.
+
+    The metric is deliberately structural, not response-derived: each
+    operator/variable mismatch costs one and unmatched child positions cost
+    one.  It is used only for diagnostics and never for MH acceptance.
+    """
+
+    distance = int(left.operator != right.operator)
+    if left.variable_index != right.variable_index:
+        distance += 1
+    for left_child, right_child in zip(left.children, right.children):
+        distance += _ast_structural_distance(left_child, right_child)
+    distance += abs(len(left.children) - len(right.children))
+    return distance
+
+
+def _semantic_polynomial_l1_distance(
+    left: TypedExpression,
+    right: TypedExpression,
+    feature_count: int,
+) -> float:
+    """Exact response-free semantic distance for the registered polynomial slice."""
+
+    left_terms = dict(polynomial_key(left, feature_count))
+    right_terms = dict(polynomial_key(right, feature_count))
+    powers = set(left_terms) | set(right_terms)
+    return float(
+        sum(abs(left_terms.get(power, 0) - right_terms.get(power, 0)) for power in powers)
+    )
+
+
+def _move_type(
+    current: _Particle,
+    proposed: _Particle,
+    feature_count: int,
+) -> tuple[str, str, str, str, int, float, str]:
+    current_raw = current.expression.raw_ast_id
+    proposed_raw = proposed.expression.raw_ast_id
+    current_class = equivalence_class_id(current.expression, feature_count)
+    proposed_class = equivalence_class_id(proposed.expression, feature_count)
+    state_changed = (
+        current.discrepancy_active != proposed.discrepancy_active
+        or current.kernel_state_id != proposed.kernel_state_id
+    )
+    if current_raw == proposed_raw and not state_changed:
+        label = "self-transition"
+    elif state_changed and current_class != proposed_class:
+        label = "cross-equivalence-and-state-change"
+    elif state_changed:
+        label = "discrepancy-state-change"
+    elif current_class == proposed_class:
+        label = "within-equivalence-class"
+    else:
+        label = "cross-equivalence-class"
+    return (
+        current_raw,
+        proposed_raw,
+        current_class,
+        proposed_class,
+        _ast_structural_distance(current.expression, proposed.expression),
+        _semantic_polynomial_l1_distance(
+            current.expression,
+            proposed.expression,
+            feature_count,
+        ),
+        label,
+    )
 
 
 @dataclass(frozen=True)
@@ -283,6 +441,7 @@ class ScalableOpenTargetResult:
     particles: tuple[OpenTargetParticleSnapshot, ...]
     diagnostics: tuple[OpenTargetParticleDiagnostics, ...]
     log_evidence: float
+    moves: tuple[OpenTargetMoveDiagnostic, ...] = ()
 
     def __post_init__(self) -> None:
         actions = np.ascontiguousarray(self.actions, dtype=float)
@@ -314,6 +473,10 @@ class ScalableOpenTargetResult:
             raise ValueError("particle posterior probabilities must sum to one")
         if not math.isfinite(self.log_evidence):
             raise ValueError("particle log evidence must be finite")
+
+        for move in self.moves:
+            if not isinstance(move, OpenTargetMoveDiagnostic):
+                raise ValueError("particle move audit entries have an invalid type")
 
     @property
     def raw_expression_posterior(self) -> dict[str, float]:
@@ -368,6 +531,7 @@ class ScalableOpenTargetResult:
             "action_dimension": int(self.actions.shape[1]),
             "proposal_kind": self.config.proposal_kind,
             "bridge_count": len(self.diagnostics),
+            "move_count": len(self.moves),
             "bridge_schedule": [
                 {
                     "observation_step": item.step,
@@ -932,18 +1096,34 @@ class ScalableOpenTargetSMC:
         row_index: int,
         target: float,
         beta: float,
-    ) -> tuple[int, int]:
+        *,
+        observation_step: int,
+        bridge_step: int,
+        proposal_index_start: int,
+    ) -> tuple[int, int, tuple[OpenTargetMoveDiagnostic, ...]]:
         proposals = 0
         acceptances = 0
+        move_diagnostics: list[OpenTargetMoveDiagnostic] = []
         component_count = (
             _finite_component_count(self.contract, self.config.maximum_nodes)
-            if self.config.proposal_kind == "complete-uniform"
+            if self.config.proposal_kind in {
+                "complete-uniform",
+                "prior-uniform-mixture",
+            }
             else None
         )
         for index, current in enumerate(particles):
             for _ in range(self.config.rejuvenation_steps):
                 proposals += 1
-                if self.config.proposal_kind == "prior-independence":
+                if self.config.proposal_kind == "prior-uniform-mixture":
+                    proposal_component = (
+                        "prior-independence"
+                        if self.rng.random() < self.config.proposal_mixture_weight
+                        else "complete-uniform"
+                    )
+                else:
+                    proposal_component = self.config.proposal_kind
+                if proposal_component == "prior-independence":
                     proposed = _sample_prior_particle(
                         self.contract,
                         actions,
@@ -983,18 +1163,69 @@ class ScalableOpenTargetSMC:
                     log_q_ratio = math.log(current.joint_prior_probability) - math.log(
                         proposed.joint_prior_probability
                     )
-                else:
+                elif self.config.proposal_kind == "complete-uniform":
                     assert component_count is not None
                     # Complete-uniform includes self-transitions and is exactly
                     # symmetric over the finite registered component support.
                     log_q_ratio = 0.0
+                else:
+                    assert component_count is not None
+                    weight = self.config.proposal_mixture_weight
+                    current_q = (
+                        weight * current.joint_prior_probability
+                        + (1.0 - weight) / component_count
+                    )
+                    proposed_q = (
+                        weight * proposed.joint_prior_probability
+                        + (1.0 - weight) / component_count
+                    )
+                    # The mixture remains independent of the current state,
+                    # but neither component cancels on its own.  The exact
+                    # mixture probability is therefore required in q(x)/q(x').
+                    log_q_ratio = math.log(current_q) - math.log(proposed_q)
                 log_acceptance = proposed_target - current_target + log_q_ratio
-                if math.log(self.rng.random()) < min(0.0, log_acceptance):
+                accepted = math.log(self.rng.random()) < min(0.0, log_acceptance)
+                (
+                    current_raw,
+                    proposed_raw,
+                    current_class,
+                    proposed_class,
+                    structural_distance,
+                    semantic_distance,
+                    move_type,
+                ) = _move_type(current, proposed, self.contract.grammar.feature_count)
+                move_diagnostics.append(
+                    OpenTargetMoveDiagnostic(
+                        observation_step=observation_step,
+                        bridge_step=bridge_step,
+                        particle_index=index,
+                        particle_id=current.particle_id,
+                        proposal_index=proposal_index_start + proposals - 1,
+                        proposal_kind=self.config.proposal_kind,
+                        proposal_component=proposal_component,
+                        accepted=accepted,
+                        log_acceptance=float(log_acceptance),
+                        current_raw_ast_id=current_raw,
+                        proposed_raw_ast_id=proposed_raw,
+                        current_equivalence_class_id=current_class,
+                        proposed_equivalence_class_id=proposed_class,
+                        current_node_count=current.expression.node_count,
+                        proposed_node_count=proposed.expression.node_count,
+                        ast_structural_distance=structural_distance,
+                        semantic_polynomial_l1_distance=semantic_distance,
+                        current_discrepancy_active=current.discrepancy_active,
+                        proposed_discrepancy_active=proposed.discrepancy_active,
+                        current_kernel_state_id=current.kernel_state_id,
+                        proposed_kernel_state_id=proposed.kernel_state_id,
+                        move_type=move_type,
+                    )
+                )
+                if accepted:
                     proposed.log_weight = current.log_weight
                     particles[index] = proposed
                     current = proposed
                     acceptances += 1
-        return proposals, acceptances
+        return proposals, acceptances, tuple(move_diagnostics)
 
     def run(
         self,
@@ -1021,6 +1252,8 @@ class ScalableOpenTargetSMC:
         log_weights = np.full(count, -math.log(count), dtype=float)
         log_evidence = 0.0
         diagnostics: list[OpenTargetParticleDiagnostics] = []
+        move_diagnostics: list[OpenTargetMoveDiagnostic] = []
+        proposal_index = 0
         next_particle_id = count
         threshold = self.config.ess_threshold_fraction * count
 
@@ -1130,7 +1363,7 @@ class ScalableOpenTargetSMC:
                     or resampled_after_bridge
                 )
 
-                proposals, acceptances = self._rejuvenate(
+                proposals, acceptances, bridge_moves = self._rejuvenate(
                     particles,
                     x,
                     y,
@@ -1138,7 +1371,12 @@ class ScalableOpenTargetSMC:
                     step - 1,
                     float(target),
                     next_beta,
+                    observation_step=step,
+                    bridge_step=bridge_step + 1,
+                    proposal_index_start=proposal_index,
                 )
+                move_diagnostics.extend(bridge_moves)
+                proposal_index += proposals
                 for particle, value in zip(particles, log_weights, strict=True):
                     particle.log_weight = float(value)
                 roots = np.asarray(
@@ -1225,6 +1463,7 @@ class ScalableOpenTargetSMC:
             particles=tuple(snapshots),
             diagnostics=tuple(diagnostics),
             log_evidence=float(log_evidence),
+            moves=tuple(move_diagnostics),
         )
 
 
@@ -1233,8 +1472,9 @@ def proposal_invariance_certificate(
     actions: np.ndarray,
     targets: np.ndarray,
     maximum_nodes: int,
+    mixture_weight: float = 0.5,
 ) -> dict[str, object]:
-    """Check two auditable MH proposals against every integer prequential target.
+    """Check registered independent MH proposals against every prefix target.
 
     This is a finite-slice algebraic certificate.  It enumerates only the
     registered correctness support, replays each component through each
@@ -1245,6 +1485,8 @@ def proposal_invariance_certificate(
 
     if maximum_nodes < 1:
         raise ValueError("maximum_nodes must be positive")
+    if not math.isfinite(mixture_weight) or not 0.0 < mixture_weight < 1.0:
+        raise ValueError("mixture_weight must lie strictly inside (0, 1)")
     x = np.asarray(actions, dtype=float)
     if x.ndim == 1:
         x = x[:, None]
@@ -1273,7 +1515,11 @@ def proposal_invariance_certificate(
             "maximum_detailed_balance_error": 0.0,
             "maximum_stationarity_error": 0.0,
         }
-        for kind in ("prior-independence", "complete-uniform")
+        for kind in (
+            "prior-independence",
+            "complete-uniform",
+            "prior-uniform-mixture",
+        )
     }
     for prefix_length in range(len(y) + 1):
         catalog: list[_Particle] = []
@@ -1305,8 +1551,13 @@ def proposal_invariance_certificate(
         for kind in maximums:
             if kind == "prior-independence":
                 proposal = np.tile(priors, (count, 1))
-            else:
+            elif kind == "complete-uniform":
                 proposal = np.full((count, count), 1.0 / count, dtype=float)
+            else:
+                proposal = np.tile(
+                    mixture_weight * priors + (1.0 - mixture_weight) / count,
+                    (count, 1),
+                )
             transition = np.zeros_like(proposal)
             for source in range(count):
                 for destination in range(count):
@@ -1339,6 +1590,7 @@ def proposal_invariance_certificate(
     return {
         "component_count": len(component_specs),
         "prefix_count": len(y) + 1,
+        "proposal_mixture_weight": mixture_weight,
         "proposal_kinds": maximums,
         "maximum_error": max(
             value
@@ -1351,6 +1603,7 @@ def proposal_invariance_certificate(
 __all__ = [
     "OpenTargetParticleConfig",
     "OpenTargetParticleDiagnostics",
+    "OpenTargetMoveDiagnostic",
     "OpenTargetParticleSnapshot",
     "ScalableOpenTargetResult",
     "ScalableOpenTargetSMC",

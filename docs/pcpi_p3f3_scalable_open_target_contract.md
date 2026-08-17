@@ -146,6 +146,64 @@ fidelity error is dominated by particle variance, proposal mixing, resampling,
 or rejuvenation; it does not authorize an error envelope or a downstream
 scientific claim.
 
+### 5.1 Accepted-move semantic audit
+
+Every rejuvenation proposal now emits a response-free `OpenTargetMoveDiagnostic`
+record.  The record contains the proposal kind, accept/reject outcome, exact
+forward/reverse MH decision already used by the kernel, raw AST identifiers,
+polynomial-equivalence identifiers, typed-tree structural distance, exact
+polynomial ℓ1 semantic distance on the registered algebra, node-count change,
+discrepancy/kernel state, and a registered move type:
+
+- `self-transition`;
+- `within-equivalence-class`;
+- `cross-equivalence-class`;
+- `discrepancy-state-change`; or
+- `cross-equivalence-and-state-change`.
+
+The mechanism runner aggregates accepted structural and semantic jump
+distances, accepted node-count changes, move-type-specific acceptance rates, cross-class and
+discrepancy-state transition fractions, and a complete accepted transition
+table.  These summaries are descriptive and are not available to the sampler
+while it is running.  In particular, no acceptance threshold, distance cutoff,
+proposal mixture, or particle count may be changed as a function of an
+observed fidelity result.
+
+The audit is designed to distinguish three mechanisms that can make a lower
+acceptance proposal more faithful: (i) fewer accepted self-transitions but
+larger accepted semantic jumps, (ii) better coverage of posterior equivalence
+classes, or (iii) lower correlation between accepted moves and resampling
+genealogy.  A conclusion about any of these mechanisms requires stability over
+the preregistered seeds and both particle counts; one favorable cell is not a
+fidelity envelope.
+
+## 5.2 Target-invariant kernel-mixture candidate
+
+The semantic audit showed a stable mechanism pattern on the exact slice:
+complete-uniform accepts fewer proposals but its accepted moves have larger
+typed-tree and polynomial-semantic jumps and more cross-equivalence-class
+transitions.  The principled next candidate is therefore an independent
+mixture proposal, not an acceptance-rate adjustment:
+
+\[
+q_{\mathrm{mix}}(z') =
+  \omega q_{\mathrm{prior}}(z') + (1-\omega)q_{\mathrm{uniform}}(z'),
+\qquad \omega=1/2.
+\]
+
+The equal weight is frozen before evaluating the mixture audit.  For every
+proposal the MH ratio uses the full mixture probability
+\(q_{\mathrm{mix}}(z)/q_{\mathrm{mix}}(z')\); it never substitutes the
+probability of whichever component happened to generate the draw.  Thus the
+mixture changes exploration only and leaves the registered posterior target
+unchanged.  The component label is recorded for later diagnostics but is not
+used for adaptation during a run.
+
+The mixture audit is diagnostic-only and compares all three kernels at the
+same four seeds, particle counts `[512, 2048]`, and one rejuvenation step.  A
+favorable mixture result cannot define a fidelity envelope; its first required
+check is the exact finite-slice detailed-balance/stationarity certificate.
+
 ## 6. Implementation boundaries
 
 - Extend the canonical `hypothesis_mvp.pcpi.open_target` path; do not create a

@@ -124,3 +124,39 @@ def test_p3f3_particle_result_records_normalized_mass_and_genealogy() -> None:
         1.0,
         abs_tol=2e-12,
     )
+
+
+def test_p3f3_move_audit_is_aligned_with_rejuvenation_diagnostics() -> None:
+    actions, targets = _fixture()
+    result = ScalableOpenTargetSMC(
+        _contract(),
+        OpenTargetParticleConfig(
+            particle_count=128,
+            maximum_nodes=3,
+            ess_threshold_fraction=0.5,
+            rejuvenation_steps=1,
+            proposal_kind="complete-uniform",
+        ),
+        seed=2026081704,
+    ).run(actions, targets)
+    expected = sum(item.proposals for item in result.diagnostics)
+    assert len(result.moves) == expected
+    assert sum(move.accepted for move in result.moves) == sum(
+        item.acceptances for item in result.diagnostics
+    )
+    assert all(move.proposal_kind == "complete-uniform" for move in result.moves)
+    assert all(move.ast_structural_distance >= 0 for move in result.moves)
+    assert all(move.semantic_polynomial_l1_distance >= 0.0 for move in result.moves)
+    assert all(move.observation_step >= 1 for move in result.moves)
+    assert all(move.bridge_step >= 1 for move in result.moves)
+    assert all(
+        move.move_type
+        in {
+            "self-transition",
+            "within-equivalence-class",
+            "cross-equivalence-class",
+            "discrepancy-state-change",
+            "cross-equivalence-and-state-change",
+        }
+        for move in result.moves
+    )

@@ -40,6 +40,7 @@ from .sequential import (
 from .particle import (
     OpenTargetParticleConfig,
     OpenTargetParticleDiagnostics,
+    OpenTargetMoveDiagnostic,
     OpenTargetParticleSnapshot,
     ScalableOpenTargetResult,
     ScalableOpenTargetSMC,
@@ -79,6 +80,7 @@ __all__ = [
     "run_exhaustive_sequential_smc_reference",
     "OpenTargetParticleConfig",
     "OpenTargetParticleDiagnostics",
+    "OpenTargetMoveDiagnostic",
     "OpenTargetParticleSnapshot",
     "ScalableOpenTargetResult",
     "ScalableOpenTargetSMC",

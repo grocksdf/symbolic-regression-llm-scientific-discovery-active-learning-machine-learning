@@ -2,7 +2,8 @@
 
 The frozen design compares two particle counts, two registered proposal
 kernels, two rejuvenation settings, and four newly preregistered seeds on the
-hand-constructed exact slice. It records acceptance, resampling, genealogy,
+hand-constructed exact slice. It records acceptance, accepted semantic jump
+distance, move types, accepted structure transitions, resampling, genealogy,
 structural diversity, and exact-reference fidelity. No real-data, held-out,
 acquisition, calibration, or efficacy path is imported.
 """
@@ -92,6 +93,134 @@ def _entropy(values: dict[str, float]) -> float:
     return float(-np.sum(positive * np.log(positive)))
 
 
+def _distance_stats(values: list[float]) -> dict[str, float | None]:
+    """Summarize accepted semantic jumps without feeding them back to SMC."""
+
+    if not values:
+        return {"count": 0, "mean": None, "std": None, "min": None, "max": None}
+    array = np.asarray(values, dtype=float)
+    return {
+        "count": int(len(array)),
+        "mean": float(np.mean(array)),
+        "std": float(np.std(array, ddof=1)) if len(array) > 1 else 0.0,
+        "min": float(np.min(array)),
+        "max": float(np.max(array)),
+    }
+
+
+def _move_audit(moves: tuple[Any, ...]) -> dict[str, Any]:
+    """Return a complete accepted-move/transition audit for one run.
+
+    All counters are post hoc summaries of the already target-invariant MH
+    trace.  No count, distance, or label is used to alter future proposals.
+    """
+
+    by_type: dict[str, dict[str, Any]] = {}
+    accepted_distances: list[float] = []
+    accepted_semantic_distances: list[float] = []
+    accepted_node_deltas: list[float] = []
+    accepted_transitions: dict[tuple[str, str, str, str, str], int] = {}
+    by_component: dict[str, dict[str, int]] = {}
+    accepted_cross_class = 0
+    accepted_state_changes = 0
+    for move in moves:
+        row = by_type.setdefault(
+            move.move_type,
+            {"proposals": 0, "acceptances": 0, "accepted_distances": [], "accepted_node_deltas": []},
+        )
+        component_row = by_component.setdefault(
+            move.proposal_component,
+            {"proposals": 0, "acceptances": 0},
+        )
+        component_row["proposals"] += 1
+        row["proposals"] += 1
+        if move.accepted:
+            component_row["acceptances"] += 1
+            row["acceptances"] += 1
+            distance = float(move.ast_structural_distance)
+            node_delta = float(move.proposed_node_count - move.current_node_count)
+            row["accepted_distances"].append(distance)
+            row.setdefault("accepted_semantic_distances", []).append(
+                float(move.semantic_polynomial_l1_distance)
+            )
+            row["accepted_node_deltas"].append(node_delta)
+            accepted_distances.append(distance)
+            accepted_semantic_distances.append(
+                float(move.semantic_polynomial_l1_distance)
+            )
+            accepted_node_deltas.append(node_delta)
+            if move.current_equivalence_class_id != move.proposed_equivalence_class_id:
+                accepted_cross_class += 1
+            if (
+                move.current_discrepancy_active != move.proposed_discrepancy_active
+                or move.current_kernel_state_id != move.proposed_kernel_state_id
+            ):
+                accepted_state_changes += 1
+            key = (
+                move.current_raw_ast_id,
+                move.proposed_raw_ast_id,
+                move.current_equivalence_class_id,
+                move.proposed_equivalence_class_id,
+                move.move_type,
+            )
+            accepted_transitions[key] = accepted_transitions.get(key, 0) + 1
+
+    type_summary: dict[str, Any] = {}
+    for label, row in sorted(by_type.items()):
+        proposals = int(row["proposals"])
+        acceptances = int(row["acceptances"])
+        type_summary[label] = {
+            "proposals": proposals,
+            "acceptances": acceptances,
+            "acceptance_rate": float(acceptances / proposals) if proposals else 0.0,
+            "accepted_ast_structural_distance": _distance_stats(row["accepted_distances"]),
+            "accepted_node_count_delta": _distance_stats(row["accepted_node_deltas"]),
+            "accepted_semantic_polynomial_l1_distance": _distance_stats(
+                row.get("accepted_semantic_distances", [])
+            ),
+        }
+
+    transition_rows = [
+        {
+            "current_raw_ast_id": key[0],
+            "proposed_raw_ast_id": key[1],
+            "current_equivalence_class_id": key[2],
+            "proposed_equivalence_class_id": key[3],
+            "move_type": key[4],
+            "accepted_count": count,
+        }
+        for key, count in sorted(accepted_transitions.items())
+    ]
+    accepted_count = sum(int(row["acceptances"]) for row in type_summary.values())
+    return {
+        "total_moves": len(moves),
+        "total_acceptances": accepted_count,
+        "accepted_ast_structural_distance": _distance_stats(accepted_distances),
+        "accepted_semantic_polynomial_l1_distance": _distance_stats(
+            accepted_semantic_distances
+        ),
+        "accepted_node_count_delta": _distance_stats(accepted_node_deltas),
+        "accepted_cross_equivalence_class_fraction": (
+            float(accepted_cross_class / accepted_count) if accepted_count else 0.0
+        ),
+        "accepted_discrepancy_or_kernel_state_change_fraction": (
+            float(accepted_state_changes / accepted_count) if accepted_count else 0.0
+        ),
+        "move_type_statistics": type_summary,
+        "proposal_component_statistics": {
+            label: {
+                **counts,
+                "acceptance_rate": (
+                    float(counts["acceptances"] / counts["proposals"])
+                    if counts["proposals"] else 0.0
+                ),
+            }
+            for label, counts in sorted(by_component.items())
+        },
+        "accepted_structure_transitions": transition_rows,
+    }
+
+
 def _run_one(
     contract: Any,
     config: dict[str, Any],
@@ -112,10 +241,12 @@ def _run_one(
         tempering_tolerance=float(config["tempering_tolerance"]),
         maximum_bridge_steps=int(config["maximum_bridge_steps"]),
         proposal_kind=proposal_kind,
+        proposal_mixture_weight=float(config.get("proposal_mixture_weight", 0.5)),
     )
     base = {
         "particle_count": particle_count,
         "proposal_kind": proposal_kind,
+        "proposal_mixture_weight": particle_config.proposal_mixture_weight,
         "rejuvenation_steps": rejuvenation_steps,
         "seed": seed,
         "target_hash": contract.stable_hash,
@@ -206,6 +337,7 @@ def _run_one(
         "terminal_raw_ast_entropy": _entropy(result.raw_expression_posterior),
         "terminal_equivalence_class_entropy": _entropy(particle_classes),
         "bridge_count": len(diagnostics),
+        "move_audit": _move_audit(result.moves),
     }
 
 
@@ -250,6 +382,112 @@ def _aggregate(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for field in ERROR_FIELDS + MECHANISM_FIELDS:
             row[field] = _summary_stats([float(run[field]) for run in selected])
         output.append(row)
+    return output
+
+
+def _aggregate_move_audits(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Pool accepted-move diagnostics within preregistered audit cells."""
+
+    cells = sorted(
+        {
+            (
+                int(run["particle_count"]),
+                str(run["proposal_kind"]),
+                int(run["rejuvenation_steps"]),
+            )
+            for run in runs
+            if run.get("run_completed", False)
+        }
+    )
+    output: list[dict[str, Any]] = []
+    for particle_count, proposal_kind, rejuvenation_steps in cells:
+        selected = [
+            run for run in runs
+            if run.get("run_completed", False)
+            and int(run["particle_count"]) == particle_count
+            and str(run["proposal_kind"]) == proposal_kind
+            and int(run["rejuvenation_steps"]) == rejuvenation_steps
+        ]
+        move_type_totals: dict[str, dict[str, int]] = {}
+        transition_totals: dict[tuple[str, str, str], int] = {}
+        for run in selected:
+            audit = run["move_audit"]
+            # Reconstruct pooled moments from the complete transition table
+            # and move-type counts.  Per-run raw move records stay in the
+            # source result object; this aggregate is intentionally compact.
+            for label, stats in audit["move_type_statistics"].items():
+                total = move_type_totals.setdefault(
+                    label, {"proposals": 0, "acceptances": 0}
+                )
+                total["proposals"] += int(stats["proposals"])
+                total["acceptances"] += int(stats["acceptances"])
+            for transition in audit["accepted_structure_transitions"]:
+                key = (
+                    str(transition["current_equivalence_class_id"]),
+                    str(transition["proposed_equivalence_class_id"]),
+                    str(transition["move_type"]),
+                )
+                transition_totals[key] = transition_totals.get(key, 0) + int(
+                    transition["accepted_count"]
+                )
+        total_proposals = sum(item["proposals"] for item in move_type_totals.values())
+        total_acceptances = sum(item["acceptances"] for item in move_type_totals.values())
+        output.append(
+            {
+                "particle_count": particle_count,
+                "proposal_kind": proposal_kind,
+                "rejuvenation_steps": rejuvenation_steps,
+                "successful_seeds": len(selected),
+                "total_proposals": total_proposals,
+                "total_acceptances": total_acceptances,
+                "acceptance_rate": (
+                    float(total_acceptances / total_proposals)
+                    if total_proposals else 0.0
+                ),
+                "move_type_totals": {
+                    label: {
+                        **counts,
+                        "acceptance_rate": (
+                            float(counts["acceptances"] / counts["proposals"])
+                            if counts["proposals"] else 0.0
+                        ),
+                    }
+                    for label, counts in sorted(move_type_totals.items())
+                },
+                "accepted_equivalence_transition_totals": [
+                    {
+                        "current_equivalence_class_id": key[0],
+                        "proposed_equivalence_class_id": key[1],
+                        "move_type": key[2],
+                        "accepted_count": count,
+                    }
+                    for key, count in sorted(transition_totals.items())
+                ],
+                "accepted_ast_structural_distance_by_seed": [
+                    {
+                        "seed": int(run["seed"]),
+                        **run["move_audit"]["accepted_ast_structural_distance"],
+                    }
+                    for run in selected
+                ],
+                "accepted_node_count_delta_by_seed": [
+                    {
+                        "seed": int(run["seed"]),
+                        **run["move_audit"]["accepted_node_count_delta"],
+                    }
+                    for run in selected
+                ],
+                "accepted_semantic_polynomial_l1_distance_by_seed": [
+                    {
+                        "seed": int(run["seed"]),
+                        **run["move_audit"][
+                            "accepted_semantic_polynomial_l1_distance"
+                        ],
+                    }
+                    for run in selected
+                ],
+            }
+        )
     return output
 
 
@@ -314,12 +552,22 @@ def _evaluate(config: dict[str, Any], target_config: dict[str, Any]) -> dict[str
     exact = fit_open_target_exact_posterior(contract, actions, targets)
     if config["particle_counts"] != [512, 2048]:
         raise ValueError("mechanism audit requires frozen particle counts [512, 2048]")
-    if config["proposal_kinds"] != ["prior-independence", "complete-uniform"]:
-        raise ValueError("mechanism audit requires both registered proposals")
-    if config["rejuvenation_steps"] != [0, 1]:
+    if config["proposal_kinds"] not in (
+        ["prior-independence", "complete-uniform"],
+        ["prior-independence", "complete-uniform", "prior-uniform-mixture"],
+    ):
+        raise ValueError("mechanism audit requires the registered proposal set")
+    if config["schema"] == "pcpi-p3f3-open-target-particle-mixture-audit-v1":
+        if config["rejuvenation_steps"] != [1]:
+            raise ValueError("mixture audit requires rejuvenation steps [1]")
+    elif config["rejuvenation_steps"] != [0, 1]:
         raise ValueError("mechanism audit requires rejuvenation steps [0, 1]")
     certificate = proposal_invariance_certificate(
-        contract, actions, targets, contract.reference_slice_maximum_nodes
+        contract,
+        actions,
+        targets,
+        contract.reference_slice_maximum_nodes,
+        mixture_weight=float(config.get("proposal_mixture_weight", 0.5)),
     )
     runs = [
         _run_one(
@@ -334,7 +582,7 @@ def _evaluate(config: dict[str, Any], target_config: dict[str, Any]) -> dict[str
     failures = [run for run in runs if not run.get("run_completed", False)]
     return {
         "stage": STAGE,
-        "experiment": EXPERIMENT,
+        "experiment": str(config.get("experiment", EXPERIMENT)),
         "fixture_role": FIXTURE_ROLE,
         "claim_boundary": CLAIM_BOUNDARY,
         "real_data_accessed": False,
@@ -355,12 +603,14 @@ def _evaluate(config: dict[str, Any], target_config: dict[str, Any]) -> dict[str
         "design": {
             "particle_counts": config["particle_counts"],
             "proposal_kinds": config["proposal_kinds"],
+            "proposal_mixture_weight": float(config.get("proposal_mixture_weight", 0.5)),
             "rejuvenation_steps": config["rejuvenation_steps"],
             "seeds": config["seeds"],
         },
         "run_count": len(runs),
         "runtime_failures": failures,
         "aggregates": _aggregate(runs),
+        "move_audit_aggregates": _aggregate_move_audits(runs),
         "paired_proposal_differences": _paired_differences(runs, "proposal"),
         "paired_rejuvenation_differences": _paired_differences(runs, "rejuvenation"),
         "runs": runs,
@@ -384,7 +634,10 @@ def main() -> int:
     root = Path(__file__).resolve().parents[1]
     config = _load_json(args.config.resolve(), root)
     target_config = _load_json(args.target_config.resolve(), root)
-    if config.get("schema") != "pcpi-p3f3-open-target-particle-mechanism-audit-v1":
+    if config.get("schema") not in {
+        "pcpi-p3f3-open-target-particle-mechanism-audit-v1",
+        "pcpi-p3f3-open-target-particle-mixture-audit-v1",
+    }:
         raise ValueError("unexpected P3F.3 mechanism-audit schema")
     if target_config.get("schema") != "pcpi-p3f2-open-target-correctness-v1":
         raise ValueError("unexpected P3F.2 target contract schema")
