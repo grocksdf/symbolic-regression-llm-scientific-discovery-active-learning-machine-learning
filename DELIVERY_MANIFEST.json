@@ -1,10 +1,10 @@
 {
   "schema": "pcpi-delivery-manifest-v1",
   "artifact_type": "canonical_source",
-  "stage": "P3E.3",
-  "task": "real_initial_development_predictive_calibration_audit",
-  "source_tree_sha256": "b232ba2f9c540e6428eeaaa8f4a11427fa9ab03a3bf319f2de8b39b11c58505e",
-  "production_code_hash": "18bf81436a95947a28b1e7b29e5290061e32bee1b868dacdd7c91bdb7638bc0c",
+  "stage": "P3F.2",
+  "task": "open_target_exact_reference_correctness",
+  "source_tree_sha256": "abaf54ab15d127a5636ce5adc55b89f2f4c4dae0c235e59256e5d3861ba2c7b4",
+  "production_code_hash": "76afcc40ea733dc1763c68d02ca2ab091c886b2bb182a92b80a395a6e1f5c8af",
   "python_version": "3.11",
   "validation_runtime": {
     "python_version": "3.12.13",
@@ -29,11 +29,13 @@
     "pcpi-p3e2-real-adequacy-audit",
     "pcpi-p3e3-predictive-calibration",
     "pcpi-p3e3-real-calibration-audit",
+    "pcpi-p3f1-structurewise-discrepancy",
+    "pcpi-p3f2-open-target-correctness",
     "hypothesis-discover",
     "hypothesis-llm-preflight"
   ],
   "tests": {
-    "passed": 249,
+    "passed": 280,
     "failed": 0,
     "skipped": 0,
     "collection_errors": 0,
@@ -123,7 +125,14 @@
     "P3E.3 eta below one blocks the proper nominal-marginal interpretation of the PIT e-process",
     "P3E.3 validation is opened only for a calibration diagnostic, with held-out closed",
     "P3E.3 does not authorize acquisition comparison or acquisition policy execution",
-    "P3E.3 real validation-role audit is frozen, but no local result has been ingested",
+    "P3E.3 returned 8/8 validation-role seeds with three PIT rejections and failed global eligibility",
+    "P3F.1 validates structure-wise generative discrepancy only on a hand-constructed algebraic reference",
+    "P3F.1 does not establish predictive calibration, efficacy, acquisition advantage, or discovery",
+    "P3F.2 defines a countably-open target but exact computation is conditional on an explicitly reported finite node-count slice",
+    "P3F.2 exact polynomial equivalence covers only the registered dimensionless algebraic language",
+    "P3F.2 registers one linear expression amplitude, Gaussian homoscedastic NIG noise, and no measurement-error state",
+    "P3F.2 collapsed exhaustive-state SMC/RJMCMC is a correctness reference, not a scalable open-grammar inference engine",
+    "P3F.2 has no real-data, acquisition, held-out, predictive-calibration, efficacy, or discovery evidence",
     "P3B.6 uses one preconditioned R-log SafeBayes posterior for every policy",
     "P3B.6 calibration and basis transforms use initial development data only",
     "P3B.6 epistemic fallback is a posterior surrogate and is not class EIG",
@@ -160,6 +169,9 @@
     "P3E.3 real non-rejection is not predictive-calibration or posterior-adequacy evidence",
     "P3E.3 proper nominal-marginal interpretation requires eta equal to one",
     "P3E.3 validation-role responses are diagnostic only; held-out and acquisition remain blocked",
+    "P3F.1 supports proper structure-wise generative-discrepancy algebra only",
+    "P3F.2 supports open-prior, exact-slice posterior, equivalence aggregation, and collapsed SMC/RJMCMC correctness only",
+    "P3F.2 does not support scalable search, real predictive calibration, acquisition, superiority, or scientific-law claims",
     "discrepancy-augmented predictive calibration remains untested",
     "no motif superiority held-out or VED claim"
   ],
@@ -186,8 +198,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "cfe41d54fabe295f32a931e256c42d85e22819e7b64918d00f6900eaa1adcf4e",
-      "size_bytes": 33698
+      "sha256": "d60b8532d9f7de72997de094b8408cf7c29ee69aedfb16fb47c757e928458905",
+      "size_bytes": 36694
     },
     {
       "path": "configs/p2a_1_correctness_diagnostic.json",
@@ -285,6 +297,16 @@
       "size_bytes": 1489
     },
     {
+      "path": "configs/p3f_1_structurewise_generative_discrepancy_correctness.json",
+      "sha256": "7b7f3907cb1cbdd426a5a34696031a65546f4ad43792b679f3e1d7cefd591a9b",
+      "size_bytes": 842
+    },
+    {
+      "path": "configs/p3f_2_open_target_correctness.json",
+      "sha256": "23137bde21ab790495336766cec870e4e17c3319a89f1076372445d834a31727",
+      "size_bytes": 1379
+    },
+    {
       "path": "contracts/rd0_1_airfoil_freeze.json",
       "sha256": "3a3a468f5717a8b5b77d8ed041a045c682c30b6245b87b1115441eab8572d943",
       "size_bytes": 2446
@@ -326,8 +348,8 @@
     },
     {
       "path": "docs/P3_DECISION.md",
-      "sha256": "d958e4c0877219aa7c67677259f87f7cbd482e7dc8c27df0de26d40718b5ef50",
-      "size_bytes": 13167
+      "sha256": "031b5af6b72a52fbdaf026c83ddf40ff7ddf85791a34d2cc20d706f6ae98ee28",
+      "size_bytes": 15817
     },
     {
       "path": "docs/hd1_1_nist_asd_hypothesis_discovery_contract.json",
@@ -336,8 +358,8 @@
     },
     {
       "path": "docs/pcpi_claim_code_evidence_matrix.csv",
-      "sha256": "8a341e532cc5187b32d365eca2799557c8a1925bbc28df1f75f265668bd257b7",
-      "size_bytes": 6226
+      "sha256": "c8606551a216f133128258c3736917c1dd4c728266f0424858071b65570609ae",
+      "size_bytes": 6313
     },
     {
       "path": "docs/pcpi_data_leakage_audit.md",
@@ -490,9 +512,24 @@
       "size_bytes": 4129
     },
     {
+      "path": "docs/pcpi_p3e3_real_predictive_calibration_result_20260816.md",
+      "sha256": "71e94ac25b36fd806b70dd1dd4ad6e968daf8a3bab1dc9f010986a3567ec3742",
+      "size_bytes": 1292
+    },
+    {
+      "path": "docs/pcpi_p3f2_open_target_correctness_result_20260816.md",
+      "sha256": "54edbb71d281966bdc1a40557d181bee0ca14250b660f7ded5cf5b8df5743ab9",
+      "size_bytes": 2856
+    },
+    {
+      "path": "docs/pcpi_p3f2_open_target_method_contract_20260816.md",
+      "sha256": "4c74801d7cddeefd1cdcfc9e45467d30af87c391e6b352b3825739a152a62a0f",
+      "size_bytes": 5912
+    },
+    {
       "path": "docs/pcpi_paper_completion_assessment.md",
-      "sha256": "a1f5ca3cf6fa0dec529934a426482f2027b9710db45e8b473feefcd8d3941682",
-      "size_bytes": 3064
+      "sha256": "c19a8c50fe4f2a299e78c35bd232d44b62a58695d087ef248f11fd21f2da1d6f",
+      "size_bytes": 3793
     },
     {
       "path": "docs/pcpi_public_source_sync_audit_20260814.md",
@@ -685,14 +722,39 @@
       "size_bytes": 517
     },
     {
+      "path": "hypothesis_mvp/pcpi/open_target/__init__.py",
+      "sha256": "ab0be9941bfba7bcfbfe697822f56d62707a4b852a28aadf1393380c81980c4b",
+      "size_bytes": 1748
+    },
+    {
+      "path": "hypothesis_mvp/pcpi/open_target/grammar.py",
+      "sha256": "aec91fbc231160c2a1cd2fadf56fd903bcf589797bc5a034917ea30aeb2574e3",
+      "size_bytes": 14096
+    },
+    {
+      "path": "hypothesis_mvp/pcpi/open_target/posterior.py",
+      "sha256": "066e74cb7e1d48bc4bd06b246fc455477f61b01aa6d63a764d41b53e201c340f",
+      "size_bytes": 10749
+    },
+    {
+      "path": "hypothesis_mvp/pcpi/open_target/rjmcmc.py",
+      "sha256": "45c204f56ccf15dd58269a0f46b021fc26a079caf7f188b1962b629d1cdd4e58",
+      "size_bytes": 7476
+    },
+    {
+      "path": "hypothesis_mvp/pcpi/open_target/sequential.py",
+      "sha256": "1a7b873c17a431305c75d9f57773c4e8179fa239a906bdb89bb2fd797081a799",
+      "size_bytes": 6504
+    },
+    {
       "path": "hypothesis_mvp/pcpi/real_acquisition.py",
       "sha256": "fef86c6761b0141a15568a03703ee160fbf83c88a03fb752fb2b95fa8904e130",
       "size_bytes": 40570
     },
     {
       "path": "hypothesis_mvp/pcpi/reference/__init__.py",
-      "sha256": "5a8b63cb36172d2774104f388254cf76d22d797d16b2890812c70bf229557111",
-      "size_bytes": 2435
+      "sha256": "9e9d59e02c7b319008c86b1426df2952e1a469308e6a85975c9cba95a0ad3434",
+      "size_bytes": 3146
     },
     {
       "path": "hypothesis_mvp/pcpi/reference/basis.py",
@@ -743,6 +805,11 @@
       "path": "hypothesis_mvp/pcpi/reference/real_bank.py",
       "sha256": "3e778fe60d18bc39daa385e853fa20cc64e9b989a06b4addb3a3eeeb51c171e2",
       "size_bytes": 5504
+    },
+    {
+      "path": "hypothesis_mvp/pcpi/reference/structurewise_discrepancy.py",
+      "sha256": "89ebc4fc7f8359c431de1a70fc75b6c22df09b99f2007ca819f212a10debcf8c",
+      "size_bytes": 24126
     },
     {
       "path": "hypothesis_mvp/pcpi/reference/update_coherence.py",
@@ -846,8 +913,8 @@
     },
     {
       "path": "paper/pcpi_aistats_main.tex",
-      "sha256": "822399d49ce35465effb13ccc59cf1bc6735298d926e1b77c163141a3e8406c0",
-      "size_bytes": 41986
+      "sha256": "420c389499b6025eaf8949f1f156e062ce3a1e6c3c5573ac818e400fc8a4eed3",
+      "size_bytes": 45212
     },
     {
       "path": "paper/references.bib",
@@ -856,8 +923,8 @@
     },
     {
       "path": "pyproject.toml",
-      "sha256": "b4d8595068baa06ce101d500ca2b2a4108d93dc53aa99d1a694215ec19b517b1",
-      "size_bytes": 2373
+      "sha256": "01b800102108df8e37c0b8a40c279584d67d8862a60ed4d4c981db39e629da3e",
+      "size_bytes": 2566
     },
     {
       "path": "pytest.ini",
@@ -906,8 +973,8 @@
     },
     {
       "path": "scripts/create_delivery_manifest.py",
-      "sha256": "ee70f482b36e06929b5d8cfc5887bcfa16be1327a0d8bf56022cbdf83548d0b3",
-      "size_bytes": 14773
+      "sha256": "068418c68fd25f0cdc705adec4867a6375db9ce958b1d71e236b51aa3bfb0b09",
+      "size_bytes": 16084
     },
     {
       "path": "scripts/package_source.ps1",
@@ -1048,6 +1115,16 @@
       "path": "scripts/run_pcpi_p3e3_real_predictive_calibration_audit.py",
       "sha256": "8d308a1fa8a545685716cdfd91942f792b35da384084cfaf071f4cca1774a411",
       "size_bytes": 16793
+    },
+    {
+      "path": "scripts/run_pcpi_p3f1_structurewise_discrepancy_diagnostic.py",
+      "sha256": "cf2cc8da6eb361a251aa7195487b241b8a10797f2b1e7f0ff916175b31ea1c69",
+      "size_bytes": 9362
+    },
+    {
+      "path": "scripts/run_pcpi_p3f2_open_target_correctness.py",
+      "sha256": "4d6d4c66ec5709e9464b7cfe85efcb1058aba9911e78b33d89a7b69ebc611785",
+      "size_bytes": 12395
     },
     {
       "path": "scripts/run_rd1_1_real_development.py",
@@ -1208,6 +1285,16 @@
       "path": "tests/test_pcpi_p3e3_real_predictive_calibration_audit.py",
       "sha256": "52594b2b5e5aabc70150961c3f9ec3256fc5be5e1a96d57cfdf9d30bb5389b0b",
       "size_bytes": 2284
+    },
+    {
+      "path": "tests/test_pcpi_p3f1_structurewise_discrepancy.py",
+      "sha256": "d580c3cfaf23dee5fab188ca43f80c2f8fc7659d879f8718dc6b97245abd6454",
+      "size_bytes": 7019
+    },
+    {
+      "path": "tests/test_pcpi_p3f2_open_target_correctness.py",
+      "sha256": "8c4f86d4bafd615386bd9bc12e94f587bdc71fcb1305c42decf1f9a9b456fe90",
+      "size_bytes": 11732
     },
     {
       "path": "tests/test_pcpi_predictive_calibration.py",
