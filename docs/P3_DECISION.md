@@ -276,7 +276,7 @@ error, nonlinear constants, and transcendental identities fail closed.
 
 P3F.2c uses an exhaustive collapsed-state sequential SMC reference and exact
 Metropolis--Hastings matrices for complete-uniform and prior-independence
-proposals. All 14 registered decisions pass, including open-prior
+proposals. All 15 registered decisions pass, including open-prior
 normalization, class-mass conservation, batch/sequential identity, evidence
 telescoping, RJMCMC detailed balance/stationarity, proposal invariance, and
 row-order equivariance.

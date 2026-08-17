@@ -22,7 +22,7 @@ policy, and did not produce calibration, efficacy, discovery, or law evidence.
 
 ## Gate result
 
-All 14 registered decisions passed:
+All 15 registered decisions passed:
 
 - open-prior normalization and explicit nonzero tail;
 - response-independent target contract;
