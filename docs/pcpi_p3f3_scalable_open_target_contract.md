@@ -118,7 +118,21 @@ only scalable inference correctness. It does not support search coverage,
 predictive calibration on real data, acquisition advantage, or scientific-law
 discovery.
 
-## 4. Implementation boundaries
+## 4. Fidelity audit boundary
+
+The separate `open_target_particle_fidelity_audit` runner freezes particle
+counts `[128, 512, 2048]`, the two registered proposal kernels, and three
+response-free seeds. It reports raw-AST, equivalence-class, predictive, and
+log-evidence error against the same hand-constructed exact slice, together
+with paired proposal differences and descriptive count convergence.
+
+This audit is diagnostic-only until an error envelope is preregistered. Its
+output cannot authorize calibration, acquisition, held-out access, real-data
+efficacy, or discovery. A larger particle count or a favorable proposal
+comparison must be reported as evidence about approximation fidelity, not as a
+post-hoc Gate threshold or a superiority claim.
+
+## 5. Implementation boundaries
 
 - Extend the canonical `hypothesis_mvp.pcpi.open_target` path; do not create a
   second production posterior or a `legacy/final/v2` implementation.
@@ -132,7 +146,7 @@ discovery.
 - Never import real-data, acquisition, or held-out modules from the P3F.3
   correctness runner.
 
-## 5. No-go conditions
+## 6. No-go conditions
 
 Stop P3F.3 if any of the following occurs:
 
@@ -151,7 +165,7 @@ After a No-Go, diagnose target specification, generative model, proposal
 support, or numerical approximation. Do not repair the result by selecting
 seeds, adding post-result regularization, or changing the claim boundary.
 
-## 6. Downstream order
+## 7. Downstream order
 
 Only after this Gate passes may a separate predictive-calibration contract be
 written. Only after that calibration Gate passes may a new held-out-closed real
