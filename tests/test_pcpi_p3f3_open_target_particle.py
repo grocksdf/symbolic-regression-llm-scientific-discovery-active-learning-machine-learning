@@ -57,6 +57,11 @@ def test_p3f3_config_rejects_unregistered_proposal() -> None:
         OpenTargetParticleConfig(proposal_kind="llm")
 
 
+def test_p3f3_mixture_config_has_fixed_registered_weight() -> None:
+    config = OpenTargetParticleConfig(proposal_kind="prior-uniform-mixture")
+    assert config.proposal_mixture_weight == pytest.approx(0.5)
+
+
 def test_p3f3_registered_proposals_have_exact_invariance_certificate() -> None:
     actions, targets = _fixture()
     certificate = proposal_invariance_certificate(
@@ -64,6 +69,8 @@ def test_p3f3_registered_proposals_have_exact_invariance_certificate() -> None:
     )
     assert certificate["component_count"] == 42
     assert certificate["prefix_count"] == len(targets) + 1
+    assert certificate["proposal_mixture_weight"] == pytest.approx(0.5)
+    assert "prior-uniform-mixture" in certificate["proposal_kinds"]
     assert certificate["maximum_error"] < 2e-14
 
 
@@ -145,6 +152,7 @@ def test_p3f3_move_audit_is_aligned_with_rejuvenation_diagnostics() -> None:
         item.acceptances for item in result.diagnostics
     )
     assert all(move.proposal_kind == "complete-uniform" for move in result.moves)
+    assert all(move.proposal_component == "complete-uniform" for move in result.moves)
     assert all(move.ast_structural_distance >= 0 for move in result.moves)
     assert all(move.semantic_polynomial_l1_distance >= 0.0 for move in result.moves)
     assert all(move.observation_step >= 1 for move in result.moves)
