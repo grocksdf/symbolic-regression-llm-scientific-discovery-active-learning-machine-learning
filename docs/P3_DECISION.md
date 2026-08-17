@@ -4,9 +4,11 @@ Status: **P3B.10, P3C.1, and P3D.2 real efficacy failed. P3E.1 repairs an exact
 generalized-update decision mismatch. P3E.2 passes its union-orthogonal
 posterior-adequacy correctness Gate and completes a protocol-valid CCPP audit
 without rejection, but this is not a posterior-adequacy certificate. P3E.3
-passes predictive-calibration correctness; its frozen CCPP validation-role
-audit awaits local execution. Another acquisition run, P4/P5, held-out
-confirmation, and superiority claims remain blocked.**
+passes predictive-calibration correctness, but its returned CCPP
+validation-role audit rejects three of eight seed-wise PIT sequences and fails
+global eligibility. P3F.1 and P3F.2a--c now pass model-class and exact-reference
+correctness Gates only. Another acquisition run, P4/P5, held-out confirmation,
+and superiority claims remain blocked.**
 
 ## Evidence retained
 
@@ -237,5 +239,50 @@ nominal-marginal interpretation of the e-process. A no-crossing real result
 would therefore be only non-rejection against the fixed PIT betting family,
 not a predictive-calibration or posterior-adequacy certificate. The local
 execution is specified in
-`docs/pcpi_p3e3_predictive_calibration_protocol_20260815.md`; no real result
-has yet been ingested into this source tree.
+`docs/pcpi_p3e3_predictive_calibration_protocol_20260815.md`.
+
+The returned audit completed all eight seeds. Seeds `2026080701`,
+`2026080706`, and `2026080707` rejected the registered PIT-uniformity null;
+only five seeds were eligible for a proper nominal-marginal interpretation and
+the global Gate failed. Held-out remained closed and no acquisition policy was
+run. See `docs/pcpi_p3e3_real_predictive_calibration_result_20260816.md`.
+
+## P3F.1 structure-wise generative discrepancy
+
+P3F.1 moves discrepancy from a union-orthogonal diagnostic into the proper
+finite generative posterior. Each symbolic structure receives its own
+response-independent projected GP factor, constructed by whitening and a
+null-space basis so PSD and structure-wise orthogonality hold by construction.
+The spike is represented once per structure; slab mass is divided over frozen
+kernel states. Structure, spike/slab, kernel, coefficient, discrepancy, and
+noise uncertainty all enter one normalized Student-t predictive mixture.
+
+The correctness runner passes all nine decisions and has no data-root,
+held-out, or acquisition surface. This establishes algebra and implementation
+only; it does not establish calibration or efficacy.
+
+## P3F.2a--c open target correctness
+
+P3F.2a defines a proper countably-open typed AST prior with a geometric node
+count. The exact finite enumeration is explicitly conditional and records its
+omitted tail. Raw AST mass is aggregated into exact polynomial equivalence
+classes without losing prior or posterior probability.
+
+P3F.2b combines that exact slice with the P3F.1 generative posterior. The
+registered one-amplitude expression model makes its design column the exact
+parameter tangent, so the structure-wise projection is tangent-correct within
+this bounded algebraic contract. Unsupported noise families, measurement
+error, nonlinear constants, and transcendental identities fail closed.
+
+P3F.2c uses an exhaustive collapsed-state sequential SMC reference and exact
+Metropolis--Hastings matrices for complete-uniform and prior-independence
+proposals. All 14 registered decisions pass, including open-prior
+normalization, class-mass conservation, batch/sequential identity, evidence
+telescoping, RJMCMC detailed balance/stationarity, proposal invariance, and
+row-order equivariance.
+
+These results do not validate scalable open-grammar exploration. The next
+admissible work is a scalable particle approximation checked against this
+reference. No new real experiment is authorized. See
+`docs/pcpi_p3f2_open_target_method_contract_20260816.md` and
+`docs/pcpi_p3f2_open_target_correctness_result_20260816.md`.

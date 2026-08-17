@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hypothesis-mvp"
-version = "1.3.3"
+version = "1.4.0"
 description = "Auditable real-only scientific hypothesis discovery agent"
 requires-python = ">=3.11"
 dependencies = [
@@ -49,6 +49,7 @@ pcpi-p3e2-real-adequacy-audit = "scripts.run_pcpi_p3e2_real_posterior_adequacy_a
 pcpi-p3e3-predictive-calibration = "scripts.run_pcpi_p3e3_predictive_calibration_diagnostic:main"
 pcpi-p3e3-real-calibration-audit = "scripts.run_pcpi_p3e3_real_predictive_calibration_audit:main"
 pcpi-p3f1-structurewise-discrepancy = "scripts.run_pcpi_p3f1_structurewise_discrepancy_diagnostic:main"
+pcpi-p3f2-open-target-correctness = "scripts.run_pcpi_p3f2_open_target_correctness:main"
 
 [tool.setuptools.packages.find]
 include = ["hypothesis_mvp*", "scripts*"]

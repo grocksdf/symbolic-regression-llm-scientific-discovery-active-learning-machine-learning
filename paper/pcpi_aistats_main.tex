@@ -66,10 +66,17 @@ validation of an augmented posterior. Gas Turbine is excluded because its
 $\eta<1$ branches require a separate update-coherent adequacy contract. Real
 posterior adequacy, superiority, motif transfer, and held-out effectiveness
 claims therefore remain blocked. A separate PIT predictive-calibration
-correctness fixture passes five registered decisions; the corresponding
-CCPP-only validation-role audit is frozen but has not yet produced ingested
-real-data evidence. A no-crossing outcome would remain non-rejection against
-one fixed betting family rather than a calibration proof.
+correctness fixture passes five registered decisions, but its returned
+CCPP-only validation-role audit rejects three of eight seed-wise PIT
+sequences; only five seeds retain a proper nominal-marginal interpretation and
+the global eligibility Gate fails. We therefore introduce a response-blind
+model-class repair: structure-wise projected discrepancy inside a proper
+generative posterior, a countably-open typed AST prior, exact prior-mass-aware
+equivalence aggregation, and a collapsed sequential SMC/RJMCMC reference. The
+open-target reference passes normalization, detailed-balance, stationarity,
+evidence-telescoping, and proposal-invariance checks. These are correctness
+results only; a scalable open-grammar approximation and new predictive-
+calibration evidence remain absent.
 \end{abstract}
 
 \section{Introduction}
@@ -94,8 +101,9 @@ The paper is organized around three primary contributions.
   \item A sequential Bayesian formulation whose primary estimand is an
   operational predictive-equivalence class rather than an expression string.
   \item A target-correct SMC construction over symbolic structures,
-  coefficients, and noise parameters, validated against an exactly enumerable
-  posterior before any open-grammar claim is made. \evidencegate{P2}
+  coefficients, discrepancy, and noise parameters, together with a proper
+  countably-open typed prior whose finite conditional slice supplies an exact
+  posterior and collapsed RJMCMC reference. \evidencegate{P2/P3F}
   \item A target-aware acquisition audit that separates numerical containment,
   registered-reference dominance, and posterior-update/loss alignment; an
   uncertified or nonpositive decision returns to the registered policy instead
@@ -743,10 +751,62 @@ with no threshold crossing, but this non-rejection is not an adequacy
 certificate and the augmented posterior is not authorized for acquisition. The
 held-out role stayed closed and no acquisition comparison was performed. Real
 posterior adequacy therefore remains unresolved. P3E.3 passes five
-predictive-calibration correctness decisions, while its CCPP validation-role
-audit is frozen pending local execution; no current evidence supports matched-budget real
-superiority, motif invariance, VED discovery, unknown-law recovery, or held-out
-confirmation.
+predictive-calibration correctness decisions, while its returned CCPP
+validation-role audit rejects three of eight PIT sequences and fails global
+eligibility. P3F.1 then places a structure-wise projected discrepancy in one
+proper finite generative posterior. P3F.2 defines a proper countably-open typed
+AST prior and passes an exact conditional-slice SMC/RJMCMC correctness Gate;
+it is not a scalable sampler or real-data result. No current evidence supports
+matched-budget real superiority, motif invariance, VED discovery, unknown-law
+recovery, or held-out confirmation.
+
+\section{Open-Target Generative Repair}
+
+The P3E.3 failure motivates a model-class repair rather than post-result
+scaling. Let \(S\) be a finite typed AST. We place a geometric prior on its
+node count \(L\),
+\begin{equation}
+ p(L=\ell)=(1-\rho)\rho^{\ell-1},\qquad
+ p(S\mid L)=N_L^{-1},
+\end{equation}
+where \(N_L\) is the exact number of registered well-typed ASTs of size
+\(L\). This defines a proper countably-open target. Enumeration through
+\(L_{\max}\) is explicitly conditional and retains mass
+\(1-\rho^{L_{\max}}\); the omitted tail \(\rho^{L_{\max}}\) is reported.
+
+For each raw AST, P3F.1 uses the generative model
+\begin{equation}
+ y=f_S(X;\theta_S)+dA_{S,\lambda}u+\epsilon,
+ \quad d\in\{0,1\},
+\end{equation}
+where \(K_\lambda=W_\lambda W_\lambda^\top\),
+\begin{equation}
+ N_S=\operatorname{null}(J_S^\top W_\lambda),\qquad
+ A_{S,\lambda}=W_\lambda N_S.
+\end{equation}
+Thus \(A_{S,\lambda}A_{S,\lambda}^\top\) is positive semidefinite by
+construction and \(J_S^\top A_{S,\lambda}=0\) on the registered domain. In
+the exact P3F.2 slice, \(f_S(x;\theta_S)=\theta_Sg_S(x)\), so
+\(J_S=g_S(X)\) is exact. General nonlinear constants require a separate
+parameter-dependent target and are not claimed.
+
+Scientific mass is a pushforward, not a simplified winner. For the registered
+algebraic language, exact polynomial canonicalization defines \(C(S)\), and
+\begin{equation}
+ p(C\mid D)=\sum_{S:C(S)=C}p(S\mid D).
+\end{equation}
+The exact slice analytically integrates the coefficient, discrepancy
+coordinates, and noise variance. Two distinct, evaluable collapsed proposals
+are corrected by
+\begin{equation}
+ \alpha(i,j)=\min\!\left(1,
+ \frac{\pi(j)q(j,i)}{\pi(i)q(i,j)}\right).
+\end{equation}
+Their transition matrices satisfy detailed balance and stationarity to
+floating-point tolerance, recover the same target, and telescope the
+sequential evidence to the batch marginal. The Gate uses a hand-constructed
+algebraic reference only and supplies no efficacy, calibration, acquisition,
+or discovery evidence.
 
 \section{Conclusion}
 
@@ -767,13 +827,16 @@ preserving the closed held-out role and the no-acquisition rule. This result is
 evidence against rejection by the registered diagnostic only; it does not
 certify posterior adequacy or authorize an augmented-posterior acquisition
 run. P3E.3 passes a five-decision PIT predictive-calibration correctness
-fixture, but its real validation-role audit is still pending and remains
-diagnostic-only. The eta-below-one branch is fail-closed for a proper
-nominal-marginal interpretation. Any downstream acquisition decision remains
-blocked.
-Augmented-posterior calibration, another measured-pool acquisition run, motif
-transfer, and held-out confirmation remain downstream and independently
-blocked.
+fixture, but its returned validation-role audit rejects three seeds and fails
+global eligibility. P3F.1/P3F.2 consequently move the repair to a proper
+structure-wise generative discrepancy and countably-open typed target. Their
+exact finite-slice checks establish normalization, class-mass conservation,
+reversible-kernel invariance, and sequential evidence identities, not search
+coverage or real predictive calibration. The eta-below-one branch remains
+fail-closed for a proper nominal-marginal interpretation. A scalable
+open-target particle engine, augmented-posterior calibration, another
+measured-pool acquisition run, motif transfer, and held-out confirmation remain
+downstream and independently blocked.
 
 \bibliographystyle{plain}
 \bibliography{references}

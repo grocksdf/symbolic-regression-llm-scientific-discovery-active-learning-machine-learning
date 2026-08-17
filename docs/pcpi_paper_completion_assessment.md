@@ -3,8 +3,8 @@
 Synchronization assessment date: 2026-08-16
 
 `paper/pcpi_aistats_main.tex` is the sole manuscript entry. This assessment is
-bound to the P3E.3 canonical mainline synchronized at remote commit `2d811bb`
-and to the frozen experiment bundle commit `c0b48ab` where explicitly stated.
+advanced through the rebuilt P3F.1 and P3F.2a--c correctness mainline; the
+returned P3E.3 real audit remains bound to frozen experiment commit `c0b48ab`.
 
 | Phase | Current state | Evidence consequence |
 |---|---|---|
@@ -22,7 +22,11 @@ and to the frozen experiment bundle commit `c0b48ab` where explicitly stated.
 | P3D.2 | real reference-dominance acquisition | 96/96 heldout-closed runs passed protocol; real efficacy Gate failed |
 | P3E.1 | generalized-update loss/update alignment | exact finite correctness Gate passed; no real-data surface |
 | P3E.2 | union-orthogonal discrepancy adequacy diagnostic | correctness Gate passed; CCPP 8/8 real audit completed without rejection; adequacy not certified |
-| P3E.3 | PIT predictive-calibration compatibility diagnostic | five-decision correctness Gate passed; frozen CCPP validation-role audit awaits local execution |
+| P3E.3 | PIT predictive-calibration compatibility diagnostic | 8/8 returned validation-role seeds completed; three PIT rejections and only 5/8 nominal-marginal eligible; global Gate failed |
+| P3F.1 | structure-wise projected generative discrepancy | proper finite joint-posterior correctness Gate passed; no real-data surface |
+| P3F.2a | proper countably-open typed target | normalization, explicit tail, and response-independent contract passed |
+| P3F.2b | exact open-target finite-slice posterior | raw/class mass, generative mixture, and batch/sequential correctness passed |
+| P3F.2c | collapsed sequential SMC/RJMCMC reference | detailed balance, stationarity, telescoping, proposal invariance, and row-order Gates passed |
 | P4 | excluded from core | no motif claim |
 | P5 | blocked | no broad real superiority claim |
 | P6 | held-out closed | no confirmation claim |
@@ -39,8 +43,10 @@ The manuscript is not submission-ready. The defensible current statement is:
 
 P3B.9, P3B.10, P3C.1, and P3D.2 do not establish real acquisition advantage.
 P3E.2 supplies protocol-valid non-rejection against one registered discrepancy
-alternative, not a posterior-adequacy certificate. P3E.3 correctness is closed,
-but its real validation-role audit has not yet been ingested. The entire
-submission Gate is **NOT YET**. Acquisition reruns, augmented-posterior claims,
-held-out confirmation, motif transfer, VED, and scientific-law claims remain
-blocked.
+alternative, not a posterior-adequacy certificate. P3E.3 returned negative
+global predictive-calibration eligibility. P3F.1/P3F.2 repair the generative
+model class and exact target semantics only; they do not yet supply a scalable
+open-grammar sampler or real predictive-calibration evidence. The entire
+submission Gate is **NOT YET**. Acquisition reruns, augmented-posterior efficacy
+claims, held-out confirmation, motif transfer, VED, and scientific-law claims
+remain blocked.

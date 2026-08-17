@@ -132,6 +132,8 @@ def run(args: argparse.Namespace) -> int:
             "pcpi-p3e2-real-adequacy-audit",
             "pcpi-p3e3-predictive-calibration",
             "pcpi-p3e3-real-calibration-audit",
+            "pcpi-p3f1-structurewise-discrepancy",
+            "pcpi-p3f2-open-target-correctness",
             "hypothesis-discover",
             "hypothesis-llm-preflight",
         ],
@@ -223,7 +225,14 @@ def run(args: argparse.Namespace) -> int:
             "P3E.3 eta below one blocks the proper nominal-marginal interpretation of the PIT e-process",
             "P3E.3 validation is opened only for a calibration diagnostic, with held-out closed",
             "P3E.3 does not authorize acquisition comparison or acquisition policy execution",
-            "P3E.3 real validation-role audit is frozen, but no local result has been ingested",
+            "P3E.3 returned 8/8 validation-role seeds with three PIT rejections and failed global eligibility",
+            "P3F.1 validates structure-wise generative discrepancy only on a hand-constructed algebraic reference",
+            "P3F.1 does not establish predictive calibration, efficacy, acquisition advantage, or discovery",
+            "P3F.2 defines a countably-open target but exact computation is conditional on an explicitly reported finite node-count slice",
+            "P3F.2 exact polynomial equivalence covers only the registered dimensionless algebraic language",
+            "P3F.2 registers one linear expression amplitude, Gaussian homoscedastic NIG noise, and no measurement-error state",
+            "P3F.2 collapsed exhaustive-state SMC/RJMCMC is a correctness reference, not a scalable open-grammar inference engine",
+            "P3F.2 has no real-data, acquisition, held-out, predictive-calibration, efficacy, or discovery evidence",
             "P3B.6 uses one preconditioned R-log SafeBayes posterior for every policy",
             "P3B.6 calibration and basis transforms use initial development data only",
             "P3B.6 epistemic fallback is a posterior surrogate and is not class EIG",
@@ -260,6 +269,9 @@ def run(args: argparse.Namespace) -> int:
             "P3E.3 real non-rejection is not predictive-calibration or posterior-adequacy evidence",
             "P3E.3 proper nominal-marginal interpretation requires eta equal to one",
             "P3E.3 validation-role responses are diagnostic only; held-out and acquisition remain blocked",
+            "P3F.1 supports proper structure-wise generative-discrepancy algebra only",
+            "P3F.2 supports open-prior, exact-slice posterior, equivalence aggregation, and collapsed SMC/RJMCMC correctness only",
+            "P3F.2 does not support scalable search, real predictive calibration, acquisition, superiority, or scientific-law claims",
             "discrepancy-augmented predictive calibration remains untested",
             "no motif superiority held-out or VED claim",
         ],
@@ -276,9 +288,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--stage", default="P3E.3")
+    parser.add_argument("--stage", default="P3F.2")
     parser.add_argument(
-        "--task", default="real_initial_development_predictive_calibration_audit"
+        "--task", default="open_target_exact_reference_correctness"
     )
     parser.add_argument("--tests-passed", type=int, required=True)
     parser.add_argument("--tests-failed", type=int, default=0)

@@ -1,10 +1,18 @@
 # Hypothesis MVP — PCPI
 
-Current stage: **P3E.3 predictive-calibration correctness passed; the frozen
-CCPP validation-role predictive-calibration audit is ready for local
-execution**. The P3E.2 real posterior-adequacy audit completed with
-protocol-valid non-rejection, not an adequacy certificate; acquisition remains
-blocked.
+Current stage: **P3F.2a--c open-target mathematical and implementation
+correctness passed; real-data and acquisition execution remain blocked**.
+P3F.1 places a structure-wise projected discrepancy inside one proper
+generative posterior. P3F.2 defines a response-independent countably-open typed
+AST prior, exact prior-mass-aware equivalence aggregation, and deterministic
+collapsed sequential SMC/RJMCMC reference. These Gates are correctness only.
+
+The returned P3E.3 CCPP validation-role audit completed all eight registered
+seeds but rejected PIT uniformity for three seeds; only five seeds retained a
+proper nominal-marginal interpretation and the global eligibility Gate failed.
+Held-out remained closed and no acquisition policy was run. The P3E.2 real
+posterior-adequacy audit had previously completed with protocol-valid
+non-rejection, not an adequacy certificate. Acquisition remains blocked.
 P3D.2 completed 96/96 protocol-valid heldout-closed real runs
 but returned `REAL_ADVANTAGE_NOT_DEMONSTRATED`. Its v2 archive has a valid
 97-event EvidenceRegistry and verified official-data, split, source, config,
@@ -42,6 +50,14 @@ correctness evidence only. The CCPP real audit selects the likelihood power on
 acquisition policy is compared. See
 `docs/pcpi_p3e3_predictive_calibration_protocol_20260815.md`.
 
+The returned negative audit is recorded in
+`docs/pcpi_p3e3_real_predictive_calibration_result_20260816.md`.
+
+P3F.1 and P3F.2 respond at the model-class and inference-target level rather
+than tuning the failed result. The mathematical contract is in
+`docs/pcpi_p3f2_open_target_method_contract_20260816.md`; the exact-reference
+result is in `docs/pcpi_p3f2_open_target_correctness_result_20260816.md`.
+
 The fresh canonical execution is audited in
 `docs/pcpi_p3e2_result_audit_20260815.md`. Its output archive SHA-256 is
 `3cee2b87b222ec228b3f0db5770dbae5936cf42cc821a4215026761ae000285b` and its
@@ -57,7 +73,7 @@ closed. The P3D.2 result audit and P3E.1 root-cause matrix are in
 `docs/pcpi_p3e1_root_cause_and_update_coherence.md`. The subsequent
 posterior-adequacy contract is in
 `docs/pcpi_p3e2_posterior_adequacy_repair.md`.
-The current P3E.3 source tree passes the full collected test suite; the exact
+The current P3F.2 source tree passes the full collected test suite; the exact
 count is recorded in `DELIVERY_MANIFEST.json`.
 
 The frozen real-audit protocol covers CCPP only, because the
@@ -662,6 +678,42 @@ proper nominal-marginal e-process interpretation. Even a complete real run
 with no PIT crossing is non-rejection against the registered betting family,
 not a calibration or posterior-adequacy certificate. Run the local protocol
 from `docs/pcpi_p3e3_predictive_calibration_protocol_20260815.md`.
+
+The returned audit completed all eight seeds but rejected three registered PIT
+sequences and failed global eligibility. See
+`docs/pcpi_p3e3_real_predictive_calibration_result_20260816.md`.
+
+## P3F.1 structure-wise generative discrepancy
+
+P3F.1 replaces the diagnostic-only union projection with one discrepancy
+spike/slab inside every structure's generative posterior. For each registered
+structure and response-independent kernel state it constructs a whitened
+null-space covariance factor whose columns are orthogonal to that structure's
+design. Structure, spike/slab, kernel state, coefficients, discrepancy
+coordinates, and noise variance are jointly normalized; the posterior
+predictive is a Student-t mixture. The entry point
+`pcpi-p3f1-structurewise-discrepancy` has no data-root or acquisition surface.
+
+## P3F.2a--c open target and corrected trans-dimensional reference
+
+P3F.2a defines a proper countably-open prior over typed finite ASTs. The finite
+exact slice is explicitly conditional and reports its omitted geometric tail.
+Raw derivation states remain distinct, while scientific output aggregates
+posterior mass by exact polynomial equivalence class.
+
+P3F.2b combines this slice with the P3F.1 generative discrepancy posterior. In
+the registered one-amplitude algebraic language the structure design is the
+exact coefficient Jacobian, so the projected discrepancy is tangent-correct
+within this bounded contract. Other noise families, measurement-error states,
+nonlinear constants, and transcendental equivalence are rejected rather than
+silently approximated.
+
+P3F.2c uses an exhaustive collapsed-state sequential SMC reference and two
+different evaluable proposals. Exact Metropolis--Hastings correction verifies
+detailed balance, stationarity, evidence telescoping, proposal invariance, and
+row-order equivariance. This is not a scalable search engine or an efficacy
+experiment. The entry point is `pcpi-p3f2-open-target-correctness`; it has no
+real-data or held-out option.
 
 ## Current claim boundary
 

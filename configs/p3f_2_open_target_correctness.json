@@ -1,0 +1,47 @@
+{
+  "schema": "pcpi-p3f2-open-target-correctness-v1",
+  "stage": "P3F.2",
+  "subgates": ["P3F.2a", "P3F.2b", "P3F.2c"],
+  "fixture_role": "hand_constructed_exact_reference_correctness_fixture",
+  "real_data_access": "forbidden",
+  "heldout_state": "not-applicable",
+  "grammar": {
+    "feature_count": 1,
+    "continuation_probability": 0.4,
+    "reference_slice_maximum_nodes": 3
+  },
+  "coefficient_noise_prior": {
+    "coefficient_mean": 0.0,
+    "coefficient_precision": 0.7,
+    "noise_shape": 3.0,
+    "noise_scale": 0.08
+  },
+  "discrepancy_prior": {
+    "discrepancy_probability": 0.3,
+    "discrepancy_precision": 1.2
+  },
+  "kernel_states": [
+    {
+      "state_id": "short",
+      "prior_probability": 0.5,
+      "length_scale": 0.6
+    },
+    {
+      "state_id": "long",
+      "prior_probability": 0.5,
+      "length_scale": 1.3
+    }
+  ],
+  "proposal_kinds": ["complete-uniform", "prior-independence"],
+  "thresholds": {
+    "prior_normalization_max_abs_error": 2e-15,
+    "probability_normalization_max_abs_error": 2e-12,
+    "equivalence_mass_conservation_max_abs_error": 2e-12,
+    "batch_sequential_max_abs_error": 2e-12,
+    "evidence_telescoping_max_abs_error": 2e-12,
+    "rjmcmc_detailed_balance_max_abs_error": 2e-15,
+    "rjmcmc_stationarity_max_abs_error": 2e-15,
+    "proposal_invariance_max_abs_error": 2e-15,
+    "row_order_max_abs_error": 2e-12
+  }
+}

@@ -402,25 +402,37 @@ def _fit_component(
     return log_marginal, mean, covariance, posterior_shape, posterior_scale
 
 
-def fit_structurewise_discrepancy_posterior(
-    bank: ReferenceBank,
+def _validated_fit_data(
     actions: np.ndarray,
     targets: np.ndarray,
-    kernel_states: tuple[DiscrepancyKernelState, ...],
-    prior: StructurewiseDiscrepancyPrior = StructurewiseDiscrepancyPrior(),
-    *,
-    sequential: bool = False,
-) -> ExactStructurewiseDiscrepancyPosterior:
-    """Fit the proper finite joint posterior on a registered x-domain."""
-
+    observation_indices: tuple[int, ...] | None,
+) -> tuple[np.ndarray, np.ndarray, tuple[int, ...]]:
     x = np.asarray(actions, dtype=float)
     if x.ndim == 1:
         x = x[:, None]
     y = np.asarray(targets, dtype=float).reshape(-1)
-    if x.ndim != 2 or len(x) < 3 or len(x) != len(y):
-        raise ValueError("actions and targets must be non-empty and aligned")
+    if x.ndim != 2 or len(x) < 3:
+        raise ValueError("registered actions must contain at least three rows")
+    if observation_indices is None:
+        indices = tuple(range(len(x)))
+    else:
+        indices = tuple(int(index) for index in observation_indices)
+        if len(indices) != len(set(indices)):
+            raise ValueError("observation indices must be unique")
+        if indices and (min(indices) < 0 or max(indices) >= len(x)):
+            raise ValueError("observation index exceeds the registered domain")
+    if len(indices) != len(y):
+        raise ValueError("targets must align with the selected observation indices")
     if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
         raise ValueError("actions and targets must be finite")
+    return x, y, indices
+
+
+def _validate_kernel_and_design_registry(
+    bank: ReferenceBank,
+    kernel_states: tuple[DiscrepancyKernelState, ...],
+    structure_designs: dict[str, np.ndarray] | None,
+) -> None:
     if not kernel_states:
         raise ValueError("at least one discrepancy kernel state is required")
     state_ids = [state.state_id for state in kernel_states]
@@ -429,11 +441,34 @@ def fit_structurewise_discrepancy_posterior(
     kernel_probability_sum = sum(state.prior_probability for state in kernel_states)
     if not math.isclose(kernel_probability_sum, 1.0, rel_tol=0.0, abs_tol=1e-12):
         raise ValueError("kernel-state probabilities must sum to one")
+    if structure_designs is not None:
+        expected = {structure.structure_id for structure in bank.structures}
+        if set(structure_designs) != expected:
+            raise ValueError("registered structure designs must match the bank exactly")
 
+
+def _component_records(
+    bank: ReferenceBank,
+    x: np.ndarray,
+    kernel_states: tuple[DiscrepancyKernelState, ...],
+    prior: StructurewiseDiscrepancyPrior,
+    structure_designs: dict[str, np.ndarray] | None,
+) -> tuple[list[dict[str, object]], list[StructurewiseProjectedBasis]]:
     records: list[dict[str, object]] = []
     bases: list[StructurewiseProjectedBasis] = []
     for structure in bank.structures:
-        base_design = design_matrix(x, structure.basis_terms)
+        base_design = (
+            design_matrix(x, structure.basis_terms)
+            if structure_designs is None
+            else np.asarray(structure_designs[structure.structure_id], dtype=float)
+        )
+        if (
+            base_design.ndim != 2
+            or base_design.shape[0] != len(x)
+            or base_design.shape[1] < 1
+            or not np.all(np.isfinite(base_design))
+        ):
+            raise ValueError("registered structure design is not a finite aligned matrix")
         coefficient_dimension = base_design.shape[1]
         inactive_prior = structure.prior_probability * (1.0 - prior.discrepancy_probability)
         records.append(
@@ -465,11 +500,22 @@ def fit_structurewise_discrepancy_posterior(
                     "coefficient_dimension": coefficient_dimension,
                 }
             )
+    return records, bases
 
+
+def _normalize_fitted_records(
+    bank: ReferenceBank,
+    records: list[dict[str, object]],
+    y: np.ndarray,
+    indices: tuple[int, ...],
+    prior: StructurewiseDiscrepancyPrior,
+    sequential: bool,
+) -> tuple[tuple[GenerativeDiscrepancyComponent, ...], float]:
     fitted: list[dict[str, object]] = []
-    log_joint = []
+    log_joint: list[float] = []
     for record in records:
         design = np.asarray(record["design"], dtype=float)
+        observed_design = design[np.asarray(indices, dtype=int)]
         coefficient_dimension = int(record["coefficient_dimension"])
         dimension = design.shape[1]
         prior_mean = np.zeros(dimension, dtype=float)
@@ -477,7 +523,7 @@ def fit_structurewise_discrepancy_posterior(
         prior_precision = np.full(dimension, prior.discrepancy_precision)
         prior_precision[:coefficient_dimension] = bank.prior.coefficient_precision
         fit = _fit_component(
-            design,
+            observed_design,
             y,
             prior_mean,
             prior_precision,
@@ -508,8 +554,32 @@ def fit_structurewise_discrepancy_posterior(
                 coefficient_dimension=int(record["coefficient_dimension"]),
             )
         )
+    return tuple(members), log_evidence
+
+
+def fit_structurewise_discrepancy_posterior(
+    bank: ReferenceBank,
+    actions: np.ndarray,
+    targets: np.ndarray,
+    kernel_states: tuple[DiscrepancyKernelState, ...],
+    prior: StructurewiseDiscrepancyPrior = StructurewiseDiscrepancyPrior(),
+    *,
+    sequential: bool = False,
+    structure_designs: dict[str, np.ndarray] | None = None,
+    observation_indices: tuple[int, ...] | None = None,
+) -> ExactStructurewiseDiscrepancyPosterior:
+    """Fit the proper finite joint posterior on a registered x-domain."""
+
+    x, y, indices = _validated_fit_data(actions, targets, observation_indices)
+    _validate_kernel_and_design_registry(bank, kernel_states, structure_designs)
+    records, bases = _component_records(
+        bank, x, kernel_states, prior, structure_designs
+    )
+    members, log_evidence = _normalize_fitted_records(
+        bank, records, y, indices, prior, sequential
+    )
     return ExactStructurewiseDiscrepancyPosterior(
-        tuple(members), tuple(bases), log_evidence
+        members, tuple(bases), log_evidence
     )
 
 
