@@ -1,0 +1,22 @@
+{
+  "schema": "pcpi-p3f3-open-target-particle-mechanism-audit-v1",
+  "stage": "P3F.3",
+  "fixture_role": "hand_constructed_exact_reference_mechanism_audit",
+  "real_data_access": "forbidden",
+  "heldout_state": "not-applicable",
+  "acquisition_state": "blocked",
+  "particle_counts": [512, 2048],
+  "proposal_kinds": ["prior-independence", "complete-uniform"],
+  "rejuvenation_steps": [0, 1],
+  "seeds": [2026081704, 2026081705, 2026081706, 2026081707],
+  "ess_threshold_fraction": 0.5,
+  "cess_target_fraction": 0.8,
+  "tempering_tolerance": 1e-6,
+  "maximum_bridge_steps": 64,
+  "fidelity_envelope": {
+    "status": "not_preregistered",
+    "formal_gate": false,
+    "reason": "Mechanism and mixing evidence must be stable before fixing an error envelope."
+  },
+  "claim_boundary": "This is a diagnostic-only exact-slice mechanism audit. It is not simulated or real-data efficacy, calibration, acquisition, heldout, discovery, or law evidence."
+}

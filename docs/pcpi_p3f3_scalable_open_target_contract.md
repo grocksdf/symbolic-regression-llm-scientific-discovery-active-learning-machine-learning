@@ -132,7 +132,21 @@ efficacy, or discovery. A larger particle count or a favorable proposal
 comparison must be reported as evidence about approximation fidelity, not as a
 post-hoc Gate threshold or a superiority claim.
 
-## 5. Implementation boundaries
+## 5. Mechanism audit boundary
+
+The mechanism audit freezes particle counts `[512, 2048]`, both registered
+proposal kernels, `rejuvenation_steps` `[0, 1]`, and four additional fixed
+seeds. It records proposal acceptance, ordinary and pre-bridge resampling,
+root genealogy, parent-offspring concentration, terminal structural diversity,
+and exact-reference fidelity. Paired comparisons are made at fixed seed,
+particle count, and the other mechanism setting.
+
+The output remains diagnostic-only. It is used to decide whether the observed
+fidelity error is dominated by particle variance, proposal mixing, resampling,
+or rejuvenation; it does not authorize an error envelope or a downstream
+scientific claim.
+
+## 6. Implementation boundaries
 
 - Extend the canonical `hypothesis_mvp.pcpi.open_target` path; do not create a
   second production posterior or a `legacy/final/v2` implementation.
@@ -146,7 +160,7 @@ post-hoc Gate threshold or a superiority claim.
 - Never import real-data, acquisition, or held-out modules from the P3F.3
   correctness runner.
 
-## 6. No-go conditions
+## 7. No-go conditions
 
 Stop P3F.3 if any of the following occurs:
 
@@ -165,7 +179,7 @@ After a No-Go, diagnose target specification, generative model, proposal
 support, or numerical approximation. Do not repair the result by selecting
 seeds, adding post-result regularization, or changing the claim boundary.
 
-## 7. Downstream order
+## 8. Downstream order
 
 Only after this Gate passes may a separate predictive-calibration contract be
 written. Only after that calibration Gate passes may a new held-out-closed real
