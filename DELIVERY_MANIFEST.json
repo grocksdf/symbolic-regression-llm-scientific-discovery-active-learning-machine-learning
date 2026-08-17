@@ -3,7 +3,7 @@
   "artifact_type": "canonical_source",
   "stage": "P3F.2",
   "task": "open_target_exact_reference_correctness",
-  "source_tree_sha256": "abaf54ab15d127a5636ce5adc55b89f2f4c4dae0c235e59256e5d3861ba2c7b4",
+  "source_tree_sha256": "6e62991d4c2dc5f4d2fb43cc451296d60a30d0fd390aecac06cfaff248c56419",
   "production_code_hash": "76afcc40ea733dc1763c68d02ca2ab091c886b2bb182a92b80a395a6e1f5c8af",
   "python_version": "3.11",
   "validation_runtime": {
@@ -348,7 +348,7 @@
     },
     {
       "path": "docs/P3_DECISION.md",
-      "sha256": "031b5af6b72a52fbdaf026c83ddf40ff7ddf85791a34d2cc20d706f6ae98ee28",
+      "sha256": "77613dcb771737f61308140410e6c3b20acc0cb762c485349b5b96a2b7b5eb87",
       "size_bytes": 15817
     },
     {
@@ -518,7 +518,7 @@
     },
     {
       "path": "docs/pcpi_p3f2_open_target_correctness_result_20260816.md",
-      "sha256": "54edbb71d281966bdc1a40557d181bee0ca14250b660f7ded5cf5b8df5743ab9",
+      "sha256": "e6794f402d6212ebec32b3d85ef64d290f6b5c5a0864edc42d30c5cbb682e86f",
       "size_bytes": 2856
     },
     {
