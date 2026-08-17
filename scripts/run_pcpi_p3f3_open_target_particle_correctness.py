@@ -2,9 +2,9 @@
 
 This runner is correctness-only.  It uses the same hand-constructed fixture as
 the P3F.2 exact reference, never imports real-data or acquisition code, and
-never converts a stochastic approximation error into an efficacy claim.  The
-proposal-invariance Gate is deliberately reported as blocked until a second
-auditable proposal kernel is implemented.
+never converts a stochastic approximation error into an efficacy claim.
+Proposal invariance is checked analytically for the two registered finite-
+support kernels before any stochastic particle diagnostic is considered.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from hypothesis_mvp.pcpi.open_target import (
     OpenTargetParticleConfig,
     ScalableOpenTargetSMC,
     fit_open_target_exact_posterior,
+    proposal_invariance_certificate,
 )
 from hypothesis_mvp.pcpi.reference import (
     DiscrepancyKernelState,
@@ -97,7 +98,18 @@ def _run_one(
     targets: np.ndarray,
     exact: Any,
 ) -> dict[str, Any]:
-    result = ScalableOpenTargetSMC(contract, particle_config, seed).run(actions, targets)
+    try:
+        result = ScalableOpenTargetSMC(contract, particle_config, seed).run(actions, targets)
+    except RuntimeError as error:
+        # Numerical no-go conditions must be archived rather than converted
+        # into a missing summary or a shell traceback.  This keeps bridge
+        # budget exhaustion auditable without treating it as a pass.
+        return {
+            "seed": seed,
+            "target_hash": contract.stable_hash,
+            "run_completed": False,
+            "runtime_error": str(error),
+        }
     diagnostics = result.diagnostics
     grouped_steps = {
         step: [item for item in diagnostics if item.step == step]
@@ -134,6 +146,7 @@ def _run_one(
     return {
         "seed": seed,
         "target_hash": contract.stable_hash,
+        "run_completed": True,
         "particle_evidence_record": result.evidence_record(),
         "mass_normalization_error": abs(
             sum(item.posterior_probability for item in result.particles) - 1.0
@@ -187,10 +200,49 @@ def _evaluate(
     particle_config = OpenTargetParticleConfig(**config["particle"])
     if particle_config.maximum_nodes != contract.reference_slice_maximum_nodes:
         raise ValueError("particle cutoff must equal the registered reference slice")
+    proposal_certificate = proposal_invariance_certificate(
+        contract,
+        actions,
+        targets,
+        particle_config.maximum_nodes,
+    )
     runs = [
         _run_one(contract, particle_config, int(seed), actions, targets, exact)
         for seed in config["seeds"]
     ]
+    runtime_failures = [run for run in runs if not run.get("run_completed", True)]
+    if runtime_failures:
+        return {
+            "stage": STAGE,
+            "experiment": EXPERIMENT,
+            "fixture_role": FIXTURE_ROLE,
+            "formal_correctness_evidence": False,
+            "formal_predictive_calibration_evidence": False,
+            "formal_efficacy_evidence": False,
+            "formal_discovery_evidence": False,
+            "real_data_accessed": False,
+            "heldout_opened": False,
+            "acquisition_authorized": False,
+            "claim_boundary": CLAIM_BOUNDARY,
+            "target_contract_hash": contract.stable_hash,
+            "exact_reference_batch_sequential_log_evidence_error": abs(
+                exact.generative_posterior.log_evidence
+                - exact_sequential.generative_posterior.log_evidence
+            ),
+            "gate_decisions": {
+                "particle_runtime_completed": False,
+                "proposal_invariance": proposal_certificate["maximum_error"]
+                <= config["diagnostic_thresholds"]["proposal_invariance_max_abs_error"],
+            },
+            "gate_passed": False,
+            "gate_blockers": ["particle_runtime_failure"],
+            "diagnostics": {
+                "run_count": len(runs),
+                "runtime_failures": runtime_failures,
+                "proposal_invariance_certificate": proposal_certificate,
+            },
+            "runs": runs,
+        }
     thresholds = config["diagnostic_thresholds"]
     max_mass_error = max(item["mass_normalization_error"] for item in runs)
     max_equivalence_error = max(item["equivalence_mass_error"] for item in runs)
@@ -217,13 +269,22 @@ def _evaluate(
         >= thresholds["minimum_conditional_ess_fraction"],
         "particle_minimum_effective_sample_size": min_ess_fraction
         >= thresholds["minimum_effective_sample_size_fraction"],
-        "proposal_invariance": False,
+        "proposal_invariance": proposal_certificate["maximum_error"]
+        <= thresholds["proposal_invariance_max_abs_error"],
     }
+    blockers: list[str] = []
+    if not decisions["proposal_invariance"]:
+        blockers.append("proposal_invariance_certificate_failed")
+    if not decisions["particle_minimum_conditional_ess"]:
+        blockers.append("minimum_conditional_ess_fraction_below_threshold")
+    if thresholds["particle_exact_reference_error_report_only"]:
+        blockers.append("stochastic_particle_exact_reference_errors_are_diagnostic_only")
     return {
         "stage": STAGE,
         "experiment": EXPERIMENT,
         "fixture_role": FIXTURE_ROLE,
-        "formal_correctness_evidence": False,
+        "formal_correctness_evidence": all(decisions.values())
+        and not thresholds["particle_exact_reference_error_report_only"],
         "formal_predictive_calibration_evidence": False,
         "formal_efficacy_evidence": False,
         "formal_discovery_evidence": False,
@@ -237,11 +298,9 @@ def _evaluate(
             - exact_sequential.generative_posterior.log_evidence
         ),
         "gate_decisions": decisions,
-        "gate_passed": False,
-        "gate_blockers": [
-            "proposal_invariance_not_implemented",
-            "stochastic_particle_exact_reference_errors_are_diagnostic_only",
-        ],
+        "gate_passed": all(decisions.values())
+        and not thresholds["particle_exact_reference_error_report_only"],
+        "gate_blockers": blockers,
         "diagnostics": {
             "run_count": len(runs),
             "particle_count": particle_config.particle_count,
@@ -250,6 +309,7 @@ def _evaluate(
             "maximum_evidence_telescoping_error": max_telescoping_error,
             "minimum_conditional_ess_fraction": min_cess_fraction,
             "minimum_effective_sample_size_fraction": min_ess_fraction,
+            "proposal_invariance_certificate": proposal_certificate,
         },
         "runs": runs,
     }

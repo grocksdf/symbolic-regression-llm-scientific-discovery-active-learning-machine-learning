@@ -43,6 +43,7 @@ from .particle import (
     OpenTargetParticleSnapshot,
     ScalableOpenTargetResult,
     ScalableOpenTargetSMC,
+    proposal_invariance_certificate,
     sample_open_prior_expression,
 )
 
@@ -81,5 +82,6 @@ __all__ = [
     "OpenTargetParticleSnapshot",
     "ScalableOpenTargetResult",
     "ScalableOpenTargetSMC",
+    "proposal_invariance_certificate",
     "sample_open_prior_expression",
 ]

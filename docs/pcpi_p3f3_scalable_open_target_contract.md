@@ -82,6 +82,18 @@ one. Fractional powers exist only along this Feynman--Kac path; the terminal
 state commits the ordinary likelihood and is the only state exposed for
 posterior prediction.
 
+The correctness implementation registers two auditable finite-slice kernels:
+prior-independence and complete-uniform. Both include their exact forward and
+reverse probabilities in the MH ratio; a deterministic finite-support
+certificate checks row stochasticity, detailed balance, and stationarity over
+every integer prequential prefix. The CESS scheduler never inserts a
+budget-sized beta increment. If the previous observation leaves the global ESS
+below the registered CESS target, the next observation begins with one
+explicit systematic resampling event; that event is included in the first
+bridge genealogy record. If the registered bridge budget still cannot reach
+the terminal state under the CESS path, it fails closed and records a NO-GO
+rather than changing the target path.
+
 ## 3. Exact-reference Gate
 
 The scalable engine is admissible only after comparison with the existing

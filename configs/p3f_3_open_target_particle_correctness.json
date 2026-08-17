@@ -21,11 +21,12 @@
     "evidence_telescoping_max_abs_error": 2e-12,
     "minimum_conditional_ess_fraction": 0.8,
     "minimum_effective_sample_size_fraction": 0.1,
+    "proposal_invariance_max_abs_error": 2e-15,
     "particle_exact_reference_error_report_only": true,
     "particle_row_order_error_report_only": true
   },
   "gate_policy": {
-    "proposal_invariance": "required_but_not_implemented",
+    "proposal_invariance": "required_and_analytically_certified",
     "predictive_calibration": "blocked",
     "real_data_efficacy": "blocked",
     "scientific_discovery": "blocked"

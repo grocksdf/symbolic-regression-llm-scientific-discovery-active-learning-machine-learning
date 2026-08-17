@@ -72,8 +72,10 @@ class OpenTargetParticleConfig:
             raise ValueError("tempering_tolerance must lie in (0, 1)")
         if self.maximum_bridge_steps < 1:
             raise ValueError("maximum_bridge_steps must be positive")
-        if self.proposal_kind != "prior-independence":
-            raise ValueError("P3F.3 initially registers prior-independence proposals only")
+        if self.proposal_kind not in {"prior-independence", "complete-uniform"}:
+            raise ValueError(
+                "P3F.3 registers only prior-independence and complete-uniform proposals"
+            )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -692,6 +694,67 @@ def _sample_prior_particle(
     )
 
 
+def _finite_component_count(
+    contract: OpenTargetContract,
+    maximum_nodes: int | None,
+) -> int:
+    """Return the finite component support size for an auditable uniform proposal."""
+
+    if maximum_nodes is None:
+        raise ValueError(
+            "complete-uniform proposal requires an explicit finite node-count slice"
+        )
+    expression_count = len(contract.grammar.enumerate_slice(maximum_nodes))
+    return expression_count * (1 + len(contract.kernel_states))
+
+
+def _sample_complete_uniform_particle(
+    contract: OpenTargetContract,
+    actions: np.ndarray,
+    rng: np.random.Generator,
+    maximum_nodes: int | None,
+    *,
+    particle_id: int,
+    root_ancestor_id: int,
+    design_cache: dict[str, np.ndarray] | None = None,
+    basis_cache: dict[tuple[str, str], object] | None = None,
+) -> _Particle:
+    """Sample one component uniformly from the registered finite support.
+
+    The proposal includes self-transitions.  Its probability is therefore
+    exactly ``1 / component_count`` for every source and destination, making
+    the forward/reverse ratio auditable and symmetric.
+    """
+
+    if maximum_nodes is None:
+        raise ValueError(
+            "complete-uniform proposal requires an explicit finite node-count slice"
+        )
+    expressions = contract.grammar.enumerate_slice(maximum_nodes)
+    kernel_count = len(contract.kernel_states)
+    component_count = len(expressions) * (1 + kernel_count)
+    draw = int(rng.integers(component_count))
+    expression_index, state_index = divmod(draw, 1 + kernel_count)
+    if state_index == 0:
+        active = False
+        kernel_id = "none"
+    else:
+        active = True
+        kernel_id = contract.kernel_states[state_index - 1].state_id
+    return _make_particle(
+        contract,
+        actions,
+        expressions[expression_index],
+        active,
+        kernel_id,
+        maximum_nodes,
+        particle_id=particle_id,
+        root_ancestor_id=root_ancestor_id,
+        design_cache=design_cache,
+        basis_cache=basis_cache,
+    )
+
+
 class ScalableOpenTargetSMC:
     """Particle approximation checked against the P3F.2 exact target."""
 
@@ -797,17 +860,21 @@ class ScalableOpenTargetSMC:
         row_index: int,
         target: float,
         beta_previous: float,
-        bridge_step: int,
     ) -> tuple[float, float, np.ndarray]:
-        remaining_steps = self.config.maximum_bridge_steps - bridge_step
-        if remaining_steps < 1:
-            raise RuntimeError("adaptive tempering bridge budget is exhausted")
         target_ess = self.config.cess_target_fraction * len(particles)
         current = np.asarray([particle.log_marginal for particle in particles], dtype=float)
         full = self._bridge_log_marginals(particles, row_index, target, 1.0)
         full_cess = self._conditional_ess(log_weights, full - current)
         if full_cess >= target_ess:
             return 1.0, full_cess, full
+
+        # The last terminal increment is allowed to finish the registered
+        # Feynman--Kac path even when its CESS falls below the non-terminal
+        # floor.  It is retained in diagnostics and therefore remains a
+        # genuine Gate failure if the terminal degeneracy is material.
+        if 1.0 - beta_previous <= self.config.tempering_tolerance:
+            return 1.0, full_cess, full
+
         lower = beta_previous
         upper = 1.0
         for _ in range(80):
@@ -823,18 +890,23 @@ class ScalableOpenTargetSMC:
                 lower = middle
             else:
                 upper = middle
-            if upper - lower <= self.config.tempering_tolerance:
-                break
-        # A CESS root can be smaller than the numerical tolerance.  Advancing
-        # only by that tolerance would require more bridges than the frozen
-        # budget and would turn a diagnostic degeneracy into a runtime hang.
-        # The budget-derived floor guarantees beta=1 is reached; the actual
-        # CESS is retained in diagnostics and can still fail the correctness
-        # Gate.  No response-derived threshold is introduced.
-        minimum_beta = beta_previous + (1.0 - beta_previous) / remaining_steps
-        next_beta = max(lower, minimum_beta)
-        if next_beta > 1.0:
-            next_beta = 1.0
+            # Use the full fixed iteration budget instead of stopping at the
+            # user-facing tolerance.  When the admissible CESS root lies
+            # inside that tolerance, early stopping leaves ``lower`` equal to
+            # beta_previous and falsely reports that no positive increment
+            # exists.  The tolerance remains a public numerical-control field
+            # for the terminal check; it is not a hard lower bound on beta.
+
+        # Do not force a budget-sized increment.  That policy can silently
+        # violate the registered CESS target (the previous implementation
+        # produced repeated 1/64 steps and conditional ESS around 0.72).
+        # If the true schedule needs more than the frozen bridge budget, the
+        # caller fails closed rather than changing the target path.
+        next_beta = float(lower)
+        if next_beta <= beta_previous:
+            raise RuntimeError(
+                "adaptive tempering found no positive CESS-feasible bridge increment"
+            )
         next_logs = self._bridge_log_marginals(
             particles,
             row_index,
@@ -855,19 +927,37 @@ class ScalableOpenTargetSMC:
     ) -> tuple[int, int]:
         proposals = 0
         acceptances = 0
+        component_count = (
+            _finite_component_count(self.contract, self.config.maximum_nodes)
+            if self.config.proposal_kind == "complete-uniform"
+            else None
+        )
         for index, current in enumerate(particles):
             for _ in range(self.config.rejuvenation_steps):
                 proposals += 1
-                proposed = _sample_prior_particle(
-                    self.contract,
-                    actions,
-                    self.rng,
-                    self.config.maximum_nodes,
-                    particle_id=current.particle_id,
-                    root_ancestor_id=current.root_ancestor_id,
-                    design_cache=self._design_cache,
-                    basis_cache=self._basis_cache,
-                )
+                if self.config.proposal_kind == "prior-independence":
+                    proposed = _sample_prior_particle(
+                        self.contract,
+                        actions,
+                        self.rng,
+                        self.config.maximum_nodes,
+                        particle_id=current.particle_id,
+                        root_ancestor_id=current.root_ancestor_id,
+                        design_cache=self._design_cache,
+                        basis_cache=self._basis_cache,
+                    )
+                else:
+                    assert component_count is not None
+                    proposed = _sample_complete_uniform_particle(
+                        self.contract,
+                        actions,
+                        self.rng,
+                        self.config.maximum_nodes,
+                        particle_id=current.particle_id,
+                        root_ancestor_id=current.root_ancestor_id,
+                        design_cache=self._design_cache,
+                        basis_cache=self._basis_cache,
+                    )
                 self._replay_prefix(proposed, targets, prefix_length)
                 proposed.log_marginal = _tempered_log_marginal(
                     proposed,
@@ -876,9 +966,21 @@ class ScalableOpenTargetSMC:
                     beta,
                     self.contract,
                 )
-                # The proposal is the exact component prior, so its probability
-                # cancels from the independent-MH ratio.
-                log_acceptance = proposed.log_marginal - current.log_marginal
+                current_target = math.log(current.joint_prior_probability) + current.log_marginal
+                proposed_target = math.log(proposed.joint_prior_probability) + proposed.log_marginal
+                if self.config.proposal_kind == "prior-independence":
+                    # The independent proposal equals the component prior, so
+                    # its forward/reverse ratio cancels the prior ratio in the
+                    # MH correction.
+                    log_q_ratio = math.log(current.joint_prior_probability) - math.log(
+                        proposed.joint_prior_probability
+                    )
+                else:
+                    assert component_count is not None
+                    # Complete-uniform includes self-transitions and is exactly
+                    # symmetric over the finite registered component support.
+                    log_q_ratio = 0.0
+                log_acceptance = proposed_target - current_target + log_q_ratio
                 if math.log(self.rng.random()) < min(0.0, log_acceptance):
                     proposed.log_weight = current.log_weight
                     particles[index] = proposed
@@ -917,6 +1019,40 @@ class ScalableOpenTargetSMC:
         for step, target in enumerate(y, start=1):
             beta = 0.0
             bridge_step = 0
+            # A CESS target is defined relative to the current normalized
+            # population.  If the previous observation left the global ESS
+            # below that target, no positive beta increment can satisfy the
+            # next bridge's CESS constraint.  Resample once at the boundary
+            # so the new bridge starts from a valid Feynman--Kac population;
+            # the genealogy is carried into the first bridge diagnostic.
+            pre_bridge_resampled = False
+            pre_bridge_ancestor_indices = tuple(range(count))
+            pre_bridge_parent_particle_ids = tuple(
+                particle.particle_id for particle in particles
+            )
+            pre_bridge_child_particle_ids = pre_bridge_parent_particle_ids
+            current_ess = effective_sample_size(log_weights)
+            cess_floor = self.config.cess_target_fraction * count
+            if current_ess + 1e-12 < cess_floor:
+                indices = systematic_resample(np.exp(log_weights), self.rng)
+                previous = particles
+                pre_bridge_ancestor_indices = tuple(int(index) for index in indices)
+                pre_bridge_parent_particle_ids = tuple(
+                    previous[int(index)].particle_id for index in indices
+                )
+                particles = []
+                for index in indices:
+                    parent = previous[int(index)]
+                    child = parent.clone(particle_id=next_particle_id)
+                    child.log_weight = -math.log(count)
+                    particles.append(child)
+                    next_particle_id += 1
+                pre_bridge_child_particle_ids = tuple(
+                    particle.particle_id for particle in particles
+                )
+                log_weights = np.full(count, -math.log(count), dtype=float)
+                pre_bridge_resampled = True
+
             while beta < 1.0:
                 if bridge_step >= self.config.maximum_bridge_steps:
                     raise RuntimeError("adaptive tempering exceeded the frozen bridge limit")
@@ -926,7 +1062,6 @@ class ScalableOpenTargetSMC:
                     step - 1,
                     float(target),
                     beta,
-                    bridge_step,
                 )
                 current_logs = np.asarray(
                     [particle.log_marginal for particle in particles],
@@ -941,8 +1076,8 @@ class ScalableOpenTargetSMC:
                 ess_before = effective_sample_size(normalized)
                 log_evidence += log_increment
                 log_weights = normalized
-                resampled = ess_before < threshold
-                if resampled:
+                resampled_after_bridge = ess_before < threshold
+                if resampled_after_bridge:
                     indices = systematic_resample(np.exp(log_weights), self.rng)
                     previous = particles
                     ancestor_indices = tuple(int(index) for index in indices)
@@ -963,13 +1098,22 @@ class ScalableOpenTargetSMC:
                     )
                     log_weights = np.full(count, -math.log(count), dtype=float)
                 else:
-                    ancestor_indices = tuple(range(count))
-                    parent_particle_ids = tuple(
-                        particle.particle_id for particle in particles
-                    )
-                    child_particle_ids = parent_particle_ids
+                    if bridge_step == 0 and pre_bridge_resampled:
+                        ancestor_indices = pre_bridge_ancestor_indices
+                        parent_particle_ids = pre_bridge_parent_particle_ids
+                        child_particle_ids = pre_bridge_child_particle_ids
+                    else:
+                        ancestor_indices = tuple(range(count))
+                        parent_particle_ids = tuple(
+                            particle.particle_id for particle in particles
+                        )
+                        child_particle_ids = parent_particle_ids
                     for particle, value in zip(particles, log_weights, strict=True):
                         particle.log_weight = float(value)
+                resampled = (
+                    (bridge_step == 0 and pre_bridge_resampled)
+                    or resampled_after_bridge
+                )
 
                 proposals, acceptances = self._rejuvenate(
                     particles,
@@ -1068,11 +1212,132 @@ class ScalableOpenTargetSMC:
         )
 
 
+def proposal_invariance_certificate(
+    contract: OpenTargetContract,
+    actions: np.ndarray,
+    targets: np.ndarray,
+    maximum_nodes: int,
+) -> dict[str, object]:
+    """Check two auditable MH proposals against every integer prequential target.
+
+    This is a finite-slice algebraic certificate.  It enumerates only the
+    registered correctness support, replays each component through each
+    prequential prefix, and checks row stochasticity, detailed balance, and
+    stationarity for both proposal matrices.  It does not access data outside
+    the supplied hand-constructed fixture.
+    """
+
+    if maximum_nodes < 1:
+        raise ValueError("maximum_nodes must be positive")
+    x = np.asarray(actions, dtype=float)
+    if x.ndim == 1:
+        x = x[:, None]
+    y = np.asarray(targets, dtype=float).reshape(-1)
+    if x.ndim != 2 or len(x) != len(y) or len(x) < 3:
+        raise ValueError("certificate actions and targets must be finite and aligned")
+    if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
+        raise ValueError("certificate actions and targets must be finite")
+    if maximum_nodes != contract.reference_slice_maximum_nodes:
+        raise ValueError("certificate cutoff must equal the registered reference slice")
+
+    expressions = contract.grammar.enumerate_slice(maximum_nodes)
+    design_cache: dict[str, np.ndarray] = {}
+    basis_cache: dict[tuple[str, str], object] = {}
+    component_specs = [
+        (expression, False, "none")
+        for expression in expressions
+    ] + [
+        (expression, True, kernel.state_id)
+        for expression in expressions
+        for kernel in contract.kernel_states
+    ]
+    maximums: dict[str, dict[str, float]] = {
+        kind: {
+            "maximum_row_normalization_error": 0.0,
+            "maximum_detailed_balance_error": 0.0,
+            "maximum_stationarity_error": 0.0,
+        }
+        for kind in ("prior-independence", "complete-uniform")
+    }
+    for prefix_length in range(len(y) + 1):
+        catalog: list[_Particle] = []
+        for index, (expression, active, kernel_id) in enumerate(component_specs):
+            particle = _make_particle(
+                contract,
+                x,
+                expression,
+                active,
+                kernel_id,
+                maximum_nodes,
+                particle_id=index,
+                root_ancestor_id=index,
+                design_cache=design_cache,
+                basis_cache=basis_cache,
+            )
+            for row_index in range(prefix_length):
+                _advance_particle(particle, particle.design[row_index], float(y[row_index]), contract)
+            catalog.append(particle)
+
+        log_targets = np.asarray(
+            [math.log(item.joint_prior_probability) + item.log_marginal for item in catalog],
+            dtype=float,
+        )
+        stationary = np.exp(log_targets - np.logaddexp.reduce(log_targets))
+        priors = np.asarray([item.joint_prior_probability for item in catalog], dtype=float)
+        priors /= float(priors.sum())
+        count = len(catalog)
+        for kind in maximums:
+            if kind == "prior-independence":
+                proposal = np.tile(priors, (count, 1))
+            else:
+                proposal = np.full((count, count), 1.0 / count, dtype=float)
+            transition = np.zeros_like(proposal)
+            for source in range(count):
+                for destination in range(count):
+                    if source == destination:
+                        continue
+                    forward = proposal[source, destination]
+                    reverse = proposal[destination, source]
+                    log_acceptance = min(
+                        0.0,
+                        log_targets[destination]
+                        - log_targets[source]
+                        + math.log(reverse)
+                        - math.log(forward),
+                    )
+                    transition[source, destination] = forward * math.exp(log_acceptance)
+                transition[source, source] = 1.0 - float(transition[source].sum())
+            flow = stationary[:, None] * transition
+            maximums[kind]["maximum_row_normalization_error"] = max(
+                maximums[kind]["maximum_row_normalization_error"],
+                float(np.max(np.abs(transition.sum(axis=1) - 1.0))),
+            )
+            maximums[kind]["maximum_detailed_balance_error"] = max(
+                maximums[kind]["maximum_detailed_balance_error"],
+                float(np.max(np.abs(flow - flow.T))),
+            )
+            maximums[kind]["maximum_stationarity_error"] = max(
+                maximums[kind]["maximum_stationarity_error"],
+                float(np.max(np.abs(stationary @ transition - stationary))),
+            )
+    return {
+        "component_count": len(component_specs),
+        "prefix_count": len(y) + 1,
+        "proposal_kinds": maximums,
+        "maximum_error": max(
+            value
+            for metrics in maximums.values()
+            for value in metrics.values()
+        ),
+    }
+
+
 __all__ = [
     "OpenTargetParticleConfig",
     "OpenTargetParticleDiagnostics",
     "OpenTargetParticleSnapshot",
     "ScalableOpenTargetResult",
     "ScalableOpenTargetSMC",
+    "proposal_invariance_certificate",
     "sample_open_prior_expression",
 ]

@@ -12,6 +12,7 @@ from hypothesis_mvp.pcpi.open_target import (
     OpenTargetContract,
     OpenTargetParticleConfig,
     ScalableOpenTargetSMC,
+    proposal_invariance_certificate,
     sample_open_prior_expression,
 )
 from hypothesis_mvp.pcpi.reference import (
@@ -54,6 +55,16 @@ def test_p3f3_prior_sampler_respects_registered_slice() -> None:
 def test_p3f3_config_rejects_unregistered_proposal() -> None:
     with pytest.raises(ValueError, match="prior-independence"):
         OpenTargetParticleConfig(proposal_kind="llm")
+
+
+def test_p3f3_registered_proposals_have_exact_invariance_certificate() -> None:
+    actions, targets = _fixture()
+    certificate = proposal_invariance_certificate(
+        _contract(), actions, targets, maximum_nodes=3
+    )
+    assert certificate["component_count"] == 42
+    assert certificate["prefix_count"] == len(targets) + 1
+    assert certificate["maximum_error"] < 2e-14
 
 
 def test_p3f3_finite_slice_cutoff_is_part_of_the_target() -> None:
