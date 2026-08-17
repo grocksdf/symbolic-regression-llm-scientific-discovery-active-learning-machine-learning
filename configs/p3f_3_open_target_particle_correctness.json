@@ -1,0 +1,33 @@
+{
+  "schema": "pcpi-p3f3-open-target-particle-correctness-v1",
+  "stage": "P3F.3",
+  "fixture_role": "hand_constructed_exact_reference_correctness_fixture",
+  "real_data_access": "forbidden",
+  "heldout_state": "not-applicable",
+  "acquisition_state": "blocked",
+  "particle": {
+    "particle_count": 512,
+    "maximum_nodes": 3,
+    "ess_threshold_fraction": 0.5,
+    "rejuvenation_steps": 1,
+    "cess_target_fraction": 0.8,
+    "tempering_tolerance": 1e-6,
+    "maximum_bridge_steps": 64,
+    "proposal_kind": "prior-independence"
+  },
+  "seeds": [2026081701, 2026081702, 2026081703],
+  "diagnostic_thresholds": {
+    "mass_normalization_max_abs_error": 2e-12,
+    "evidence_telescoping_max_abs_error": 2e-12,
+    "minimum_conditional_ess_fraction": 0.8,
+    "minimum_effective_sample_size_fraction": 0.1,
+    "particle_exact_reference_error_report_only": true,
+    "particle_row_order_error_report_only": true
+  },
+  "gate_policy": {
+    "proposal_invariance": "required_but_not_implemented",
+    "predictive_calibration": "blocked",
+    "real_data_efficacy": "blocked",
+    "scientific_discovery": "blocked"
+  }
+}

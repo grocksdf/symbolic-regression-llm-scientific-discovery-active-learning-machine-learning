@@ -37,6 +37,14 @@ from .sequential import (
     ExhaustiveSequentialSMCResult,
     run_exhaustive_sequential_smc_reference,
 )
+from .particle import (
+    OpenTargetParticleConfig,
+    OpenTargetParticleDiagnostics,
+    OpenTargetParticleSnapshot,
+    ScalableOpenTargetResult,
+    ScalableOpenTargetSMC,
+    sample_open_prior_expression,
+)
 
 __all__ = [
     "P3F2_EXPRESSION_TYPE",
@@ -68,4 +76,10 @@ __all__ = [
     "ExhaustiveSMCStep",
     "ExhaustiveSequentialSMCResult",
     "run_exhaustive_sequential_smc_reference",
+    "OpenTargetParticleConfig",
+    "OpenTargetParticleDiagnostics",
+    "OpenTargetParticleSnapshot",
+    "ScalableOpenTargetResult",
+    "ScalableOpenTargetSMC",
+    "sample_open_prior_expression",
 ]

@@ -1,0 +1,1078 @@
+"""P3F.3 particle approximation for the frozen P3F.2 open target.
+
+This module is deliberately correctness-first.  It samples the registered
+countably-open grammar prior, integrates the registered linear coefficients and
+Normal--Inverse-Gamma noise state, applies prequential fractional-likelihood
+bridges chosen by conditional ESS, and uses prior-independence MH rejuvenation
+whose proposal probability is exactly known.  It does not read real data,
+acquisition pools, or held-out roles.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import math
+
+import numpy as np
+from scipy.special import gammaln
+from scipy.stats import t as student_t
+
+from hypothesis_mvp.pcpi.reference.structurewise_discrepancy import (
+    structurewise_projected_rbf_basis,
+)
+from hypothesis_mvp.pcpi.smc.resampling import (
+    effective_sample_size,
+    normalize_log_weights,
+    systematic_resample,
+    weight_entropy,
+)
+
+from .grammar import (
+    CountablyOpenTypedGrammar,
+    TypedExpression,
+    aggregate_equivalence_mass,
+    evaluate_expression,
+    add,
+    mul,
+    neg,
+    one,
+    variable,
+)
+from .posterior import OpenTargetContract
+
+
+@dataclass(frozen=True)
+class OpenTargetParticleConfig:
+    """Numerical controls for the P3F.3 correctness engine."""
+
+    particle_count: int = 512
+    maximum_nodes: int | None = 3
+    ess_threshold_fraction: float = 0.5
+    rejuvenation_steps: int = 1
+    cess_target_fraction: float = 0.8
+    tempering_tolerance: float = 1e-6
+    maximum_bridge_steps: int = 64
+    proposal_kind: str = "prior-independence"
+
+    def __post_init__(self) -> None:
+        if self.particle_count < 2:
+            raise ValueError("particle_count must be at least two")
+        if self.maximum_nodes is not None and self.maximum_nodes < 1:
+            raise ValueError("maximum_nodes must be positive when supplied")
+        if not 0.0 < self.ess_threshold_fraction <= 1.0:
+            raise ValueError("ess_threshold_fraction must lie in (0, 1]")
+        if self.rejuvenation_steps < 0:
+            raise ValueError("rejuvenation_steps must be non-negative")
+        if not 0.0 < self.cess_target_fraction < 1.0:
+            raise ValueError("cess_target_fraction must lie strictly inside (0, 1)")
+        if (
+            not math.isfinite(self.tempering_tolerance)
+            or not 0.0 < self.tempering_tolerance < 1.0
+        ):
+            raise ValueError("tempering_tolerance must lie in (0, 1)")
+        if self.maximum_bridge_steps < 1:
+            raise ValueError("maximum_bridge_steps must be positive")
+        if self.proposal_kind != "prior-independence":
+            raise ValueError("P3F.3 initially registers prior-independence proposals only")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "particle_count": self.particle_count,
+            "maximum_nodes": self.maximum_nodes,
+            "ess_threshold_fraction": self.ess_threshold_fraction,
+            "rejuvenation_steps": self.rejuvenation_steps,
+            "cess_target_fraction": self.cess_target_fraction,
+            "tempering_tolerance": self.tempering_tolerance,
+            "maximum_bridge_steps": self.maximum_bridge_steps,
+            "proposal_kind": self.proposal_kind,
+        }
+
+
+@dataclass(frozen=True)
+class OpenTargetParticleDiagnostics:
+    step: int
+    bridge_step: int
+    beta_previous: float
+    beta_current: float
+    conditional_ess: float
+    effective_sample_size_before: float
+    effective_sample_size_after: float
+    weight_entropy: float
+    resampled: bool
+    resampling_threshold_ess: float
+    log_evidence_increment: float
+    distinct_root_ancestors: int
+    root_entropy: float
+    proposals: int
+    acceptances: int
+    ancestor_indices: tuple[int, ...]
+    parent_particle_ids: tuple[int, ...]
+    child_particle_ids: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        count = len(self.ancestor_indices)
+        aligned = (self.parent_particle_ids, self.child_particle_ids)
+        if self.step < 1 or self.bridge_step < 1:
+            raise ValueError("particle diagnostic step identifiers must be positive")
+        if count < 2 or any(len(values) != count for values in aligned):
+            raise ValueError("particle genealogy vectors must be aligned")
+        if min(self.ancestor_indices) < 0 or max(self.ancestor_indices) >= count:
+            raise ValueError("particle ancestor indices must address the population")
+        if min(self.parent_particle_ids) < 0 or min(self.child_particle_ids) < 0:
+            raise ValueError("particle genealogy identifiers must be non-negative")
+        if len(set(self.child_particle_ids)) != count:
+            raise ValueError("particle child identifiers must be unique")
+        if not 0.0 <= self.beta_previous < self.beta_current <= 1.0 + 1e-12:
+            raise ValueError("particle bridge temperatures must increase inside [0, 1]")
+        for value, name in (
+            (self.conditional_ess, "conditional_ess"),
+            (self.effective_sample_size_before, "effective_sample_size_before"),
+            (self.effective_sample_size_after, "effective_sample_size_after"),
+        ):
+            if not math.isfinite(value) or not 0.0 < value <= count + 1e-9:
+                raise ValueError(f"{name} must lie inside the population range")
+        if not 0.0 <= self.resampling_threshold_ess <= count:
+            raise ValueError("resampling threshold must lie inside the population range")
+        if self.resampled and not self.parent_particle_ids:
+            raise ValueError("resampled diagnostics require parent identifiers")
+        if len(set(self.ancestor_indices)) != len(set(self.parent_particle_ids)):
+            raise ValueError("ancestor and parent genealogy cardinalities disagree")
+        if self.resampled:
+            if set(self.child_particle_ids) & set(self.parent_particle_ids):
+                raise ValueError("resampling must assign fresh child identifiers")
+        elif (
+            self.ancestor_indices != tuple(range(count))
+            or self.parent_particle_ids != self.child_particle_ids
+        ):
+            raise ValueError("non-resampled bridge must preserve particle identity")
+        if self.resampled != (
+            self.effective_sample_size_before < self.resampling_threshold_ess
+        ):
+            raise ValueError("resampling decision is inconsistent with the ESS threshold")
+        if not math.isfinite(self.log_evidence_increment):
+            raise ValueError("bridge log evidence increment must be finite")
+        if self.distinct_root_ancestors < 1 or not math.isfinite(self.root_entropy):
+            raise ValueError("root ancestry diagnostics must be finite and non-empty")
+        if self.proposals < 0 or self.acceptances < 0 or self.acceptances > self.proposals:
+            raise ValueError("proposal and acceptance counts are inconsistent")
+
+
+@dataclass
+class _Particle:
+    expression: TypedExpression
+    discrepancy_active: bool
+    kernel_state_id: str
+    joint_prior_probability: float
+    design: np.ndarray
+    coefficient_dimension: int
+    prior_mean: np.ndarray
+    prior_precision: np.ndarray
+    precision: np.ndarray
+    information: np.ndarray
+    y_square_sum: float = 0.0
+    observations: float = 0.0
+    log_marginal: float = 0.0
+    log_weight: float = 0.0
+    particle_id: int = 0
+    root_ancestor_id: int = 0
+
+    def clone(self, *, particle_id: int) -> "_Particle":
+        return _Particle(
+            expression=self.expression,
+            discrepancy_active=self.discrepancy_active,
+            kernel_state_id=self.kernel_state_id,
+            joint_prior_probability=self.joint_prior_probability,
+            design=self.design.copy(),
+            coefficient_dimension=self.coefficient_dimension,
+            prior_mean=self.prior_mean.copy(),
+            prior_precision=self.prior_precision.copy(),
+            precision=self.precision.copy(),
+            information=self.information.copy(),
+            y_square_sum=self.y_square_sum,
+            observations=self.observations,
+            log_marginal=self.log_marginal,
+            log_weight=self.log_weight,
+            particle_id=particle_id,
+            root_ancestor_id=self.root_ancestor_id,
+        )
+
+
+@dataclass(frozen=True)
+class OpenTargetParticleSnapshot:
+    expression: TypedExpression
+    discrepancy_active: bool
+    kernel_state_id: str
+    posterior_probability: float
+    log_marginal: float
+    design: np.ndarray
+    posterior_mean: np.ndarray
+    posterior_covariance: np.ndarray
+    noise_shape: float
+    noise_scale: float
+
+    def __post_init__(self) -> None:
+        for name in (
+            "design",
+            "posterior_mean",
+            "posterior_covariance",
+        ):
+            value = np.ascontiguousarray(getattr(self, name), dtype=float)
+            if not np.all(np.isfinite(value)):
+                raise ValueError(f"snapshot {name} must be finite")
+            value.setflags(write=False)
+            object.__setattr__(self, name, value)
+        if self.design.ndim != 2 or self.design.shape[1] != len(self.posterior_mean):
+            raise ValueError("snapshot design and posterior mean dimensions disagree")
+        if self.posterior_covariance.shape != (
+            len(self.posterior_mean),
+            len(self.posterior_mean),
+        ):
+            raise ValueError("snapshot posterior covariance has an invalid shape")
+        if not math.isfinite(self.posterior_probability) or self.posterior_probability < 0.0:
+            raise ValueError("snapshot posterior probability must be finite and non-negative")
+        if not math.isfinite(self.log_marginal):
+            raise ValueError("snapshot log marginal must be finite")
+        if not math.isfinite(self.noise_shape) or self.noise_shape <= 0.0:
+            raise ValueError("snapshot noise shape must be positive and finite")
+        if not math.isfinite(self.noise_scale) or self.noise_scale <= 0.0:
+            raise ValueError("snapshot noise scale must be positive and finite")
+
+    def predictive_density(self, row_index: int, target: float) -> float:
+        row = self.design[row_index]
+        location = float(row @ self.posterior_mean)
+        scale_squared = self.noise_scale / self.noise_shape * (
+            1.0 + float(row @ self.posterior_covariance @ row)
+        )
+        return float(
+            student_t.pdf(
+                target,
+                df=2.0 * self.noise_shape,
+                loc=location,
+                scale=math.sqrt(scale_squared),
+            )
+        )
+
+    def predictive_cdf(self, row_index: int, target: float) -> float:
+        row = self.design[row_index]
+        location = float(row @ self.posterior_mean)
+        scale_squared = self.noise_scale / self.noise_shape * (
+            1.0 + float(row @ self.posterior_covariance @ row)
+        )
+        return float(
+            student_t.cdf(
+                target,
+                df=2.0 * self.noise_shape,
+                loc=location,
+                scale=math.sqrt(scale_squared),
+            )
+        )
+
+
+@dataclass(frozen=True)
+class ScalableOpenTargetResult:
+    contract: OpenTargetContract
+    config: OpenTargetParticleConfig
+    seed: int
+    actions: np.ndarray
+    targets: np.ndarray
+    particles: tuple[OpenTargetParticleSnapshot, ...]
+    diagnostics: tuple[OpenTargetParticleDiagnostics, ...]
+    log_evidence: float
+
+    def __post_init__(self) -> None:
+        actions = np.ascontiguousarray(self.actions, dtype=float)
+        targets = np.ascontiguousarray(self.targets, dtype=float).reshape(-1)
+        actions.setflags(write=False)
+        targets.setflags(write=False)
+        object.__setattr__(self, "actions", actions)
+        object.__setattr__(self, "targets", targets)
+        if self.seed < 0:
+            raise ValueError("particle result seed must be non-negative")
+        if self.config.particle_count != len(self.particles):
+            raise ValueError("particle result count must match its registered configuration")
+        if actions.ndim != 2 or len(actions) != len(targets):
+            raise ValueError("particle result actions and targets must be aligned")
+        if len(self.particles) < 2:
+            raise ValueError("particle result requires at least two particles")
+        probabilities = np.asarray(
+            [particle.posterior_probability for particle in self.particles],
+            dtype=float,
+        )
+        if (
+            not np.all(np.isfinite(probabilities))
+            or np.any(probabilities < 0.0)
+        ):
+            raise ValueError(
+                "particle posterior probabilities must be finite and non-negative"
+            )
+        if not math.isclose(float(probabilities.sum()), 1.0, abs_tol=2e-12):
+            raise ValueError("particle posterior probabilities must sum to one")
+        if not math.isfinite(self.log_evidence):
+            raise ValueError("particle log evidence must be finite")
+
+    @property
+    def raw_expression_posterior(self) -> dict[str, float]:
+        result: dict[str, float] = {}
+        for particle in self.particles:
+            identifier = particle.expression.raw_ast_id
+            result[identifier] = result.get(identifier, 0.0) + particle.posterior_probability
+        return result
+
+    @property
+    def expression_posterior(self) -> dict[str, float]:
+        """Posterior mass by raw AST identifier (never silently reordered)."""
+
+        return self.raw_expression_posterior
+
+    @property
+    def bridge_schedule(self) -> tuple[tuple[int, int, float, float], ...]:
+        return tuple(
+            (
+                item.step,
+                item.bridge_step,
+                item.beta_previous,
+                item.beta_current,
+            )
+            for item in self.diagnostics
+        )
+
+    def evidence_record(self) -> dict[str, object]:
+        """Return response-free provenance for an external evidence registry."""
+
+        return {
+            "schema": "pcpi-p3f3-particle-evidence-v1",
+            "target_hash": self.contract.stable_hash,
+            "reference_slice_maximum_nodes": self.contract.reference_slice_maximum_nodes,
+            "reference_omitted_tail_mass": self.contract.grammar.tail_mass(
+                self.contract.reference_slice_maximum_nodes
+            ),
+            "particle_support": (
+                "full-open"
+                if self.config.maximum_nodes is None
+                else "registered-reference-slice"
+            ),
+            "particle_omitted_tail_mass": (
+                0.0
+                if self.config.maximum_nodes is None
+                else self.contract.grammar.tail_mass(self.config.maximum_nodes)
+            ),
+            "config": self.config.to_dict(),
+            "seed": self.seed,
+            "particle_count": len(self.particles),
+            "observation_count": len(self.targets),
+            "action_dimension": int(self.actions.shape[1]),
+            "proposal_kind": self.config.proposal_kind,
+            "bridge_count": len(self.diagnostics),
+            "bridge_schedule": [
+                {
+                    "observation_step": step,
+                    "bridge_step": bridge,
+                    "beta_previous": beta_previous,
+                    "beta_current": beta_current,
+                }
+                for step, bridge, beta_previous, beta_current in self.bridge_schedule
+            ],
+            "heldout_state": "not-applicable",
+            "real_data_access": "forbidden",
+        }
+
+    @property
+    def equivalence_class_posterior(self) -> dict[str, float]:
+        expressions = tuple(self._unique_expressions())
+        probabilities = np.asarray(
+            [self.raw_expression_posterior[item.raw_ast_id] for item in expressions],
+            dtype=float,
+        )
+        return aggregate_equivalence_mass(
+            expressions,
+            probabilities,
+            self.contract.grammar.feature_count,
+        )
+
+    def _unique_expressions(self) -> list[TypedExpression]:
+        result: dict[str, TypedExpression] = {}
+        for particle in self.particles:
+            result.setdefault(particle.expression.raw_ast_id, particle.expression)
+        return list(result.values())
+
+    def predictive_density(self, row_index: int, target: float) -> float:
+        return float(
+            sum(
+                particle.posterior_probability
+                * particle.predictive_density(row_index, target)
+                for particle in self.particles
+            )
+        )
+
+    def predictive_cdf(self, row_index: int, target: float) -> float:
+        return float(
+            sum(
+                particle.posterior_probability
+                * particle.predictive_cdf(row_index, target)
+                for particle in self.particles
+            )
+        )
+
+
+def _sample_expression_of_size(
+    grammar: CountablyOpenTypedGrammar,
+    node_count: int,
+    rng: np.random.Generator,
+) -> TypedExpression:
+    if node_count < 1:
+        raise ValueError("node_count must be positive")
+    if node_count == 1:
+        terminal = int(rng.integers(grammar.feature_count + 1))
+        return one() if terminal == 0 else variable(terminal - 1)
+
+    total = grammar.expression_count(node_count)
+    choice = int(rng.integers(total))
+    unary_count = grammar.expression_count(node_count - 1)
+    if choice < unary_count:
+        return neg(_sample_expression_of_size(grammar, node_count - 1, rng))
+    choice -= unary_count
+    for left_size in range(1, node_count - 1):
+        right_size = node_count - 1 - left_size
+        block = grammar.expression_count(left_size) * grammar.expression_count(right_size)
+        for operator in (add, mul):
+            if choice < block:
+                return operator(
+                    _sample_expression_of_size(grammar, left_size, rng),
+                    _sample_expression_of_size(grammar, right_size, rng),
+                )
+            choice -= block
+    raise AssertionError("grammar expression count did not cover sampling choice")
+
+
+def sample_open_prior_expression(
+    grammar: CountablyOpenTypedGrammar,
+    rng: np.random.Generator,
+    maximum_nodes: int | None = None,
+) -> TypedExpression:
+    """Sample a raw AST exactly from the registered prior or its slice."""
+
+    if maximum_nodes is None:
+        node_count = int(rng.geometric(1.0 - grammar.continuation_probability))
+    else:
+        if maximum_nodes < 1:
+            raise ValueError("maximum_nodes must be positive")
+        probabilities = np.asarray(
+            [grammar.size_probability(size) for size in range(1, maximum_nodes + 1)],
+            dtype=float,
+        )
+        probabilities /= float(probabilities.sum())
+        node_count = int(
+            rng.choice(np.arange(1, maximum_nodes + 1), p=probabilities)
+        )
+    return _sample_expression_of_size(grammar, node_count, rng)
+
+
+def _conditional_expression_prior(
+    grammar: CountablyOpenTypedGrammar,
+    expression: TypedExpression,
+    maximum_nodes: int | None,
+) -> float:
+    probability = grammar.prior_probability(expression)
+    if maximum_nodes is not None:
+        if expression.node_count > maximum_nodes:
+            return 0.0
+        probability /= grammar.slice_mass(maximum_nodes)
+    return float(probability)
+
+
+def _log_marginal(particle: _Particle, prior: OpenTargetContract) -> float:
+    precision = particle.precision
+    mean = np.linalg.solve(precision, particle.information)
+    posterior_shape = prior.coefficient_noise_prior.noise_shape + 0.5 * particle.observations
+    prior_quadratic = float(
+        particle.prior_mean @ (particle.prior_precision * particle.prior_mean)
+    )
+    posterior_scale = prior.coefficient_noise_prior.noise_scale + 0.5 * (
+        particle.y_square_sum + prior_quadratic - float(mean @ precision @ mean)
+    )
+    if not math.isfinite(posterior_scale) or posterior_scale <= 0.0:
+        raise FloatingPointError("invalid particle posterior noise scale")
+    sign, posterior_logdet = np.linalg.slogdet(precision)
+    if sign <= 0.0:
+        raise FloatingPointError("particle posterior precision must be positive definite")
+    prior_logdet = float(np.sum(np.log(particle.prior_precision)))
+    return float(
+        -0.5 * particle.observations * math.log(2.0 * math.pi)
+        + 0.5 * (prior_logdet - posterior_logdet)
+        + prior.coefficient_noise_prior.noise_shape
+        * math.log(prior.coefficient_noise_prior.noise_scale)
+        - posterior_shape * math.log(posterior_scale)
+        + gammaln(posterior_shape)
+        - gammaln(prior.coefficient_noise_prior.noise_shape)
+    )
+
+
+def _tempered_log_marginal(
+    particle: _Particle,
+    row: np.ndarray,
+    target: float,
+    beta: float,
+    contract: OpenTargetContract,
+) -> float:
+    """Marginal likelihood after adding one row with fractional power ``beta``.
+
+    The existing particle state contains all previous observations at power one.
+    The new row is kept outside the state until the bridge reaches one, so a
+    rejected or intermediate bridge move never mutates the sufficient
+    statistics.  This is the exact conjugate Feynman--Kac bridge for the frozen
+    Gaussian/NIG target, not a generalized final likelihood.
+    """
+
+    if not 0.0 <= beta <= 1.0:
+        raise ValueError("bridge beta must lie in [0, 1]")
+    values = np.asarray(row, dtype=float).reshape(-1)
+    if len(values) != particle.design.shape[1]:
+        raise ValueError("bridge row dimension does not match the particle design")
+    precision = particle.precision + beta * np.outer(values, values)
+    information = particle.information + beta * values * float(target)
+    y_square_sum = particle.y_square_sum + beta * float(target * target)
+    observations = particle.observations + beta
+    mean = np.linalg.solve(precision, information)
+    posterior_shape = contract.coefficient_noise_prior.noise_shape + 0.5 * observations
+    prior_quadratic = float(
+        particle.prior_mean @ (particle.prior_precision * particle.prior_mean)
+    )
+    posterior_scale = contract.coefficient_noise_prior.noise_scale + 0.5 * (
+        y_square_sum + prior_quadratic - float(mean @ precision @ mean)
+    )
+    if not math.isfinite(posterior_scale) or posterior_scale <= 0.0:
+        raise FloatingPointError("invalid tempered particle posterior noise scale")
+    sign, posterior_logdet = np.linalg.slogdet(precision)
+    if sign <= 0.0:
+        raise FloatingPointError("tempered particle posterior precision must be positive definite")
+    prior_logdet = float(np.sum(np.log(particle.prior_precision)))
+    return float(
+        -0.5 * observations * math.log(2.0 * math.pi)
+        + 0.5 * (prior_logdet - posterior_logdet)
+        + contract.coefficient_noise_prior.noise_shape
+        * math.log(contract.coefficient_noise_prior.noise_scale)
+        - posterior_shape * math.log(posterior_scale)
+        + gammaln(posterior_shape)
+        - gammaln(contract.coefficient_noise_prior.noise_shape)
+    )
+
+
+def _advance_particle(
+    particle: _Particle,
+    design_row: np.ndarray,
+    target: float,
+    contract: OpenTargetContract,
+) -> float:
+    row = np.asarray(design_row, dtype=float).reshape(-1)
+    if len(row) != particle.design.shape[1]:
+        raise ValueError("particle design row dimension does not match its sufficient statistics")
+    particle.precision += np.outer(row, row)
+    particle.information += row * float(target)
+    particle.y_square_sum += float(target * target)
+    particle.observations += 1
+    previous = particle.log_marginal
+    particle.log_marginal = _log_marginal(particle, contract)
+    return particle.log_marginal - previous
+
+
+def _make_particle(
+    contract: OpenTargetContract,
+    actions: np.ndarray,
+    expression: TypedExpression,
+    discrepancy_active: bool,
+    kernel_state_id: str,
+    maximum_nodes: int | None,
+    *,
+    particle_id: int,
+    root_ancestor_id: int,
+    design_cache: dict[str, np.ndarray] | None = None,
+    basis_cache: dict[tuple[str, str], object] | None = None,
+) -> _Particle:
+    expression_prior = _conditional_expression_prior(
+        contract.grammar, expression, maximum_nodes
+    )
+    if expression_prior <= 0.0:
+        raise ValueError("particle expression lies outside the registered prior slice")
+    if design_cache is None:
+        base_design = evaluate_expression(expression, actions)[:, None]
+    else:
+        if expression.raw_ast_id not in design_cache:
+            design_cache[expression.raw_ast_id] = np.ascontiguousarray(
+                evaluate_expression(expression, actions)[:, None]
+            )
+        base_design = design_cache[expression.raw_ast_id]
+    if discrepancy_active:
+        kernels = {state.state_id: state for state in contract.kernel_states}
+        try:
+            kernel = kernels[kernel_state_id]
+        except KeyError as error:
+            raise ValueError(f"unknown discrepancy kernel state: {kernel_state_id}") from error
+        basis_key = (expression.raw_ast_id, kernel_state_id)
+        if basis_cache is None or basis_key not in basis_cache:
+            basis = structurewise_projected_rbf_basis(
+                actions,
+                base_design,
+                expression.raw_ast_id,
+                kernel,
+            )
+            if basis_cache is not None:
+                basis_cache[basis_key] = basis
+        else:
+            basis = basis_cache[basis_key]
+        design = np.column_stack((base_design, basis.factor))
+        component_probability = (
+            expression_prior
+            * contract.discrepancy_prior.discrepancy_probability
+            * kernel.prior_probability
+        )
+    else:
+        kernel_state_id = "none"
+        design = base_design
+        component_probability = expression_prior * (
+            1.0 - contract.discrepancy_prior.discrepancy_probability
+        )
+    coefficient_dimension = 1
+    prior_mean = np.zeros(design.shape[1], dtype=float)
+    prior_mean[0] = contract.coefficient_noise_prior.coefficient_mean
+    prior_precision = np.full(
+        design.shape[1], contract.discrepancy_prior.discrepancy_precision
+    )
+    prior_precision[0] = contract.coefficient_noise_prior.coefficient_precision
+    precision = np.diag(prior_precision)
+    information = prior_precision * prior_mean
+    return _Particle(
+        expression=expression,
+        discrepancy_active=discrepancy_active,
+        kernel_state_id=kernel_state_id,
+        joint_prior_probability=float(component_probability),
+        design=np.ascontiguousarray(design, dtype=float),
+        coefficient_dimension=coefficient_dimension,
+        prior_mean=prior_mean,
+        prior_precision=prior_precision,
+        precision=precision,
+        information=information,
+        particle_id=particle_id,
+        root_ancestor_id=root_ancestor_id,
+    )
+
+
+def _sample_prior_particle(
+    contract: OpenTargetContract,
+    actions: np.ndarray,
+    rng: np.random.Generator,
+    maximum_nodes: int | None,
+    *,
+    particle_id: int,
+    root_ancestor_id: int,
+    design_cache: dict[str, np.ndarray] | None = None,
+    basis_cache: dict[tuple[str, str], object] | None = None,
+) -> _Particle:
+    expression = sample_open_prior_expression(contract.grammar, rng, maximum_nodes)
+    active = bool(rng.random() < contract.discrepancy_prior.discrepancy_probability)
+    if active:
+        probabilities = np.asarray(
+            [state.prior_probability for state in contract.kernel_states],
+            dtype=float,
+        )
+        kernel_index = int(rng.choice(len(contract.kernel_states), p=probabilities))
+        kernel_id = contract.kernel_states[kernel_index].state_id
+    else:
+        kernel_id = "none"
+    return _make_particle(
+        contract,
+        actions,
+        expression,
+        active,
+        kernel_id,
+        maximum_nodes,
+        particle_id=particle_id,
+        root_ancestor_id=root_ancestor_id,
+        design_cache=design_cache,
+        basis_cache=basis_cache,
+    )
+
+
+class ScalableOpenTargetSMC:
+    """Particle approximation checked against the P3F.2 exact target."""
+
+    def __init__(
+        self,
+        contract: OpenTargetContract,
+        config: OpenTargetParticleConfig,
+        seed: int,
+    ) -> None:
+        self.contract = contract
+        self.config = config
+        self.seed = int(seed)
+        if self.seed < 0:
+            raise ValueError("particle seed must be non-negative")
+        if (
+            config.maximum_nodes is not None
+            and config.maximum_nodes != contract.reference_slice_maximum_nodes
+        ):
+            raise ValueError(
+                "finite-slice particle target must match the registered reference slice"
+            )
+        self.rng = np.random.default_rng(self.seed)
+        self._design_cache: dict[str, np.ndarray] = {}
+        self._basis_cache: dict[tuple[str, str], object] = {}
+
+    @staticmethod
+    def _validated_data(
+        contract: OpenTargetContract,
+        actions: np.ndarray,
+        targets: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        x = np.asarray(actions, dtype=float)
+        if x.ndim == 1:
+            x = x[:, None]
+        y = np.asarray(targets, dtype=float).reshape(-1)
+        if x.ndim != 2 or len(x) < 3 or len(x) != len(y):
+            raise ValueError("particle actions and targets must be aligned with at least three rows")
+        if x.shape[1] != contract.grammar.feature_count:
+            raise ValueError("particle action dimension does not match the grammar")
+        if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
+            raise ValueError("particle actions and targets must be finite")
+        scales = np.std(x, axis=0, ddof=0)
+        active = scales > np.finfo(float).eps * np.maximum(
+            1.0,
+            np.max(np.abs(x), axis=0),
+        )
+        if not np.any(active):
+            raise ValueError("particle actions require a varying coordinate")
+        return np.ascontiguousarray(x), np.ascontiguousarray(y)
+
+    def _replay_prefix(
+        self,
+        particle: _Particle,
+        targets: np.ndarray,
+        prefix_length: int,
+    ) -> _Particle:
+        for index in range(prefix_length):
+            _advance_particle(
+                particle,
+                particle.design[index],
+                targets[index],
+                self.contract,
+            )
+        return particle
+
+    @staticmethod
+    def _conditional_ess(
+        log_weights: np.ndarray,
+        log_increment: np.ndarray,
+    ) -> float:
+        normalized, _ = normalize_log_weights(log_weights)
+        increments = np.asarray(log_increment, dtype=float).reshape(-1)
+        if len(increments) != len(normalized) or not np.all(np.isfinite(increments)):
+            raise ValueError("bridge increments must be finite and aligned")
+        proposed, _ = normalize_log_weights(normalized + increments)
+        return float(1.0 / np.exp(2.0 * proposed).sum())
+
+    def _bridge_log_marginals(
+        self,
+        particles: list[_Particle],
+        row_index: int,
+        target: float,
+        beta: float,
+    ) -> np.ndarray:
+        return np.asarray(
+            [
+                _tempered_log_marginal(
+                    particle,
+                    particle.design[row_index],
+                    target,
+                    beta,
+                    self.contract,
+                )
+                for particle in particles
+            ],
+            dtype=float,
+        )
+
+    def _adaptive_bridge_beta(
+        self,
+        particles: list[_Particle],
+        log_weights: np.ndarray,
+        row_index: int,
+        target: float,
+        beta_previous: float,
+        bridge_step: int,
+    ) -> tuple[float, float, np.ndarray]:
+        remaining_steps = self.config.maximum_bridge_steps - bridge_step
+        if remaining_steps < 1:
+            raise RuntimeError("adaptive tempering bridge budget is exhausted")
+        target_ess = self.config.cess_target_fraction * len(particles)
+        current = np.asarray([particle.log_marginal for particle in particles], dtype=float)
+        full = self._bridge_log_marginals(particles, row_index, target, 1.0)
+        full_cess = self._conditional_ess(log_weights, full - current)
+        if full_cess >= target_ess:
+            return 1.0, full_cess, full
+        lower = beta_previous
+        upper = 1.0
+        for _ in range(80):
+            middle = 0.5 * (lower + upper)
+            candidate = self._bridge_log_marginals(
+                particles,
+                row_index,
+                target,
+                middle,
+            )
+            candidate_cess = self._conditional_ess(log_weights, candidate - current)
+            if candidate_cess >= target_ess:
+                lower = middle
+            else:
+                upper = middle
+            if upper - lower <= self.config.tempering_tolerance:
+                break
+        # A CESS root can be smaller than the numerical tolerance.  Advancing
+        # only by that tolerance would require more bridges than the frozen
+        # budget and would turn a diagnostic degeneracy into a runtime hang.
+        # The budget-derived floor guarantees beta=1 is reached; the actual
+        # CESS is retained in diagnostics and can still fail the correctness
+        # Gate.  No response-derived threshold is introduced.
+        minimum_beta = beta_previous + (1.0 - beta_previous) / remaining_steps
+        next_beta = max(lower, minimum_beta)
+        if next_beta > 1.0:
+            next_beta = 1.0
+        next_logs = self._bridge_log_marginals(
+            particles,
+            row_index,
+            target,
+            next_beta,
+        )
+        return next_beta, self._conditional_ess(log_weights, next_logs - current), next_logs
+
+    def _rejuvenate(
+        self,
+        particles: list[_Particle],
+        actions: np.ndarray,
+        targets: np.ndarray,
+        prefix_length: int,
+        row_index: int,
+        target: float,
+        beta: float,
+    ) -> tuple[int, int]:
+        proposals = 0
+        acceptances = 0
+        for index, current in enumerate(particles):
+            for _ in range(self.config.rejuvenation_steps):
+                proposals += 1
+                proposed = _sample_prior_particle(
+                    self.contract,
+                    actions,
+                    self.rng,
+                    self.config.maximum_nodes,
+                    particle_id=current.particle_id,
+                    root_ancestor_id=current.root_ancestor_id,
+                    design_cache=self._design_cache,
+                    basis_cache=self._basis_cache,
+                )
+                self._replay_prefix(proposed, targets, prefix_length)
+                proposed.log_marginal = _tempered_log_marginal(
+                    proposed,
+                    proposed.design[row_index],
+                    target,
+                    beta,
+                    self.contract,
+                )
+                # The proposal is the exact component prior, so its probability
+                # cancels from the independent-MH ratio.
+                log_acceptance = proposed.log_marginal - current.log_marginal
+                if math.log(self.rng.random()) < min(0.0, log_acceptance):
+                    proposed.log_weight = current.log_weight
+                    particles[index] = proposed
+                    current = proposed
+                    acceptances += 1
+        return proposals, acceptances
+
+    def run(
+        self,
+        actions: np.ndarray,
+        targets: np.ndarray,
+    ) -> ScalableOpenTargetResult:
+        x, y = self._validated_data(self.contract, actions, targets)
+        self._design_cache.clear()
+        self._basis_cache.clear()
+        count = self.config.particle_count
+        particles = [
+            _sample_prior_particle(
+                self.contract,
+                x,
+                self.rng,
+                self.config.maximum_nodes,
+                particle_id=index,
+                root_ancestor_id=index,
+                design_cache=self._design_cache,
+                basis_cache=self._basis_cache,
+            )
+            for index in range(count)
+        ]
+        log_weights = np.full(count, -math.log(count), dtype=float)
+        log_evidence = 0.0
+        diagnostics: list[OpenTargetParticleDiagnostics] = []
+        next_particle_id = count
+        threshold = self.config.ess_threshold_fraction * count
+
+        for step, target in enumerate(y, start=1):
+            beta = 0.0
+            bridge_step = 0
+            while beta < 1.0:
+                if bridge_step >= self.config.maximum_bridge_steps:
+                    raise RuntimeError("adaptive tempering exceeded the frozen bridge limit")
+                next_beta, conditional_ess, next_logs = self._adaptive_bridge_beta(
+                    particles,
+                    log_weights,
+                    step - 1,
+                    float(target),
+                    beta,
+                    bridge_step,
+                )
+                current_logs = np.asarray(
+                    [particle.log_marginal for particle in particles],
+                    dtype=float,
+                )
+                increments = next_logs - current_logs
+                normalized, log_increment = normalize_log_weights(
+                    log_weights + increments
+                )
+                for particle, value in zip(particles, next_logs, strict=True):
+                    particle.log_marginal = float(value)
+                ess_before = effective_sample_size(normalized)
+                log_evidence += log_increment
+                log_weights = normalized
+                resampled = ess_before < threshold
+                if resampled:
+                    indices = systematic_resample(np.exp(log_weights), self.rng)
+                    previous = particles
+                    ancestor_indices = tuple(int(index) for index in indices)
+                    parent_particle_ids = tuple(
+                        previous[int(index)].particle_id for index in indices
+                    )
+                    particles = []
+                    for index in indices:
+                        parent = previous[int(index)]
+                        child = parent.clone(
+                            particle_id=next_particle_id,
+                        )
+                        child.log_weight = -math.log(count)
+                        particles.append(child)
+                        next_particle_id += 1
+                    child_particle_ids = tuple(
+                        particle.particle_id for particle in particles
+                    )
+                    log_weights = np.full(count, -math.log(count), dtype=float)
+                else:
+                    ancestor_indices = tuple(range(count))
+                    parent_particle_ids = tuple(
+                        particle.particle_id for particle in particles
+                    )
+                    child_particle_ids = parent_particle_ids
+                    for particle, value in zip(particles, log_weights, strict=True):
+                        particle.log_weight = float(value)
+
+                proposals, acceptances = self._rejuvenate(
+                    particles,
+                    x,
+                    y,
+                    step - 1,
+                    step - 1,
+                    float(target),
+                    next_beta,
+                )
+                for particle, value in zip(particles, log_weights, strict=True):
+                    particle.log_weight = float(value)
+                roots = np.asarray(
+                    [particle.root_ancestor_id for particle in particles]
+                )
+                unique, root_counts = np.unique(roots, return_counts=True)
+                root_probabilities = root_counts.astype(float) / count
+                root_entropy = float(
+                    -np.sum(root_probabilities * np.log(root_probabilities))
+                )
+                diagnostics.append(
+                    OpenTargetParticleDiagnostics(
+                        step=step,
+                        bridge_step=bridge_step + 1,
+                        beta_previous=beta,
+                        beta_current=next_beta,
+                        conditional_ess=conditional_ess,
+                        effective_sample_size_before=ess_before,
+                        effective_sample_size_after=effective_sample_size(log_weights),
+                        weight_entropy=weight_entropy(log_weights),
+                        resampled=resampled,
+                        resampling_threshold_ess=threshold,
+                        log_evidence_increment=float(log_increment),
+                        distinct_root_ancestors=len(unique),
+                        root_entropy=root_entropy,
+                        proposals=proposals,
+                        acceptances=acceptances,
+                        ancestor_indices=ancestor_indices,
+                        parent_particle_ids=parent_particle_ids,
+                        child_particle_ids=child_particle_ids,
+                    )
+                )
+                beta = next_beta
+                bridge_step += 1
+
+            # Commit the ordinary likelihood row only after the bridge has
+            # reached beta=1.  Intermediate states therefore remain valid
+            # fractional targets for MH and resampling diagnostics.
+            for particle in particles:
+                _advance_particle(
+                    particle,
+                    particle.design[step - 1],
+                    float(target),
+                    self.contract,
+                )
+
+        snapshots: list[OpenTargetParticleSnapshot] = []
+        for particle in particles:
+            posterior_mean = np.linalg.solve(particle.precision, particle.information)
+            posterior_covariance = np.linalg.inv(particle.precision)
+            posterior_shape = (
+                self.contract.coefficient_noise_prior.noise_shape
+                + 0.5 * particle.observations
+            )
+            posterior_scale = self.contract.coefficient_noise_prior.noise_scale + 0.5 * (
+                particle.y_square_sum
+                + float(
+                    particle.prior_mean
+                    @ (particle.prior_precision * particle.prior_mean)
+                )
+                - float(posterior_mean @ particle.precision @ posterior_mean)
+            )
+            snapshots.append(
+                OpenTargetParticleSnapshot(
+                    expression=particle.expression,
+                    discrepancy_active=particle.discrepancy_active,
+                    kernel_state_id=particle.kernel_state_id,
+                    posterior_probability=float(np.exp(particle.log_weight)),
+                    log_marginal=particle.log_marginal,
+                    design=particle.design,
+                    posterior_mean=posterior_mean,
+                    posterior_covariance=posterior_covariance,
+                    noise_shape=posterior_shape,
+                    noise_scale=posterior_scale,
+                )
+            )
+        return ScalableOpenTargetResult(
+            contract=self.contract,
+            config=self.config,
+            seed=self.seed,
+            actions=x,
+            targets=y,
+            particles=tuple(snapshots),
+            diagnostics=tuple(diagnostics),
+            log_evidence=float(log_evidence),
+        )
+
+
+__all__ = [
+    "OpenTargetParticleConfig",
+    "OpenTargetParticleDiagnostics",
+    "OpenTargetParticleSnapshot",
+    "ScalableOpenTargetResult",
+    "ScalableOpenTargetSMC",
+    "sample_open_prior_expression",
+]
