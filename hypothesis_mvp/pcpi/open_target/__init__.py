@@ -49,6 +49,12 @@ from .particle import (
     proposal_invariance_certificate,
     sample_open_prior_expression,
 )
+from .full_population import (
+    STANDARD_METHOD,
+    WASTE_FREE_METHOD,
+    MatchedFullPopulationConfig,
+    MatchedFullPopulationSMC,
+)
 
 __all__ = [
     "P3F2_EXPRESSION_TYPE",
@@ -90,4 +96,8 @@ __all__ = [
     "ScalableOpenTargetSMC",
     "proposal_invariance_certificate",
     "sample_open_prior_expression",
+    "STANDARD_METHOD",
+    "WASTE_FREE_METHOD",
+    "MatchedFullPopulationConfig",
+    "MatchedFullPopulationSMC",
 ]

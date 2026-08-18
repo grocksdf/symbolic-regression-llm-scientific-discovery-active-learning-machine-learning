@@ -1,0 +1,104 @@
+{
+  "schema": "pcpi-p3f3-open-target-particle-variance-reduction-full-population-development-v3",
+  "stage": "P3F.3-VR.3",
+  "experiment": "open_target_particle_variance_reduction_full_population_development",
+  "fixture_role": "new_response_free_exact_reference_full_population_matched_compute_development",
+  "claim_boundary": "This development-only Gate compares standard and waste-free full-population SMC under matched potential, proposal-target, posterior-functional, and total target-evaluation budgets. It is not confirmatory fidelity, predictive calibration, real-data efficacy, acquisition, heldout, discovery, or scientific-law evidence.",
+  "real_data_access": "forbidden",
+  "heldout_state": "not-applicable",
+  "predictive_calibration_state": "blocked",
+  "acquisition_state": "blocked",
+  "common_population": {
+    "population_size": 8192,
+    "maximum_nodes": 3,
+    "fixed_bridge_betas": [0.25, 0.5, 0.75, 1.0],
+    "proposal_kind": "complete-uniform",
+    "proposal_mixture_weight": 0.5,
+    "resampling_kind": "systematic",
+    "cess_target_fraction": 0.8
+  },
+  "methods": [
+    {
+      "method_id": "standard-full-population-single-step",
+      "source_chain_count": 8192,
+      "states_per_chain": 1,
+      "population_semantics": "resample_N_then_one_invariant_MH_state_per_parent"
+    },
+    {
+      "method_id": "waste-free-full-population-four-step",
+      "source_chain_count": 2048,
+      "states_per_chain": 4,
+      "population_semantics": "resample_M_sources_then_retain_all_P_post_MH_states_as_next_N_population"
+    }
+  ],
+  "matched_budget": {
+    "observation_count": 8,
+    "bridges_per_observation": 4,
+    "bridge_count_per_run": 32,
+    "full_population_size": 8192,
+    "mh_proposal_target_evaluations_per_bridge": 8192,
+    "mh_proposal_target_evaluations_per_run": 262144,
+    "incremental_potential_evaluations_per_bridge": 8192,
+    "incremental_potential_evaluations_per_run": 262144,
+    "total_target_evaluations_per_bridge": 16384,
+    "total_target_evaluations_per_run": 524288,
+    "posterior_functional_component_evaluations_per_point": 8192,
+    "matched_budget_definition": "Both methods carry N=8192 states into every fixed-grid potential. Standard SMC resamples N parents and applies one MH proposal per parent; waste-free SMC resamples M=2048 sources and retains P=4 post-MH chain states, N=M*P. Therefore incremental potentials, MH proposal-target evaluations, posterior-functional components, and their total are exactly matched.",
+    "source_chain_counts_differ_by_registered_mechanism": true,
+    "wall_clock_role": "descriptive_only"
+  },
+  "mechanism_eligibility": {
+    "all_fixture_seed_method_runs_required": true,
+    "minimum_conditional_ess_fraction_min": 0.799,
+    "proposal_invariance_max_abs_error": 2e-15,
+    "mass_normalization_max_abs_error": 2e-12,
+    "evidence_telescoping_max_abs_error": 2e-12,
+    "candidate_worst_log_evidence_abs_error_ratio_max": 1.0,
+    "candidate_worst_predictive_density_abs_error_ratio_max": 1.0,
+    "candidate_worst_predictive_cdf_abs_error_ratio_max": 1.0,
+    "candidate_raw_ast_worst_additive_noninferiority": 0.002,
+    "candidate_equivalence_worst_additive_noninferiority": 0.002,
+    "candidate_raw_ancestry_log_attrition_per_event_max": 1.6362943611198906,
+    "candidate_raw_root_entropy_loss_per_event_max": 0.20384615384615384,
+    "candidate_capacity_adjusted_ancestry_log_attrition_max": 0.25,
+    "candidate_capacity_adjusted_root_entropy_loss_max": 0.05,
+    "genealogy_threshold_rationale": "With N/M=P=4, a canonical waste-free source-resampling event has the structural lower bounds log(P) for raw ancestry attrition and 1-log(M)/log(N)=2/13 for normalized raw entropy loss even under perfect source coverage. The raw limits add the previously frozen 0.25 and 0.05 event-loss allowances to those analytical capacity floors. Capacity-adjusted metrics retain the original 0.25 and 0.05 limits. Raw metrics remain reported and gated.",
+    "means_are_descriptive_only": true
+  },
+  "predictive_evaluation": {
+    "row_indices": [0, 2, 5, 7],
+    "target_values": [-0.75, -0.25, 0.25, 0.75]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "vr3_shallow_negative_curvature_grid_j",
+      "actions": [-1.52, -1.08, -0.63, -0.21, 0.17, 0.54, 0.96, 1.37],
+      "polynomial_coefficients": [0.05, 0.42, -0.14],
+      "response_free_registration": true
+    },
+    {
+      "fixture_id": "vr3_positive_curvature_negative_slope_grid_k",
+      "actions": [-1.38, -0.97, -0.49, -0.05, 0.28, 0.66, 1.07, 1.51],
+      "polynomial_coefficients": [-0.18, -0.48, 0.16],
+      "response_free_registration": true
+    },
+    {
+      "fixture_id": "vr3_positive_curvature_low_slope_grid_l",
+      "actions": [-1.47, -1.11, -0.69, -0.24, 0.13, 0.47, 0.89, 1.29],
+      "polynomial_coefficients": [0.27, 0.08, 0.24],
+      "response_free_registration": true
+    }
+  ],
+  "seeds": [2026081736, 2026081737, 2026081738, 2026081739],
+  "confirmatory_policy": {
+    "vr1_development_fixtures_reused_for_vr3_gate": false,
+    "vr1_development_seeds_reused_for_vr3_gate": false,
+    "vr2_development_fixtures_reused_for_vr3_gate": false,
+    "vr2_development_seeds_reused_for_vr3_gate": false,
+    "prior_confirmatory_fixtures_reused_for_selection": false,
+    "prior_confirmatory_seeds_reused_for_selection": false,
+    "unseen_confirmatory_fixtures_frozen_in_this_stage": false,
+    "unseen_confirmatory_seeds_frozen_in_this_stage": false,
+    "next_confirmatory_freeze_authorized_only_if_mechanism_eligible": true
+  }
+}

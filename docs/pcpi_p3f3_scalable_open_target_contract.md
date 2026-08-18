@@ -444,6 +444,63 @@ pass of every preregistered strict-budget decision can authorize freezing a new
 unseen confirmatory fixture bank; it still cannot authorize calibration or any
 real-data, acquisition, or held-out path.
 
+## 5.10 Full-population waste-free propagation development
+
+P3F.3-VR.2 is also retained as negative development evidence. Its 24 runs
+matched the fixed bridge count and the registered MH proposal count. The
+terminal-pool estimator improved the worst raw-AST, equivalence, predictive
+density, and predictive CDF errors, but its worst absolute log-evidence error
+was larger than the terminal-only comparator. The result therefore cannot
+freeze another confirmatory bank.
+
+The VR.2 audit additionally found that the open-target engine's private
+`_conditional_ess` routine still returned the ordinary ESS after reweighting.
+That statistic equals the current ESS at a zero increment, whereas registered
+CESS must equal $N$ at a zero increment even for non-uniform incoming weights.
+P3F.3-VR.3 reuses the canonical `conditional_effective_sample_size` primitive
+and freezes the zero-increment identity as a regression test. The VR.2 CESS
+decision is consequently invalid even though its other recorded estimators
+remain useful negative development evidence.
+
+VR.3 removes the propagation compression that prevented the intermediate
+population from entering later potential and normalizing-constant estimates.
+Both methods carry the same full population size $N=8192$ through every fixed
+bridge. The standard comparator resamples $N$ parents and takes one invariant
+MH step per parent. The waste-free candidate resamples $M=2048$ source chains,
+takes $P=4$ successive invariant MH steps per source, and retains every
+post-MH state as the next population, so $N=MP$. No pool is compressed before
+the next incremental potential or terminal posterior functional.
+
+Per bridge, each method must execute exactly 8192 incremental-potential
+evaluations, 8192 MH proposal/target evaluations, and 8192 component
+evaluations for each registered posterior functional. Across 32 bridges this
+is 262144 potential evaluations plus 262144 proposal/target evaluations, or
+524288 registered target evaluations per run. Wall clock remains descriptive.
+
+Every resampling event retains the raw ancestry attrition and raw normalized
+root-entropy loss. Because the waste-free transform intentionally maps $N$
+states through at most $M=N/P$ source chains, even perfect source coverage has
+the structural raw floors
+
+\[
+  a_{\mathrm{capacity}}=\log P, \qquad
+  \ell_{\mathrm{capacity}}=1-\frac{\log M}{\log N}.
+\]
+
+VR.3 therefore also preregisters capacity-adjusted event losses while keeping
+the raw quantities visible and gated. The raw limits are the analytical
+capacity floors plus the previously registered event allowances of 0.25 for
+log attrition and 0.05 for normalized entropy loss; capacity-adjusted limits
+remain 0.25 and 0.05. This adjustment is fixed before the new VR.3 fixtures are
+run and cannot be inferred from their outcomes.
+
+VR.3 uses new response-free J/K/L development fixtures and seeds disjoint from
+VR.1, VR.2, and the previous confirmatory bank. It may only authorize freezing
+a new unseen confirmatory bank if every matched-budget, CESS, target-invariance,
+fidelity, evidence, and raw-plus-adjusted genealogy decision passes. It cannot
+itself authorize predictive calibration or any real-data, acquisition, or
+held-out path.
+
 ## 6. Implementation boundaries
 
 - Extend the canonical `hypothesis_mvp.pcpi.open_target` path; do not create a

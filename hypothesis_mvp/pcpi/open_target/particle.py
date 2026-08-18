@@ -21,6 +21,7 @@ from hypothesis_mvp.pcpi.reference.structurewise_discrepancy import (
     structurewise_projected_rbf_basis,
 )
 from hypothesis_mvp.pcpi.smc.resampling import (
+    conditional_effective_sample_size,
     effective_sample_size,
     normalize_log_weights,
     residual_resample_count,
@@ -120,22 +121,33 @@ class OpenTargetParticleConfig:
             "terminal-only",
             "waste-free-pool-compressed",
             "waste-free-pool-estimator-compressed",
+            "waste-free-full-population",
         }:
             raise ValueError(
                 "rejuvenation_population_mode must be terminal-only, "
                 "waste-free-pool-compressed, or "
-                "waste-free-pool-estimator-compressed"
+                "waste-free-pool-estimator-compressed, or "
+                "waste-free-full-population"
             )
         if (
             self.rejuvenation_population_mode
             in {
                 "waste-free-pool-compressed",
                 "waste-free-pool-estimator-compressed",
+                "waste-free-full-population",
             }
             and self.rejuvenation_steps < 2
         ):
             raise ValueError(
-                "waste-free pool compression requires at least two rejuvenation steps"
+                "waste-free population modes require at least two rejuvenation steps"
+            )
+        if (
+            self.rejuvenation_population_mode == "waste-free-full-population"
+            and self.particle_count % self.rejuvenation_steps != 0
+        ):
+            raise ValueError(
+                "full-population waste-free mode requires particle_count to be "
+                "divisible by rejuvenation_steps"
             )
 
     def to_dict(self) -> dict[str, object]:
@@ -211,6 +223,8 @@ class OpenTargetParticleDiagnostics:
             "pre-bridge-cess-boundary",
             "post-bridge-cess-boundary",
             "ess-threshold",
+            "strict-standard-resampling",
+            "waste-free-source-resampling",
         }:
             raise ValueError("unknown particle resampling reason")
         if self.resampled != (self.resampling_reason != "none"):
@@ -363,6 +377,8 @@ class OpenTargetResamplingGenealogyDiagnostic:
             "post-bridge-cess-boundary",
             "ess-threshold",
             "waste-free-pool-compression",
+            "strict-standard-resampling",
+            "waste-free-source-resampling",
         }:
             raise ValueError("unknown resampling genealogy event kind")
         if self.population_size < 2:
@@ -723,9 +739,15 @@ class ScalableOpenTargetResult:
             range(1, len(self.resampling_genealogy) + 1)
         ):
             raise ValueError("resampling genealogy event indices must be consecutive")
-        if self.config.rejuvenation_population_mode == "terminal-only":
+        if self.config.rejuvenation_population_mode in {
+            "terminal-only",
+            "waste-free-full-population",
+        }:
             if self.waste_free_diagnostics or self.estimator_particles:
-                raise ValueError("terminal-only results cannot contain waste-free diagnostics")
+                raise ValueError(
+                    "direct full-population results cannot contain compressed-pool "
+                    "diagnostics"
+                )
         elif len(self.waste_free_diagnostics) != len(self.diagnostics):
             raise ValueError("every waste-free bridge requires one population diagnostic")
         if (
@@ -1342,12 +1364,16 @@ class ScalableOpenTargetSMC:
         log_weights: np.ndarray,
         log_increment: np.ndarray,
     ) -> float:
-        normalized, _ = normalize_log_weights(log_weights)
         increments = np.asarray(log_increment, dtype=float).reshape(-1)
-        if len(increments) != len(normalized) or not np.all(np.isfinite(increments)):
+        if len(increments) != len(np.asarray(log_weights).reshape(-1)) or not np.all(
+            np.isfinite(increments)
+        ):
             raise ValueError("bridge increments must be finite and aligned")
-        proposed, _ = normalize_log_weights(normalized + increments)
-        return float(1.0 / np.exp(2.0 * proposed).sum())
+        # The increment is already the full beta_previous -> beta_next log
+        # potential, so delta=1.  This is CESS, not the ordinary ESS of the
+        # reweighted population.  In particular a zero increment returns N
+        # even when the incoming SMC weights are non-uniform.
+        return conditional_effective_sample_size(log_weights, increments, 1.0)
 
     def _resample_indices(
         self,
@@ -1697,6 +1723,7 @@ class ScalableOpenTargetSMC:
                 if self.config.rejuvenation_population_mode in {
                     "waste-free-pool-compressed",
                     "waste-free-pool-estimator-compressed",
+                    "waste-free-full-population",
                 }:
                     intermediate_pool.append(
                         current.clone(particle_id=current.particle_id)
