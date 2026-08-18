@@ -23,6 +23,8 @@ from hypothesis_mvp.pcpi.reference.structurewise_discrepancy import (
 from hypothesis_mvp.pcpi.smc.resampling import (
     effective_sample_size,
     normalize_log_weights,
+    residual_resample,
+    stratified_resample,
     systematic_resample,
     weight_entropy,
 )
@@ -56,6 +58,8 @@ class OpenTargetParticleConfig:
     maximum_bridge_steps: int = 64
     proposal_kind: str = "prior-independence"
     proposal_mixture_weight: float = 0.5
+    resampling_kind: str = "systematic"
+    resampling_schedule: str = "pre-bridge"
 
     def __post_init__(self) -> None:
         if self.particle_count < 2:
@@ -90,6 +94,10 @@ class OpenTargetParticleConfig:
             or not 0.0 < self.proposal_mixture_weight < 1.0
         ):
             raise ValueError("proposal_mixture_weight must lie strictly inside (0, 1)")
+        if self.resampling_kind not in {"systematic", "stratified", "residual"}:
+            raise ValueError("resampling_kind must be systematic, stratified, or residual")
+        if self.resampling_schedule not in {"pre-bridge", "post-bridge"}:
+            raise ValueError("resampling_schedule must be pre-bridge or post-bridge")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -102,6 +110,8 @@ class OpenTargetParticleConfig:
             "maximum_bridge_steps": self.maximum_bridge_steps,
             "proposal_kind": self.proposal_kind,
             "proposal_mixture_weight": self.proposal_mixture_weight,
+            "resampling_kind": self.resampling_kind,
+            "resampling_schedule": self.resampling_schedule,
         }
 
 
@@ -126,6 +136,7 @@ class OpenTargetParticleDiagnostics:
     ancestor_indices: tuple[int, ...]
     parent_particle_ids: tuple[int, ...]
     child_particle_ids: tuple[int, ...]
+    resampling_reason: str = "none"
 
     def __post_init__(self) -> None:
         count = len(self.ancestor_indices)
@@ -153,6 +164,19 @@ class OpenTargetParticleDiagnostics:
             raise ValueError("resampling threshold must lie inside the population range")
         if self.resampled and not self.parent_particle_ids:
             raise ValueError("resampled diagnostics require parent identifiers")
+        if self.resampling_reason not in {
+            "none",
+            "pre-bridge-cess-boundary",
+            "post-bridge-cess-boundary",
+            "ess-threshold",
+        }:
+            raise ValueError("unknown particle resampling reason")
+        if self.resampled != (self.resampling_reason != "none"):
+            raise ValueError("resampling reason is inconsistent with resampled flag")
+        if self.pre_bridge_resampled and self.resampling_reason != "pre-bridge-cess-boundary":
+            raise ValueError("pre-bridge resampling requires a boundary reason")
+        if not self.pre_bridge_resampled and self.resampling_reason == "pre-bridge-cess-boundary":
+            raise ValueError("pre-bridge boundary reason requires pre-bridge resampling")
         if len(set(self.ancestor_indices)) != len(set(self.parent_particle_ids)):
             raise ValueError("ancestor and parent genealogy cardinalities disagree")
         if self.resampled:
@@ -165,10 +189,10 @@ class OpenTargetParticleDiagnostics:
             raise ValueError("non-resampled bridge must preserve particle identity")
         if (
             not self.pre_bridge_resampled
-            and self.resampled
-            != (self.effective_sample_size_before < self.resampling_threshold_ess)
+            and self.resampling_reason == "ess-threshold"
+            and not self.effective_sample_size_before < self.resampling_threshold_ess
         ):
-            raise ValueError("resampling decision is inconsistent with the ESS threshold")
+            raise ValueError("ESS-threshold resampling decision is inconsistent")
         if not math.isfinite(self.log_evidence_increment):
             raise ValueError("bridge log evidence increment must be finite")
         if self.distinct_root_ancestors < 1 or not math.isfinite(self.root_entropy):
@@ -545,6 +569,7 @@ class ScalableOpenTargetResult:
                     "effective_sample_size_after": item.effective_sample_size_after,
                     "resampled": item.resampled,
                     "pre_bridge_resampled": item.pre_bridge_resampled,
+                    "resampling_reason": item.resampling_reason,
                 }
                 for item in self.diagnostics
             ],
@@ -1006,6 +1031,15 @@ class ScalableOpenTargetSMC:
         proposed, _ = normalize_log_weights(normalized + increments)
         return float(1.0 / np.exp(2.0 * proposed).sum())
 
+    def _resample_indices(self, weights: np.ndarray) -> np.ndarray:
+        if self.config.resampling_kind == "systematic":
+            return systematic_resample(weights, self.rng)
+        if self.config.resampling_kind == "stratified":
+            return stratified_resample(weights, self.rng)
+        if self.config.resampling_kind == "residual":
+            return residual_resample(weights, self.rng)
+        raise AssertionError(self.config.resampling_kind)
+
     def _bridge_log_marginals(
         self,
         particles: list[_Particle],
@@ -1285,10 +1319,14 @@ class ScalableOpenTargetSMC:
                 # CESS is measured relative to the current normalized
                 # population.  A previous bridge may leave that population
                 # below the next bridge's CESS target, in which case no
-                # positive beta increment is feasible.  Resample at every
-                # bridge boundary when necessary and carry the event into
-                # this bridge's genealogy record.
+                # positive beta increment is feasible.  The registered
+                # schedule chooses whether this boundary resample is recorded
+                # on the next bridge (pre-bridge) or performed immediately
+                # after the current bridge (post-bridge).  Both operations
+                # are ordinary unbiased resampling followed by a target-
+                # invariant rejuvenation kernel.
                 bridge_pre_resampled = False
+                resampling_reason = "none"
                 bridge_pre_ancestor_indices = tuple(range(count))
                 bridge_pre_parent_particle_ids = tuple(
                     particle.particle_id for particle in particles
@@ -1299,8 +1337,11 @@ class ScalableOpenTargetSMC:
                 # can land at CESS == target to machine precision; treating
                 # that as strictly above the floor leaves no positive next
                 # increment because every larger beta is infeasible.
-                if current_ess <= cess_floor * (1.0 + 1e-12):
-                    indices = systematic_resample(np.exp(log_weights), self.rng)
+                if (
+                    self.config.resampling_schedule == "pre-bridge"
+                    and current_ess <= cess_floor * (1.0 + 1e-12)
+                ):
+                    indices = self._resample_indices(np.exp(log_weights))
                     previous = particles
                     bridge_pre_ancestor_indices = tuple(
                         int(index) for index in indices
@@ -1320,6 +1361,15 @@ class ScalableOpenTargetSMC:
                     )
                     log_weights = np.full(count, -math.log(count), dtype=float)
                     bridge_pre_resampled = True
+                    resampling_reason = "pre-bridge-cess-boundary"
+                elif (
+                    self.config.resampling_schedule == "post-bridge"
+                    and current_ess <= cess_floor * (1.0 + 1e-12)
+                ):
+                    raise RuntimeError(
+                        "post-bridge resampling schedule invariant violated: "
+                        "a nonterminal bridge began at the CESS boundary"
+                    )
 
                 next_beta, conditional_ess, next_logs = self._adaptive_bridge_beta(
                     particles,
@@ -1342,8 +1392,15 @@ class ScalableOpenTargetSMC:
                 log_evidence += log_increment
                 log_weights = normalized
                 resampled_after_bridge = ess_before < threshold
+                if (
+                    self.config.resampling_schedule == "post-bridge"
+                    and next_beta < 1.0
+                    and ess_before <= cess_floor * (1.0 + 1e-12)
+                ):
+                    resampled_after_bridge = True
+                    resampling_reason = "post-bridge-cess-boundary"
                 if resampled_after_bridge:
-                    indices = systematic_resample(np.exp(log_weights), self.rng)
+                    indices = self._resample_indices(np.exp(log_weights))
                     previous = particles
                     ancestor_indices = tuple(int(index) for index in indices)
                     parent_particle_ids = tuple(
@@ -1362,6 +1419,8 @@ class ScalableOpenTargetSMC:
                         particle.particle_id for particle in particles
                     )
                     log_weights = np.full(count, -math.log(count), dtype=float)
+                    if resampling_reason == "none":
+                        resampling_reason = "ess-threshold"
                 else:
                     if bridge_pre_resampled:
                         ancestor_indices = bridge_pre_ancestor_indices
@@ -1425,6 +1484,7 @@ class ScalableOpenTargetSMC:
                         ancestor_indices=ancestor_indices,
                         parent_particle_ids=parent_particle_ids,
                         child_particle_ids=child_particle_ids,
+                        resampling_reason=resampling_reason,
                     )
                 )
                 beta = next_beta

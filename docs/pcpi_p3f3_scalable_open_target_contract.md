@@ -45,7 +45,8 @@ exact reference. The engine may use:
 - local typed subtree birth/death/replacement moves;
 - discrepancy spike/kernel-state transitions;
 - adaptive likelihood bridges selected by conditional ESS;
-- systematic resampling with complete local and root genealogy;
+- an explicitly registered unbiased resampler (systematic, stratified, or
+  residual) with complete local and root genealogy;
 - rejuvenation kernels that leave every registered bridge target invariant; and
 - a proposal mixture with a nonzero base grammar component.
 
@@ -89,10 +90,10 @@ certificate checks row stochasticity, detailed balance, and stationarity over
 every integer prequential prefix. The CESS scheduler never inserts a
 budget-sized beta increment. If a previous fractional bridge leaves the global
 ESS below the registered CESS target, the next bridge begins with one explicit
-systematic resampling event; that event is included in that bridge's genealogy
-record. If the registered bridge budget still cannot reach the terminal state
-under the CESS path, it fails closed and records a NO-GO rather than changing
-the target path.
+resampling event; the registered resampling kernel and that event are included
+in that bridge's genealogy record. If the registered bridge budget still cannot
+reach the terminal state under the CESS path, it fails closed and records a
+NO-GO rather than changing the target path.
 
 ## 3. Exact-reference Gate
 
@@ -177,7 +178,48 @@ genealogy.  A conclusion about any of these mechanisms requires stability over
 the preregistered seeds and both particle counts; one favorable cell is not a
 fidelity envelope.
 
-## 5.2 Target-invariant kernel-mixture candidate
+## 5.2 Resampling variance and genealogy audit
+
+The resampling audit freezes the complete-uniform rejuvenation kernel,
+`rejuvenation_steps = 1`, particle counts `[512, 2048]`, and four additional
+seeds while comparing three registered unbiased population transforms:
+systematic, stratified, and residual resampling. It records paired posterior,
+predictive, and evidence errors, pre-bridge versus ordinary resampling, root
+ancestor survival, parent-offspring concentration, move statistics, and
+accepted structure transitions. The resampling choice is a configuration-level
+numerical kernel, not a response-adapted correction.
+
+This audit is diagnostic-only. It may identify avoidable resampling variance or
+genealogy collapse, but it cannot select a resampler from the same observed
+fidelity result and cannot define the finite-particle fidelity envelope. A
+resampler is eligible for a future envelope only if its pre-registered
+comparison is stable across both particle counts and all seeds, and if the
+resulting posterior and predictive functionals satisfy a separately frozen
+error certificate.
+
+## 5.3 Bridge-boundary resample-move schedule
+
+The resampling comparison does not authorize a resampler: systematic,
+stratified, and residual kernels can trade posterior, predictive, evidence,
+and genealogy error across particle counts. The next mechanism-level
+comparison therefore freezes systematic resampling and compares two
+target-invariant orderings of the same operation:
+
+- `pre-bridge`: resample at the start of the next bridge when the previous
+  bridge reaches the CESS boundary;
+- `post-bridge`: resample immediately after a nonterminal bridge reaches that
+  boundary, then apply rejuvenation at the current fractional target before
+  starting the next bridge.
+
+The operation is a standard resample-move transformation. Moving the boundary
+event changes genealogy and the temperature at which the invariant kernel is
+applied, but does not change the registered target or likelihood path. The
+diagnostic records an explicit resampling reason so pre-bridge boundary events,
+post-bridge boundary events, and ordinary ESS-threshold events cannot be
+confused. This schedule audit remains diagnostic-only and cannot be selected
+from a single favorable fidelity result.
+
+## 5.4 Target-invariant kernel-mixture candidate
 
 The semantic audit showed a stable mechanism pattern on the exact slice:
 complete-uniform accepts fewer proposals but its accepted moves have larger
@@ -204,7 +246,7 @@ same four seeds, particle counts `[512, 2048]`, and one rejuvenation step.  A
 favorable mixture result cannot define a fidelity envelope; its first required
 check is the exact finite-slice detailed-balance/stationarity certificate.
 
-## 5.3 Random-scan kernel mixture
+## 5.5 Random-scan kernel mixture
 
 The independent mixture above uses the full mixture density in one MH ratio.
 Because its audit result was intermediate rather than uniformly dominant, the

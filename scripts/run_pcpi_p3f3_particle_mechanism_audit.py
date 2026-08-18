@@ -57,6 +57,7 @@ MECHANISM_FIELDS = (
     "resampling_events",
     "pre_bridge_resampling_events",
     "ordinary_resampling_events",
+    "post_bridge_resampling_events",
     "minimum_distinct_root_ancestor_fraction",
     "terminal_distinct_root_ancestor_fraction",
     "terminal_root_entropy",
@@ -242,11 +243,15 @@ def _run_one(
         maximum_bridge_steps=int(config["maximum_bridge_steps"]),
         proposal_kind=proposal_kind,
         proposal_mixture_weight=float(config.get("proposal_mixture_weight", 0.5)),
+        resampling_kind=str(config.get("resampling_kind", "systematic")),
+        resampling_schedule=str(config.get("resampling_schedule", "pre-bridge")),
     )
     base = {
         "particle_count": particle_count,
         "proposal_kind": proposal_kind,
         "proposal_mixture_weight": particle_config.proposal_mixture_weight,
+        "resampling_kind": particle_config.resampling_kind,
+        "resampling_schedule": particle_config.resampling_schedule,
         "rejuvenation_steps": rejuvenation_steps,
         "seed": seed,
         "target_hash": contract.stable_hash,
@@ -325,6 +330,10 @@ def _run_one(
             bool(item.resampled and not item.pre_bridge_resampled)
             for item in diagnostics
         ),
+        "post_bridge_resampling_events": sum(
+            item.resampling_reason == "post-bridge-cess-boundary"
+            for item in diagnostics
+        ),
         "minimum_distinct_root_ancestor_fraction": min(
             item.distinct_root_ancestors / particle_count for item in diagnostics
         ),
@@ -361,22 +370,34 @@ def _aggregate(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 int(run["particle_count"]),
                 str(run["proposal_kind"]),
                 int(run["rejuvenation_steps"]),
+                str(run.get("resampling_kind", "systematic")),
+                str(run.get("resampling_schedule", "pre-bridge")),
             )
             for run in runs
         }
     )
-    for particle_count, proposal_kind, rejuvenation_steps in cells:
+    for (
+        particle_count,
+        proposal_kind,
+        rejuvenation_steps,
+        resampling_kind,
+        resampling_schedule,
+    ) in cells:
         selected = [
             run for run in runs
             if run["particle_count"] == particle_count
             and run["proposal_kind"] == proposal_kind
             and run["rejuvenation_steps"] == rejuvenation_steps
+            and run.get("resampling_kind", "systematic") == resampling_kind
+            and run.get("resampling_schedule", "pre-bridge") == resampling_schedule
             and run.get("run_completed", False)
         ]
         row: dict[str, Any] = {
             "particle_count": particle_count,
             "proposal_kind": proposal_kind,
             "rejuvenation_steps": rejuvenation_steps,
+            "resampling_kind": resampling_kind,
+            "resampling_schedule": resampling_schedule,
             "successful_seeds": len(selected),
         }
         for field in ERROR_FIELDS + MECHANISM_FIELDS:
@@ -394,19 +415,29 @@ def _aggregate_move_audits(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 int(run["particle_count"]),
                 str(run["proposal_kind"]),
                 int(run["rejuvenation_steps"]),
+                str(run.get("resampling_kind", "systematic")),
+                str(run.get("resampling_schedule", "pre-bridge")),
             )
             for run in runs
             if run.get("run_completed", False)
         }
     )
     output: list[dict[str, Any]] = []
-    for particle_count, proposal_kind, rejuvenation_steps in cells:
+    for (
+        particle_count,
+        proposal_kind,
+        rejuvenation_steps,
+        resampling_kind,
+        resampling_schedule,
+    ) in cells:
         selected = [
             run for run in runs
             if run.get("run_completed", False)
             and int(run["particle_count"]) == particle_count
             and str(run["proposal_kind"]) == proposal_kind
             and int(run["rejuvenation_steps"]) == rejuvenation_steps
+            and str(run.get("resampling_kind", "systematic")) == resampling_kind
+            and str(run.get("resampling_schedule", "pre-bridge")) == resampling_schedule
         ]
         move_type_totals: dict[str, dict[str, int]] = {}
         transition_totals: dict[tuple[str, str, str], int] = {}
@@ -437,6 +468,8 @@ def _aggregate_move_audits(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "particle_count": particle_count,
                 "proposal_kind": proposal_kind,
                 "rejuvenation_steps": rejuvenation_steps,
+                "resampling_kind": resampling_kind,
+                "resampling_schedule": resampling_schedule,
                 "successful_seeds": len(selected),
                 "total_proposals": total_proposals,
                 "total_acceptances": total_acceptances,

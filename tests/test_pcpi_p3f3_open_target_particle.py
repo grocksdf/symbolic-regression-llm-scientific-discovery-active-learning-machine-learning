@@ -57,6 +57,11 @@ def test_p3f3_config_rejects_unregistered_proposal() -> None:
         OpenTargetParticleConfig(proposal_kind="llm")
 
 
+def test_p3f3_config_rejects_unregistered_resampling_schedule() -> None:
+    with pytest.raises(ValueError, match="pre-bridge or post-bridge"):
+        OpenTargetParticleConfig(resampling_schedule="adaptive")
+
+
 def test_p3f3_mixture_config_has_fixed_registered_weight() -> None:
     config = OpenTargetParticleConfig(proposal_kind="prior-uniform-mixture")
     assert config.proposal_mixture_weight == pytest.approx(0.5)

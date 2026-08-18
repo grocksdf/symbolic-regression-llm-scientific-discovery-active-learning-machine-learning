@@ -1,0 +1,26 @@
+{
+  "schema": "pcpi-p3f3-open-target-particle-resampling-schedule-audit-v1",
+  "stage": "P3F.3",
+  "experiment": "open_target_particle_resampling_schedule_audit",
+  "fixture_role": "hand_constructed_exact_reference_resampling_schedule_audit",
+  "real_data_access": "forbidden",
+  "heldout_state": "not-applicable",
+  "acquisition_state": "blocked",
+  "particle_counts": [512, 2048],
+  "proposal_kind": "complete-uniform",
+  "resampling_kind": "systematic",
+  "resampling_schedules": ["pre-bridge", "post-bridge"],
+  "rejuvenation_steps": [1],
+  "seeds": [2026081712, 2026081713, 2026081714, 2026081715],
+  "ess_threshold_fraction": 0.5,
+  "cess_target_fraction": 0.8,
+  "tempering_tolerance": 1e-6,
+  "maximum_bridge_steps": 64,
+  "proposal_mixture_weight": 0.5,
+  "fidelity_envelope": {
+    "status": "not_preregistered",
+    "formal_gate": false,
+    "reason": "This audit isolates bridge-boundary resample-move ordering after the resampling-kernel comparison did not yield a uniform winner."
+  },
+  "claim_boundary": "This is a diagnostic-only exact-slice bridge-boundary schedule audit. It is not simulated or real-data efficacy, calibration, acquisition, heldout, discovery, or law evidence."
+}

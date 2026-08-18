@@ -14,6 +14,8 @@ from .resampling import (
     adaptive_temperature_delta,
     conditional_effective_sample_size,
     effective_sample_size,
+    residual_resample,
+    stratified_resample,
     systematic_resample,
     weight_entropy,
 )
@@ -47,7 +49,9 @@ __all__ = [
     "compare_with_reference",
     "conditional_effective_sample_size",
     "effective_sample_size",
+    "residual_resample",
     "p2b_structure_proposal_catalog",
     "systematic_resample",
+    "stratified_resample",
     "weight_entropy",
 ]

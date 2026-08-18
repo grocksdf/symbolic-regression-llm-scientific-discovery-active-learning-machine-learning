@@ -94,3 +94,59 @@ def systematic_resample(weights: np.ndarray, rng: np.random.Generator) -> np.nda
     cumulative[-1] = 1.0
     positions = (rng.random() + np.arange(len(probabilities))) / len(probabilities)
     return np.searchsorted(cumulative, positions, side="right").astype(int)
+
+
+def stratified_resample(weights: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Unbiased stratified resampling with one random point per stratum."""
+
+    probabilities = np.asarray(weights, dtype=float).reshape(-1)
+    if (
+        not len(probabilities)
+        or np.any(probabilities < 0)
+        or not np.all(np.isfinite(probabilities))
+    ):
+        raise ValueError("resampling weights must be finite and non-negative")
+    total = float(probabilities.sum())
+    if total <= 0:
+        raise ValueError("resampling weights must have positive mass")
+    probabilities = probabilities / total
+    cumulative = np.cumsum(probabilities)
+    cumulative[-1] = 1.0
+    count = len(probabilities)
+    positions = (np.arange(count) + rng.random(count)) / count
+    return np.searchsorted(cumulative, positions, side="right").astype(int)
+
+
+def residual_resample(weights: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Unbiased residual resampling with randomized residual allocations."""
+
+    probabilities = np.asarray(weights, dtype=float).reshape(-1)
+    if (
+        not len(probabilities)
+        or np.any(probabilities < 0)
+        or not np.all(np.isfinite(probabilities))
+    ):
+        raise ValueError("resampling weights must be finite and non-negative")
+    total = float(probabilities.sum())
+    if total <= 0:
+        raise ValueError("resampling weights must have positive mass")
+    probabilities = probabilities / total
+    count = len(probabilities)
+    expected = count * probabilities
+    deterministic = np.floor(expected).astype(int)
+    residual_count = count - int(deterministic.sum())
+    indices = np.repeat(np.arange(count, dtype=int), deterministic)
+    if residual_count:
+        residual_mass = expected - deterministic
+        residual_total = float(residual_mass.sum())
+        if residual_total <= 0.0:
+            raise ValueError("residual resampling has invalid residual mass")
+        residual_probabilities = residual_mass / residual_total
+        cumulative = np.cumsum(residual_probabilities)
+        cumulative[-1] = 1.0
+        positions = (rng.random(residual_count) + np.arange(residual_count)) / residual_count
+        residual_indices = np.searchsorted(cumulative, positions, side="right").astype(int)
+        indices = np.concatenate((indices, residual_indices))
+    if len(indices) != count:
+        raise AssertionError("residual resampling returned the wrong population size")
+    return indices[rng.permutation(count)]
