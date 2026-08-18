@@ -51,9 +51,16 @@ ERROR_FIELDS = (
     "predictive_density_exact_reference_max_abs_error",
     "predictive_cdf_exact_reference_max_abs_error",
     "log_evidence_exact_reference_abs_error",
+    "mass_normalization_error",
+    "equivalence_mass_error",
+    "evidence_telescoping_error",
 )
 MECHANISM_FIELDS = (
     "acceptance_rate",
+    "total_proposals",
+    "total_acceptances",
+    "minimum_conditional_ess_fraction",
+    "minimum_effective_sample_size_fraction",
     "resampling_events",
     "pre_bridge_resampling_events",
     "ordinary_resampling_events",
