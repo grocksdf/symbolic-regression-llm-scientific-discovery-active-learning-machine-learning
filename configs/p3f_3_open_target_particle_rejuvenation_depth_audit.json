@@ -1,0 +1,26 @@
+{
+  "schema": "pcpi-p3f3-open-target-particle-rejuvenation-depth-audit-v1",
+  "stage": "P3F.3",
+  "experiment": "open_target_particle_rejuvenation_depth_audit",
+  "fixture_role": "hand_constructed_exact_reference_rejuvenation_depth_audit",
+  "real_data_access": "forbidden",
+  "heldout_state": "not-applicable",
+  "acquisition_state": "blocked",
+  "particle_counts": [512, 2048],
+  "proposal_kind": "complete-uniform",
+  "resampling_kind": "systematic",
+  "resampling_schedule": "pre-bridge",
+  "rejuvenation_steps": [0, 1, 2, 4],
+  "seeds": [2026081716, 2026081717, 2026081718, 2026081719],
+  "ess_threshold_fraction": 0.5,
+  "cess_target_fraction": 0.8,
+  "tempering_tolerance": 1e-6,
+  "maximum_bridge_steps": 64,
+  "proposal_mixture_weight": 0.5,
+  "fidelity_envelope": {
+    "status": "not_preregistered",
+    "formal_gate": false,
+    "reason": "This audit isolates invariant-kernel mixing depth after bridge-boundary schedule and resampling-kernel comparisons did not yield a uniform fidelity winner."
+  },
+  "claim_boundary": "This is a diagnostic-only exact-slice rejuvenation-depth audit. It is not simulated or real-data efficacy, calibration, acquisition, heldout, discovery, or law evidence."
+}

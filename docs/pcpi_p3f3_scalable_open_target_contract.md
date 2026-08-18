@@ -268,6 +268,22 @@ constructs both component transition matrices and verifies the convex
 combination directly.  Its audit is separate from the independent-mixture
 audit and remains diagnostic-only.
 
+## 5.6 Invariant-rejuvenation depth audit
+
+The resampling and bridge-boundary comparisons do not produce a uniform
+posterior-fidelity winner. The next isolated mechanism audit freezes the
+complete-uniform proposal, systematic pre-bridge resampling, particle counts
+`[512, 2048]`, and four new seeds while comparing `rejuvenation_steps` in
+`[0, 1, 2, 4]`. Each sweep is a registered target-invariant kernel application
+at the current fractional bridge target; increasing the sweep count changes
+mixing effort but never changes the posterior target.
+
+The audit records acceptance, accepted semantic jump distance, move type,
+posterior and predictive error, evidence error, ESS, and genealogy for every
+depth. It is diagnostic-only: no depth is promoted from a favorable cell, and
+the result cannot authorize a finite-particle fidelity envelope or downstream
+real-data claim.
+
 ## 6. Implementation boundaries
 
 - Extend the canonical `hypothesis_mvp.pcpi.open_target` path; do not create a
