@@ -644,6 +644,68 @@ Only a complete P3F.3-CF.RB.1 pass authorizes construction of a separate
 predictive-calibration Gate. Real data, acquisition, and held-out access stay
 blocked until both confirmatory fidelity and predictive calibration pass.
 
+## 5.14 Negative CF.RB.1 evidence and non-terminal acceptance knots
+
+The frozen P3F.3-CF.RB.1 archive completed all 40 runs with the registered
+source, target, fixture bank, seeds, and matched budgets. Forty-five of 51
+decisions passed, but the formal Gate failed six decisions. The candidate
+worst predictive-density error was 0.0156595, exceeding both the absolute
+0.015 envelope and the paired standard worst error 0.0154163. Its
+cross-fixture seed-median spans also exceeded the frozen limits for CESS, ESS,
+minimum root fraction, and terminal root fraction. This is permanent negative
+confirmatory evidence. The S/T/U/V fixtures, seeds, or envelopes must not be
+changed, rerun as a new confirmatory bank, or reused to choose a replacement
+mechanism.
+
+The paired resident paths in CF.RB.1 were identical, so the ESS and genealogy
+span failures cannot be attributed to the terminal Rao--Blackwell estimator.
+They measure response-dependent variation in the underlying SMC population.
+Moreover, integrating only the final accept/reject uniform is a terminal
+post-processing operation: it does not alter prior bridge weights, evidence,
+resampling, or genealogy, and it does not guarantee pathwise dominance of a
+maximum absolute-error functional. P3F.3-VR.5 is therefore retired from further
+confirmatory use without retroactively changing its valid development result.
+
+P3F.3-VR.6 registers a new development-only non-terminal mechanism. At the
+last fractional bridge for an already observed response, both methods first
+sample the same complete-uniform proposal and evaluate both accept/reject
+branches under the next potential. The standard comparator samples the MH
+acceptance uniform and weights the selected branch. The candidate instead
+uses
+
+\[
+  K(G)(x,\tilde{x})
+  = (1-\alpha(x,\tilde{x}))G(x)
+    + \alpha(x,\tilde{x})G(\tilde{x})
+\]
+
+as its predictive potential, then samples from the potential-twisted
+two-branch kernel with probabilities proportional to the two terms. This is a
+specialized adapted knot of the accept/reject kernel: it preserves the
+terminal Feynman--Kac measure while moving potential information into a
+non-terminal transition, where variance ordering is theoretically available.
+It uses no future observation, acquisition response, held-out value, or exact
+answer.
+
+Both sides retain $N=8192$, four bridges per observation, one proposal per
+particle and observation, systematic resampling, and identical primitive
+budgets: 65536 proposal-target evaluations, 327680 incremental-potential
+evaluations (including both terminal branches), 393216 total target
+evaluations, and 8192 posterior-functional component evaluations per point.
+The standard side deliberately evaluates and discards its counterfactual
+branch only to keep this comparison matched.
+
+VR.6 uses new response-free W/X/Y development fixtures and seeds disjoint from
+all previous banks. Absolute fidelity and genealogy safety limits remain
+inherited from earlier preregistrations. Cross-fixture spans for fidelity
+errors remain absolute; response-difficulty-sensitive CESS, ESS, and genealogy
+spans are compared candidate-to-standard on the same fixture/seed bank rather
+than treated as an invariant property of heterogeneous targets. This estimand
+change is frozen before VR.6 responses and does not alter the failed CF.RB.1
+decision. Only a complete VR.6 pass may authorize a new unseen confirmatory
+freeze. Predictive calibration and all real/acquisition/held-out paths remain
+blocked.
+
 ## 6. Implementation boundaries
 
 - Extend the canonical `hypothesis_mvp.pcpi.open_target` path; do not create a

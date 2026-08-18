@@ -56,6 +56,14 @@ from .full_population import (
     MatchedFullPopulationConfig,
     MatchedFullPopulationSMC,
 )
+from .adapted_knot import (
+    ACCEPTANCE_KNOT_METHOD,
+    KNOT_STANDARD_METHOD,
+    AcceptanceKnotDiagnostic,
+    MatchedAcceptanceKnotConfig,
+    MatchedAcceptanceKnotResult,
+    MatchedAcceptanceKnotSMC,
+)
 
 __all__ = [
     "P3F2_EXPRESSION_TYPE",
@@ -102,4 +110,10 @@ __all__ = [
     "RAO_BLACKWELL_METHOD",
     "MatchedFullPopulationConfig",
     "MatchedFullPopulationSMC",
+    "KNOT_STANDARD_METHOD",
+    "ACCEPTANCE_KNOT_METHOD",
+    "AcceptanceKnotDiagnostic",
+    "MatchedAcceptanceKnotConfig",
+    "MatchedAcceptanceKnotResult",
+    "MatchedAcceptanceKnotSMC",
 ]

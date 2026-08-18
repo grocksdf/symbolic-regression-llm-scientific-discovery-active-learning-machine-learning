@@ -8,8 +8,8 @@ from scipy.special import logsumexp
 
 def normalize_log_weights(log_weights: np.ndarray) -> tuple[np.ndarray, float]:
     values = np.asarray(log_weights, dtype=float).reshape(-1)
-    if not len(values) or not np.all(np.isfinite(values)):
-        raise ValueError("log weights must be finite and non-empty")
+    if not len(values) or np.isnan(values).any() or np.all(values == -np.inf):
+        raise ValueError("log weights must be non-empty and must not be NaN or all degenerate")
     log_normalizer = float(logsumexp(values))
     normalized = values - log_normalizer
     return normalized, log_normalizer
