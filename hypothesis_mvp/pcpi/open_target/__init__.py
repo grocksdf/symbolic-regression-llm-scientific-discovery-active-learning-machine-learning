@@ -50,6 +50,7 @@ from .particle import (
     sample_open_prior_expression,
 )
 from .full_population import (
+    RAO_BLACKWELL_METHOD,
     STANDARD_METHOD,
     WASTE_FREE_METHOD,
     MatchedFullPopulationConfig,
@@ -98,6 +99,7 @@ __all__ = [
     "sample_open_prior_expression",
     "STANDARD_METHOD",
     "WASTE_FREE_METHOD",
+    "RAO_BLACKWELL_METHOD",
     "MatchedFullPopulationConfig",
     "MatchedFullPopulationSMC",
 ]

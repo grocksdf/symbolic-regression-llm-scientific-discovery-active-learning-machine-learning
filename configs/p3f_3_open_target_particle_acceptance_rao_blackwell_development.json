@@ -1,0 +1,104 @@
+{
+  "schema": "pcpi-p3f3-open-target-particle-acceptance-rao-blackwell-development-v1",
+  "stage": "P3F.3-VR.5",
+  "experiment": "open_target_particle_acceptance_rao_blackwell_development",
+  "fixture_role": "new_response_free_exact_reference_acceptance_raoblackwell_matched_compute_development",
+  "claim_boundary": "This development-only Gate compares the standard resident SMC estimator with a conditional acceptance Rao-Blackwell estimator built from the same resident path and the same evaluated MH proposals. It is not confirmatory fidelity, predictive calibration, real-data efficacy, acquisition, heldout, discovery, or scientific-law evidence.",
+  "real_data_access": "forbidden",
+  "heldout_state": "not-applicable",
+  "predictive_calibration_state": "blocked",
+  "acquisition_state": "blocked",
+  "common_population": {
+    "population_size": 8192,
+    "maximum_nodes": 3,
+    "fixed_bridge_betas": [0.25, 0.5, 0.75, 1.0],
+    "rejuvenation_betas": [1.0],
+    "proposal_kind": "complete-uniform",
+    "proposal_mixture_weight": 0.5,
+    "resampling_kind": "systematic",
+    "cess_target_fraction": 0.8
+  },
+  "methods": [
+    {
+      "method_id": "standard-full-population-single-step",
+      "source_chain_count": 8192,
+      "states_per_chain": 1,
+      "estimator_semantics": "accepted_resident_state_with_the_registered_mh_uniform"
+    },
+    {
+      "method_id": "acceptance-rao-blackwell-single-step",
+      "source_chain_count": 8192,
+      "states_per_chain": 1,
+      "estimator_semantics": "conditional_two_branch_estimator_integrating_only_the_registered_mh_uniform"
+    }
+  ],
+  "matched_budget": {
+    "observation_count": 8,
+    "bridges_per_observation": 4,
+    "bridge_count_per_run": 32,
+    "rejuvenation_events_per_observation": 1,
+    "rejuvenation_event_count_per_run": 8,
+    "resident_population_size": 8192,
+    "mh_proposal_target_evaluations_per_rejuvenation_event": 8192,
+    "mh_proposal_target_evaluations_per_run": 65536,
+    "incremental_potential_evaluations_per_bridge": 8192,
+    "incremental_potential_evaluations_per_run": 262144,
+    "total_target_evaluations_per_run": 327680,
+    "posterior_functional_component_evaluations_per_point": 16384,
+    "standard_unique_estimator_components": 8192,
+    "rao_blackwell_weighted_estimator_components": 16384,
+    "matched_budget_definition": "Both methods have an identical N=8192 resident SMC path, 32 fixed-grid potentials, eight beta=1 resample-move events, N one-step complete-uniform MH proposals per event, and 327680 total target evaluations. The candidate stores the current/proposed conditional branches of the final N proposals with weights (1-alpha)/N and alpha/N. Each registered posterior functional receives 16384 component evaluations; the standard estimator repeats each resident component twice with half contribution, leaving its value unchanged while matching the candidate's functional evaluation count.",
+    "wall_clock_role": "descriptive_only"
+  },
+  "mechanism_eligibility": {
+    "all_fixture_seed_method_runs_required": true,
+    "minimum_conditional_ess_fraction_min": 0.799,
+    "proposal_invariance_max_abs_error": 2e-15,
+    "mass_normalization_max_abs_error": 2e-12,
+    "evidence_telescoping_max_abs_error": 2e-12,
+    "rao_blackwell_pair_normalization_max_abs_error": 2e-12,
+    "paired_resident_paths_must_be_identical": true,
+    "candidate_worst_log_evidence_abs_error_ratio_max": 1.0,
+    "candidate_worst_predictive_density_abs_error_ratio_max": 1.0,
+    "candidate_worst_predictive_cdf_abs_error_ratio_max": 1.0,
+    "candidate_raw_ast_worst_additive_noninferiority": 0.002,
+    "candidate_equivalence_worst_additive_noninferiority": 0.002,
+    "candidate_terminal_distinct_root_ancestor_fraction_min": 0.02,
+    "candidate_terminal_normalized_root_entropy_min": 0.3,
+    "means_are_descriptive_only": true
+  },
+  "predictive_evaluation": {
+    "row_indices": [0, 2, 5, 7],
+    "target_values": [-0.75, -0.25, 0.25, 0.75]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "rb1_negative_curvature_low_intercept_grid_p",
+      "actions": [-1.57, -1.18, -0.77, -0.31, 0.08, 0.47, 0.89, 1.36],
+      "polynomial_coefficients": [-0.08, 0.42, -0.15],
+      "response_free_registration": true
+    },
+    {
+      "fixture_id": "rb1_positive_curvature_flat_slope_grid_q",
+      "actions": [-1.44, -1.02, -0.61, -0.16, 0.24, 0.67, 1.08, 1.49],
+      "polynomial_coefficients": [0.27, 0.06, 0.17],
+      "response_free_registration": true
+    },
+    {
+      "fixture_id": "rb1_negative_curvature_negative_slope_grid_r",
+      "actions": [-1.51, -1.09, -0.68, -0.23, 0.13, 0.52, 0.97, 1.42],
+      "polynomial_coefficients": [0.38, -0.31, -0.09],
+      "response_free_registration": true
+    }
+  ],
+  "seeds": [2026081744, 2026081745, 2026081746, 2026081747],
+  "confirmatory_policy": {
+    "all_prior_development_fixtures_reused_for_vr5_gate": false,
+    "all_prior_development_seeds_reused_for_vr5_gate": false,
+    "prior_confirmatory_fixtures_reused_for_selection": false,
+    "prior_confirmatory_seeds_reused_for_selection": false,
+    "unseen_confirmatory_fixtures_frozen_in_this_stage": false,
+    "unseen_confirmatory_seeds_frozen_in_this_stage": false,
+    "next_confirmatory_freeze_authorized_only_if_mechanism_eligible": true
+  }
+}

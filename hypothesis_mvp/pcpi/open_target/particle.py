@@ -122,12 +122,14 @@ class OpenTargetParticleConfig:
             "waste-free-pool-compressed",
             "waste-free-pool-estimator-compressed",
             "waste-free-full-population",
+            "acceptance-rao-blackwell-estimator",
         }:
             raise ValueError(
                 "rejuvenation_population_mode must be terminal-only, "
                 "waste-free-pool-compressed, or "
                 "waste-free-pool-estimator-compressed, or "
-                "waste-free-full-population"
+                "waste-free-full-population, or "
+                "acceptance-rao-blackwell-estimator"
             )
         if (
             self.rejuvenation_population_mode
@@ -148,6 +150,14 @@ class OpenTargetParticleConfig:
             raise ValueError(
                 "full-population waste-free mode requires particle_count to be "
                 "divisible by rejuvenation_steps"
+            )
+        if (
+            self.rejuvenation_population_mode
+            == "acceptance-rao-blackwell-estimator"
+            and self.rejuvenation_steps != 1
+        ):
+            raise ValueError(
+                "acceptance Rao-Blackwellization requires one MH proposal per source"
             )
 
     def to_dict(self) -> dict[str, object]:
@@ -748,7 +758,11 @@ class ScalableOpenTargetResult:
                     "direct full-population results cannot contain compressed-pool "
                     "diagnostics"
                 )
-        elif len(self.waste_free_diagnostics) != len(self.diagnostics):
+        elif (
+            self.config.rejuvenation_population_mode
+            != "acceptance-rao-blackwell-estimator"
+            and len(self.waste_free_diagnostics) != len(self.diagnostics)
+        ):
             raise ValueError("every waste-free bridge requires one population diagnostic")
         if (
             self.config.rejuvenation_population_mode
@@ -757,6 +771,18 @@ class ScalableOpenTargetResult:
             expected = self.config.particle_count * self.config.rejuvenation_steps
             if len(self.estimator_particles) != expected:
                 raise ValueError("waste-free terminal estimator pool has the wrong size")
+        elif (
+            self.config.rejuvenation_population_mode
+            == "acceptance-rao-blackwell-estimator"
+        ):
+            if self.waste_free_diagnostics:
+                raise ValueError(
+                    "acceptance Rao-Blackwellization has no compressed-pool diagnostics"
+                )
+            if len(self.estimator_particles) != 2 * self.config.particle_count:
+                raise ValueError(
+                    "acceptance Rao-Blackwell estimator requires two branches per proposal"
+                )
         elif self.estimator_particles:
             raise ValueError("compressed-only mode cannot expose an estimator pool")
 
@@ -817,9 +843,14 @@ class ScalableOpenTargetResult:
             "particle_count": len(self.particles),
             "posterior_estimator_particle_count": len(self.posterior_particles),
             "posterior_estimator_kind": (
-                "waste-free-weighted-terminal-pool"
-                if self.estimator_particles
-                else "resident-particle-population"
+                "acceptance-rao-blackwell-weighted-terminal-branches"
+                if self.config.rejuvenation_population_mode
+                == "acceptance-rao-blackwell-estimator"
+                else (
+                    "waste-free-weighted-terminal-pool"
+                    if self.estimator_particles
+                    else "resident-particle-population"
+                )
             ),
             "observation_count": len(self.targets),
             "action_dimension": int(self.actions.shape[1]),
@@ -1715,6 +1746,32 @@ class ScalableOpenTargetSMC:
                         move_type=move_type,
                     )
                 )
+                if (
+                    self.config.rejuvenation_population_mode
+                    == "acceptance-rao-blackwell-estimator"
+                ):
+                    # Integrate out only the auxiliary MH accept/reject uniform.
+                    # Conditional on the current state and evaluated proposal,
+                    # the transition is (1-alpha) delta_current + alpha
+                    # delta_proposed.  Keeping these two weighted branches does
+                    # not alter the resident MH path or consume another target
+                    # evaluation.  expm1 gives a stable log(1-alpha) when the
+                    # log acceptance ratio is close to zero.
+                    log_alpha = min(0.0, float(log_acceptance))
+                    log_rejection = (
+                        -math.inf
+                        if log_acceptance >= 0.0
+                        else math.log(-math.expm1(float(log_acceptance)))
+                    )
+                    current_branch = current.clone(
+                        particle_id=current.particle_id
+                    )
+                    proposed_branch = proposed.clone(
+                        particle_id=proposed.particle_id
+                    )
+                    current_branch.log_weight = current.log_weight + log_rejection
+                    proposed_branch.log_weight = current.log_weight + log_alpha
+                    intermediate_pool.extend((current_branch, proposed_branch))
                 if accepted:
                     proposed.log_weight = current.log_weight
                     particles[index] = proposed

@@ -548,6 +548,64 @@ fidelity, evidence, ESS, and local-plus-terminal genealogy decision passes may
 a separate unseen confirmatory bank be frozen. Predictive calibration, real
 data, acquisition, and held-out access remain blocked.
 
+## 5.12 Conditional acceptance Rao--Blackwell development
+
+P3F.3-VR.4 is retained as negative development evidence. Its 24/24 runs used
+the registered code and configuration, completed the exact matched budget, and
+showed that observation-terminal scheduling fixed the cumulative genealogy
+failure. After analytical source-capacity adjustment, the candidate terminal
+root fraction and entropy were noninferior to the standard population. The
+candidate nevertheless failed worst raw-AST, equivalence-class,
+predictive-density, predictive-CDF, and absolute log-evidence fidelity. Raw-AST
+and absolute log-evidence error were worse in 10 of 12 paired fixture/seed
+comparisons. Proposal acceptance and accepted cross-equivalence movement were
+nearly identical across methods. The remaining failure is therefore attributed
+to within-chain dependence from representing $N=8192$ resident states by
+$M=2048$ length-four chains, not to a threshold, seed, bridge, or genealogy
+defect.
+
+This limitation is consistent with the scope of Dau and Chopin's waste-free
+SMC theory: the method is consistent and asymptotically normal, and its benefit
+depends on the MCMC mixing regime; it is not a universal finite-budget
+dominance result. Delmas and Jourdain likewise show that a naive
+waste-recycling estimator can increase asymptotic variance. Fixed $P=4$
+waste-free propagation is therefore retired from confirmatory consideration
+rather than tuned against its development outcomes.
+
+P3F.3-VR.5 instead removes only the auxiliary accept/reject-uniform noise from
+the terminal MH estimator. The standard and candidate methods use identical
+$N=8192$ resident particles, systematic resampling indices, complete-uniform
+proposals, evaluated targets, acceptance uniforms, accepted resident states,
+bridge schedules, genealogy, and log-evidence path. For each of the final $N$
+evaluated proposals, the candidate additionally records the conditional
+transition measure
+
+\[
+  (1-\alpha_i)\,\delta_{x_i}+\alpha_i\,\delta_{y_i},
+\]
+
+where $x_i$ is the current state, $y_i$ is the evaluated proposal, and
+$\alpha_i$ is the exact MH acceptance probability. Thus each pair carries
+total mass $1/N$, proposal evaluations are unchanged, and the resident SMC
+target is untouched. This is the local conditional-expectation principle used
+by Rao--Blackwellized MH methods. It does not by itself assert a universal
+log-evidence or SMC-wide variance theorem; that boundary remains an
+exact-reference development Gate.
+
+Both methods execute 262144 incremental-potential evaluations, 65536 MH
+proposal/target evaluations, and 327680 total target evaluations per run. The
+candidate posterior functional uses $2N=16384$ weighted current/proposed
+branches. The standard functional repeats each of its $N$ resident components
+twice with half contribution, leaving its estimator unchanged while matching
+16384 component evaluations per registered point. The runner requires bitwise
+identity of paired resident populations, bridge schedules, moves, genealogy,
+and log evidence, and separately verifies every Rao--Blackwell pair weight.
+
+VR.5 uses new response-free P/Q/R development fixtures and seeds disjoint from
+all earlier development and confirmatory banks. A pass may authorize only a
+subsequent freeze of still-unseen confirmatory fixtures and seeds. Predictive
+calibration, real data, acquisition, and held-out access remain blocked.
+
 ## 6. Implementation boundaries
 
 - Extend the canonical `hypothesis_mvp.pcpi.open_target` path; do not create a

@@ -45,6 +45,7 @@ from .posterior import OpenTargetContract
 
 STANDARD_METHOD = "standard-full-population-single-step"
 WASTE_FREE_METHOD = "waste-free-full-population-four-step"
+RAO_BLACKWELL_METHOD = "acceptance-rao-blackwell-single-step"
 
 
 @dataclass(frozen=True)
@@ -64,7 +65,11 @@ class MatchedFullPopulationConfig:
     cess_target_fraction: float = 0.8
 
     def __post_init__(self) -> None:
-        if self.method_id not in {STANDARD_METHOD, WASTE_FREE_METHOD}:
+        if self.method_id not in {
+            STANDARD_METHOD,
+            WASTE_FREE_METHOD,
+            RAO_BLACKWELL_METHOD,
+        }:
             raise ValueError("full-population method is not registered")
         if self.population_size < 2 or self.source_chain_count < 2:
             raise ValueError("full-population dimensions must be at least two")
@@ -72,11 +77,13 @@ class MatchedFullPopulationConfig:
             raise ValueError("states_per_chain must be positive")
         if self.source_chain_count * self.states_per_chain != self.population_size:
             raise ValueError("source_chain_count * states_per_chain must equal N")
-        if self.method_id == STANDARD_METHOD and (
+        if self.method_id in {STANDARD_METHOD, RAO_BLACKWELL_METHOD} and (
             self.source_chain_count != self.population_size
             or self.states_per_chain != 1
         ):
-            raise ValueError("standard full-population SMC requires N one-step chains")
+            raise ValueError(
+                "standard and Rao-Blackwell SMC require N one-step chains"
+            )
         if self.method_id == WASTE_FREE_METHOD and self.states_per_chain < 2:
             raise ValueError("waste-free full-population SMC needs multiple chain states")
         if self.maximum_nodes < 1:
@@ -99,6 +106,13 @@ class MatchedFullPopulationConfig:
             or any(value not in betas for value in rejuvenation_betas)
         ):
             raise ValueError("rejuvenation_betas must be a unique subset of the beta grid")
+        if (
+            self.method_id == RAO_BLACKWELL_METHOD
+            and rejuvenation_betas != (1.0,)
+        ):
+            raise ValueError(
+                "acceptance Rao-Blackwellization is registered only at beta=1"
+            )
         if self.resampling_kind != "systematic":
             raise ValueError("full-population audits freeze systematic resampling")
         if not 0.0 < self.cess_target_fraction < 1.0:
@@ -106,11 +120,11 @@ class MatchedFullPopulationConfig:
 
     @property
     def population_mode(self) -> str:
-        return (
-            "terminal-only"
-            if self.method_id == STANDARD_METHOD
-            else "waste-free-full-population"
-        )
+        if self.method_id == STANDARD_METHOD:
+            return "terminal-only"
+        if self.method_id == RAO_BLACKWELL_METHOD:
+            return "acceptance-rao-blackwell-estimator"
+        return "waste-free-full-population"
 
     def particle_config(self) -> OpenTargetParticleConfig:
         """Return the target/proposal configuration used by the shared MH code."""
@@ -227,6 +241,7 @@ class MatchedFullPopulationSMC:
         diagnostics: list[OpenTargetParticleDiagnostics] = []
         moves: list[OpenTargetMoveDiagnostic] = []
         genealogy = []
+        final_estimator_pool: list[_Particle] = []
         proposal_index = 0
         next_particle_id = count
 
@@ -335,6 +350,20 @@ class MatchedFullPopulationSMC:
                     particles = sources
                     parent_indices = tuple(int(index) for index in source_indices)
                     event_kind = "strict-standard-resampling"
+                elif self.config.method_id == RAO_BLACKWELL_METHOD:
+                    if len(pool) != 2 * count or len(sources) != count:
+                        raise RuntimeError(
+                            "acceptance Rao-Blackwell transition requires two branches "
+                            "per resident proposal"
+                        )
+                    particles = sources
+                    if observation_step == len(y):
+                        final_estimator_pool = list(pool)
+                    parent_indices = tuple(int(index) for index in source_indices)
+                    # The resident transition is deliberately identical to
+                    # the standard method; only the separate estimator pool
+                    # changes. Keep the resident genealogy event identical.
+                    event_kind = "strict-standard-resampling"
                 else:
                     if len(pool) != count:
                         raise RuntimeError("waste-free chain population did not retain N states")
@@ -407,6 +436,14 @@ class MatchedFullPopulationSMC:
                     float(target),
                     self.contract,
                 )
+            if observation_step == len(y):
+                for particle in final_estimator_pool:
+                    _advance_particle(
+                        particle,
+                        particle.design[observation_step - 1],
+                        float(target),
+                        self.contract,
+                    )
 
         return ScalableOpenTargetResult(
             contract=self.contract,
@@ -419,4 +456,8 @@ class MatchedFullPopulationSMC:
             log_evidence=float(log_evidence),
             moves=tuple(moves),
             resampling_genealogy=tuple(genealogy),
+            estimator_particles=tuple(
+                _snapshot(particle, self.contract)
+                for particle in final_estimator_pool
+            ),
         )
