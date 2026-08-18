@@ -1,0 +1,104 @@
+{
+  "schema": "pcpi-p3f3-open-target-particle-variance-reduction-strict-development-v2",
+  "stage": "P3F.3-VR.2",
+  "experiment": "open_target_particle_variance_reduction_strict_development",
+  "fixture_role": "new_response_free_exact_reference_strict_matched_budget_development",
+  "real_data_access": "forbidden",
+  "heldout_state": "not-applicable",
+  "acquisition_state": "blocked",
+  "predictive_calibration_state": "blocked",
+  "base_particle": {
+    "particle_count": 2048,
+    "maximum_nodes": 3,
+    "ess_threshold_fraction": 0.5,
+    "rejuvenation_steps": 4,
+    "cess_target_fraction": 0.8,
+    "tempering_tolerance": 1e-6,
+    "maximum_bridge_steps": 4,
+    "proposal_kind": "complete-uniform",
+    "proposal_mixture_weight": 0.5,
+    "resampling_kind": "systematic",
+    "resampling_schedule": "pre-bridge",
+    "tempering_mode": "fixed-grid",
+    "fixed_bridge_betas": [0.25, 0.5, 0.75, 1.0]
+  },
+  "methods": [
+    {
+      "method_id": "terminal-only-fixed-grid",
+      "rejuvenation_population_mode": "terminal-only"
+    },
+    {
+      "method_id": "waste-free-pool-estimator-compressed",
+      "rejuvenation_population_mode": "waste-free-pool-estimator-compressed"
+    }
+  ],
+  "matched_budget": {
+    "resident_particle_count": 2048,
+    "rejuvenation_proposals_per_particle_per_bridge": 4,
+    "proposal_and_target_evaluations_per_bridge": 8192,
+    "bridges_per_observation": 4,
+    "observation_count": 8,
+    "proposal_and_target_evaluations_per_run": 262144,
+    "candidate_terminal_estimator_particle_count": 8192,
+    "posterior_functional_component_evaluations_per_point": 8192,
+    "proposal_and_target_evaluations_must_match": true,
+    "resident_particle_count_must_match": true,
+    "matched_budget_definition": "Both methods use the identical fixed beta grid and therefore the same total bridge count, resident particles, and invariant-kernel proposal/target evaluations. Transient normalization, compression draws, estimator population size, and wall clock are reported separately and may not be hidden.",
+    "transient_pool_bookkeeping": "reported_separately_not_counted_as_target_evaluation",
+    "wall_clock_role": "descriptive_only"
+  },
+  "seeds": [2026081732, 2026081733, 2026081734, 2026081735],
+  "fixtures": [
+    {
+      "fixture_id": "vr2_asymmetric_convex_grid_g",
+      "response_free_registration": true,
+      "actions": [-1.35, -0.92, -0.51, -0.12, 0.22, 0.61, 1.03, 1.42],
+      "polynomial_coefficients": [0.12, -0.2, 0.18]
+    },
+    {
+      "fixture_id": "vr2_steep_positive_grid_h",
+      "response_free_registration": true,
+      "actions": [-1.45, -1.02, -0.58, -0.16, 0.19, 0.57, 0.98, 1.31],
+      "polynomial_coefficients": [-0.1, 0.65, 0.08]
+    },
+    {
+      "fixture_id": "vr2_negative_concave_grid_i",
+      "response_free_registration": true,
+      "actions": [-1.28, -0.81, -0.37, 0.02, 0.36, 0.73, 1.12, 1.48],
+      "polynomial_coefficients": [0.3, -0.35, -0.22]
+    }
+  ],
+  "predictive_evaluation": {
+    "row_indices": [0, 2, 5, 7],
+    "target_values": [-0.75, -0.25, 0.25, 0.75]
+  },
+  "mechanism_eligibility": {
+    "all_fixture_seed_method_runs_required": true,
+    "proposal_budget_must_match": true,
+    "resident_particle_count_must_match": true,
+    "proposal_invariance_max_abs_error": 2e-15,
+    "mass_normalization_max_abs_error": 2e-12,
+    "evidence_telescoping_max_abs_error": 2e-12,
+    "minimum_conditional_ess_fraction_min": 0.799,
+    "waste_free_pool_probability_normalization_max_abs_error": 2e-12,
+    "waste_free_within_source_log_weight_spread_max": 2e-15,
+    "candidate_worst_log_evidence_abs_error_ratio_max": 1.0,
+    "candidate_worst_predictive_density_abs_error_ratio_max": 1.0,
+    "candidate_worst_predictive_cdf_abs_error_ratio_max": 1.0,
+    "candidate_raw_ast_worst_additive_noninferiority": 0.002,
+    "candidate_equivalence_worst_additive_noninferiority": 0.002,
+    "candidate_ancestry_log_attrition_per_event_max": 0.25,
+    "candidate_root_entropy_loss_per_event_max": 0.05,
+    "genealogy_threshold_rationale": "Each compression or ordinary resampling event must retain at least exp(-0.25) of the root support and lose no more than 0.05 normalized root entropy; thresholds are frozen before these development fixtures are run.",
+    "means_are_descriptive_only": true
+  },
+  "confirmatory_policy": {
+    "current_confirmatory_fixtures_reused_for_selection": false,
+    "vr1_development_fixtures_reused_for_vr2_gate": false,
+    "vr1_development_seeds_reused_for_vr2_gate": false,
+    "unseen_confirmatory_fixtures_frozen_in_this_stage": false,
+    "unseen_confirmatory_seeds_frozen_in_this_stage": false,
+    "next_confirmatory_freeze_authorized_only_if_mechanism_eligible": true
+  },
+  "claim_boundary": "This is a strict total-evaluation-matched exact-fixture development comparison of terminal-only and a full terminal-pool estimator with compressed propagation. It cannot establish confirmatory fidelity, predictive calibration, real-data efficacy, acquisition advantage, heldout confirmation, discovery, or a scientific law."
+}

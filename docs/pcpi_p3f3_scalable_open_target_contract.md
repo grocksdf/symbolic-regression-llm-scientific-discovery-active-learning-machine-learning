@@ -395,6 +395,55 @@ access. The unseen confirmatory fixture specifications and seeds are frozen
 only after the development mechanism is eligible; they are never generated or
 chosen after observing their particle errors.
 
+## 5.9 Strict total-budget terminal-pool estimator development
+
+The P3F.3-VR.1 result is retained as negative development evidence. All 24
+runs completed and the compressed pool improved worst log-evidence error and
+per-event genealogy loss, but it failed predictive-density, predictive-CDF,
+and raw-AST noninferiority. It also exposed a protocol bug: the runner matched
+proposal evaluations per bridge but not the total number of bridges. The
+terminal-only runs used 10--11 bridges while compressed-pool runs used 8--9,
+so their total proposal counts differed by 10--27 percent even though the old
+budget decision returned true. That decision is invalid and cannot authorize
+another confirmatory Gate.
+
+P3F.3-VR.2 corrects the design rather than changing a threshold. Both methods
+use the response-free fixed grid
+
+\[
+  \beta \in \{0, 0.25, 0.5, 0.75, 1\}
+\]
+
+for every observation. With eight observations, $N=2048$, and four
+rejuvenation proposals per resident particle and bridge, both methods must
+execute exactly 32 bridges and 262144 proposal/target evaluations per run.
+The runner checks paired total counts, not only per-bridge counts. CESS remains
+reported and must exceed the registered lower bound; the fixed grid changes
+only the numerical path, not the target.
+
+Predictive-functional computation is also matched at 8192 component
+evaluations per registered density or CDF point. The terminal-only estimator
+repeats its 2048 weighted components four times with weights divided by four;
+this leaves its numerical estimate unchanged while preventing the candidate's
+larger terminal estimator population from receiving an unreported evaluation
+budget advantage.
+
+The new candidate still compresses intermediate pools to $N$ for propagation,
+but terminal posterior functionals do not use that lossy draw. At the final
+registered target, all $4N=8192$ intermediate states retain normalized source
+weights $w_i/4$. Raw-AST mass, equivalence mass, predictive density, and
+predictive CDF are evaluated directly on this weighted terminal pool. The
+resident $N$-particle population remains separately available for propagation
+and genealogy. Log evidence remains the ordinary SMC normalizer and receives no
+post-hoc correction.
+
+VR.2 uses three new response-free development fixtures and four new seeds,
+disjoint from both VR.1 and the failed confirmatory audit. It retains the same
+signed/absolute pointwise errors and per-resampling genealogy records. Only a
+pass of every preregistered strict-budget decision can authorize freezing a new
+unseen confirmatory fixture bank; it still cannot authorize calibration or any
+real-data, acquisition, or held-out path.
+
 ## 6. Implementation boundaries
 
 - Extend the canonical `hypothesis_mvp.pcpi.open_target` path; do not create a

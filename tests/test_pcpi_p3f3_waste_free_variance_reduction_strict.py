@@ -1,4 +1,4 @@
-"""Correctness and static-boundary tests for P3F.3-VR.1."""
+"""Correctness and static-boundary tests for P3F.3-VR.2."""
 
 from __future__ import annotations
 
@@ -25,21 +25,22 @@ from hypothesis_mvp.pcpi.smc import (
     stratified_resample_count,
     systematic_resample_count,
 )
-from scripts.run_pcpi_p3f3_particle_variance_reduction_development import (
-    ERROR_FIELDS,
-    _paired_rows,
-)
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = (
-    ROOT / "configs/p3f_3_open_target_particle_variance_reduction_development.json"
+    ROOT
+    / "configs/p3f_3_open_target_particle_variance_reduction_strict_development.json"
 )
 CONFIRMATORY_CONFIG_PATH = (
     ROOT / "configs/p3f_3_open_target_particle_confirmatory_fidelity_audit.json"
 )
 RUNNER_PATH = (
-    ROOT / "scripts/run_pcpi_p3f3_particle_variance_reduction_development.py"
+    ROOT
+    / "scripts/run_pcpi_p3f3_particle_variance_reduction_strict_development.py"
+)
+VR1_CONFIG_PATH = (
+    ROOT / "configs/p3f_3_open_target_particle_variance_reduction_development.json"
 )
 
 
@@ -88,28 +89,49 @@ def test_registered_resamplers_support_matched_arbitrary_output_size(resampler) 
     assert np.all((indices >= 0) & (indices < len(weights)))
 
 
-def test_waste_free_population_uses_every_sweep_at_the_matched_proposal_budget() -> None:
+def test_full_terminal_pool_estimator_uses_every_sweep_at_matched_budget() -> None:
     actions, targets = _fixture()
     count = 64
     sweeps = 4
+    shared = dict(
+        particle_count=count,
+        maximum_nodes=3,
+        ess_threshold_fraction=0.5,
+        rejuvenation_steps=sweeps,
+        proposal_kind="complete-uniform",
+        resampling_kind="systematic",
+        resampling_schedule="pre-bridge",
+        tempering_mode="fixed-grid",
+        fixed_bridge_betas=(0.5, 1.0),
+        maximum_bridge_steps=2,
+    )
+    baseline = ScalableOpenTargetSMC(
+        _contract(),
+        OpenTargetParticleConfig(
+            **shared,
+            rejuvenation_population_mode="terminal-only",
+        ),
+        seed=2026081732,
+    ).run(actions, targets)
     result = ScalableOpenTargetSMC(
         _contract(),
         OpenTargetParticleConfig(
-            particle_count=count,
-            maximum_nodes=3,
-            ess_threshold_fraction=0.5,
-            rejuvenation_steps=sweeps,
-            proposal_kind="complete-uniform",
-            resampling_kind="systematic",
-            resampling_schedule="pre-bridge",
-            rejuvenation_population_mode="waste-free-pool-compressed",
+            **shared,
+            rejuvenation_population_mode="waste-free-pool-estimator-compressed",
         ),
-        seed=2026081724,
+        seed=2026081732,
     ).run(actions, targets)
+    assert len(result.diagnostics) == len(baseline.diagnostics) == 2 * len(targets)
     assert len(result.waste_free_diagnostics) == len(result.diagnostics)
     assert len(result.particles) == count
+    assert len(result.estimator_particles) == count * sweeps
+    assert len(result.posterior_particles) == count * sweeps
+    assert len(baseline.posterior_particles) == count
     assert sum(item.proposals for item in result.diagnostics) == count * sweeps * len(
         result.diagnostics
+    )
+    assert sum(item.proposals for item in baseline.diagnostics) == sum(
+        item.proposals for item in result.diagnostics
     )
     assert all(item.pool_size == count * sweeps for item in result.waste_free_diagnostics)
     assert all(
@@ -134,6 +156,14 @@ def test_waste_free_population_uses_every_sweep_at_the_matched_proposal_budget()
     assert all(event.ancestry_log_attrition >= 0.0 for event in result.resampling_genealogy)
     assert math.isclose(
         sum(particle.posterior_probability for particle in result.particles),
+        1.0,
+        abs_tol=2e-12,
+    )
+    assert math.isclose(
+        sum(
+            particle.posterior_probability
+            for particle in result.estimator_particles
+        ),
         1.0,
         abs_tol=2e-12,
     )
@@ -162,15 +192,25 @@ def test_terminal_only_population_preserves_the_existing_result_boundary() -> No
 def test_development_design_is_new_matched_and_cannot_freeze_confirmatory_data() -> None:
     config = _load(CONFIG_PATH)
     previous = _load(CONFIRMATORY_CONFIG_PATH)
-    assert config["stage"] == "P3F.3-VR.1"
+    vr1 = _load(VR1_CONFIG_PATH)
+    assert config["stage"] == "P3F.3-VR.2"
     assert [method["method_id"] for method in config["methods"]] == [
-        "terminal-only",
-        "waste-free-pool-compressed",
+        "terminal-only-fixed-grid",
+        "waste-free-pool-estimator-compressed",
     ]
     assert config["base_particle"]["rejuvenation_steps"] == 4
+    assert config["base_particle"]["tempering_mode"] == "fixed-grid"
+    assert config["base_particle"]["fixed_bridge_betas"] == [0.25, 0.5, 0.75, 1.0]
     assert config["matched_budget"]["proposal_and_target_evaluations_per_bridge"] == (
         config["base_particle"]["particle_count"]
         * config["base_particle"]["rejuvenation_steps"]
+    )
+    assert (
+        config["matched_budget"][
+            "posterior_functional_component_evaluations_per_point"
+        ]
+        == config["matched_budget"]["candidate_terminal_estimator_particle_count"]
+        == 8192
     )
     assert len(config["fixtures"]) >= 3
     assert len(config["seeds"]) >= 3
@@ -178,6 +218,10 @@ def test_development_design_is_new_matched_and_cannot_freeze_confirmatory_data()
     assert {
         fixture["fixture_id"] for fixture in config["fixtures"]
     }.isdisjoint({fixture["fixture_id"] for fixture in previous["fixtures"]})
+    assert set(config["seeds"]).isdisjoint(vr1["seeds"])
+    assert {
+        fixture["fixture_id"] for fixture in config["fixtures"]
+    }.isdisjoint({fixture["fixture_id"] for fixture in vr1["fixtures"]})
     policy = config["confirmatory_policy"]
     assert policy["current_confirmatory_fixtures_reused_for_selection"] is False
     assert policy["unseen_confirmatory_fixtures_frozen_in_this_stage"] is False
@@ -207,29 +251,3 @@ def test_variance_reduction_runner_reports_signed_pointwise_and_event_metrics() 
     assert config["real_data_access"] == "forbidden"
     assert config["heldout_state"] == "not-applicable"
     assert config["predictive_calibration_state"] == "blocked"
-
-
-def test_vr1_budget_gate_compares_total_proposals_not_only_each_bridge() -> None:
-    def run(method_id: str, bridge_count: int, proposals: int) -> dict[str, object]:
-        row: dict[str, object] = {
-            "method_id": method_id,
-            "fixture_id": "fixture",
-            "seed": 1,
-            "run_completed": True,
-            "bridge_count": bridge_count,
-            "proposal_evaluations": proposals,
-            "log_evidence_exact_reference_signed_error": 0.0,
-            "maximum_ancestry_log_attrition_per_resampling_event": 0.1,
-            "maximum_root_entropy_loss_per_resampling_event": 0.01,
-        }
-        row.update({field: 0.01 for field in ERROR_FIELDS})
-        return row
-
-    paired = _paired_rows(
-        [
-            run("terminal-only", 11, 90112),
-            run("waste-free-pool-compressed", 8, 65536),
-        ]
-    )
-    assert len(paired) == 1
-    assert paired[0]["paired_total_proposal_budget_matched"] is False

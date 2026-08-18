@@ -1,9 +1,10 @@
-"""Run the matched-budget P3F.3-VR.1 variance-reduction development audit.
+"""Run the strict matched-total-budget P3F.3-VR.2 development audit.
 
 The runner compares the existing terminal-only rejuvenation population with a
-bounded-memory waste-free pool that retains every intermediate MH state before
-an unbiased compression back to the same resident particle count.  Target,
-proposal kernel, proposal evaluations, seeds, and exact fixtures are matched.
+bounded-memory waste-free pool whose full weighted terminal population is used
+for posterior functionals while propagation is compressed back to the same
+resident particle count. Target, proposal kernel, fixed beta grid, total
+proposal evaluations, seeds, and exact fixtures are matched.
 No real-data, calibration, acquisition, or held-out path is imported.
 """
 
@@ -40,9 +41,11 @@ from scripts.run_pcpi_p3f3_particle_confirmatory_fidelity_audit import (
 )
 
 
-STAGE = "P3F.3-VR.1"
-EXPERIMENT = "open_target_particle_variance_reduction_development"
-CONFIG_SCHEMA = "pcpi-p3f3-open-target-particle-variance-reduction-development-v1"
+STAGE = "P3F.3-VR.2"
+EXPERIMENT = "open_target_particle_variance_reduction_strict_development"
+CONFIG_SCHEMA = (
+    "pcpi-p3f3-open-target-particle-variance-reduction-strict-development-v2"
+)
 TARGET_SCHEMA = "pcpi-p3f2-open-target-correctness-v1"
 ERROR_FIELDS = (
     "raw_ast_exact_reference_max_abs_error",
@@ -59,7 +62,8 @@ GENEALOGY_FIELDS = (
     "maximum_parent_offspring_fraction",
 )
 CLAIM_BOUNDARY = (
-    "This is a matched-budget exact-fixture variance-reduction development "
+    "This is a strict total-evaluation-matched exact-fixture variance-reduction "
+    "development "
     "audit. It is not confirmatory fidelity, predictive calibration, real-data "
     "efficacy, acquisition, heldout, discovery, or law evidence."
 )
@@ -121,7 +125,27 @@ def _pointwise_predictive_audit(
     particle: Any,
     predictive_config: dict[str, Any],
     observation_count: int,
+    component_evaluation_count: int,
 ) -> list[dict[str, float | int]]:
+    posterior_particles = particle.posterior_particles
+    if component_evaluation_count % len(posterior_particles) != 0:
+        raise ValueError(
+            "posterior functional budget must be divisible by estimator population"
+        )
+    repetitions = component_evaluation_count // len(posterior_particles)
+
+    def matched_value(row_index: int, target: float, kind: str) -> float:
+        total = 0.0
+        for _ in range(repetitions):
+            for component in posterior_particles:
+                value = (
+                    component.predictive_density(row_index, target)
+                    if kind == "density"
+                    else component.predictive_cdf(row_index, target)
+                )
+                total += component.posterior_probability * value / repetitions
+        return float(total)
+
     rows: list[dict[str, float | int]] = []
     for row_index in predictive_config["row_indices"]:
         index = int(row_index)
@@ -130,9 +154,9 @@ def _pointwise_predictive_audit(
         for target_value in predictive_config["target_values"]:
             target = float(target_value)
             exact_density = exact.predictive_density(index, target)
-            particle_density = particle.predictive_density(index, target)
+            particle_density = matched_value(index, target, "density")
             exact_cdf = exact.predictive_cdf(index, target)
-            particle_cdf = particle.predictive_cdf(index, target)
+            particle_cdf = matched_value(index, target, "cdf")
             rows.append(
                 {
                     "row_index": index,
@@ -145,6 +169,9 @@ def _pointwise_predictive_audit(
                     "particle_cdf": particle_cdf,
                     "cdf_signed_error": particle_cdf - exact_cdf,
                     "cdf_abs_error": abs(particle_cdf - exact_cdf),
+                    "particle_component_evaluations_per_functional": (
+                        component_evaluation_count
+                    ),
                 }
             )
     return rows
@@ -189,6 +216,11 @@ def _run_one(
         result,
         config["predictive_evaluation"],
         len(targets),
+        int(
+            config["matched_budget"][
+                "posterior_functional_component_evaluations_per_point"
+            ]
+        ),
     )
     diagnostics = result.diagnostics
     terminal = diagnostics[-1]
@@ -297,6 +329,10 @@ def _run_one(
         "log_evidence_exact_reference_signed_error": signed_log_evidence_error,
         "log_evidence_exact_reference_abs_error": abs(signed_log_evidence_error),
         "mass_normalization_error": abs(
+            sum(item.posterior_probability for item in result.posterior_particles)
+            - 1.0
+        ),
+        "resident_mass_normalization_error": abs(
             sum(item.posterior_probability for item in result.particles) - 1.0
         ),
         "equivalence_mass_error": abs(
@@ -344,6 +380,17 @@ def _run_one(
         "proposal_budget_matched": proposal_evaluations == expected_total,
         "resident_particle_count_matched": len(result.particles)
         == config["matched_budget"]["resident_particle_count"],
+        "posterior_estimator_particle_count": len(result.posterior_particles),
+        "posterior_estimator_kind": (
+            "waste-free-weighted-terminal-pool"
+            if result.estimator_particles
+            else "resident-particle-population"
+        ),
+        "posterior_functional_component_evaluations_per_point": int(
+            config["matched_budget"][
+                "posterior_functional_component_evaluations_per_point"
+            ]
+        ),
         "waste_free_pool_states": sum(
             item.pool_size for item in result.waste_free_diagnostics
         ),
@@ -426,44 +473,47 @@ def _paired_rows(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
             groups.setdefault(key, {})[str(run["method_id"])] = run
     rows: list[dict[str, Any]] = []
     for (fixture_id, seed), methods in sorted(groups.items()):
-        if set(methods) != {"terminal-only", "waste-free-pool-compressed"}:
+        if set(methods) != {
+            "terminal-only-fixed-grid",
+            "waste-free-pool-estimator-compressed",
+        }:
             continue
-        baseline = methods["terminal-only"]
-        candidate = methods["waste-free-pool-compressed"]
+        baseline = methods["terminal-only-fixed-grid"]
+        candidate = methods["waste-free-pool-estimator-compressed"]
         row: dict[str, Any] = {"fixture_id": fixture_id, "seed": seed}
-        row["bridge_count::terminal-only"] = baseline["bridge_count"]
-        row["bridge_count::waste-free-pool-compressed"] = candidate[
+        row["bridge_count::terminal-only-fixed-grid"] = baseline["bridge_count"]
+        row["bridge_count::waste-free-pool-estimator-compressed"] = candidate[
             "bridge_count"
         ]
-        row["proposal_evaluations::terminal-only"] = baseline[
+        row["proposal_evaluations::terminal-only-fixed-grid"] = baseline[
             "proposal_evaluations"
         ]
-        row["proposal_evaluations::waste-free-pool-compressed"] = candidate[
+        row["proposal_evaluations::waste-free-pool-estimator-compressed"] = candidate[
             "proposal_evaluations"
         ]
         row["paired_total_proposal_budget_matched"] = (
             baseline["proposal_evaluations"] == candidate["proposal_evaluations"]
         )
         for field in ERROR_FIELDS:
-            row[f"{field}::terminal-only"] = baseline[field]
-            row[f"{field}::waste-free-pool-compressed"] = candidate[field]
+            row[f"{field}::terminal-only-fixed-grid"] = baseline[field]
+            row[f"{field}::waste-free-pool-estimator-compressed"] = candidate[field]
             row[f"{field}::improvement"] = baseline[field] - candidate[field]
-        row["log_evidence_signed_error::terminal-only"] = baseline[
+        row["log_evidence_signed_error::terminal-only-fixed-grid"] = baseline[
             "log_evidence_exact_reference_signed_error"
         ]
-        row["log_evidence_signed_error::waste-free-pool-compressed"] = candidate[
+        row["log_evidence_signed_error::waste-free-pool-estimator-compressed"] = candidate[
             "log_evidence_exact_reference_signed_error"
         ]
-        row["maximum_ancestry_log_attrition_per_event::terminal-only"] = baseline[
+        row["maximum_ancestry_log_attrition_per_event::terminal-only-fixed-grid"] = baseline[
             "maximum_ancestry_log_attrition_per_resampling_event"
         ]
-        row["maximum_ancestry_log_attrition_per_event::waste-free-pool-compressed"] = candidate[
+        row["maximum_ancestry_log_attrition_per_event::waste-free-pool-estimator-compressed"] = candidate[
             "maximum_ancestry_log_attrition_per_resampling_event"
         ]
-        row["maximum_root_entropy_loss_per_event::terminal-only"] = baseline[
+        row["maximum_root_entropy_loss_per_event::terminal-only-fixed-grid"] = baseline[
             "maximum_root_entropy_loss_per_resampling_event"
         ]
-        row["maximum_root_entropy_loss_per_event::waste-free-pool-compressed"] = candidate[
+        row["maximum_root_entropy_loss_per_event::waste-free-pool-estimator-compressed"] = candidate[
             "maximum_root_entropy_loss_per_resampling_event"
         ]
         rows.append(row)
@@ -486,8 +536,8 @@ def _evaluate(config: dict[str, Any], target_config: dict[str, Any]) -> dict[str
     if config.get("heldout_state") != "not-applicable":
         raise ValueError("variance-reduction development has no heldout role")
     if [method["method_id"] for method in config["methods"]] != [
-        "terminal-only",
-        "waste-free-pool-compressed",
+        "terminal-only-fixed-grid",
+        "waste-free-pool-estimator-compressed",
     ]:
         raise ValueError("variance-reduction methods are not frozen")
     fixtures = _fixture_bank(config)
@@ -506,6 +556,14 @@ def _evaluate(config: dict[str, Any], target_config: dict[str, Any]) -> dict[str
         "proposal_and_target_evaluations_per_bridge"
     ]:
         raise ValueError("registered proposal budget is inconsistent")
+    expected_bridges = (
+        len(config["base_particle"]["fixed_bridge_betas"])
+        * int(config["matched_budget"]["observation_count"])
+    )
+    if expected_bridges * expected_budget != config["matched_budget"][
+        "proposal_and_target_evaluations_per_run"
+    ]:
+        raise ValueError("registered total proposal budget is inconsistent")
     if any(
         item.particle_count != config["matched_budget"]["resident_particle_count"]
         for item in method_configs.values()
@@ -531,15 +589,15 @@ def _evaluate(config: dict[str, Any], target_config: dict[str, Any]) -> dict[str
     completed_candidate = [
         run
         for run in completed
-        if run["method_id"] == "waste-free-pool-compressed"
+        if run["method_id"] == "waste-free-pool-estimator-compressed"
     ]
     failures = [run for run in runs if not run.get("run_completed", False)]
     aggregates = _method_aggregates(runs)
     paired = _paired_rows(runs)
     expected_runs = len(fixtures) * len(config["seeds"]) * len(config["methods"])
     thresholds = config["mechanism_eligibility"]
-    baseline = aggregates.get("terminal-only", {})
-    candidate = aggregates.get("waste-free-pool-compressed", {})
+    baseline = aggregates.get("terminal-only-fixed-grid", {})
+    candidate = aggregates.get("waste-free-pool-estimator-compressed", {})
     expected_per_method = len(fixtures) * len(config["seeds"])
     baseline_ready = baseline.get("completed_runs") == expected_per_method
     candidate_ready = candidate.get("completed_runs") == expected_per_method
@@ -555,13 +613,45 @@ def _evaluate(config: dict[str, Any], target_config: dict[str, Any]) -> dict[str
         and all(row["paired_total_proposal_budget_matched"] for row in paired),
         "resident_particle_counts_matched": bool(completed)
         and all(run["resident_particle_count_matched"] for run in completed),
+        "posterior_functional_budgets_matched": bool(completed)
+        and all(
+            run["posterior_functional_component_evaluations_per_point"]
+            == config["matched_budget"][
+                "posterior_functional_component_evaluations_per_point"
+            ]
+            for run in completed
+        ),
+        "fixed_bridge_schedules_matched": bool(completed)
+        and all(run["bridge_count"] == expected_bridges for run in completed)
+        and all(
+            run["proposal_evaluations"]
+            == config["matched_budget"]["proposal_and_target_evaluations_per_run"]
+            for run in completed
+        ),
+        "candidate_terminal_pool_exposed": candidate_ready
+        and all(
+            run["posterior_estimator_particle_count"]
+            == config["matched_budget"]["candidate_terminal_estimator_particle_count"]
+            and run["posterior_estimator_kind"]
+            == "waste-free-weighted-terminal-pool"
+            for run in completed_candidate
+        ),
+        "minimum_conditional_ess": bool(completed)
+        and min(run["minimum_conditional_ess_fraction"] for run in completed)
+        >= thresholds["minimum_conditional_ess_fraction_min"],
         "proposal_invariance": all(
             certificate["maximum_error"]
             <= thresholds["proposal_invariance_max_abs_error"]
             for certificate in certificates.values()
         ),
         "mass_normalization": bool(completed)
-        and max(run["mass_normalization_error"] for run in completed)
+        and max(
+            max(
+                run["mass_normalization_error"],
+                run["resident_mass_normalization_error"],
+            )
+            for run in completed
+        )
         <= thresholds["mass_normalization_max_abs_error"],
         "evidence_telescoping": bool(completed)
         and max(run["evidence_telescoping_error"] for run in completed)
@@ -667,7 +757,7 @@ def _evaluate(config: dict[str, Any], target_config: dict[str, Any]) -> dict[str
         "downstream_state": {
             "new_confirmatory_freeze": (
                 "authorized_not_executed" if mechanism_eligible
-                else "blocked_by_variance_reduction_development"
+                else "blocked_by_strict_variance_reduction_development"
             ),
             "predictive_calibration": "blocked",
             "real_data": "blocked",
@@ -684,7 +774,7 @@ def main() -> int:
         "--config",
         type=Path,
         default=Path(
-            "configs/p3f_3_open_target_particle_variance_reduction_development.json"
+            "configs/p3f_3_open_target_particle_variance_reduction_strict_development.json"
         ),
     )
     parser.add_argument(
@@ -708,7 +798,9 @@ def main() -> int:
     summary["created_at_utc"] = datetime.now(timezone.utc).isoformat()
     summary["source_identity"] = {
         "production_code_hash": production_code_hash(root),
-        "variance_reduction_config_sha256": file_sha256(args.config.resolve()),
+        "variance_reduction_strict_config_sha256": file_sha256(
+            args.config.resolve()
+        ),
         "target_config_sha256": file_sha256(args.target_config.resolve()),
         "runner_sha256": file_sha256(Path(__file__).resolve()),
     }

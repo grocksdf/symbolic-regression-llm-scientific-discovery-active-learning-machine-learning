@@ -61,6 +61,8 @@ class OpenTargetParticleConfig:
     resampling_kind: str = "systematic"
     resampling_schedule: str = "pre-bridge"
     rejuvenation_population_mode: str = "terminal-only"
+    tempering_mode: str = "adaptive-cess"
+    fixed_bridge_betas: tuple[float, ...] = (1.0,)
 
     def __post_init__(self) -> None:
         if self.particle_count < 2:
@@ -99,16 +101,37 @@ class OpenTargetParticleConfig:
             raise ValueError("resampling_kind must be systematic, stratified, or residual")
         if self.resampling_schedule not in {"pre-bridge", "post-bridge"}:
             raise ValueError("resampling_schedule must be pre-bridge or post-bridge")
+        if self.tempering_mode not in {"adaptive-cess", "fixed-grid"}:
+            raise ValueError("tempering_mode must be adaptive-cess or fixed-grid")
+        fixed_betas = tuple(float(value) for value in self.fixed_bridge_betas)
+        object.__setattr__(self, "fixed_bridge_betas", fixed_betas)
+        if (
+            not fixed_betas
+            or any(not math.isfinite(value) for value in fixed_betas)
+            or any(not 0.0 < value <= 1.0 for value in fixed_betas)
+            or any(left >= right for left, right in zip(fixed_betas, fixed_betas[1:]))
+            or fixed_betas[-1] != 1.0
+        ):
+            raise ValueError(
+                "fixed_bridge_betas must be strictly increasing inside (0, 1] "
+                "and terminate at one"
+            )
         if self.rejuvenation_population_mode not in {
             "terminal-only",
             "waste-free-pool-compressed",
+            "waste-free-pool-estimator-compressed",
         }:
             raise ValueError(
-                "rejuvenation_population_mode must be terminal-only or "
-                "waste-free-pool-compressed"
+                "rejuvenation_population_mode must be terminal-only, "
+                "waste-free-pool-compressed, or "
+                "waste-free-pool-estimator-compressed"
             )
         if (
-            self.rejuvenation_population_mode == "waste-free-pool-compressed"
+            self.rejuvenation_population_mode
+            in {
+                "waste-free-pool-compressed",
+                "waste-free-pool-estimator-compressed",
+            }
             and self.rejuvenation_steps < 2
         ):
             raise ValueError(
@@ -129,6 +152,8 @@ class OpenTargetParticleConfig:
             "resampling_kind": self.resampling_kind,
             "resampling_schedule": self.resampling_schedule,
             "rejuvenation_population_mode": self.rejuvenation_population_mode,
+            "tempering_mode": self.tempering_mode,
+            "fixed_bridge_betas": list(self.fixed_bridge_betas),
         }
 
 
@@ -637,6 +662,7 @@ class ScalableOpenTargetResult:
     moves: tuple[OpenTargetMoveDiagnostic, ...] = ()
     waste_free_diagnostics: tuple[OpenTargetWasteFreeDiagnostic, ...] = ()
     resampling_genealogy: tuple[OpenTargetResamplingGenealogyDiagnostic, ...] = ()
+    estimator_particles: tuple[OpenTargetParticleSnapshot, ...] = ()
 
     def __post_init__(self) -> None:
         actions = np.ascontiguousarray(self.actions, dtype=float)
@@ -666,6 +692,21 @@ class ScalableOpenTargetResult:
             )
         if not math.isclose(float(probabilities.sum()), 1.0, abs_tol=2e-12):
             raise ValueError("particle posterior probabilities must sum to one")
+        estimator_probabilities = np.asarray(
+            [particle.posterior_probability for particle in self.estimator_particles],
+            dtype=float,
+        )
+        if self.estimator_particles and (
+            not np.all(np.isfinite(estimator_probabilities))
+            or np.any(estimator_probabilities < 0.0)
+            or not math.isclose(
+                float(estimator_probabilities.sum()), 1.0, abs_tol=2e-12
+            )
+        ):
+            raise ValueError(
+                "waste-free estimator probabilities must be finite, non-negative, "
+                "and normalized"
+            )
         if not math.isfinite(self.log_evidence):
             raise ValueError("particle log evidence must be finite")
 
@@ -683,15 +724,30 @@ class ScalableOpenTargetResult:
         ):
             raise ValueError("resampling genealogy event indices must be consecutive")
         if self.config.rejuvenation_population_mode == "terminal-only":
-            if self.waste_free_diagnostics:
+            if self.waste_free_diagnostics or self.estimator_particles:
                 raise ValueError("terminal-only results cannot contain waste-free diagnostics")
         elif len(self.waste_free_diagnostics) != len(self.diagnostics):
             raise ValueError("every waste-free bridge requires one population diagnostic")
+        if (
+            self.config.rejuvenation_population_mode
+            == "waste-free-pool-estimator-compressed"
+        ):
+            expected = self.config.particle_count * self.config.rejuvenation_steps
+            if len(self.estimator_particles) != expected:
+                raise ValueError("waste-free terminal estimator pool has the wrong size")
+        elif self.estimator_particles:
+            raise ValueError("compressed-only mode cannot expose an estimator pool")
+
+    @property
+    def posterior_particles(self) -> tuple[OpenTargetParticleSnapshot, ...]:
+        """Population used for posterior functionals, separate from propagation."""
+
+        return self.estimator_particles or self.particles
 
     @property
     def raw_expression_posterior(self) -> dict[str, float]:
         result: dict[str, float] = {}
-        for particle in self.particles:
+        for particle in self.posterior_particles:
             identifier = particle.expression.raw_ast_id
             result[identifier] = result.get(identifier, 0.0) + particle.posterior_probability
         return result
@@ -737,6 +793,12 @@ class ScalableOpenTargetResult:
             "config": self.config.to_dict(),
             "seed": self.seed,
             "particle_count": len(self.particles),
+            "posterior_estimator_particle_count": len(self.posterior_particles),
+            "posterior_estimator_kind": (
+                "waste-free-weighted-terminal-pool"
+                if self.estimator_particles
+                else "resident-particle-population"
+            ),
             "observation_count": len(self.targets),
             "action_dimension": int(self.actions.shape[1]),
             "proposal_kind": self.config.proposal_kind,
@@ -848,7 +910,7 @@ class ScalableOpenTargetResult:
 
     def _unique_expressions(self) -> list[TypedExpression]:
         result: dict[str, TypedExpression] = {}
-        for particle in self.particles:
+        for particle in self.posterior_particles:
             result.setdefault(particle.expression.raw_ast_id, particle.expression)
         return list(result.values())
 
@@ -857,7 +919,7 @@ class ScalableOpenTargetResult:
             sum(
                 particle.posterior_probability
                 * particle.predictive_density(row_index, target)
-                for particle in self.particles
+                for particle in self.posterior_particles
             )
         )
 
@@ -866,7 +928,7 @@ class ScalableOpenTargetResult:
             sum(
                 particle.posterior_probability
                 * particle.predictive_cdf(row_index, target)
-                for particle in self.particles
+                for particle in self.posterior_particles
             )
         )
 
@@ -1386,7 +1448,33 @@ class ScalableOpenTargetSMC:
         row_index: int,
         target: float,
         beta_previous: float,
+        bridge_step: int,
     ) -> tuple[float, float, np.ndarray]:
+        if self.config.tempering_mode == "fixed-grid":
+            if bridge_step >= len(self.config.fixed_bridge_betas):
+                raise RuntimeError("fixed tempering grid did not reach beta one")
+            expected_previous = (
+                0.0
+                if bridge_step == 0
+                else self.config.fixed_bridge_betas[bridge_step - 1]
+            )
+            if not math.isclose(beta_previous, expected_previous, abs_tol=1e-14):
+                raise RuntimeError("fixed tempering grid state is inconsistent")
+            next_beta = self.config.fixed_bridge_betas[bridge_step]
+            current = np.asarray(
+                [particle.log_marginal for particle in particles], dtype=float
+            )
+            next_logs = self._bridge_log_marginals(
+                particles,
+                row_index,
+                target,
+                next_beta,
+            )
+            return (
+                next_beta,
+                self._conditional_ess(log_weights, next_logs - current),
+                next_logs,
+            )
         target_ess = self.config.cess_target_fraction * len(particles)
         current = np.asarray([particle.log_marginal for particle in particles], dtype=float)
         full = self._bridge_log_marginals(particles, row_index, target, 1.0)
@@ -1606,7 +1694,10 @@ class ScalableOpenTargetSMC:
                     particles[index] = proposed
                     current = proposed
                     acceptances += 1
-                if self.config.rejuvenation_population_mode == "waste-free-pool-compressed":
+                if self.config.rejuvenation_population_mode in {
+                    "waste-free-pool-compressed",
+                    "waste-free-pool-estimator-compressed",
+                }:
                     intermediate_pool.append(
                         current.clone(particle_id=current.particle_id)
                     )
@@ -1616,6 +1707,28 @@ class ScalableOpenTargetSMC:
             tuple(move_diagnostics),
             tuple(intermediate_pool),
         )
+
+    def _normalized_waste_free_pool(
+        self,
+        pool: tuple[_Particle, ...],
+    ) -> tuple[tuple[_Particle, ...], np.ndarray]:
+        count = self.config.particle_count
+        states_per_chain = self.config.rejuvenation_steps
+        if len(pool) != count * states_per_chain:
+            raise RuntimeError(
+                "waste-free intermediate pool does not match the frozen budget"
+            )
+        pool_log_weights = np.asarray(
+            [particle.log_weight - math.log(states_per_chain) for particle in pool],
+            dtype=float,
+        )
+        normalized_pool_weights, _ = normalize_log_weights(pool_log_weights)
+        normalized_pool: list[_Particle] = []
+        for particle, value in zip(pool, normalized_pool_weights, strict=True):
+            clone = particle.clone(particle_id=particle.particle_id)
+            clone.log_weight = float(value)
+            normalized_pool.append(clone)
+        return tuple(normalized_pool), normalized_pool_weights
 
     def _compress_waste_free_pool(
         self,
@@ -1650,13 +1763,11 @@ class ScalableOpenTargetSMC:
             raise RuntimeError(
                 "waste-free proposal evaluations do not match terminal-only budget"
             )
-        pool_log_weights = np.asarray(
-            [particle.log_weight - math.log(states_per_chain) for particle in pool],
-            dtype=float,
+        normalized_pool, normalized_pool_weights = self._normalized_waste_free_pool(
+            pool
         )
-        normalized_pool_weights, _ = normalize_log_weights(pool_log_weights)
         pool_probabilities = np.exp(normalized_pool_weights)
-        chain_log_weights = pool_log_weights.reshape(count, states_per_chain)
+        chain_log_weights = normalized_pool_weights.reshape(count, states_per_chain)
         selected_pool_indices = self._resample_indices(
             pool_probabilities,
             sample_count=count,
@@ -1670,7 +1781,7 @@ class ScalableOpenTargetSMC:
         )
         retained: list[_Particle] = []
         for pool_index in selected_pool_indices:
-            child = pool[int(pool_index)].clone(particle_id=next_particle_id)
+            child = normalized_pool[int(pool_index)].clone(particle_id=next_particle_id)
             child.log_weight = -math.log(count)
             retained.append(child)
             next_particle_id += 1
@@ -1753,6 +1864,7 @@ class ScalableOpenTargetSMC:
         move_diagnostics: list[OpenTargetMoveDiagnostic] = []
         waste_free_diagnostics: list[OpenTargetWasteFreeDiagnostic] = []
         resampling_genealogy: list[OpenTargetResamplingGenealogyDiagnostic] = []
+        terminal_estimator_pool: tuple[_Particle, ...] = ()
         proposal_index = 0
         next_particle_id = count
         threshold = self.config.ess_threshold_fraction * count
@@ -1837,6 +1949,7 @@ class ScalableOpenTargetSMC:
                     step - 1,
                     float(target),
                     beta,
+                    bridge_step,
                 )
                 current_logs = np.asarray(
                     [particle.log_marginal for particle in particles],
@@ -1936,8 +2049,21 @@ class ScalableOpenTargetSMC:
                 proposal_index += proposals
                 if (
                     self.config.rejuvenation_population_mode
-                    == "waste-free-pool-compressed"
+                    in {
+                        "waste-free-pool-compressed",
+                        "waste-free-pool-estimator-compressed",
+                    }
                 ):
+                    if (
+                        self.config.rejuvenation_population_mode
+                        == "waste-free-pool-estimator-compressed"
+                        and step == len(y)
+                        and math.isclose(next_beta, 1.0, abs_tol=1e-14)
+                    ):
+                        (
+                            terminal_estimator_pool,
+                            _,
+                        ) = self._normalized_waste_free_pool(intermediate_pool)
                     compression_source_particles = particles
                     (
                         particles,
@@ -2014,9 +2140,16 @@ class ScalableOpenTargetSMC:
                     float(target),
                     self.contract,
                 )
+            if step == len(y) and terminal_estimator_pool:
+                for particle in terminal_estimator_pool:
+                    _advance_particle(
+                        particle,
+                        particle.design[step - 1],
+                        float(target),
+                        self.contract,
+                    )
 
-        snapshots: list[OpenTargetParticleSnapshot] = []
-        for particle in particles:
+        def snapshot(particle: _Particle) -> OpenTargetParticleSnapshot:
             posterior_mean = np.linalg.solve(particle.precision, particle.information)
             posterior_covariance = np.linalg.inv(particle.precision)
             posterior_shape = (
@@ -2031,20 +2164,22 @@ class ScalableOpenTargetSMC:
                 )
                 - float(posterior_mean @ particle.precision @ posterior_mean)
             )
-            snapshots.append(
-                OpenTargetParticleSnapshot(
-                    expression=particle.expression,
-                    discrepancy_active=particle.discrepancy_active,
-                    kernel_state_id=particle.kernel_state_id,
-                    posterior_probability=float(np.exp(particle.log_weight)),
-                    log_marginal=particle.log_marginal,
-                    design=particle.design,
-                    posterior_mean=posterior_mean,
-                    posterior_covariance=posterior_covariance,
-                    noise_shape=posterior_shape,
-                    noise_scale=posterior_scale,
-                )
+            return OpenTargetParticleSnapshot(
+                expression=particle.expression,
+                discrepancy_active=particle.discrepancy_active,
+                kernel_state_id=particle.kernel_state_id,
+                posterior_probability=float(np.exp(particle.log_weight)),
+                log_marginal=particle.log_marginal,
+                design=particle.design,
+                posterior_mean=posterior_mean,
+                posterior_covariance=posterior_covariance,
+                noise_shape=posterior_shape,
+                noise_scale=posterior_scale,
             )
+        snapshots = [snapshot(particle) for particle in particles]
+        estimator_snapshots = [
+            snapshot(particle) for particle in terminal_estimator_pool
+        ]
         return ScalableOpenTargetResult(
             contract=self.contract,
             config=self.config,
@@ -2057,6 +2192,7 @@ class ScalableOpenTargetSMC:
             moves=tuple(move_diagnostics),
             waste_free_diagnostics=tuple(waste_free_diagnostics),
             resampling_genealogy=tuple(resampling_genealogy),
+            estimator_particles=tuple(estimator_snapshots),
         )
 
 
