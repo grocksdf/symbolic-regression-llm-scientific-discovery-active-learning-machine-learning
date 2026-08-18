@@ -1,0 +1,181 @@
+{
+  "schema": "pcpi-p3f3-open-target-particle-acceptance-rao-blackwell-confirmatory-v1",
+  "stage": "P3F.3-CF.RB.1",
+  "experiment": "open_target_particle_acceptance_rao_blackwell_confirmatory_fidelity",
+  "fixture_role": "unseen_response_free_exact_reference_acceptance_raoblackwell_confirmatory",
+  "selection_rule": "All fixtures, seeds, numerical controls, absolute envelopes, and paired stability bounds are frozen after VR.5 development authorization and before any confirmatory response is evaluated.",
+  "claim_boundary": "A pass establishes finite-slice confirmatory fidelity and paired noninferiority of the acceptance Rao-Blackwell estimator only. Predictive calibration remains a separate Gate. Real data, acquisition, heldout, efficacy, discovery, and scientific-law claims remain blocked.",
+  "real_data_access": "forbidden",
+  "heldout_state": "not-applicable",
+  "predictive_calibration_state": "blocked_until_confirmatory_passes",
+  "acquisition_state": "blocked",
+  "development_authorization": {
+    "stage": "P3F.3-VR.5",
+    "development_summary_sha256": "e0c2d585787f3a6792a129e207615a8d62a294c828869f314ca0200c8566d084",
+    "development_fixture_bank_hash": "7ed73d619a641d222c8915771a69424c7227e3dc6138164caaafbeb9b48a3c38",
+    "target_contract_hash": "7207d25689341870501fc0ac45627ff9729f34f5efe1f5a2ffcfb434328835f9",
+    "production_code_hash": "958502689b33a13ea93756f74575db4e762f4e2a4dec1fd7a5f3f3730df13092",
+    "runner_sha256": "eaaf39d4e34c184df9adbb2d758103ae0972be48029c504532157e32b762f943",
+    "config_sha256": "d94f8e310ff7ec7d3d23ce0ee624eed0b8fc7f96f1d5055f54b171e0b04b40a6",
+    "mechanism_eligible_for_new_confirmatory_freeze": true
+  },
+  "common_population": {
+    "population_size": 8192,
+    "maximum_nodes": 3,
+    "fixed_bridge_betas": [0.25, 0.5, 0.75, 1.0],
+    "rejuvenation_betas": [1.0],
+    "proposal_kind": "complete-uniform",
+    "proposal_mixture_weight": 0.5,
+    "resampling_kind": "systematic",
+    "cess_target_fraction": 0.8
+  },
+  "methods": [
+    {
+      "method_id": "standard-full-population-single-step",
+      "source_chain_count": 8192,
+      "states_per_chain": 1,
+      "estimator_semantics": "accepted_resident_state_with_the_registered_mh_uniform"
+    },
+    {
+      "method_id": "acceptance-rao-blackwell-single-step",
+      "source_chain_count": 8192,
+      "states_per_chain": 1,
+      "estimator_semantics": "conditional_two_branch_estimator_integrating_only_the_registered_mh_uniform"
+    }
+  ],
+  "matched_budget": {
+    "observation_count": 8,
+    "bridges_per_observation": 4,
+    "bridge_count_per_run": 32,
+    "rejuvenation_events_per_observation": 1,
+    "rejuvenation_event_count_per_run": 8,
+    "resident_population_size": 8192,
+    "mh_proposal_target_evaluations_per_rejuvenation_event": 8192,
+    "mh_proposal_target_evaluations_per_run": 65536,
+    "incremental_potential_evaluations_per_bridge": 8192,
+    "incremental_potential_evaluations_per_run": 262144,
+    "total_target_evaluations_per_run": 327680,
+    "posterior_functional_component_evaluations_per_point": 16384,
+    "standard_unique_estimator_components": 8192,
+    "rao_blackwell_weighted_estimator_components": 16384,
+    "wall_clock_role": "descriptive_only"
+  },
+  "correctness_thresholds": {
+    "minimum_conditional_ess_fraction_min": 0.799,
+    "proposal_invariance_max_abs_error": 2e-15,
+    "mass_normalization_max_abs_error": 2e-12,
+    "evidence_telescoping_max_abs_error": 2e-12,
+    "rao_blackwell_pair_normalization_max_abs_error": 2e-12,
+    "paired_resident_paths_must_be_identical": true
+  },
+  "absolute_fidelity_envelope": {
+    "provenance": "Inherited unchanged from the first preregistered multi-fixture P3F.3 confirmatory envelope; not fitted to VR.5 results.",
+    "candidate_worst_case_error_max": {
+      "raw_ast_exact_reference_max_abs_error": 0.025,
+      "equivalence_class_exact_reference_max_abs_error": 0.025,
+      "predictive_density_exact_reference_max_abs_error": 0.015,
+      "predictive_cdf_exact_reference_max_abs_error": 0.015,
+      "log_evidence_exact_reference_abs_error": 0.05
+    },
+    "candidate_cross_fixture_seed_median_span_max": {
+      "raw_ast_exact_reference_max_abs_error": 0.0125,
+      "equivalence_class_exact_reference_max_abs_error": 0.0125,
+      "predictive_density_exact_reference_max_abs_error": 0.0075,
+      "predictive_cdf_exact_reference_max_abs_error": 0.0075,
+      "log_evidence_exact_reference_abs_error": 0.025,
+      "minimum_conditional_ess_fraction": 0.01,
+      "minimum_effective_sample_size_fraction": 0.15,
+      "minimum_distinct_root_ancestor_fraction": 0.1,
+      "terminal_distinct_root_ancestor_fraction": 0.1,
+      "terminal_normalized_root_entropy": 0.15,
+      "minimum_normalized_weight_entropy": 0.15,
+      "maximum_parent_offspring_fraction": 0.05
+    },
+    "candidate_worst_case_lower_bounds": {
+      "minimum_conditional_ess_fraction": 0.799,
+      "minimum_effective_sample_size_fraction": 0.1,
+      "minimum_distinct_root_ancestor_fraction": 0.02,
+      "terminal_distinct_root_ancestor_fraction": 0.02,
+      "terminal_normalized_root_entropy": 0.3,
+      "minimum_normalized_weight_entropy": 0.5
+    },
+    "candidate_worst_case_upper_bounds": {
+      "maximum_parent_offspring_fraction": 0.1
+    }
+  },
+  "event_genealogy_envelope": {
+    "provenance": "Inherited unchanged from the response-free VR.4 genealogy registration, which predates VR.5 and this confirmatory bank.",
+    "candidate_worst_case_upper_bounds": {
+      "maximum_ancestry_log_attrition_per_resampling_event": 1.6362943611198906,
+      "maximum_root_entropy_loss_per_resampling_event": 0.20384615384615384
+    },
+    "legacy_terminal_and_bridge_genealogy_retained": true
+  },
+  "paired_fidelity_envelope": {
+    "worst_case_ratio_max": {
+      "log_evidence_exact_reference_abs_error": 1.0,
+      "predictive_density_exact_reference_max_abs_error": 1.0,
+      "predictive_cdf_exact_reference_max_abs_error": 1.0
+    },
+    "worst_case_additive_noninferiority": {
+      "raw_ast_exact_reference_max_abs_error": 0.002,
+      "equivalence_class_exact_reference_max_abs_error": 0.002
+    },
+    "minimum_fixture_median_improvement": {
+      "raw_ast_exact_reference_max_abs_error": -0.002,
+      "equivalence_class_exact_reference_max_abs_error": -0.002,
+      "predictive_density_exact_reference_max_abs_error": -0.0015,
+      "predictive_cdf_exact_reference_max_abs_error": -0.0015,
+      "log_evidence_exact_reference_abs_error": 0.0
+    },
+    "aggregation_policy": {
+      "gate_on_global_worst_case": true,
+      "gate_on_each_fixture_seed_median": true,
+      "means_are_descriptive_only": true,
+      "all_fixture_seed_method_runs_required": true
+    }
+  },
+  "predictive_evaluation": {
+    "row_indices": [0, 2, 5, 7],
+    "target_values": [-0.75, -0.25, 0.25, 0.75]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "rb_confirm_negative_curvature_positive_slope_grid_s",
+      "actions": [-1.62, -1.21, -0.83, -0.38, 0.02, 0.41, 0.84, 1.29],
+      "polynomial_coefficients": [0.05, 0.48, -0.22],
+      "response_free_registration": true
+    },
+    {
+      "fixture_id": "rb_confirm_positive_curvature_negative_slope_grid_t",
+      "actions": [-1.48, -1.11, -0.73, -0.27, 0.16, 0.56, 0.99, 1.45],
+      "polynomial_coefficients": [-0.31, -0.27, 0.19],
+      "response_free_registration": true
+    },
+    {
+      "fixture_id": "rb_confirm_near_affine_positive_slope_grid_u",
+      "actions": [-1.55, -1.08, -0.59, -0.12, 0.29, 0.71, 1.12, 1.53],
+      "polynomial_coefficients": [0.22, 0.33, 0.03],
+      "response_free_registration": true
+    },
+    {
+      "fixture_id": "rb_confirm_strong_convex_flat_slope_grid_v",
+      "actions": [-1.6, -1.15, -0.69, -0.24, 0.18, 0.62, 1.04, 1.5],
+      "polynomial_coefficients": [-0.12, 0.08, 0.26],
+      "response_free_registration": true
+    }
+  ],
+  "seeds": [2026081748, 2026081749, 2026081750, 2026081751, 2026081752],
+  "freeze_state": {
+    "fixtures_frozen_before_first_confirmatory_response": true,
+    "seeds_frozen_before_first_confirmatory_response": true,
+    "envelopes_frozen_before_first_confirmatory_response": true,
+    "result_adaptation": "forbidden"
+  },
+  "downstream_policy": {
+    "predictive_calibration_gate": "authorized_only_if_this_confirmatory_gate_passes",
+    "real_data": "blocked_until_confirmatory_fidelity_and_predictive_calibration_both_pass",
+    "acquisition": "blocked_until_confirmatory_fidelity_and_predictive_calibration_both_pass",
+    "heldout": "blocked_until_confirmatory_fidelity_and_predictive_calibration_both_pass"
+  }
+}

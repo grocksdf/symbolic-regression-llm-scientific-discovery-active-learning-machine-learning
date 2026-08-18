@@ -606,6 +606,44 @@ all earlier development and confirmatory banks. A pass may authorize only a
 subsequent freeze of still-unseen confirmatory fixtures and seeds. Predictive
 calibration, real data, acquisition, and held-out access remain blocked.
 
+## 5.13 Acceptance Rao--Blackwell confirmatory fidelity Gate
+
+The registered P3F.3-VR.5 development archive completed all 24 fixture/seed/
+method runs with identical paired resident populations, bridge schedules,
+moves, genealogy, log evidence, and matched target-evaluation budgets. Its
+candidate worst errors were 0.01867 for raw AST mass, 0.01803 for equivalence
+mass, 0.01285 for predictive density, 0.00243 for predictive CDF, and 0.02420
+for absolute log evidence. All development decisions passed. This authorizes
+freezing an independent confirmatory bank; it is not itself confirmatory
+fidelity evidence. In particular, predictive-density error improved in only
+3 of 12 paired development comparisons even though its global worst case
+improved. The confirmatory decision must therefore include per-fixture
+stability rather than rely on a mean or one global maximum alone.
+
+P3F.3-CF.RB.1 freezes four new response-free S/T/U/V exact fixtures and five
+new seeds before any response is evaluated. Each of the 40 method runs retains
+the VR.5 target, population size, fixed beta schedule, observation-terminal
+rejuvenation schedule, systematic resampling, complete-uniform proposal, and
+matched proposal, incremental-potential, total-target, and posterior-
+functional evaluation budgets. The candidate is evaluated against both:
+
+- the absolute worst-case and cross-fixture seed-median-span envelope inherited
+  unchanged from the first preregistered P3F.3 confirmatory fidelity audit; and
+- paired global noninferiority plus a minimum median improvement within every
+  fixture, preventing good fixtures from masking an unstable fixture.
+
+The evidence record retains signed log-evidence error and every pointwise
+predictive density/CDF signed and absolute error. Genealogy is gated using the
+preregistered per-resampling-event ancestry log attrition and root-entropy
+loss limits inherited from VR.4, while the original bridge and terminal root,
+entropy, and parent-offspring diagnostics remain present. A failure is final
+for this frozen bank: seeds, fixtures, envelopes, schedules, and budgets may
+not be adapted to the responses.
+
+Only a complete P3F.3-CF.RB.1 pass authorizes construction of a separate
+predictive-calibration Gate. Real data, acquisition, and held-out access stay
+blocked until both confirmatory fidelity and predictive calibration pass.
+
 ## 6. Implementation boundaries
 
 - Extend the canonical `hypothesis_mvp.pcpi.open_target` path; do not create a
