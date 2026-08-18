@@ -327,7 +327,7 @@ def _run_one(
             bool(item.pre_bridge_resampled) for item in diagnostics
         ),
         "ordinary_resampling_events": sum(
-            bool(item.resampled and not item.pre_bridge_resampled)
+            item.resampling_reason == "ess-threshold"
             for item in diagnostics
         ),
         "post_bridge_resampling_events": sum(
