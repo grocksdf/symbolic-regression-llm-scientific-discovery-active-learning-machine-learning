@@ -284,6 +284,49 @@ depth. It is diagnostic-only: no depth is promoted from a favorable cell, and
 the result cannot authorize a finite-particle fidelity envelope or downstream
 real-data claim.
 
+## 5.7 Confirmatory multi-fixture fidelity envelope
+
+The confirmatory Gate no longer compares numerical candidates. Before any
+confirmatory result is observed, it freezes `particle_count = 2048`, four new
+seeds, complete-uniform rejuvenation, systematic pre-bridge resampling, and
+four invariant rejuvenation sweeps. It evaluates that one mechanism on three
+registered one-dimensional exact-reference fixtures whose action grids and
+polynomial construction coefficients are committed in configuration. Fixture
+selection, predictive evaluation points, and thresholds cannot depend on a
+particle response, runtime failure, or exact-reference discrepancy observed
+during the confirmatory run.
+
+The candidate is registered by mechanism and prior audit support, not selected
+from the confirmatory responses: 2048 is the largest already-audited particle
+count, complete-uniform has a direct finite-support invariance certificate,
+systematic/pre-bridge is the canonical registered resample-move ordering, and
+four sweeps is the largest previously registered invariant depth. The
+confirmatory Gate cannot change any of these choices after a fixture or seed
+fails.
+
+Every fixture/seed cell reports raw-AST and equivalence-class posterior error,
+predictive density and CDF error on the registered evaluation grid,
+log-evidence error, ESS/CESS, normalized weight entropy, resampling, distinct
+root ancestry, normalized root entropy, and maximum parent-offspring
+concentration. The formal envelope uses two simultaneous requirements:
+
+1. the global worst cell must remain inside every registered posterior,
+   predictive, evidence, ESS, and genealogy bound; and
+2. the span of the fixture-specific seed medians must remain inside every
+   registered cross-fixture stability bound.
+
+Means are descriptive only. All twelve fixture/seed cells must complete, and
+mass conservation, evidence telescoping, terminal bridge completion, exact
+batch/sequential agreement, and proposal invariance remain mandatory. Missing
+cells or unavailable metrics fail closed; they cannot be replaced by a mean
+over the successful cells.
+
+A pass is finite-slice scalable-inference fidelity evidence only. It authorizes
+writing and executing a separate predictive-calibration Gate, but it does not
+itself constitute calibration evidence. Real data, acquisition, and held-out
+access remain blocked until both the confirmatory fidelity Gate and that
+separate predictive-calibration Gate pass.
+
 ## 6. Implementation boundaries
 
 - Extend the canonical `hypothesis_mvp.pcpi.open_target` path; do not create a
