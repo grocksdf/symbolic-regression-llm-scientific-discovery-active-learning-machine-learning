@@ -1,6 +1,7 @@
 """Strict matched-compute standard and waste-free full-population SMC.
 
-This module implements the development-only mechanism used by P3F.3-VR.3.
+This module implements the development-only mechanisms used by P3F.3-VR.3
+and the observation-terminal P3F.3-VR.4 audit.
 Both registered methods carry the same full population size, evaluate the same
 incremental potentials, and perform the same number of invariant-kernel
 proposals.  The standard method resamples ``N`` parents and takes one MH step
@@ -56,6 +57,7 @@ class MatchedFullPopulationConfig:
     states_per_chain: int
     maximum_nodes: int
     fixed_bridge_betas: tuple[float, ...]
+    rejuvenation_betas: tuple[float, ...] = ()
     proposal_kind: str = "complete-uniform"
     proposal_mixture_weight: float = 0.5
     resampling_kind: str = "systematic"
@@ -88,8 +90,17 @@ class MatchedFullPopulationConfig:
             or betas[-1] != 1.0
         ):
             raise ValueError("the fixed beta grid must increase and terminate at one")
+        rejuvenation_betas = tuple(float(value) for value in self.rejuvenation_betas)
+        if not rejuvenation_betas:
+            rejuvenation_betas = betas
+        object.__setattr__(self, "rejuvenation_betas", rejuvenation_betas)
+        if (
+            len(set(rejuvenation_betas)) != len(rejuvenation_betas)
+            or any(value not in betas for value in rejuvenation_betas)
+        ):
+            raise ValueError("rejuvenation_betas must be a unique subset of the beta grid")
         if self.resampling_kind != "systematic":
-            raise ValueError("VR.3 freezes systematic resampling")
+            raise ValueError("full-population audits freeze systematic resampling")
         if not 0.0 < self.cess_target_fraction < 1.0:
             raise ValueError("CESS target must lie strictly inside (0, 1)")
 
@@ -128,6 +139,7 @@ class MatchedFullPopulationConfig:
             "states_per_chain": self.states_per_chain,
             "maximum_nodes": self.maximum_nodes,
             "fixed_bridge_betas": list(self.fixed_bridge_betas),
+            "rejuvenation_betas": list(self.rejuvenation_betas),
             "proposal_kind": self.proposal_kind,
             "proposal_mixture_weight": self.proposal_mixture_weight,
             "resampling_kind": self.resampling_kind,
@@ -172,7 +184,7 @@ def _snapshot(
 
 
 class MatchedFullPopulationSMC:
-    """Run one preregistered side of the P3F.3-VR.3 comparison."""
+    """Run one preregistered side of a full-population comparison."""
 
     def __init__(
         self,
@@ -186,7 +198,9 @@ class MatchedFullPopulationSMC:
         if self.seed < 0:
             raise ValueError("particle seed must be non-negative")
         if config.maximum_nodes != contract.reference_slice_maximum_nodes:
-            raise ValueError("VR.3 must use the registered exact-reference slice")
+            raise ValueError(
+                "full-population audits must use the registered exact-reference slice"
+            )
         self.particle_config = config.particle_config()
         self.engine = ScalableOpenTargetSMC(contract, self.particle_config, seed)
 
@@ -245,6 +259,42 @@ class MatchedFullPopulationSMC:
                 ess_before = effective_sample_size(normalized)
                 log_evidence += log_increment
 
+                if beta_current not in self.config.rejuvenation_betas:
+                    log_weights = normalized
+                    for particle, value in zip(particles, log_weights, strict=True):
+                        particle.log_weight = float(value)
+                    roots, root_entropy = _root_summary(particles, count)
+                    identity = tuple(range(count))
+                    particle_ids = tuple(
+                        particle.particle_id for particle in particles
+                    )
+                    diagnostics.append(
+                        OpenTargetParticleDiagnostics(
+                            step=observation_step,
+                            bridge_step=bridge_index,
+                            beta_previous=beta_previous,
+                            beta_current=beta_current,
+                            conditional_ess=conditional_ess,
+                            effective_sample_size_before=ess_before,
+                            effective_sample_size_after=ess_before,
+                            weight_entropy=weight_entropy(log_weights),
+                            resampled=False,
+                            pre_bridge_resampled=False,
+                            resampling_threshold_ess=float(count),
+                            log_evidence_increment=float(log_increment),
+                            distinct_root_ancestors=roots,
+                            root_entropy=root_entropy,
+                            proposals=0,
+                            acceptances=0,
+                            ancestor_indices=identity,
+                            parent_particle_ids=particle_ids,
+                            child_particle_ids=particle_ids,
+                            resampling_reason="none",
+                        )
+                    )
+                    beta_previous = beta_current
+                    continue
+
                 previous = particles
                 probabilities = np.exp(normalized)
                 source_indices = self.engine._resample_indices(
@@ -275,7 +325,9 @@ class MatchedFullPopulationSMC:
                 proposal_index += proposals
                 moves.extend(bridge_moves)
                 if proposals != count:
-                    raise RuntimeError("VR.3 proposal budget changed inside a bridge")
+                    raise RuntimeError(
+                        "full-population proposal budget changed inside an event"
+                    )
 
                 if self.config.method_id == STANDARD_METHOD:
                     if pool or len(sources) != count:
@@ -300,7 +352,7 @@ class MatchedFullPopulationSMC:
                     event_kind = "waste-free-source-resampling"
 
                 if len(parent_indices) != count or len(particles) != count:
-                    raise RuntimeError("VR.3 full population changed size")
+                    raise RuntimeError("full-population audit changed population size")
                 log_weights = np.full(count, -math.log(count), dtype=float)
                 for particle in particles:
                     particle.log_weight = -math.log(count)

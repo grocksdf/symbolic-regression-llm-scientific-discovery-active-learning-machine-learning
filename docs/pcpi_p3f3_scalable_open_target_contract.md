@@ -501,6 +501,53 @@ fidelity, evidence, and raw-plus-adjusted genealogy decision passes. It cannot
 itself authorize predictive calibration or any real-data, acquisition, or
 held-out path.
 
+## 5.11 Observation-terminal waste-free propagation development
+
+P3F.3-VR.3 is retained as negative development evidence. Its 24/24 runs
+completed with exact paired evaluation budgets, valid CESS, and source hashes
+matching the registered code and configuration. The candidate nevertheless
+lost to the standard comparator on worst equivalence-class, predictive-density,
+predictive-CDF, and absolute log-evidence error. These failures occurred across
+multiple fixture/seed pairs, not as a single outlier. The candidate also ended
+with substantially fewer root ancestors and lower root entropy.
+
+The causal implementation feature is the repeated $N\rightarrow M\rightarrow N$
+source contraction at every fractional bridge. With four bridges per
+observation and eight observations, VR.3 applies 32 such contractions. Its
+capacity-adjusted *per-event* genealogy checks can pass while the repeated
+events still accumulate terminal ancestry collapse. Lowering a fidelity limit,
+selecting a seed, or treating the event adjustment as proof of global diversity
+would therefore be an invalid repair.
+
+P3F.3-VR.4 keeps the same target, the same $N=8192$ resident population, and
+the same response-free fixed beta grid. Incremental potentials are evaluated at
+all 32 registered bridges, but resample-move is restricted to $\beta=1$, once
+per completed observation. Each method consequently performs eight
+resample-move events. At every such event the standard comparator evaluates
+$N$ one-step MH proposals, and the waste-free candidate evaluates $M=2048$
+chains of $P=4$ successive proposals while retaining all $MP=N$ post-MH
+states. Per run, both methods execute 262144 potential evaluations, 65536
+proposal/target evaluations, 8192 components per posterior functional, and
+327680 total target evaluations. The reduction relative to VR.3 is a frozen
+mechanism change applied identically to both methods; it is not an unequal
+candidate budget.
+
+VR.4 keeps every raw and capacity-adjusted per-resampling event metric from
+VR.3 and adds cumulative terminal requirements. Candidate terminal root
+fraction and normalized root entropy retain the pre-existing raw lower bounds.
+After division by the analytical source-capacity ceilings $M/N$ and
+$\log M/\log N$, candidate terminal root fraction and entropy must also be
+noninferior to the standard comparator. Proposal acceptance and the fraction of
+accepted moves that cross an equivalence class are reported descriptively and
+do not replace the exact-reference fidelity Gate.
+
+VR.4 uses response-free M/N/O development fixtures and four seeds disjoint from
+VR.1, VR.2, VR.3, and the prior confirmatory audit. No new confirmatory fixture
+or seed is frozen in this stage. Only if every registered target, budget,
+fidelity, evidence, ESS, and local-plus-terminal genealogy decision passes may
+a separate unseen confirmatory bank be frozen. Predictive calibration, real
+data, acquisition, and held-out access remain blocked.
+
 ## 6. Implementation boundaries
 
 - Extend the canonical `hypothesis_mvp.pcpi.open_target` path; do not create a
