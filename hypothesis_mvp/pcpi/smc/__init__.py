@@ -15,8 +15,11 @@ from .resampling import (
     conditional_effective_sample_size,
     effective_sample_size,
     residual_resample,
+    residual_resample_count,
     stratified_resample,
+    stratified_resample_count,
     systematic_resample,
+    systematic_resample_count,
     weight_entropy,
 )
 from .state import (
@@ -50,8 +53,11 @@ __all__ = [
     "conditional_effective_sample_size",
     "effective_sample_size",
     "residual_resample",
+    "residual_resample_count",
     "p2b_structure_proposal_catalog",
     "systematic_resample",
+    "systematic_resample_count",
     "stratified_resample",
+    "stratified_resample_count",
     "weight_entropy",
 ]

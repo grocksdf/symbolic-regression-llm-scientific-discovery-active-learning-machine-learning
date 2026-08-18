@@ -23,9 +23,9 @@ from hypothesis_mvp.pcpi.reference.structurewise_discrepancy import (
 from hypothesis_mvp.pcpi.smc.resampling import (
     effective_sample_size,
     normalize_log_weights,
-    residual_resample,
-    stratified_resample,
-    systematic_resample,
+    residual_resample_count,
+    stratified_resample_count,
+    systematic_resample_count,
     weight_entropy,
 )
 
@@ -60,6 +60,7 @@ class OpenTargetParticleConfig:
     proposal_mixture_weight: float = 0.5
     resampling_kind: str = "systematic"
     resampling_schedule: str = "pre-bridge"
+    rejuvenation_population_mode: str = "terminal-only"
 
     def __post_init__(self) -> None:
         if self.particle_count < 2:
@@ -98,6 +99,21 @@ class OpenTargetParticleConfig:
             raise ValueError("resampling_kind must be systematic, stratified, or residual")
         if self.resampling_schedule not in {"pre-bridge", "post-bridge"}:
             raise ValueError("resampling_schedule must be pre-bridge or post-bridge")
+        if self.rejuvenation_population_mode not in {
+            "terminal-only",
+            "waste-free-pool-compressed",
+        }:
+            raise ValueError(
+                "rejuvenation_population_mode must be terminal-only or "
+                "waste-free-pool-compressed"
+            )
+        if (
+            self.rejuvenation_population_mode == "waste-free-pool-compressed"
+            and self.rejuvenation_steps < 2
+        ):
+            raise ValueError(
+                "waste-free pool compression requires at least two rejuvenation steps"
+            )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -112,6 +128,7 @@ class OpenTargetParticleConfig:
             "proposal_mixture_weight": self.proposal_mixture_weight,
             "resampling_kind": self.resampling_kind,
             "resampling_schedule": self.resampling_schedule,
+            "rejuvenation_population_mode": self.rejuvenation_population_mode,
         }
 
 
@@ -199,6 +216,156 @@ class OpenTargetParticleDiagnostics:
             raise ValueError("root ancestry diagnostics must be finite and non-empty")
         if self.proposals < 0 or self.acceptances < 0 or self.acceptances > self.proposals:
             raise ValueError("proposal and acceptance counts are inconsistent")
+
+
+@dataclass(frozen=True)
+class OpenTargetWasteFreeDiagnostic:
+    """Audit record for one bounded-memory waste-free population transform."""
+
+    observation_step: int
+    bridge_step: int
+    source_particle_count: int
+    states_per_chain: int
+    pool_size: int
+    retained_particle_count: int
+    proposal_evaluations: int
+    matched_terminal_only_proposal_evaluations: int
+    compression_resampling_kind: str
+    distinct_source_chains: int
+    maximum_source_chain_offspring_fraction: float
+    pool_unique_raw_ast: int
+    retained_unique_raw_ast: int
+    pool_unique_equivalence_classes: int
+    retained_unique_equivalence_classes: int
+    pool_probability_normalization_error: float
+    maximum_within_source_log_weight_spread: float
+    distinct_root_ancestors_after: int
+    normalized_root_entropy_after: float
+    selected_source_chain_indices: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        if self.observation_step < 1 or self.bridge_step < 1:
+            raise ValueError("waste-free diagnostic step identifiers must be positive")
+        if self.source_particle_count < 2 or self.states_per_chain < 2:
+            raise ValueError("waste-free population dimensions are invalid")
+        if self.pool_size != self.source_particle_count * self.states_per_chain:
+            raise ValueError("waste-free pool size does not match its chain layout")
+        if self.retained_particle_count != self.source_particle_count:
+            raise ValueError("bounded-memory waste-free population changed resident count")
+        if self.proposal_evaluations != self.matched_terminal_only_proposal_evaluations:
+            raise ValueError("waste-free proposal budget is not matched")
+        if self.proposal_evaluations != self.pool_size:
+            raise ValueError("every waste-free pool state must correspond to one proposal")
+        if self.compression_resampling_kind not in {
+            "systematic",
+            "stratified",
+            "residual",
+        }:
+            raise ValueError("waste-free compression resampler is not registered")
+        if len(self.selected_source_chain_indices) != self.retained_particle_count:
+            raise ValueError("waste-free retained ancestry vector has the wrong size")
+        if (
+            min(self.selected_source_chain_indices) < 0
+            or max(self.selected_source_chain_indices) >= self.source_particle_count
+        ):
+            raise ValueError("waste-free source-chain ancestry is out of range")
+        if self.distinct_source_chains != len(set(self.selected_source_chain_indices)):
+            raise ValueError("waste-free distinct source-chain count is inconsistent")
+        if not 1 <= self.distinct_root_ancestors_after <= self.retained_particle_count:
+            raise ValueError("waste-free root genealogy is invalid")
+        for value, name in (
+            (
+                self.maximum_source_chain_offspring_fraction,
+                "maximum_source_chain_offspring_fraction",
+            ),
+            (self.normalized_root_entropy_after, "normalized_root_entropy_after"),
+        ):
+            if not math.isfinite(value) or not 0.0 <= value <= 1.0 + 1e-12:
+                raise ValueError(f"waste-free {name} must lie in [0, 1]")
+        for value in (
+            self.pool_unique_raw_ast,
+            self.retained_unique_raw_ast,
+            self.pool_unique_equivalence_classes,
+            self.retained_unique_equivalence_classes,
+        ):
+            if value < 1:
+                raise ValueError("waste-free structural diversity must be non-empty")
+        for value, name in (
+            (
+                self.pool_probability_normalization_error,
+                "pool_probability_normalization_error",
+            ),
+            (
+                self.maximum_within_source_log_weight_spread,
+                "maximum_within_source_log_weight_spread",
+            ),
+        ):
+            if not math.isfinite(value) or value < 0.0:
+                raise ValueError(f"waste-free {name} must be finite and non-negative")
+
+
+@dataclass(frozen=True)
+class OpenTargetResamplingGenealogyDiagnostic:
+    """Pre-registered loss record for one actual resampling event.
+
+    The existing bridge-level genealogy remains unchanged.  This record adds
+    event-local before/after quantities so a run with more resampling events
+    cannot look better merely because terminal loss was divided by an event
+    count after the fact.
+    """
+
+    event_index: int
+    observation_step: int
+    bridge_step: int
+    event_kind: str
+    population_size: int
+    distinct_root_ancestors_before: int
+    distinct_root_ancestors_after: int
+    normalized_root_entropy_before: float
+    normalized_root_entropy_after: float
+    ancestry_retention_fraction: float
+    ancestry_log_attrition: float
+    root_entropy_signed_loss: float
+    root_entropy_loss: float
+    distinct_parent_count: int
+    maximum_parent_offspring_fraction: float
+
+    def __post_init__(self) -> None:
+        if self.event_index < 1 or self.observation_step < 1 or self.bridge_step < 1:
+            raise ValueError("resampling genealogy event identifiers must be positive")
+        if self.event_kind not in {
+            "pre-bridge-cess-boundary",
+            "post-bridge-cess-boundary",
+            "ess-threshold",
+            "waste-free-pool-compression",
+        }:
+            raise ValueError("unknown resampling genealogy event kind")
+        if self.population_size < 2:
+            raise ValueError("resampling genealogy requires a population")
+        for value in (
+            self.distinct_root_ancestors_before,
+            self.distinct_root_ancestors_after,
+            self.distinct_parent_count,
+        ):
+            if not 1 <= value <= self.population_size:
+                raise ValueError("resampling genealogy count is outside the population")
+        for value, name in (
+            (self.normalized_root_entropy_before, "normalized_root_entropy_before"),
+            (self.normalized_root_entropy_after, "normalized_root_entropy_after"),
+            (self.ancestry_retention_fraction, "ancestry_retention_fraction"),
+            (
+                self.maximum_parent_offspring_fraction,
+                "maximum_parent_offspring_fraction",
+            ),
+        ):
+            if not math.isfinite(value) or not 0.0 <= value <= 1.0 + 1e-12:
+                raise ValueError(f"resampling genealogy {name} must lie in [0, 1]")
+        if not math.isfinite(self.ancestry_log_attrition) or self.ancestry_log_attrition < 0:
+            raise ValueError("resampling ancestry attrition must be finite and non-negative")
+        if not math.isfinite(self.root_entropy_signed_loss):
+            raise ValueError("resampling signed entropy loss must be finite")
+        if not math.isfinite(self.root_entropy_loss) or self.root_entropy_loss < 0:
+            raise ValueError("resampling entropy loss must be finite and non-negative")
 
 
 @dataclass(frozen=True)
@@ -468,6 +635,8 @@ class ScalableOpenTargetResult:
     diagnostics: tuple[OpenTargetParticleDiagnostics, ...]
     log_evidence: float
     moves: tuple[OpenTargetMoveDiagnostic, ...] = ()
+    waste_free_diagnostics: tuple[OpenTargetWasteFreeDiagnostic, ...] = ()
+    resampling_genealogy: tuple[OpenTargetResamplingGenealogyDiagnostic, ...] = ()
 
     def __post_init__(self) -> None:
         actions = np.ascontiguousarray(self.actions, dtype=float)
@@ -503,6 +672,21 @@ class ScalableOpenTargetResult:
         for move in self.moves:
             if not isinstance(move, OpenTargetMoveDiagnostic):
                 raise ValueError("particle move audit entries have an invalid type")
+        for diagnostic in self.waste_free_diagnostics:
+            if not isinstance(diagnostic, OpenTargetWasteFreeDiagnostic):
+                raise ValueError("waste-free population audit entry has an invalid type")
+        for event in self.resampling_genealogy:
+            if not isinstance(event, OpenTargetResamplingGenealogyDiagnostic):
+                raise ValueError("resampling genealogy audit entry has an invalid type")
+        if tuple(event.event_index for event in self.resampling_genealogy) != tuple(
+            range(1, len(self.resampling_genealogy) + 1)
+        ):
+            raise ValueError("resampling genealogy event indices must be consecutive")
+        if self.config.rejuvenation_population_mode == "terminal-only":
+            if self.waste_free_diagnostics:
+                raise ValueError("terminal-only results cannot contain waste-free diagnostics")
+        elif len(self.waste_free_diagnostics) != len(self.diagnostics):
+            raise ValueError("every waste-free bridge requires one population diagnostic")
 
     @property
     def raw_expression_posterior(self) -> dict[str, float]:
@@ -558,6 +742,8 @@ class ScalableOpenTargetResult:
             "proposal_kind": self.config.proposal_kind,
             "bridge_count": len(self.diagnostics),
             "move_count": len(self.moves),
+            "waste_free_population_count": len(self.waste_free_diagnostics),
+            "resampling_genealogy_event_count": len(self.resampling_genealogy),
             "bridge_schedule": [
                 {
                     "observation_step": item.step,
@@ -572,6 +758,76 @@ class ScalableOpenTargetResult:
                     "resampling_reason": item.resampling_reason,
                 }
                 for item in self.diagnostics
+            ],
+            "waste_free_population": [
+                {
+                    "observation_step": item.observation_step,
+                    "bridge_step": item.bridge_step,
+                    "source_particle_count": item.source_particle_count,
+                    "states_per_chain": item.states_per_chain,
+                    "pool_size": item.pool_size,
+                    "retained_particle_count": item.retained_particle_count,
+                    "proposal_evaluations": item.proposal_evaluations,
+                    "matched_terminal_only_proposal_evaluations": (
+                        item.matched_terminal_only_proposal_evaluations
+                    ),
+                    "compression_resampling_kind": item.compression_resampling_kind,
+                    "distinct_source_chains": item.distinct_source_chains,
+                    "maximum_source_chain_offspring_fraction": (
+                        item.maximum_source_chain_offspring_fraction
+                    ),
+                    "pool_unique_raw_ast": item.pool_unique_raw_ast,
+                    "retained_unique_raw_ast": item.retained_unique_raw_ast,
+                    "pool_unique_equivalence_classes": (
+                        item.pool_unique_equivalence_classes
+                    ),
+                    "retained_unique_equivalence_classes": (
+                        item.retained_unique_equivalence_classes
+                    ),
+                    "pool_probability_normalization_error": (
+                        item.pool_probability_normalization_error
+                    ),
+                    "maximum_within_source_log_weight_spread": (
+                        item.maximum_within_source_log_weight_spread
+                    ),
+                    "distinct_root_ancestors_after": (
+                        item.distinct_root_ancestors_after
+                    ),
+                    "normalized_root_entropy_after": (
+                        item.normalized_root_entropy_after
+                    ),
+                }
+                for item in self.waste_free_diagnostics
+            ],
+            "resampling_genealogy": [
+                {
+                    "event_index": item.event_index,
+                    "observation_step": item.observation_step,
+                    "bridge_step": item.bridge_step,
+                    "event_kind": item.event_kind,
+                    "population_size": item.population_size,
+                    "distinct_root_ancestors_before": (
+                        item.distinct_root_ancestors_before
+                    ),
+                    "distinct_root_ancestors_after": (
+                        item.distinct_root_ancestors_after
+                    ),
+                    "normalized_root_entropy_before": (
+                        item.normalized_root_entropy_before
+                    ),
+                    "normalized_root_entropy_after": (
+                        item.normalized_root_entropy_after
+                    ),
+                    "ancestry_retention_fraction": item.ancestry_retention_fraction,
+                    "ancestry_log_attrition": item.ancestry_log_attrition,
+                    "root_entropy_signed_loss": item.root_entropy_signed_loss,
+                    "root_entropy_loss": item.root_entropy_loss,
+                    "distinct_parent_count": item.distinct_parent_count,
+                    "maximum_parent_offspring_fraction": (
+                        item.maximum_parent_offspring_fraction
+                    ),
+                }
+                for item in self.resampling_genealogy
             ],
             "heldout_state": "not-applicable",
             "real_data_access": "forbidden",
@@ -1031,14 +1287,76 @@ class ScalableOpenTargetSMC:
         proposed, _ = normalize_log_weights(normalized + increments)
         return float(1.0 / np.exp(2.0 * proposed).sum())
 
-    def _resample_indices(self, weights: np.ndarray) -> np.ndarray:
+    def _resample_indices(
+        self,
+        weights: np.ndarray,
+        sample_count: int | None = None,
+    ) -> np.ndarray:
+        count = len(np.asarray(weights).reshape(-1)) if sample_count is None else sample_count
         if self.config.resampling_kind == "systematic":
-            return systematic_resample(weights, self.rng)
+            return systematic_resample_count(weights, count, self.rng)
         if self.config.resampling_kind == "stratified":
-            return stratified_resample(weights, self.rng)
+            return stratified_resample_count(weights, count, self.rng)
         if self.config.resampling_kind == "residual":
-            return residual_resample(weights, self.rng)
+            return residual_resample_count(weights, count, self.rng)
         raise AssertionError(self.config.resampling_kind)
+
+    @staticmethod
+    def _root_genealogy_summary(
+        particles: list[_Particle],
+        population_size: int,
+    ) -> tuple[int, float]:
+        roots = np.asarray([particle.root_ancestor_id for particle in particles])
+        _, counts = np.unique(roots, return_counts=True)
+        probabilities = counts.astype(float) / population_size
+        normalized_entropy = float(
+            -np.sum(probabilities * np.log(probabilities))
+            / math.log(population_size)
+        )
+        return len(counts), normalized_entropy
+
+    @classmethod
+    def _resampling_genealogy_event(
+        cls,
+        before: list[_Particle],
+        after: list[_Particle],
+        parent_indices: tuple[int, ...],
+        *,
+        event_index: int,
+        observation_step: int,
+        bridge_step: int,
+        event_kind: str,
+    ) -> OpenTargetResamplingGenealogyDiagnostic:
+        count = len(before)
+        if len(after) != count or len(parent_indices) != count:
+            raise RuntimeError("resampling genealogy populations are not matched")
+        before_roots, before_entropy = cls._root_genealogy_summary(before, count)
+        after_roots, after_entropy = cls._root_genealogy_summary(after, count)
+        if after_roots > before_roots:
+            raise RuntimeError("resampling created a new root ancestor")
+        retention = after_roots / before_roots
+        parent_counts = np.bincount(
+            np.asarray(parent_indices, dtype=int),
+            minlength=count,
+        )
+        signed_entropy_loss = before_entropy - after_entropy
+        return OpenTargetResamplingGenealogyDiagnostic(
+            event_index=event_index,
+            observation_step=observation_step,
+            bridge_step=bridge_step,
+            event_kind=event_kind,
+            population_size=count,
+            distinct_root_ancestors_before=before_roots,
+            distinct_root_ancestors_after=after_roots,
+            normalized_root_entropy_before=before_entropy,
+            normalized_root_entropy_after=after_entropy,
+            ancestry_retention_fraction=retention,
+            ancestry_log_attrition=-math.log(retention),
+            root_entropy_signed_loss=signed_entropy_loss,
+            root_entropy_loss=max(0.0, signed_entropy_loss),
+            distinct_parent_count=int(np.count_nonzero(parent_counts)),
+            maximum_parent_offspring_fraction=float(np.max(parent_counts) / count),
+        )
 
     def _bridge_log_marginals(
         self,
@@ -1136,10 +1454,16 @@ class ScalableOpenTargetSMC:
         observation_step: int,
         bridge_step: int,
         proposal_index_start: int,
-    ) -> tuple[int, int, tuple[OpenTargetMoveDiagnostic, ...]]:
+    ) -> tuple[
+        int,
+        int,
+        tuple[OpenTargetMoveDiagnostic, ...],
+        tuple[_Particle, ...],
+    ]:
         proposals = 0
         acceptances = 0
         move_diagnostics: list[OpenTargetMoveDiagnostic] = []
+        intermediate_pool: list[_Particle] = []
         component_count = (
             _finite_component_count(self.contract, self.config.maximum_nodes)
             if self.config.proposal_kind in {
@@ -1194,6 +1518,12 @@ class ScalableOpenTargetSMC:
                     beta,
                     self.contract,
                 )
+                # Rejuvenation changes state but not the incoming SMC weight.
+                # Terminal-only mode overwrites weights after the sweep, so
+                # this inheritance was previously implicit.  The waste-free
+                # intermediate population observes every chain state and
+                # therefore requires the invariant source weight explicitly.
+                proposed.log_weight = current.log_weight
                 current_target = math.log(current.joint_prior_probability) + current.log_marginal
                 proposed_target = math.log(proposed.joint_prior_probability) + proposed.log_marginal
                 if self.config.proposal_kind == "prior-independence":
@@ -1276,7 +1606,124 @@ class ScalableOpenTargetSMC:
                     particles[index] = proposed
                     current = proposed
                     acceptances += 1
-        return proposals, acceptances, tuple(move_diagnostics)
+                if self.config.rejuvenation_population_mode == "waste-free-pool-compressed":
+                    intermediate_pool.append(
+                        current.clone(particle_id=current.particle_id)
+                    )
+        return (
+            proposals,
+            acceptances,
+            tuple(move_diagnostics),
+            tuple(intermediate_pool),
+        )
+
+    def _compress_waste_free_pool(
+        self,
+        pool: tuple[_Particle, ...],
+        *,
+        observation_step: int,
+        bridge_step: int,
+        proposal_evaluations: int,
+        next_particle_id: int,
+    ) -> tuple[
+        list[_Particle],
+        np.ndarray,
+        OpenTargetWasteFreeDiagnostic,
+        int,
+    ]:
+        """Unbiasedly compress all intermediate MH states back to resident N.
+
+        Every source particle contributes one state after each registered MH
+        proposal, with source weight divided equally across its chain states.
+        The registered resampler then returns exactly ``particle_count``
+        particles.  No target or proposal evaluation is added by compression.
+        """
+
+        count = self.config.particle_count
+        states_per_chain = self.config.rejuvenation_steps
+        expected_pool_size = count * states_per_chain
+        if len(pool) != expected_pool_size:
+            raise RuntimeError(
+                "waste-free intermediate pool does not match the frozen budget"
+            )
+        if proposal_evaluations != expected_pool_size:
+            raise RuntimeError(
+                "waste-free proposal evaluations do not match terminal-only budget"
+            )
+        pool_log_weights = np.asarray(
+            [particle.log_weight - math.log(states_per_chain) for particle in pool],
+            dtype=float,
+        )
+        normalized_pool_weights, _ = normalize_log_weights(pool_log_weights)
+        pool_probabilities = np.exp(normalized_pool_weights)
+        chain_log_weights = pool_log_weights.reshape(count, states_per_chain)
+        selected_pool_indices = self._resample_indices(
+            pool_probabilities,
+            sample_count=count,
+        )
+        selected_source_chains = tuple(
+            int(index) // states_per_chain for index in selected_pool_indices
+        )
+        source_counts = np.bincount(
+            np.asarray(selected_source_chains, dtype=int),
+            minlength=count,
+        )
+        retained: list[_Particle] = []
+        for pool_index in selected_pool_indices:
+            child = pool[int(pool_index)].clone(particle_id=next_particle_id)
+            child.log_weight = -math.log(count)
+            retained.append(child)
+            next_particle_id += 1
+        roots = np.asarray([particle.root_ancestor_id for particle in retained])
+        _, root_counts = np.unique(roots, return_counts=True)
+        root_probabilities = root_counts.astype(float) / count
+        normalized_root_entropy = float(
+            -np.sum(root_probabilities * np.log(root_probabilities)) / math.log(count)
+        )
+        feature_count = self.contract.grammar.feature_count
+        pool_raw = {particle.expression.raw_ast_id for particle in pool}
+        retained_raw = {particle.expression.raw_ast_id for particle in retained}
+        pool_classes = {
+            equivalence_class_id(particle.expression, feature_count) for particle in pool
+        }
+        retained_classes = {
+            equivalence_class_id(particle.expression, feature_count)
+            for particle in retained
+        }
+        diagnostic = OpenTargetWasteFreeDiagnostic(
+            observation_step=observation_step,
+            bridge_step=bridge_step,
+            source_particle_count=count,
+            states_per_chain=states_per_chain,
+            pool_size=len(pool),
+            retained_particle_count=len(retained),
+            proposal_evaluations=proposal_evaluations,
+            matched_terminal_only_proposal_evaluations=count * states_per_chain,
+            compression_resampling_kind=self.config.resampling_kind,
+            distinct_source_chains=len(set(selected_source_chains)),
+            maximum_source_chain_offspring_fraction=float(
+                np.max(source_counts) / count
+            ),
+            pool_unique_raw_ast=len(pool_raw),
+            retained_unique_raw_ast=len(retained_raw),
+            pool_unique_equivalence_classes=len(pool_classes),
+            retained_unique_equivalence_classes=len(retained_classes),
+            pool_probability_normalization_error=abs(
+                float(pool_probabilities.sum()) - 1.0
+            ),
+            maximum_within_source_log_weight_spread=float(
+                np.max(np.ptp(chain_log_weights, axis=1))
+            ),
+            distinct_root_ancestors_after=len(root_counts),
+            normalized_root_entropy_after=normalized_root_entropy,
+            selected_source_chain_indices=selected_source_chains,
+        )
+        return (
+            retained,
+            np.full(count, -math.log(count), dtype=float),
+            diagnostic,
+            next_particle_id,
+        )
 
     def run(
         self,
@@ -1304,6 +1751,8 @@ class ScalableOpenTargetSMC:
         log_evidence = 0.0
         diagnostics: list[OpenTargetParticleDiagnostics] = []
         move_diagnostics: list[OpenTargetMoveDiagnostic] = []
+        waste_free_diagnostics: list[OpenTargetWasteFreeDiagnostic] = []
+        resampling_genealogy: list[OpenTargetResamplingGenealogyDiagnostic] = []
         proposal_index = 0
         next_particle_id = count
         threshold = self.config.ess_threshold_fraction * count
@@ -1362,6 +1811,17 @@ class ScalableOpenTargetSMC:
                     log_weights = np.full(count, -math.log(count), dtype=float)
                     bridge_pre_resampled = True
                     resampling_reason = "pre-bridge-cess-boundary"
+                    resampling_genealogy.append(
+                        self._resampling_genealogy_event(
+                            previous,
+                            particles,
+                            bridge_pre_ancestor_indices,
+                            event_index=len(resampling_genealogy) + 1,
+                            observation_step=step,
+                            bridge_step=bridge_step + 1,
+                            event_kind="pre-bridge-cess-boundary",
+                        )
+                    )
                 elif (
                     self.config.resampling_schedule == "post-bridge"
                     and current_ess <= cess_floor * (1.0 + 1e-12)
@@ -1419,6 +1879,22 @@ class ScalableOpenTargetSMC:
                         particle.particle_id for particle in particles
                     )
                     log_weights = np.full(count, -math.log(count), dtype=float)
+                    after_event_kind = (
+                        "post-bridge-cess-boundary"
+                        if resampling_reason == "post-bridge-cess-boundary"
+                        else "ess-threshold"
+                    )
+                    resampling_genealogy.append(
+                        self._resampling_genealogy_event(
+                            previous,
+                            particles,
+                            ancestor_indices,
+                            event_index=len(resampling_genealogy) + 1,
+                            observation_step=step,
+                            bridge_step=bridge_step + 1,
+                            event_kind=after_event_kind,
+                        )
+                    )
                     if resampling_reason == "none":
                         resampling_reason = "ess-threshold"
                 else:
@@ -1439,7 +1915,12 @@ class ScalableOpenTargetSMC:
                     or resampled_after_bridge
                 )
 
-                proposals, acceptances, bridge_moves = self._rejuvenate(
+                (
+                    proposals,
+                    acceptances,
+                    bridge_moves,
+                    intermediate_pool,
+                ) = self._rejuvenate(
                     particles,
                     x,
                     y,
@@ -1453,6 +1934,39 @@ class ScalableOpenTargetSMC:
                 )
                 move_diagnostics.extend(bridge_moves)
                 proposal_index += proposals
+                if (
+                    self.config.rejuvenation_population_mode
+                    == "waste-free-pool-compressed"
+                ):
+                    compression_source_particles = particles
+                    (
+                        particles,
+                        log_weights,
+                        waste_free_diagnostic,
+                        next_particle_id,
+                    ) = self._compress_waste_free_pool(
+                        intermediate_pool,
+                        observation_step=step,
+                        bridge_step=bridge_step + 1,
+                        proposal_evaluations=proposals,
+                        next_particle_id=next_particle_id,
+                    )
+                    waste_free_diagnostics.append(waste_free_diagnostic)
+                    resampling_genealogy.append(
+                        self._resampling_genealogy_event(
+                            compression_source_particles,
+                            particles,
+                            waste_free_diagnostic.selected_source_chain_indices,
+                            event_index=len(resampling_genealogy) + 1,
+                            observation_step=step,
+                            bridge_step=bridge_step + 1,
+                            event_kind="waste-free-pool-compression",
+                        )
+                    )
+                elif intermediate_pool:
+                    raise AssertionError(
+                        "terminal-only rejuvenation emitted an intermediate pool"
+                    )
                 for particle, value in zip(particles, log_weights, strict=True):
                     particle.log_weight = float(value)
                 roots = np.asarray(
@@ -1541,6 +2055,8 @@ class ScalableOpenTargetSMC:
             diagnostics=tuple(diagnostics),
             log_evidence=float(log_evidence),
             moves=tuple(move_diagnostics),
+            waste_free_diagnostics=tuple(waste_free_diagnostics),
+            resampling_genealogy=tuple(resampling_genealogy),
         )
 
 

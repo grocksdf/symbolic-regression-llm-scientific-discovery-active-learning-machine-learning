@@ -327,6 +327,74 @@ itself constitute calibration evidence. Real data, acquisition, and held-out
 access remain blocked until both the confirmatory fidelity Gate and that
 separate predictive-calibration Gate pass.
 
+## 5.8 Independent waste-free variance-reduction development stage
+
+The failed confirmatory envelope does not authorize another confirmatory run.
+The next stage instead isolates one variance-reduction mechanism on three new
+response-free development fixtures and four new development seeds. The old
+confirmatory fixtures and seeds are not used for selection.
+
+The baseline retains only the terminal state from each of the four registered
+rejuvenation transitions. The candidate records every state after each
+transition in a transient chain-major pool. If source particle (i) has SMC
+weight (w_i) and the registered depth is (R=4), every retained chain state
+has pool weight (w_i/R). The same registered unbiased resampler compresses
+the (NR) transient states back to the frozen resident population (N).
+Compression adds no target or proposal evaluation and creates no new support.
+Every accepted and rejected transition inherits its source-chain weight.
+
+This is a bounded-memory waste-free pool-compression candidate inspired by
+waste-free SMC, not a claim that the compressed implementation is identical to
+the canonical uncompressed construction. Its target argument is limited to:
+each (K^r) is invariant at the current bridge target, their equally weighted
+mixture is invariant, and the registered resampling transform is marginally
+unbiased. Exact-reference fidelity must still be demonstrated empirically.
+
+The matched dominant computational budget is a vector fixed before execution:
+
+- the same (N=2048) resident particles;
+- the same four invariant transitions per source particle and bridge;
+- exactly (4N=8192) proposal and target evaluations per bridge;
+- the same target, proposal, CESS path, resampler, schedule, fixtures, and
+  paired seeds.
+
+The candidate's transient (4N) storage, pool normalization, and compression
+resampling are not called free. Pool size, compression draws, total actual
+resampling events, and wall-clock time are reported separately. Wall-clock
+means are descriptive because they are execution-environment dependent; the
+registered evaluation counts and resident population define the matched
+dominant budget.
+
+Every fixture/seed/method cell reports raw-AST and equivalence-class error,
+signed and absolute log-evidence error, and every registered predictive
+density and CDF point with signed and absolute error. Selection uses paired
+worst-case noninferiority or improvement; means are descriptive only.
+
+Genealogy is evaluated at every actual resampling event, including ordinary
+CESS/ESS resampling and waste-free pool compression. For event (e), let
+(A_e^-) and (A_e^+) be the numbers of distinct root ancestors immediately
+before and after the event, and let (H_e^-) and (H_e^+) be root entropy
+normalized by (log N). The registered event metrics are
+
+\[
+  a_e=-\log(A_e^+/A_e^-), \qquad
+  \ell_e=\max(0,H_e^- - H_e^+).
+\]
+
+The event record also retains the signed entropy change, distinct parents,
+maximum parent-offspring fraction, event kind, observation/bridge index, and
+the before/after raw root counts and entropies. Existing bridge-level minimum
+root fraction, terminal root fraction/entropy, parent concentration, ESS,
+CESS, and the legacy terminal-loss-divided-by-event-count summaries remain in
+the evidence record, but they do not replace the per-event Gate.
+
+This development stage can only authorize freezing a new, still-unseen set of
+confirmatory fixtures and seeds. It cannot pass the prior confirmatory Gate and
+cannot authorize predictive calibration, real data, acquisition, or held-out
+access. The unseen confirmatory fixture specifications and seeds are frozen
+only after the development mechanism is eligible; they are never generated or
+chosen after observing their particle errors.
+
 ## 6. Implementation boundaries
 
 - Extend the canonical `hypothesis_mvp.pcpi.open_target` path; do not create a
