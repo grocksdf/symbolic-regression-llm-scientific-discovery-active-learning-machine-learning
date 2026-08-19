@@ -706,6 +706,48 @@ decision. Only a complete VR.6 pass may authorize a new unseen confirmatory
 freeze. Predictive calibration and all real/acquisition/held-out paths remain
 blocked.
 
+## 5.15 Negative VR.6 evidence and the terminal-safe knotset
+
+The frozen VR.6 W/X/Y archive completed all 24 registered runs with matched
+proposal, potential, posterior-functional, population, bridge, and resampling
+budgets. Its source and target identities match GitHub commit `e6bf9e8`. The
+candidate passed every absolute fidelity and safety bound, but only 39 of 49
+registered decisions passed. In particular, its candidate-to-standard
+worst-error ratios were 1.00524 for log evidence, 1.20454 for predictive
+density, and 1.16558 for predictive CDF. Its minimum-root, terminal-root, and
+terminal-root-entropy cross-fixture span ratios were also above one. W and Y
+showed negative within-fixture median improvements for several posterior
+functionals. This is final negative development evidence; W/X/Y, their seeds,
+and their envelopes cannot be reused or changed to authorize the mechanism.
+
+The failure exposes a mismatch between the VR.6 name and its actual horizon.
+VR.6 applied the adapted accept/reject knot at every observation, including
+the eighth observation, which is the terminal time of the complete
+Feynman--Kac sequence. The general knot variance ordering applies to knots at
+times $p<n$. A terminal knot requires a separate test-function-aware
+construction to order arbitrary terminal posterior functionals; a generic
+terminal adaptation only has a general variance guarantee for the normalizing
+constant. Therefore the local conditional-potential optimality used by VR.6
+does not imply a variance ordering for raw AST mass, equivalence mass, or
+predictive density/CDF at the terminal observation.
+
+P3F.3-VR.7 registers a terminal-safe knotset before observing any new
+development response. It preserves the VR.6 target, complete-uniform proposal,
+$N=8192$ population, four fractional bridges, systematic resampling, and every
+primitive evaluation budget. The candidate applies the adapted acceptance
+knot only at observations $1,\ldots,T-1$; observation $T$ uses the same sampled
+acceptance branch, incremental potential, and resampling construction as the
+standard comparator. Both sides still evaluate both terminal branches at all
+observations so the proposal and potential budgets remain exactly matched.
+
+The absolute, paired worst-case, per-fixture median-improvement, error-span,
+and event-genealogy envelopes are inherited unchanged from VR.6. VR.7 uses new
+response-free Z/AA/AB fixtures and new seeds disjoint from W/X/Y and every
+prior confirmatory bank. A new decision also requires exactly $T-1$ candidate
+knots and zero terminal knots. Only a complete VR.7 pass may freeze another
+unseen confirmatory bank. It does not itself authorize predictive calibration,
+real data, acquisition, or held-out access.
+
 ## 6. Implementation boundaries
 
 - Extend the canonical `hypothesis_mvp.pcpi.open_target` path; do not create a

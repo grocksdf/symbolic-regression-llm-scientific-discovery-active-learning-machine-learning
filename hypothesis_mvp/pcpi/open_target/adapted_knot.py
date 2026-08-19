@@ -42,6 +42,9 @@ from .posterior import OpenTargetContract
 
 KNOT_STANDARD_METHOD = "preterminal-mh-standard-selection"
 ACCEPTANCE_KNOT_METHOD = "preterminal-mh-adapted-acceptance-knot"
+TERMINAL_SAFE_ACCEPTANCE_KNOT_METHOD = (
+    "nonterminal-only-mh-adapted-acceptance-knotset"
+)
 
 
 @dataclass(frozen=True)
@@ -58,7 +61,11 @@ class MatchedAcceptanceKnotConfig:
     cess_target_fraction: float = 0.8
 
     def __post_init__(self) -> None:
-        if self.method_id not in {KNOT_STANDARD_METHOD, ACCEPTANCE_KNOT_METHOD}:
+        if self.method_id not in {
+            KNOT_STANDARD_METHOD,
+            ACCEPTANCE_KNOT_METHOD,
+            TERMINAL_SAFE_ACCEPTANCE_KNOT_METHOD,
+        }:
             raise ValueError("adapted-knot method is not registered")
         if self.population_size < 2 or self.maximum_nodes < 1:
             raise ValueError("adapted-knot population controls are invalid")
@@ -132,6 +139,8 @@ class AcceptanceKnotDiagnostic:
     predictive_potential_log_increment_consistency_error: float
     branch_count: int
     parent_count: int
+    adapted_knot_applied: bool
+    terminal_observation: bool
 
 
 @dataclass(frozen=True)
@@ -252,6 +261,7 @@ class MatchedAcceptanceKnotSMC:
 
         for observation_step, target_value in enumerate(y, start=1):
             target = float(target_value)
+            terminal_observation = observation_step == len(y)
             beta_previous = 0.0
             for bridge_step, beta_current in enumerate(
                 self.config.fixed_bridge_betas,
@@ -325,7 +335,15 @@ class MatchedAcceptanceKnotSMC:
                     branch_log_probabilities[:, 1] + pool_increments[:, 1],
                 )
 
-                if self.config.method_id == KNOT_STANDARD_METHOD:
+                adapted_knot_applied = (
+                    self.config.method_id == ACCEPTANCE_KNOT_METHOD
+                    or (
+                        self.config.method_id
+                        == TERMINAL_SAFE_ACCEPTANCE_KNOT_METHOD
+                        and not terminal_observation
+                    )
+                )
+                if not adapted_knot_applied:
                     accepted = np.asarray(
                         [move.accepted for move in bridge_moves], dtype=bool
                     )
@@ -456,12 +474,12 @@ class MatchedAcceptanceKnotSMC:
                             branch_probability_error
                         ),
                         predictive_potential_log_increment_consistency_error=(
-                            0.0
-                            if self.config.method_id == KNOT_STANDARD_METHOD
-                            else consistency_error
+                            consistency_error if adapted_knot_applied else 0.0
                         ),
                         branch_count=2 * count,
                         parent_count=count,
+                        adapted_knot_applied=adapted_knot_applied,
+                        terminal_observation=terminal_observation,
                     )
                 )
                 beta_previous = beta_current

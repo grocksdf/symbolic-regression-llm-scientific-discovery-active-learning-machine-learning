@@ -1,0 +1,197 @@
+{
+  "schema": "pcpi-p3f3-open-target-particle-terminal-safe-acceptance-knot-development-v1",
+  "stage": "P3F.3-VR.7",
+  "experiment": "open_target_particle_terminal_safe_acceptance_knot_development",
+  "fixture_role": "new_response_free_exact_reference_terminal_safe_knot_development",
+  "selection_rule": "All fixtures, seeds, target controls, budgets, and envelopes are frozen after the negative VR.6 audit and before any VR.7 response is evaluated.",
+  "claim_boundary": "A pass establishes development eligibility of one target-preserving knotset restricted to non-terminal observations. It may authorize a separate unseen confirmatory freeze. Predictive calibration, real data, acquisition, heldout, efficacy, and discovery remain blocked.",
+  "real_data_access": "forbidden",
+  "heldout_state": "not-applicable",
+  "negative_confirmatory_evidence": {
+    "stage": "P3F.3-CF.RB.1",
+    "git_commit": "162f942a63d12eee5e917523e3e02ce9379f1a08",
+    "summary_sha256": "b39f42476f7d66b967b70407e55f211e111e08d9bb1696bfad5ad72abe66679d",
+    "fixture_bank_hash": "1a684a90754908f284c6ba4303524342603960b2152fe0f4941046c78ce5fb45",
+    "target_contract_hash": "7207d25689341870501fc0ac45627ff9729f34f5efe1f5a2ffcfb434328835f9",
+    "production_code_hash": "67dd567539d1516b2513691fa2d37c749b51a51bbaef600a11acc98869643dd0",
+    "runner_sha256": "7bda28461dbdbff89e2c0c6a4a9653e55aebd04b7d01eeb1b4e942b7cb1acc18",
+    "config_sha256": "08518e4cbd59e7548b92f24f0175c1696369b720207dbb7239da7fe29bd0a3af",
+    "confirmatory_fidelity_gate_passed": false,
+    "failed_decision_count": 6,
+    "frozen_gate_remains_final": true
+  },
+  "negative_development_evidence": {
+    "stage": "P3F.3-VR.6",
+    "git_commit": "e6bf9e823d8d7f9b5997ecb2fe9e44d6f5841c4d",
+    "archive_sha256": "250d8f362fdd7c4bda0fbc4f81669c83862f551b01d759784b1d8236dd2bbd78",
+    "summary_sha256": "3ad6411a8a8b35125d77e1911d213502a42712daa3e996f689e7fed951723d38",
+    "fixture_bank_hash": "743d596b7f551353597f72f8e1e8c9352ae994192c5b850873b37908ed880c19",
+    "target_contract_hash": "7207d25689341870501fc0ac45627ff9729f34f5efe1f5a2ffcfb434328835f9",
+    "production_code_hash": "046a4f28265a1d35f83aa9e70576d7ba1ce16b8c5a9c77769bef7801b4c961cf",
+    "runner_sha256": "b35f21650cf08fe1bb830395cc1798a17adc042b33cb208882da343bc5b7349d",
+    "config_sha256": "950d601384251221c47efae5be2402ed23fe7c68db9c3001d42bb12eaa192b39",
+    "development_mechanism_eligible": false,
+    "failed_decision_count": 10,
+    "fixture_ids": [
+      "knot_negative_slope_concave_grid_w",
+      "knot_positive_slope_convex_grid_x",
+      "knot_near_flat_shallow_convex_grid_y"
+    ],
+    "seeds": [2026081753, 2026081754, 2026081755, 2026081756],
+    "frozen_gate_remains_final": true
+  },
+  "mechanism_contract": {
+    "factorization": "adapt_complete_uniform_accept_reject_kernel_to_the_next_fractional_potential_only_when_future_registered_potentials_remain",
+    "standard_path": "sample_acceptance_uniform_then_weight_selected_branch_at_every_observation",
+    "candidate_nonterminal_path": "for_observations_1_through_T_minus_1_weight_by_conditional_predictive_potential_then_sample_twisted_branch",
+    "candidate_terminal_path": "at_observation_T_use_the_same_standard_acceptance_selection_and_weighting_as_the_comparator",
+    "terminal_measure": "unchanged",
+    "proposal_target": "unchanged",
+    "adaptation_uses": "only_the_already_observed_response_and_the_registered_next_fractional_potential",
+    "future_or_heldout_information": "forbidden"
+  },
+  "common_population": {
+    "population_size": 8192,
+    "maximum_nodes": 3,
+    "fixed_bridge_betas": [0.25, 0.5, 0.75, 1.0],
+    "proposal_kind": "complete-uniform",
+    "proposal_mixture_weight": 0.5,
+    "resampling_kind": "systematic",
+    "cess_target_fraction": 0.8
+  },
+  "methods": [
+    {
+      "method_id": "preterminal-mh-standard-selection",
+      "estimator_semantics": "sample_acceptance_uniform_then_weight_selected_branch",
+      "counterfactual_branch_potential_evaluations": "computed_and_discarded_only_to_match_candidate_budget"
+    },
+    {
+      "method_id": "nonterminal-only-mh-adapted-acceptance-knotset",
+      "estimator_semantics": "adapt_observations_1_through_T_minus_1_and_use_standard_transition_at_T",
+      "counterfactual_branch_potential_evaluations": "used_by_nonterminal_knots_and_computed_at_T_to_preserve_budget"
+    }
+  ],
+  "matched_budget": {
+    "observation_count": 8,
+    "bridges_per_observation": 4,
+    "bridge_count_per_run": 32,
+    "resident_population_size": 8192,
+    "mh_proposal_target_evaluations_per_observation": 8192,
+    "mh_proposal_target_evaluations_per_run": 65536,
+    "ordinary_incremental_potential_evaluations_per_observation": 24576,
+    "terminal_two_branch_potential_evaluations_per_observation": 16384,
+    "incremental_potential_evaluations_per_run": 327680,
+    "total_target_evaluations_per_run": 393216,
+    "posterior_functional_component_evaluations_per_point": 8192,
+    "wall_clock_role": "descriptive_only"
+  },
+  "correctness_thresholds": {
+    "minimum_conditional_ess_fraction_min": 0.799,
+    "proposal_invariance_max_abs_error": 2e-15,
+    "mass_normalization_max_abs_error": 2e-12,
+    "evidence_telescoping_max_abs_error": 2e-12,
+    "branch_probability_normalization_max_abs_error": 2e-12,
+    "knot_log_increment_consistency_max_abs_error": 2e-12
+  },
+  "development_fidelity_envelope": {
+    "provenance": "Inherited unchanged from VR.6. No bound was changed after observing the negative W/X/Y bank.",
+    "candidate_worst_case_error_max": {
+      "raw_ast_exact_reference_max_abs_error": 0.025,
+      "equivalence_class_exact_reference_max_abs_error": 0.025,
+      "predictive_density_exact_reference_max_abs_error": 0.015,
+      "predictive_cdf_exact_reference_max_abs_error": 0.015,
+      "log_evidence_exact_reference_abs_error": 0.05
+    },
+    "candidate_error_span_max": {
+      "raw_ast_exact_reference_max_abs_error": 0.0125,
+      "equivalence_class_exact_reference_max_abs_error": 0.0125,
+      "predictive_density_exact_reference_max_abs_error": 0.0075,
+      "predictive_cdf_exact_reference_max_abs_error": 0.0075,
+      "log_evidence_exact_reference_abs_error": 0.025
+    },
+    "candidate_worst_case_lower_bounds": {
+      "minimum_conditional_ess_fraction": 0.799,
+      "minimum_effective_sample_size_fraction": 0.1,
+      "minimum_distinct_root_ancestor_fraction": 0.02,
+      "terminal_distinct_root_ancestor_fraction": 0.02,
+      "terminal_normalized_root_entropy": 0.3,
+      "minimum_normalized_weight_entropy": 0.5
+    },
+    "candidate_worst_case_upper_bounds": {
+      "maximum_parent_offspring_fraction": 0.1
+    }
+  },
+  "event_genealogy_envelope": {
+    "provenance": "Inherited unchanged from the response-free VR.4 genealogy registration.",
+    "candidate_worst_case_upper_bounds": {
+      "maximum_ancestry_log_attrition_per_resampling_event": 1.6362943611198906,
+      "maximum_root_entropy_loss_per_resampling_event": 0.20384615384615384
+    },
+    "legacy_terminal_and_bridge_genealogy_retained": true
+  },
+  "paired_development_envelope": {
+    "worst_case_ratio_max": {
+      "log_evidence_exact_reference_abs_error": 1.0,
+      "predictive_density_exact_reference_max_abs_error": 1.0,
+      "predictive_cdf_exact_reference_max_abs_error": 1.0
+    },
+    "worst_case_additive_noninferiority": {
+      "raw_ast_exact_reference_max_abs_error": 0.002,
+      "equivalence_class_exact_reference_max_abs_error": 0.002
+    },
+    "minimum_fixture_median_improvement": {
+      "raw_ast_exact_reference_max_abs_error": -0.002,
+      "equivalence_class_exact_reference_max_abs_error": -0.002,
+      "predictive_density_exact_reference_max_abs_error": -0.0015,
+      "predictive_cdf_exact_reference_max_abs_error": -0.0015,
+      "log_evidence_exact_reference_abs_error": 0.0
+    },
+    "difficulty_metric_span_ratio_max": {
+      "minimum_conditional_ess_fraction": 1.0,
+      "minimum_effective_sample_size_fraction": 1.0,
+      "minimum_distinct_root_ancestor_fraction": 1.0,
+      "terminal_distinct_root_ancestor_fraction": 1.0,
+      "terminal_normalized_root_entropy": 1.0,
+      "maximum_parent_offspring_fraction": 1.0
+    },
+    "means_are_descriptive_only": true
+  },
+  "predictive_evaluation": {
+    "row_indices": [0, 2, 5, 7],
+    "target_values": [-0.75, -0.25, 0.25, 0.75]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "terminal_safe_negative_slope_convex_grid_z",
+      "actions": [-1.61, -1.19, -0.72, -0.26, 0.18, 0.55, 0.97, 1.43],
+      "polynomial_coefficients": [0.11, -0.31, 0.13],
+      "response_free_registration": true
+    },
+    {
+      "fixture_id": "terminal_safe_positive_slope_concave_grid_aa",
+      "actions": [-1.47, -1.03, -0.57, -0.11, 0.31, 0.73, 1.15, 1.53],
+      "polynomial_coefficients": [-0.14, 0.37, -0.12],
+      "response_free_registration": true
+    },
+    {
+      "fixture_id": "terminal_safe_low_curvature_grid_ab",
+      "actions": [-1.68, -1.28, -0.83, -0.38, 0.06, 0.49, 0.94, 1.61],
+      "polynomial_coefficients": [0.26, 0.08, -0.04],
+      "response_free_registration": true
+    }
+  ],
+  "seeds": [2026081763, 2026081764, 2026081765, 2026081766],
+  "freeze_state": {
+    "fixtures_frozen_before_first_development_response": true,
+    "seeds_frozen_before_first_development_response": true,
+    "envelopes_frozen_before_first_development_response": true,
+    "result_adaptation": "forbidden"
+  },
+  "downstream_policy": {
+    "new_unseen_confirmatory_freeze": "authorized_only_if_every_registered_VR7_decision_passes",
+    "predictive_calibration_gate": "blocked_until_a_subsequent_confirmatory_gate_passes",
+    "real_data": "blocked_until_confirmatory_fidelity_and_predictive_calibration_both_pass",
+    "acquisition": "blocked_until_confirmatory_fidelity_and_predictive_calibration_both_pass",
+    "heldout": "blocked_until_confirmatory_fidelity_and_predictive_calibration_both_pass"
+  }
+}

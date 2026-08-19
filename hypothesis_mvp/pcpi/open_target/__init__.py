@@ -59,6 +59,7 @@ from .full_population import (
 from .adapted_knot import (
     ACCEPTANCE_KNOT_METHOD,
     KNOT_STANDARD_METHOD,
+    TERMINAL_SAFE_ACCEPTANCE_KNOT_METHOD,
     AcceptanceKnotDiagnostic,
     MatchedAcceptanceKnotConfig,
     MatchedAcceptanceKnotResult,
@@ -112,6 +113,7 @@ __all__ = [
     "MatchedFullPopulationSMC",
     "KNOT_STANDARD_METHOD",
     "ACCEPTANCE_KNOT_METHOD",
+    "TERMINAL_SAFE_ACCEPTANCE_KNOT_METHOD",
     "AcceptanceKnotDiagnostic",
     "MatchedAcceptanceKnotConfig",
     "MatchedAcceptanceKnotResult",

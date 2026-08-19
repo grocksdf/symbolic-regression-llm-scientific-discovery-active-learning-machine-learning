@@ -376,6 +376,13 @@ def _run_one(
         "resampling_genealogy": resampling_genealogy,
         "bridge_genealogy_legacy": bridge_genealogy,
         "knot_diagnostics": knot_records,
+        "adapted_knot_event_count": sum(
+            bool(item.adapted_knot_applied) for item in matched.knot_diagnostics
+        ),
+        "terminal_knot_event_count": sum(
+            bool(item.adapted_knot_applied and item.terminal_observation)
+            for item in matched.knot_diagnostics
+        ),
         "maximum_branch_probability_normalization_error": max(
             item.branch_probability_normalization_error
             for item in matched.knot_diagnostics
