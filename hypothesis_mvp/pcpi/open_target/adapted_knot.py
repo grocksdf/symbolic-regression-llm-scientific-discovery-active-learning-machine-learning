@@ -45,6 +45,9 @@ ACCEPTANCE_KNOT_METHOD = "preterminal-mh-adapted-acceptance-knot"
 TERMINAL_SAFE_ACCEPTANCE_KNOT_METHOD = (
     "nonterminal-only-mh-adapted-acceptance-knotset"
 )
+TERMINAL_FUNCTION_CONDITIONAL_METHOD = (
+    "terminal-function-aware-conditional-estimator"
+)
 
 
 @dataclass(frozen=True)
@@ -65,6 +68,7 @@ class MatchedAcceptanceKnotConfig:
             KNOT_STANDARD_METHOD,
             ACCEPTANCE_KNOT_METHOD,
             TERMINAL_SAFE_ACCEPTANCE_KNOT_METHOD,
+            TERMINAL_FUNCTION_CONDITIONAL_METHOD,
         }:
             raise ValueError("adapted-knot method is not registered")
         if self.population_size < 2 or self.maximum_nodes < 1:
@@ -112,7 +116,9 @@ class MatchedAcceptanceKnotConfig:
 
     @property
     def result_particle_config(self) -> OpenTargetParticleConfig:
-        return self._particle_config(branch_pool=False)
+        return self._particle_config(
+            branch_pool=self.method_id == TERMINAL_FUNCTION_CONDITIONAL_METHOD
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -126,6 +132,9 @@ class MatchedAcceptanceKnotConfig:
             "cess_target_fraction": self.cess_target_fraction,
             "knot_location": "before-final-fractional-potential",
             "acceptance_branch_count": 2,
+            "terminal_function_conditional_estimator": (
+                self.method_id == TERMINAL_FUNCTION_CONDITIONAL_METHOD
+            ),
         }
 
 
@@ -141,6 +150,8 @@ class AcceptanceKnotDiagnostic:
     parent_count: int
     adapted_knot_applied: bool
     terminal_observation: bool
+    terminal_function_conditional_estimator_applied: bool
+    terminal_function_log_increment_consistency_error: float
 
 
 @dataclass(frozen=True)
@@ -149,6 +160,8 @@ class MatchedAcceptanceKnotResult:
     knot_diagnostics: tuple[AcceptanceKnotDiagnostic, ...]
     proposal_target_evaluations: int
     incremental_potential_evaluations: int
+    terminal_conditional_log_evidence: float | None
+    terminal_conditional_log_evidence_increment: float | None
 
 
 class MatchedAcceptanceKnotSMC:
@@ -258,6 +271,9 @@ class MatchedAcceptanceKnotSMC:
         proposal_index = 0
         next_particle_id = count
         potential_evaluations = 0
+        terminal_estimator_pool: list[_Particle] = []
+        terminal_conditional_log_evidence: float | None = None
+        terminal_conditional_log_evidence_increment: float | None = None
 
         for observation_step, target_value in enumerate(y, start=1):
             target = float(target_value)
@@ -343,6 +359,11 @@ class MatchedAcceptanceKnotSMC:
                         and not terminal_observation
                     )
                 )
+                terminal_function_estimator_applied = (
+                    self.config.method_id == TERMINAL_FUNCTION_CONDITIONAL_METHOD
+                    and terminal_observation
+                )
+                terminal_function_consistency_error = 0.0
                 if not adapted_knot_applied:
                     accepted = np.asarray(
                         [move.accepted for move in bridge_moves], dtype=bool
@@ -361,6 +382,39 @@ class MatchedAcceptanceKnotSMC:
                     normalized, log_increment = normalize_log_weights(
                         incoming_log_weights + selected_increment
                     )
+                    if terminal_function_estimator_applied:
+                        _, parent_log_increment = normalize_log_weights(
+                            incoming_log_weights + predictive_log_increment
+                        )
+                        flat_unnormalized = (
+                            pool_log_weights + pool_increments
+                        ).reshape(-1)
+                        branch_normalized, branch_log_increment = (
+                            normalize_log_weights(flat_unnormalized)
+                        )
+                        terminal_function_consistency_error = abs(
+                            branch_log_increment - parent_log_increment
+                        )
+                        if terminal_function_consistency_error > 2e-12:
+                            raise RuntimeError(
+                                "terminal conditional parent and branch evidence "
+                                "increments disagree"
+                            )
+                        for branch, value, branch_log_weight in zip(
+                            pool_list,
+                            pool_next_logs,
+                            branch_normalized,
+                            strict=True,
+                        ):
+                            branch.log_marginal = float(value)
+                            branch.log_weight = float(branch_log_weight)
+                        terminal_estimator_pool = pool_list
+                        terminal_conditional_log_evidence = float(
+                            log_evidence + parent_log_increment
+                        )
+                        terminal_conditional_log_evidence_increment = float(
+                            parent_log_increment
+                        )
                     for particle, value, log_weight in zip(
                         particles, selected_next_logs, normalized, strict=True
                     ):
@@ -480,6 +534,12 @@ class MatchedAcceptanceKnotSMC:
                         parent_count=count,
                         adapted_knot_applied=adapted_knot_applied,
                         terminal_observation=terminal_observation,
+                        terminal_function_conditional_estimator_applied=(
+                            terminal_function_estimator_applied
+                        ),
+                        terminal_function_log_increment_consistency_error=(
+                            terminal_function_consistency_error
+                        ),
                     )
                 )
                 beta_previous = beta_current
@@ -491,6 +551,14 @@ class MatchedAcceptanceKnotSMC:
                     target,
                     self.contract,
                 )
+            if terminal_function_estimator_applied:
+                for branch in terminal_estimator_pool:
+                    _advance_particle(
+                        branch,
+                        branch.design[observation_step - 1],
+                        target,
+                        self.contract,
+                    )
 
         result = ScalableOpenTargetResult(
             contract=self.contract,
@@ -503,10 +571,18 @@ class MatchedAcceptanceKnotSMC:
             log_evidence=float(log_evidence),
             moves=tuple(moves),
             resampling_genealogy=tuple(genealogy),
+            estimator_particles=tuple(
+                _snapshot(branch, self.contract)
+                for branch in terminal_estimator_pool
+            ),
         )
         return MatchedAcceptanceKnotResult(
             particle_result=result,
             knot_diagnostics=tuple(knot_diagnostics),
             proposal_target_evaluations=proposal_index,
             incremental_potential_evaluations=potential_evaluations,
+            terminal_conditional_log_evidence=terminal_conditional_log_evidence,
+            terminal_conditional_log_evidence_increment=(
+                terminal_conditional_log_evidence_increment
+            ),
         )

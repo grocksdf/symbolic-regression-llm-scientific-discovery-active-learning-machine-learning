@@ -291,7 +291,24 @@ def _run_one(
         for item in result.particles
     ])
     exact_log_evidence = exact.generative_posterior.log_evidence
-    signed_log_evidence_error = result.log_evidence - exact_log_evidence
+    functional_log_evidence = (
+        matched.terminal_conditional_log_evidence
+        if matched.terminal_conditional_log_evidence is not None
+        else result.log_evidence
+    )
+    signed_log_evidence_error = functional_log_evidence - exact_log_evidence
+    resident_evidence_telescoping_error = abs(
+        sum(item.log_evidence_increment for item in diagnostics)
+        - result.log_evidence
+    )
+    if matched.terminal_conditional_log_evidence_increment is None:
+        functional_evidence_telescoping_error = resident_evidence_telescoping_error
+    else:
+        functional_evidence_telescoping_error = abs(
+            sum(item.log_evidence_increment for item in diagnostics[:-1])
+            + matched.terminal_conditional_log_evidence_increment
+            - functional_log_evidence
+        )
     knot_records = [item.__dict__ for item in matched.knot_diagnostics]
     expected_proposals = int(
         config["matched_budget"]["mh_proposal_target_evaluations_per_run"]
@@ -322,7 +339,14 @@ def _run_one(
         ),
         "predictive_pointwise": pointwise,
         "exact_log_evidence": exact_log_evidence,
-        "particle_log_evidence": result.log_evidence,
+        "particle_log_evidence": functional_log_evidence,
+        "resident_particle_log_evidence": result.log_evidence,
+        "terminal_conditional_log_evidence": (
+            matched.terminal_conditional_log_evidence
+        ),
+        "terminal_conditional_log_evidence_increment": (
+            matched.terminal_conditional_log_evidence_increment
+        ),
         "log_evidence_exact_reference_signed_error": signed_log_evidence_error,
         "log_evidence_exact_reference_abs_error": abs(signed_log_evidence_error),
         "mass_normalization_error": abs(
@@ -332,8 +356,9 @@ def _run_one(
             sum(item.posterior_probability for item in result.particles) - 1.0
         ),
         "equivalence_mass_error": abs(sum(result.equivalence_class_posterior.values()) - 1.0),
-        "evidence_telescoping_error": abs(
-            sum(item.log_evidence_increment for item in diagnostics) - result.log_evidence
+        "evidence_telescoping_error": functional_evidence_telescoping_error,
+        "resident_evidence_telescoping_error": (
+            resident_evidence_telescoping_error
         ),
         "minimum_conditional_ess_fraction": min(
             item.conditional_ess / particle_count for item in diagnostics
@@ -383,12 +408,20 @@ def _run_one(
             bool(item.adapted_knot_applied and item.terminal_observation)
             for item in matched.knot_diagnostics
         ),
+        "terminal_function_conditional_estimator_event_count": sum(
+            bool(item.terminal_function_conditional_estimator_applied)
+            for item in matched.knot_diagnostics
+        ),
         "maximum_branch_probability_normalization_error": max(
             item.branch_probability_normalization_error
             for item in matched.knot_diagnostics
         ),
         "maximum_knot_log_increment_consistency_error": max(
             item.predictive_potential_log_increment_consistency_error
+            for item in matched.knot_diagnostics
+        ),
+        "maximum_terminal_function_log_increment_consistency_error": max(
+            item.terminal_function_log_increment_consistency_error
             for item in matched.knot_diagnostics
         ),
         "proposal_evaluations": proposal_evaluations,
@@ -416,7 +449,9 @@ def _run_one(
         "resident_particle_count_matched": len(result.particles)
         == config["matched_budget"]["resident_population_size"],
         "posterior_estimator_particle_count": len(result.posterior_particles),
-        "posterior_estimator_kind": "resident-particle-population",
+        "posterior_estimator_kind": result.evidence_record()[
+            "posterior_estimator_kind"
+        ],
         "posterior_functional_component_evaluations_per_point": int(
             config["matched_budget"]["posterior_functional_component_evaluations_per_point"]
         ),
@@ -442,6 +477,8 @@ def _method_aggregates(runs: list[dict[str, Any]]) -> dict[str, Any]:
         "log_evidence_exact_reference_signed_error",
         "maximum_branch_probability_normalization_error",
         "maximum_knot_log_increment_consistency_error",
+        "maximum_terminal_function_log_increment_consistency_error",
+        "resident_evidence_telescoping_error",
         "wall_clock_seconds_descriptive_only",
     )
     for method_id in sorted({str(run["method_id"]) for run in runs}):

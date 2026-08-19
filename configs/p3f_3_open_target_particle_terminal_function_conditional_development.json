@@ -1,0 +1,206 @@
+{
+  "schema": "pcpi-p3f3-open-target-particle-terminal-function-conditional-development-v1",
+  "stage": "P3F.3-VR.8",
+  "experiment": "open_target_particle_terminal_function_conditional_development",
+  "fixture_role": "new_response_free_exact_reference_terminal_function_development",
+  "selection_rule": "All fixtures, seeds, target controls, budgets, terminal functions, and envelopes are frozen after the negative VR.7 audit and before any VR.8 response is evaluated.",
+  "claim_boundary": "A pass establishes development eligibility of one target-preserving terminal function-aware conditional estimator. It may authorize a separate unseen confirmatory freeze. Predictive calibration, real data, acquisition, heldout, efficacy, and discovery remain blocked.",
+  "real_data_access": "forbidden",
+  "heldout_state": "not-applicable",
+  "negative_confirmatory_evidence": {
+    "stage": "P3F.3-CF.RB.1",
+    "git_commit": "162f942a63d12eee5e917523e3e02ce9379f1a08",
+    "summary_sha256": "b39f42476f7d66b967b70407e55f211e111e08d9bb1696bfad5ad72abe66679d",
+    "fixture_bank_hash": "1a684a90754908f284c6ba4303524342603960b2152fe0f4941046c78ce5fb45",
+    "target_contract_hash": "7207d25689341870501fc0ac45627ff9729f34f5efe1f5a2ffcfb434328835f9",
+    "production_code_hash": "67dd567539d1516b2513691fa2d37c749b51a51bbaef600a11acc98869643dd0",
+    "runner_sha256": "7bda28461dbdbff89e2c0c6a4a9653e55aebd04b7d01eeb1b4e942b7cb1acc18",
+    "config_sha256": "08518e4cbd59e7548b92f24f0175c1696369b720207dbb7239da7fe29bd0a3af",
+    "confirmatory_fidelity_gate_passed": false,
+    "failed_decision_count": 6,
+    "frozen_gate_remains_final": true
+  },
+  "negative_development_evidence": {
+    "stage": "P3F.3-VR.7",
+    "git_commit": "061e6616c3352b233cff60980d88f17a71700749",
+    "archive_sha256": "c8528907cd5a6c0a2da9a43430c4451ab115d0ca004103a0c3f41a1e02001b4e",
+    "summary_sha256": "cf2034a980282ca4479c164c20fffe188fe02f02f776876ac8b0a1b036496728",
+    "fixture_bank_hash": "9be12c1813d0d5d1e0b4a3af5d7365b2de6cbe92a2e41669a1fac56dbb81dd2d",
+    "target_contract_hash": "7207d25689341870501fc0ac45627ff9729f34f5efe1f5a2ffcfb434328835f9",
+    "production_code_hash": "3c0ad23d36d103be937127de03318d1148a749d1c46c7f29c6344af75d936939",
+    "runner_sha256": "59505bae00b338fabd0716cee937eebbfa87dc5761e85f84a7703faa0401a2c4",
+    "config_sha256": "44c82eab197e2c60db319e5e032f538d46cd3210c7a1cbd5e7d55174a4ebeee4",
+    "development_mechanism_eligible": false,
+    "failed_decision_count": 7,
+    "fixture_ids": [
+      "terminal_safe_negative_slope_convex_grid_z",
+      "terminal_safe_positive_slope_concave_grid_aa",
+      "terminal_safe_low_curvature_grid_ab"
+    ],
+    "seeds": [2026081763, 2026081764, 2026081765, 2026081766],
+    "frozen_gate_remains_final": true
+  },
+  "terminal_estimator_contract": {
+    "resident_path": "bitwise_identical_standard_path_for_both_methods",
+    "terminal_location": "only_the_final_fractional_potential_of_observation_T",
+    "candidate_functionals": [
+      "raw_ast_indicators",
+      "equivalence_class_indicators",
+      "predictive_density_at_registered_points",
+      "predictive_cdf_at_registered_points"
+    ],
+    "normalizing_constant_function": "phi_equals_one",
+    "conditional_operation": "integrate_accept_reject_uniform_and_final_potential_over_both_already_evaluated_branches",
+    "resident_resampling": "unchanged_standard_systematic_resampling",
+    "future_or_heldout_information": "forbidden",
+    "exact_reference_use": "evaluation_only_not_estimator_input"
+  },
+  "common_population": {
+    "population_size": 8192,
+    "maximum_nodes": 3,
+    "fixed_bridge_betas": [0.25, 0.5, 0.75, 1.0],
+    "proposal_kind": "complete-uniform",
+    "proposal_mixture_weight": 0.5,
+    "resampling_kind": "systematic",
+    "cess_target_fraction": 0.8
+  },
+  "methods": [
+    {
+      "method_id": "preterminal-mh-standard-selection",
+      "estimator_semantics": "sample_final_acceptance_uniform_apply_final_potential_and_use_resident_population",
+      "counterfactual_branch_potential_evaluations": "computed_and_discarded_to_match_candidate_target_budget"
+    },
+    {
+      "method_id": "terminal-function-aware-conditional-estimator",
+      "estimator_semantics": "same_resident_path_but_terminal_functionals_and_phi_one_evidence_integrate_both_final_branches",
+      "counterfactual_branch_potential_evaluations": "used_by_registered_terminal_conditional_estimators"
+    }
+  ],
+  "matched_budget": {
+    "observation_count": 8,
+    "bridges_per_observation": 4,
+    "bridge_count_per_run": 32,
+    "resident_population_size": 8192,
+    "mh_proposal_target_evaluations_per_observation": 8192,
+    "mh_proposal_target_evaluations_per_run": 65536,
+    "ordinary_incremental_potential_evaluations_per_observation": 24576,
+    "terminal_two_branch_potential_evaluations_per_observation": 16384,
+    "incremental_potential_evaluations_per_run": 327680,
+    "total_target_evaluations_per_run": 393216,
+    "posterior_functional_component_evaluations_per_point": 16384,
+    "standard_functional_repetitions_per_resident_component": 2,
+    "candidate_terminal_branch_components_per_point": 16384,
+    "wall_clock_role": "descriptive_only"
+  },
+  "correctness_thresholds": {
+    "minimum_conditional_ess_fraction_min": 0.799,
+    "proposal_invariance_max_abs_error": 2e-15,
+    "mass_normalization_max_abs_error": 2e-12,
+    "evidence_telescoping_max_abs_error": 2e-12,
+    "branch_probability_normalization_max_abs_error": 2e-12,
+    "knot_log_increment_consistency_max_abs_error": 2e-12,
+    "terminal_function_log_increment_consistency_max_abs_error": 2e-12
+  },
+  "development_fidelity_envelope": {
+    "provenance": "Inherited unchanged from VR.7. No fidelity or safety bound was changed after observing Z/AA/AB.",
+    "candidate_worst_case_error_max": {
+      "raw_ast_exact_reference_max_abs_error": 0.025,
+      "equivalence_class_exact_reference_max_abs_error": 0.025,
+      "predictive_density_exact_reference_max_abs_error": 0.015,
+      "predictive_cdf_exact_reference_max_abs_error": 0.015,
+      "log_evidence_exact_reference_abs_error": 0.05
+    },
+    "candidate_error_span_max": {
+      "raw_ast_exact_reference_max_abs_error": 0.0125,
+      "equivalence_class_exact_reference_max_abs_error": 0.0125,
+      "predictive_density_exact_reference_max_abs_error": 0.0075,
+      "predictive_cdf_exact_reference_max_abs_error": 0.0075,
+      "log_evidence_exact_reference_abs_error": 0.025
+    },
+    "candidate_worst_case_lower_bounds": {
+      "minimum_conditional_ess_fraction": 0.799,
+      "minimum_effective_sample_size_fraction": 0.1,
+      "minimum_distinct_root_ancestor_fraction": 0.02,
+      "terminal_distinct_root_ancestor_fraction": 0.02,
+      "terminal_normalized_root_entropy": 0.3,
+      "minimum_normalized_weight_entropy": 0.5
+    },
+    "candidate_worst_case_upper_bounds": {
+      "maximum_parent_offspring_fraction": 0.1
+    }
+  },
+  "event_genealogy_envelope": {
+    "provenance": "Inherited unchanged from the response-free VR.4 genealogy registration.",
+    "candidate_worst_case_upper_bounds": {
+      "maximum_ancestry_log_attrition_per_resampling_event": 1.6362943611198906,
+      "maximum_root_entropy_loss_per_resampling_event": 0.20384615384615384
+    },
+    "legacy_terminal_and_bridge_genealogy_retained": true
+  },
+  "paired_development_envelope": {
+    "worst_case_ratio_max": {
+      "log_evidence_exact_reference_abs_error": 1.0,
+      "predictive_density_exact_reference_max_abs_error": 1.0,
+      "predictive_cdf_exact_reference_max_abs_error": 1.0
+    },
+    "worst_case_additive_noninferiority": {
+      "raw_ast_exact_reference_max_abs_error": 0.002,
+      "equivalence_class_exact_reference_max_abs_error": 0.002
+    },
+    "minimum_fixture_median_improvement": {
+      "raw_ast_exact_reference_max_abs_error": -0.002,
+      "equivalence_class_exact_reference_max_abs_error": -0.002,
+      "predictive_density_exact_reference_max_abs_error": -0.0015,
+      "predictive_cdf_exact_reference_max_abs_error": -0.0015,
+      "log_evidence_exact_reference_abs_error": 0.0
+    },
+    "difficulty_metric_span_ratio_max": {
+      "minimum_conditional_ess_fraction": 1.0,
+      "minimum_effective_sample_size_fraction": 1.0,
+      "minimum_distinct_root_ancestor_fraction": 1.0,
+      "terminal_distinct_root_ancestor_fraction": 1.0,
+      "terminal_normalized_root_entropy": 1.0,
+      "maximum_parent_offspring_fraction": 1.0
+    },
+    "means_are_descriptive_only": true
+  },
+  "predictive_evaluation": {
+    "row_indices": [0, 2, 5, 7],
+    "target_values": [-0.75, -0.25, 0.25, 0.75]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "terminal_function_negative_slope_mixed_grid_ac",
+      "actions": [-1.55, -1.12, -0.69, -0.21, 0.16, 0.62, 1.06, 1.46],
+      "polynomial_coefficients": [0.19, -0.27, 0.09],
+      "response_free_registration": true
+    },
+    {
+      "fixture_id": "terminal_function_positive_slope_concave_grid_ad",
+      "actions": [-1.62, -1.08, -0.61, -0.15, 0.28, 0.71, 1.18, 1.58],
+      "polynomial_coefficients": [-0.11, 0.33, -0.08],
+      "response_free_registration": true
+    },
+    {
+      "fixture_id": "terminal_function_near_flat_convex_grid_ae",
+      "actions": [-1.49, -1.24, -0.78, -0.32, 0.12, 0.52, 0.99, 1.51],
+      "polynomial_coefficients": [0.24, 0.04, 0.06],
+      "response_free_registration": true
+    }
+  ],
+  "seeds": [2026081773, 2026081774, 2026081775, 2026081776],
+  "freeze_state": {
+    "fixtures_frozen_before_first_development_response": true,
+    "seeds_frozen_before_first_development_response": true,
+    "envelopes_frozen_before_first_development_response": true,
+    "terminal_functions_frozen_before_first_development_response": true,
+    "result_adaptation": "forbidden"
+  },
+  "downstream_policy": {
+    "new_unseen_confirmatory_freeze": "authorized_only_if_every_registered_VR8_decision_passes",
+    "predictive_calibration_gate": "blocked_until_a_subsequent_confirmatory_gate_passes",
+    "real_data": "blocked_until_confirmatory_fidelity_and_predictive_calibration_both_pass",
+    "acquisition": "blocked_until_confirmatory_fidelity_and_predictive_calibration_both_pass",
+    "heldout": "blocked_until_confirmatory_fidelity_and_predictive_calibration_both_pass"
+  }
+}

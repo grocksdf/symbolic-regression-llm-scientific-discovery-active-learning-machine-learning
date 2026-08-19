@@ -748,6 +748,67 @@ knots and zero terminal knots. Only a complete VR.7 pass may freeze another
 unseen confirmatory bank. It does not itself authorize predictive calibration,
 real data, acquisition, or held-out access.
 
+## 5.16 Negative VR.7 evidence and terminal function conditioning
+
+The frozen VR.7 Z/AA/AB archive completed all 24 registered runs with source,
+target, proposal, bridge, resampling, and evaluation identities intact. The
+terminal-safe location decision passed, as did every absolute fidelity and
+safety bound. The candidate improved the worst-case log-evidence and predictive
+density ratios to 0.76601 and 0.89642, respectively, but only 43 of 50 decisions
+passed. Its predictive-CDF worst-case ratio was 1.47518. ESS and root-lineage
+cross-fixture spans were slightly above the paired standard spans, and the
+per-fixture median requirements failed for equivalence mass, predictive
+density, and log evidence. This is final negative VR.7 evidence; its fixtures,
+seeds, and responses cannot be reused to select or authorize a successor.
+
+The remaining mismatch is no longer target correctness or knot location. A
+non-terminal adapted knot changes the propagated resident population and hence
+cannot make ESS and genealogy identical to the comparator. Moreover, a single
+generic terminal population is not the test-function-aware construction needed
+to reduce each registered terminal functional. P3F.3-VR.8 therefore leaves the
+resident SMC algorithm exactly equal to the standard comparator and changes
+only terminal estimation.
+
+For incoming normalized weights $w_i$, evaluated accept/reject branches
+$x_{ib}$, conditional branch probabilities $p_{ib}$, and the final fractional
+potential $G_{ib}$, the candidate normalizing-constant increment is
+
+\[
+  \widehat{Z_T/Z_{T-1}}_{\mathrm{cond}}
+  = \sum_i w_i\sum_{b\in\{0,1\}}p_{ib}G_{ib}.
+\]
+
+For each registered terminal function $\varphi$, the separate conditional
+posterior estimator is
+
+\[
+  \hat\eta_T^{\mathrm{cond}}(\varphi)
+  = \frac{\sum_i w_i\sum_b p_{ib}G_{ib}\varphi(x_{ib})}
+         {\sum_i w_i\sum_b p_{ib}G_{ib}}.
+\]
+
+The frozen function family contains every raw-AST indicator, every operational
+equivalence-class indicator, and predictive density and CDF at every registered
+point. Evidence uses the distinct $\varphi=1$ estimator. Exact-reference values
+are evaluation outputs only and never enter either estimator.
+
+Both methods retain $N=8192$, complete-uniform proposals, four fractional
+bridges, systematic resampling, 65536 proposal-target evaluations, 327680
+incremental-potential evaluations, and 393216 total target evaluations. The
+candidate reuses the already evaluated two terminal branches and consumes no
+additional target evaluation. Posterior-function evaluation is matched at
+16384 branch/component evaluations per point: the candidate evaluates both
+branches once and the standard side repeats its 8192 resident components twice.
+
+VR.8 uses new response-free AC/AD/AE fixtures and new seeds. All fidelity,
+paired noninferiority, per-fixture improvement, stability, and event-genealogy
+envelopes are inherited unchanged from VR.7. In addition to those decisions,
+the Gate requires bitwise equality of resident populations, move histories,
+bridge schedules, evidence paths, ESS, and genealogy; exactly one candidate
+terminal conditional estimator; normalized branch mass; and separate
+telescoping of resident and conditional evidence. Only a complete VR.8 pass may
+authorize an unseen confirmatory freeze. Every downstream path remains blocked.
+
 ## 6. Implementation boundaries
 
 - Extend the canonical `hypothesis_mvp.pcpi.open_target` path; do not create a
