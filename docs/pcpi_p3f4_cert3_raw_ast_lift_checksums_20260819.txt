@@ -1,0 +1,24 @@
+P3F.4-CERT.3 exact semantic-core to raw-AST lift
+
+GitHub main baseline:
+eeb1fbaf1b9e82568caf1ed9c341d3fb114d30d4
+
+Predecessor local development commit:
+7ff83ebdccd2379b9fefadbf9702487e1695604a
+
+SHA-256:
+f3f68be047042b2222d0876bfcc97d530000866dc9faa485d8645ba6926f05dd  hypothesis_mvp/pcpi/open_target/__init__.py
+aa5cc0f739ad54059244163714e4210564a52a2441b47fc5f6079d1bc2d8bc09  hypothesis_mvp/pcpi/open_target/semantic_lift.py
+552d60e59f4621d6e01119bdcd7cb96514d8b50338bf253e5b9c078d8cb6a1ff  tests/test_pcpi_p3f4_semantic_lift.py
+125648a933817ad08007b0a4c64143c13a26250aa52465c95f5776add843d3fd  docs/pcpi_p3f4_cert3_raw_ast_lift_contract_20260819.md
+
+Verification boundary:
+- five response-free exact algebraic/combinatorial test functions passed;
+- exhaustive semantic unranking covered complete 1D shells through size 6
+  and complete 2D shells through size 5;
+- syntax preflight passed for 194 Python files;
+- pytest was unavailable in the work container;
+- no target/response materialization, real/held-out access, resident SMC,
+  confirmatory run, or efficacy experiment was performed;
+- source audit retained seven pre-existing >100-line P3F.3 functions and
+  introduced no new audit finding.
