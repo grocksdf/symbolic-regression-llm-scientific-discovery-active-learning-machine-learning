@@ -1,0 +1,13 @@
+P3F.4-CERT.CF.1 CONFIRMATORY FREEZE
+
+STATE: FROZEN AND UNRUN
+
+No confirmatory target vector has been materialized.
+No confirmatory certification decision has been observed.
+No resident-SMC mechanism has been executed or modified.
+
+Run only with:
+python -m scripts.run_pcpi_p3f4_certification_confirmatory
+
+Return the generated result archive without threshold, seed, source, config,
+or result modification and without a formal rerun after response materialization.

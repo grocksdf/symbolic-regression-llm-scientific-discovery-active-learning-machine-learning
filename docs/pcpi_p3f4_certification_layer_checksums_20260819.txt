@@ -1,0 +1,22 @@
+P3F.4-CERT.1 semantic-envelope certification layer
+
+Source baseline commit:
+ffe7239955d9083a7ad6ef878c3213c602027aad
+
+Frozen P3F.3-VR.8 input archive SHA-256:
+16bb9ab7e007fd98614ebb3152f929501db75655882958a1c256770ada6d235a
+
+Package content SHA-256:
+73b268c5a998be65c4a8ebc245471c2b1c3d1b54faef0fa06faa86ac749d3e8d  hypothesis_mvp/pcpi/open_target/certification.py
+81248452ef5f4f9d27fcda58303829108005a7275c4f8ab7223d401701ae53c6  hypothesis_mvp/pcpi/open_target/__init__.py
+e53e4188dd997d0817d5953fad458da4498f110ee33227faccd6a40bf0788812  tests/test_pcpi_p3f4_certification_layer.py
+5dbeee18df3e7d0452034d1febb707d0f8810f93b91f7fa86b25936ea424e6a2  scripts/run_pcpi_p3f4_certification_layer.py
+64d1ad473d497bda0c38ea1db1047f3d2495a4144b77fc0dde243c6f94d25104  configs/p3f_4_semantic_envelope_certification_development.json
+c20dd648d7ff84333cb524e6c878a7ea9ded9729a217a5b63aa7909de8875b1f  docs/pcpi_p3f4_certification_layer_proof_contract_20260819.md
+01e85acfb34119a3271c5af65f0ab77cc79c874976bd7e159a4001808af9f20d  docs/pcpi_p3f4_certification_layer_runbook_20260819.md
+c10ff3e6ef3e9cd91384bbd5a4a1302f5a1cbc00ac3b1e049af8a665576276e7  results/summary.json
+
+Boundary:
+Static development certification only. No resident-SMC execution or
+integration, confirmatory fidelity, real data, held-out, acquisition, efficacy,
+predictive-calibration, or discovery claim is authorized.

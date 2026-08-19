@@ -1,0 +1,17 @@
+P3F.4 upstream posterior/estimand/resident-SMC contract review package
+
+Source baseline commit:
+ffe7239955d9083a7ad6ef878c3213c602027aad
+
+Frozen P3F.3-VR.8 results archive SHA-256:
+16bb9ab7e007fd98614ebb3152f929501db75655882958a1c256770ada6d235a
+
+Package content SHA-256:
+b901ccc05b3e41a8f7a36234f61139433c74953ace0bc615ce4121d9c7299b20  pcpi_p3f4_upstream_posterior_estimand_contract.md
+cfd2688a64cad17cee2650e018cd8780719e29b12e2ea7516af27f429d8eb836  pcpi_p3f4_upstream_posterior_estimand_review_checklist.md
+490cc64d406ea8a03f52eadc70e02dffb11e658b0107e9b65ec21df608769162  pcpi_p3f4_g0_g6_proof_package_20260819.md
+7005bd049e11a2f84ed7fc0ceb0e8ff919b7fe9100111aa950cceaf0795797b0  pcpi_p3f4_g0_g6_numeric_ledger_20260819.md
+
+Boundary:
+Contract-only mathematical review. No inference mechanism implementation or
+downstream execution is authorized.
