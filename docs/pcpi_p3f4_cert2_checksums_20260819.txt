@@ -1,0 +1,17 @@
+P3F.4-CERT.2 response-energy tail and anchored-kernel proof package
+
+Source baseline commit:
+5b05e9158b1a550e967a88a3123f76985346fc8e
+
+Permanent predecessor NO-GO archive SHA-256:
+3a6c357946143929c7a2eb8c4dd3404e2435bc0f8ad1f2dca8a05fd6391d45b6
+
+Package document SHA-256:
+1fdcadf9179d882e4c377b12620b038c3cebbd66058f5b20593f451fcedc2037  docs/pcpi_p3f4_cert2_response_energy_tail_mixing_contract_20260819.md
+4996e7e0ab2fdae7e1c9c2199161689472827d05b0937bbdd6d690020118ea5e  docs/pcpi_p3f4_cert2_postmortem_numeric_ledger_20260819.md
+f279f8218752fde776fbd526650980c9b53d01fcd6971d6569e6b8d94d25d31d  docs/pcpi_p3f4_cert2_proof_review_checklist_20260819.md
+
+Boundary:
+Mathematical contract and postmortem ledger only. No certification mechanism,
+resident SMC, new response bank, predictive calibration, real data,
+acquisition, held-out execution, or efficacy claim is included or authorized.
