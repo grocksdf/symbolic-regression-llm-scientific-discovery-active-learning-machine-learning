@@ -198,13 +198,33 @@ long-horizon context and remain binding even when a local task omits them.
   occupied unregistered class and never adds `other` or renormalizes. Four
   additional guards precede entropy, coordinate, result, particle and oracle
   access, while all three CERT.10 guards remain false.
+- `P3F.4-CERT.12` implements the response-free rigorous special-function
+  kernel and replaces the intractable all-class union budget for MAP decisions
+  with a selection/confirmation product split. The numerical kernel accepts
+  only exact dyadic parameter balls, pins `python-flint==0.8.0` and 256-bit Arb
+  arithmetic, evaluates the Student-t CDF through the regularized incomplete
+  beta function, and exports exact outward binary endpoints. Analytic Cauchy
+  identities are checked, but rounded resident posterior arrays are explicitly
+  rejected as rigorous inputs: the full `H0` state-to-parameter-ball provider,
+  including the structurewise RBF discrepancy design, remains unproved and
+  blocked. For the MAP decision, one selection island may name an arbitrary
+  candidate; nine fresh independent confirmation islands evaluate only that
+  now-fixed class indicator. Conditional on selection, the CERT.9 fixed-
+  functional theorem therefore applies without a union bound over
+  `6^(7*|A0|)` classes. With error `r/2`, confirmation median at least `1/2`
+  proves candidate mass at least `(1-r)/2` and MAP regret at most `r`; otherwise
+  the procedure abstains. Selection and confirmation coordinates are disjoint,
+  no island is reused, and there is no retry, seed selection, class-space
+  enumeration, result-derived threshold, normalization or posterior-vector
+  claim. The external product-entropy premise remains explicit.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out
   access, efficacy claims, and formal paper superiority claims remain blocked.
-  The next admissible phase is a separate response-free Gate for a rigorous
-  predictive Student-t CDF interval oracle and for reconciling the full
-  implicit class count with the CERT.9 simultaneous finite-`N` error budget
-  and CERT.10 fixed-vector identity. Ordinary SciPy CDF values, `nextafter`,
-  observed-class selection, `other` buckets, post-hoc normalization and
-  tolerance relaxation are not admissible substitutes.
+  The next admissible phase is a separate response-free Gate that constructs
+  full-state posterior predictive parameter balls directly from frozen `H0`,
+  including a certified structurewise RBF discrepancy design, and composes
+  the sparse candidate/confirmation projector without exposing a fixed full-
+  class vector. Ordinary SciPy CDF values, `nextafter`, rounded snapshot arrays,
+  observed-class `other` buckets, post-hoc normalization and tolerance
+  relaxation are not admissible substitutes.
