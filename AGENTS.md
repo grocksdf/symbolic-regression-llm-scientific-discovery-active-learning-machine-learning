@@ -182,12 +182,29 @@ long-horizon context and remain binding even when a local task omits them.
   `2 * epsilon`, and the exact binomial-tail union budget remains bound to all
   operational classes. The executor guard precedes product-source, projector,
   response, engine and particle access, so CERT.10 is not an execution result.
-- Resident-SMC integration, independent-island execution, production random-
-  source/projector implementation, new confirmatory materialization,
-  predictive calibration, real data, acquisition, held-out access, efficacy
-  claims, and formal paper superiority claims remain blocked. The next
-  admissible phase is a separate response-free implementation Gate for the
-  auditable product random source and frozen full-support operational class
-  projector. It must retain the idealized-randomness premise, process/state
-  isolation, exact plan identity and boundary-uncertainty semantics before any
-  CERT.10 authorization flag can change.
+- `P3F.4-CERT.11` implements, without executing, an auditable direct-key
+  product-source and the complete implicit operational-class map. Exactly one
+  external 128-bit key is bound to every ordered island coordinate and enters
+  `Philox(key=..., counter=0)` directly; no root key, integer-seed argument,
+  `SeedSequence.spawn`, jump, retry, replacement or favourable-key selection
+  is used. The operating-system entropy tuple remains an explicit external
+  product-law premise and is not claimed to be proved by source inspection.
+  The projector freezes `H0`, the standardizer, action/threshold grids,
+  `B=32`, `K_B=6` and the grid-only claim, then gives all `6^(7*|A0|)` classes
+  reversible base-six ranks without enumerating them. Exact rational CDF
+  intervals that intersect multiple bins retain sparse boundary-uncertain
+  mass and exact class lower/upper bounds; they are never rounded to the
+  nearest bin. The CERT.10 fixed-vector adapter fails on any uncertainty or
+  occupied unregistered class and never adds `other` or renormalizes. Four
+  additional guards precede entropy, coordinate, result, particle and oracle
+  access, while all three CERT.10 guards remain false.
+- Resident-SMC integration, independent-island execution, entropy capture,
+  product-stream materialization, projector result access, new confirmatory
+  materialization, predictive calibration, real data, acquisition, held-out
+  access, efficacy claims, and formal paper superiority claims remain blocked.
+  The next admissible phase is a separate response-free Gate for a rigorous
+  predictive Student-t CDF interval oracle and for reconciling the full
+  implicit class count with the CERT.9 simultaneous finite-`N` error budget
+  and CERT.10 fixed-vector identity. Ordinary SciPy CDF values, `nextafter`,
+  observed-class selection, `other` buckets, post-hoc normalization and
+  tolerance relaxation are not admissible substitutes.

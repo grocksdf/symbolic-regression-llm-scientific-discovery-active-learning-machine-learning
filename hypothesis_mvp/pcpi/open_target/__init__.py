@@ -201,6 +201,28 @@ from .resident_islands import (
     finite_independent_island_product_law,
     validate_resident_island_random_streams,
 )
+from .resident_product_projector import (
+    P3F4_CERT11_CERTIFIED_CDF_INTERVAL_ORACLE_IMPLEMENTATION_AUTHORIZED,
+    P3F4_CERT11_KEY_MANIFEST_SCHEMA,
+    P3F4_CERT11_OPERATIONAL_ESTIMAND_SCHEMA,
+    P3F4_CERT11_OPERATIONAL_PROJECTOR_SCHEMA,
+    P3F4_CERT11_PRODUCT_SOURCE_SCHEMA,
+    P3F4_CERT11_PRODUCT_STREAM_MATERIALIZATION_AUTHORIZED,
+    P3F4_CERT11_PROJECTOR_RESULT_ACCESS_AUTHORIZED,
+    P3F4_CERT11_SYSTEM_ENTROPY_CAPTURE_AUTHORIZED,
+    AuditablePhiloxProductRandomSource,
+    BoundaryUncertainClassMass,
+    CertifiedOperationalStateRecord,
+    CertifiedPredictiveCDFIntervalOracle,
+    CertifiedProbabilityInterval,
+    FullSupportOperationalClassProjector,
+    ResidentOperationalEstimandSpec,
+    ResidentOperationalProjectionBounds,
+    ResidentPhiloxKeyManifest,
+    ResidentPhiloxProductSourceContract,
+    operational_projector_hash,
+    project_certified_operational_records,
+)
 from .full_population import (
     RAO_BLACKWELL_METHOD,
     STANDARD_METHOD,
