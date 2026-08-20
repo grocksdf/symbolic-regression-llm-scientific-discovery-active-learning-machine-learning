@@ -1,7 +1,8 @@
 """Response-free source/algebra audit of resident P3F open-target kernels.
 
-These tests deliberately preserve the two blockers found by CERT.4.  They are
-not an integration test and do not invoke ``ScalableOpenTargetSMC.run``.
+These tests preserve the CERT.4 failure witnesses while later certificates
+repair their source causes.  They are not an integration test and do not
+invoke ``ScalableOpenTargetSMC.run``.
 """
 
 from __future__ import annotations
@@ -89,12 +90,22 @@ def test_resident_raw_evaluation_counterexample_blocks_semantic_lumpability() ->
 
 
 def test_resident_open_sampler_uint64_ceiling_blocks_full_reverse_support() -> None:
+    """Retain the CERT.4 failure witness and prove the source repair is active."""
+
     grammar = CountablyOpenTypedGrammar(2, 0.4)
     node_count = 29
-    assert grammar.expression_count(node_count).bit_length() > 64
+    total = grammar.expression_count(node_count)
+    assert total.bit_length() > 64
     try:
-        _sample_expression_of_size(grammar, node_count, np.random.default_rng(0))
+        np.random.default_rng(0).integers(total)
     except ValueError as error:
         assert "int64" in str(error)
     else:
-        raise AssertionError("resident sampler unexpectedly covered a >64-bit shell")
+        raise AssertionError("the archived NumPy bounded-integer failure disappeared")
+
+    repaired = _sample_expression_of_size(
+        grammar,
+        node_count,
+        np.random.default_rng(0),
+    )
+    assert repaired.node_count == node_count

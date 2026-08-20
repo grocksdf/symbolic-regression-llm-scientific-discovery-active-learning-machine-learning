@@ -276,6 +276,18 @@ def draw_exact_raw_ast_prior(
     node_count = 1
     while _randbelow(source, rho.denominator) < rho.numerator:
         node_count += 1
+    return draw_exact_raw_ast_shell(grammar, node_count, source)
+
+
+def draw_exact_raw_ast_shell(
+    grammar: CountablyOpenTypedGrammar,
+    node_count: int,
+    source: RandomByteSource,
+) -> ExactRawAstPriorDraw:
+    """Draw uniformly from one raw-AST shell without a machine-integer cap."""
+
+    if type(node_count) is not int or node_count < 1:
+        raise ValueError("raw-AST shell node count must be a positive integer")
     shell_count = grammar.expression_count(node_count)
     rank = _randbelow(source, shell_count)
     expression = unrank_raw_expression(grammar, node_count, rank)
@@ -603,6 +615,7 @@ __all__ = [
     "build_raw_state_local_rj_plan",
     "build_raw_state_local_rj_proposal",
     "draw_exact_raw_ast_prior",
+    "draw_exact_raw_ast_shell",
     "evaluate_raw_state_local_rj_target_mass",
     "raw_expression_paths",
     "raw_state_local_rj_mh_log_acceptance",

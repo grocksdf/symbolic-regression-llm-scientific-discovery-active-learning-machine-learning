@@ -17,9 +17,6 @@ import numpy as np
 from scipy.special import gammaln
 from scipy.stats import t as student_t
 
-from hypothesis_mvp.pcpi.reference.structurewise_discrepancy import (
-    structurewise_projected_rbf_basis,
-)
 from hypothesis_mvp.pcpi.smc.resampling import (
     conditional_effective_sample_size,
     effective_sample_size,
@@ -35,15 +32,21 @@ from .grammar import (
     TypedExpression,
     aggregate_equivalence_mass,
     equivalence_class_id,
-    evaluate_expression,
-    add,
-    mul,
-    neg,
-    one,
     polynomial_key,
-    variable,
 )
 from .posterior import OpenTargetContract
+from .raw_state_anchor import (
+    build_raw_state_component_prior_plan,
+    sample_raw_state_component,
+)
+from .raw_state_local_rj import (
+    draw_exact_raw_ast_prior,
+    draw_exact_raw_ast_shell,
+)
+from .resident_common_target import (
+    NumpyGeneratorByteSource,
+    build_resident_semantic_design_for_expression,
+)
 
 
 @dataclass(frozen=True)
@@ -991,29 +994,8 @@ def _sample_expression_of_size(
     node_count: int,
     rng: np.random.Generator,
 ) -> TypedExpression:
-    if node_count < 1:
-        raise ValueError("node_count must be positive")
-    if node_count == 1:
-        terminal = int(rng.integers(grammar.feature_count + 1))
-        return one() if terminal == 0 else variable(terminal - 1)
-
-    total = grammar.expression_count(node_count)
-    choice = int(rng.integers(total))
-    unary_count = grammar.expression_count(node_count - 1)
-    if choice < unary_count:
-        return neg(_sample_expression_of_size(grammar, node_count - 1, rng))
-    choice -= unary_count
-    for left_size in range(1, node_count - 1):
-        right_size = node_count - 1 - left_size
-        block = grammar.expression_count(left_size) * grammar.expression_count(right_size)
-        for operator in (add, mul):
-            if choice < block:
-                return operator(
-                    _sample_expression_of_size(grammar, left_size, rng),
-                    _sample_expression_of_size(grammar, right_size, rng),
-                )
-            choice -= block
-    raise AssertionError("grammar expression count did not cover sampling choice")
+    source = NumpyGeneratorByteSource(rng)
+    return draw_exact_raw_ast_shell(grammar, node_count, source).expression
 
 
 def sample_open_prior_expression(
@@ -1024,7 +1006,10 @@ def sample_open_prior_expression(
     """Sample a raw AST exactly from the registered prior or its slice."""
 
     if maximum_nodes is None:
-        node_count = int(rng.geometric(1.0 - grammar.continuation_probability))
+        return draw_exact_raw_ast_prior(
+            grammar,
+            NumpyGeneratorByteSource(rng),
+        ).expression
     else:
         if maximum_nodes < 1:
             raise ValueError("maximum_nodes must be positive")
@@ -1165,44 +1150,21 @@ def _make_particle(
     )
     if expression_prior <= 0.0:
         raise ValueError("particle expression lies outside the registered prior slice")
-    if design_cache is None:
-        base_design = evaluate_expression(expression, actions)[:, None]
-    else:
-        if expression.raw_ast_id not in design_cache:
-            design_cache[expression.raw_ast_id] = np.ascontiguousarray(
-                evaluate_expression(expression, actions)[:, None]
-            )
-        base_design = design_cache[expression.raw_ast_id]
-    if discrepancy_active:
-        kernels = {state.state_id: state for state in contract.kernel_states}
-        try:
-            kernel = kernels[kernel_state_id]
-        except KeyError as error:
-            raise ValueError(f"unknown discrepancy kernel state: {kernel_state_id}") from error
-        basis_key = (expression.raw_ast_id, kernel_state_id)
-        if basis_cache is None or basis_key not in basis_cache:
-            basis = structurewise_projected_rbf_basis(
-                actions,
-                base_design,
-                expression.raw_ast_id,
-                kernel,
-            )
-            if basis_cache is not None:
-                basis_cache[basis_key] = basis
-        else:
-            basis = basis_cache[basis_key]
-        design = np.column_stack((base_design, basis.factor))
-        component_probability = (
-            expression_prior
-            * contract.discrepancy_prior.discrepancy_probability
-            * kernel.prior_probability
-        )
-    else:
-        kernel_state_id = "none"
-        design = base_design
-        component_probability = expression_prior * (
-            1.0 - contract.discrepancy_prior.discrepancy_probability
-        )
+    component_state_id = kernel_state_id if discrepancy_active else "none"
+    semantic_design = build_resident_semantic_design_for_expression(
+        contract,
+        actions,
+        expression,
+        component_state_id,
+        design_cache=design_cache,
+        basis_cache=basis_cache,
+    )
+    discrepancy_active = semantic_design.discrepancy_active
+    kernel_state_id = semantic_design.kernel_state_id
+    design = semantic_design.design
+    component_probability = expression_prior * float(
+        semantic_design.component_prior_probability
+    )
     coefficient_dimension = 1
     prior_mean = np.zeros(design.shape[1], dtype=float)
     prior_mean[0] = contract.coefficient_noise_prior.coefficient_mean
@@ -1240,16 +1202,13 @@ def _sample_prior_particle(
     basis_cache: dict[tuple[str, str], object] | None = None,
 ) -> _Particle:
     expression = sample_open_prior_expression(contract.grammar, rng, maximum_nodes)
-    active = bool(rng.random() < contract.discrepancy_prior.discrepancy_probability)
-    if active:
-        probabilities = np.asarray(
-            [state.prior_probability for state in contract.kernel_states],
-            dtype=float,
-        )
-        kernel_index = int(rng.choice(len(contract.kernel_states), p=probabilities))
-        kernel_id = contract.kernel_states[kernel_index].state_id
-    else:
-        kernel_id = "none"
+    component_plan = build_raw_state_component_prior_plan(contract)
+    component = sample_raw_state_component(
+        component_plan,
+        NumpyGeneratorByteSource(rng),
+    )
+    active = component.state_id != "none"
+    kernel_id = component.state_id
     return _make_particle(
         contract,
         actions,

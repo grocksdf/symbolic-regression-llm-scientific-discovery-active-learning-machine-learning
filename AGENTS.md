@@ -95,11 +95,12 @@ long-horizon context and remain binding even when a local task omits them.
 - `P3F.4-CERT.2` supplies the response-energy, dependency-aware static
   certification layer; `CERT.3` supplies the exact semantic-core/raw-AST lift;
   and `CERT.4` supplies a standalone complete raw `(T,d)` envelope anchor.
-- The CERT.4 resident audit is NO-GO for composition: the open resident sampler
-  has an `int64` shell ceiling, raw-expression floating evaluation is not
-  exactly class-constant, and no resident raw-AST local/RJ proposal is
-  implemented. Finite independence-proposal formulas pass only on their
-  declared finite support.
+- The CERT.4 resident audit recorded three composition blockers: the open
+  resident sampler had an `int64` shell ceiling, raw-expression floating
+  evaluation was not exactly class-constant, and no resident raw-AST local/RJ
+  proposal was implemented. Finite independence-proposal formulas pass only
+  on their declared finite support. Preserve these findings as the historical
+  baseline for later source repairs.
 - The first Windows CERT.4 response-free execution at `8b18f74f` is retained
   as a failed check attempt: three tests asserted bit-exact floating
   normalization although the implementation had already registered and
@@ -114,8 +115,18 @@ long-horizon context and remain binding even when a local task omits them.
   exact pathwise proposal masses and a discrete unit Jacobian give target
   invariance. This construction is not imported by resident SMC and does not
   authorize resident integration.
+- `P3F.4-CERT.6` repairs the first two resident source boundaries without
+  running the engine: fixed-shell and complete open-prior raw-AST draws use
+  arbitrary-precision exact tickets, while resident base designs, projected
+  discrepancy bases, and caches are keyed only by the exact polynomial class.
+  Its standalone common-target adapter evaluates CERT.5 proposal endpoints
+  through that semantic interface and retains the exact proposal ratio. The
+  adapter deliberately does not import `_rejuvenate` or call
+  `ScalableOpenTargetSMC.run`; resident integration remains unauthorized until
+  a separate source-composition Gate proves the actual rejuvenation path.
 - Resident-SMC integration, new confirmatory materialization, predictive
   calibration, real data, acquisition, held-out access, efficacy claims, and
-  formal paper superiority claims remain blocked until canonical target
-  evaluation, arbitrary-precision resident support, and a separately proved
-  resident proposal kernel pass a response-free common-target Gate.
+  formal paper superiority claims remain blocked. The next admissible phase is
+  a response-free import of the CERT.6 adapter into the actual resident
+  rejuvenation path, followed by a source and finite-transition composition
+  proof; it is not an experiment authorization.
