@@ -106,6 +106,14 @@ long-horizon context and remain binding even when a local task omits them.
   enforced a `2e-12` log-mass identity tolerance. CERT.4-R1 may align only
   those assertions with that pre-existing tolerance; it may not change the
   target, proposal, envelope, resident decision, or scientific Gate.
+- `P3F.4-CERT.5` supplies a standalone exact involutive raw-state local/RJ
+  proposal. It chooses a raw-AST address uniformly, regenerates a complete
+  countably-open subtree and exact component, retains the discarded values as
+  the reverse auxiliary state, and evaluates target mass only through the
+  exact polynomial key. Root replacement gives complete bidirectional support;
+  exact pathwise proposal masses and a discrete unit Jacobian give target
+  invariance. This construction is not imported by resident SMC and does not
+  authorize resident integration.
 - Resident-SMC integration, new confirmatory materialization, predictive
   calibration, real data, acquisition, held-out access, efficacy claims, and
   formal paper superiority claims remain blocked until canonical target
