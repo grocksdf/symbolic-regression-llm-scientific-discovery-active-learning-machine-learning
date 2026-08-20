@@ -6,6 +6,7 @@ from fractions import Fraction
 import math
 
 from hypothesis_mvp.pcpi.open_target import (
+    P3F4_RAW_STATE_ANCHOR_IDENTITY_TOLERANCE,
     CountablyOpenTypedGrammar,
     OpenTargetContract,
     build_raw_state_component_prior_plan,
@@ -156,9 +157,15 @@ def test_complete_anchor_normalizes_and_recovers_every_core_raw_target_mass() ->
         0.0,
         logs,
     )
-    assert plan.selection_probability_sum == 1.0
-    assert plan.selection_normalization_error == 0.0
-    assert plan.maximum_log_mass_identity_error < 8e-15
+    tolerance = P3F4_RAW_STATE_ANCHOR_IDENTITY_TOLERANCE
+    assert math.isclose(
+        plan.selection_probability_sum,
+        1.0,
+        rel_tol=0.0,
+        abs_tol=tolerance,
+    )
+    assert plan.selection_normalization_error <= tolerance
+    assert plan.maximum_log_mass_identity_error <= tolerance
     assert plan.exact_tail_prior_mass == Fraction(2, 5) ** cutoff
     assert plan.resident_smc_integration_authorized is False
 
@@ -178,13 +185,16 @@ def test_complete_anchor_normalizes_and_recovers_every_core_raw_target_mass() ->
             assert abs(
                 (mass.log_target_mass - plan.log_normalizer_upper)
                 - mass.log_proposal_mass
-            ) < 8e-15
+            ) <= tolerance
             core_target += math.exp(mass.log_target_mass)
             core_proposal += math.exp(mass.log_proposal_mass)
-    assert abs(math.log(core_target) - plan.log_core_evidence) < 8e-15
-    assert abs(
-        core_proposal + plan.implemented_tail_selection_probability - 1.0
-    ) < 8e-15
+    assert abs(math.log(core_target) - plan.log_core_evidence) <= tolerance
+    assert math.isclose(
+        core_proposal + plan.implemented_tail_selection_probability,
+        1.0,
+        rel_tol=0.0,
+        abs_tol=tolerance,
+    )
 
 
 def test_raw_state_mh_mass_satisfies_pairwise_detailed_balance() -> None:

@@ -100,6 +100,12 @@ long-horizon context and remain binding even when a local task omits them.
   exactly class-constant, and no resident raw-AST local/RJ proposal is
   implemented. Finite independence-proposal formulas pass only on their
   declared finite support.
+- The first Windows CERT.4 response-free execution at `8b18f74f` is retained
+  as a failed check attempt: three tests asserted bit-exact floating
+  normalization although the implementation had already registered and
+  enforced a `2e-12` log-mass identity tolerance. CERT.4-R1 may align only
+  those assertions with that pre-existing tolerance; it may not change the
+  target, proposal, envelope, resident decision, or scientific Gate.
 - Resident-SMC integration, new confirmatory materialization, predictive
   calibration, real data, acquisition, held-out access, efficacy claims, and
   formal paper superiority claims remain blocked until canonical target

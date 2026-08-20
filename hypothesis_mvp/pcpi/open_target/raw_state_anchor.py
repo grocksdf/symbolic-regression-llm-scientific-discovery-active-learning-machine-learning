@@ -45,6 +45,7 @@ from .semantic_lift import (
 
 
 P3F4_RAW_STATE_ANCHOR_SCHEMA = "pcpi-p3f4-complete-raw-state-envelope-anchor-v1"
+P3F4_RAW_STATE_ANCHOR_IDENTITY_TOLERANCE = 2e-12
 
 
 class RandomByteSource(Protocol):
@@ -485,7 +486,7 @@ def build_raw_state_envelope_anchor_plan(
     *,
     expected_core_log_evidence: float | None = None,
     expected_normalizer_log_upper: float | None = None,
-    identity_tolerance: float = 2e-12,
+    identity_tolerance: float = P3F4_RAW_STATE_ANCHOR_IDENTITY_TOLERANCE,
 ) -> RawStateEnvelopeAnchorPlan:
     """Build the full raw-state envelope proposal from a frozen core table.
 
@@ -639,7 +640,7 @@ def evaluate_raw_state_anchor_mass(
     component_state_id: str,
     log_marginal_likelihood: float,
     *,
-    identity_tolerance: float = 2e-12,
+    identity_tolerance: float = P3F4_RAW_STATE_ANCHOR_IDENTITY_TOLERANCE,
 ) -> RawStateAnchorMass:
     """Return the exact MH inputs for one state under the implemented law."""
 
@@ -782,6 +783,7 @@ def sample_raw_state_envelope_proposal(
 
 
 __all__ = [
+    "P3F4_RAW_STATE_ANCHOR_IDENTITY_TOLERANCE",
     "P3F4_RAW_STATE_ANCHOR_SCHEMA",
     "ConditionalRawTailExactDraw",
     "RawStateAnchorDraw",

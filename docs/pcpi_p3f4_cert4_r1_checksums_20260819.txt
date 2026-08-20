@@ -1,0 +1,7 @@
+# P3F.4-CERT.4-R1 controlled source SHA-256 (2026-08-19)
+# The checksum manifest intentionally excludes itself.
+ecba1662a4c1d9b089f97273c12ca19df2de2363332d5cfe9c1e7cdc55ff4c5e  AGENTS.md
+ea3f72d43e7bff3c7627d8aa7303f1632125f05c5b0cf71389da99c5ab072692  docs/pcpi_p3f4_cert4_r1_response_free_failure_and_repair_20260819.md
+a752d7a18ff0dd6607c87f5abaf54ad3d221b99cd2de71628a8cc564a5f5be07  hypothesis_mvp/pcpi/open_target/__init__.py
+436e5e774be4e6f5e210a1beaa069bdecefc361bfd7f944f8be895617d497416  hypothesis_mvp/pcpi/open_target/raw_state_anchor.py
+aaf40f5768323df6651feadb64c5d0c978386b92ca20ecf76434963f293ceb47  tests/test_pcpi_p3f4_raw_state_anchor.py

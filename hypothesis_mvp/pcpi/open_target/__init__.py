@@ -93,6 +93,7 @@ from .semantic_lift import (
     unrank_semantic_expression,
 )
 from .raw_state_anchor import (
+    P3F4_RAW_STATE_ANCHOR_IDENTITY_TOLERANCE,
     P3F4_RAW_STATE_ANCHOR_SCHEMA,
     ConditionalRawTailExactDraw,
     RawStateAnchorDraw,
@@ -205,6 +206,7 @@ __all__ = [
     "lift_semantic_core_ticket",
     "sample_semantic_core_expression",
     "unrank_semantic_expression",
+    "P3F4_RAW_STATE_ANCHOR_IDENTITY_TOLERANCE",
     "P3F4_RAW_STATE_ANCHOR_SCHEMA",
     "ConditionalRawTailExactDraw",
     "RawStateAnchorDraw",
