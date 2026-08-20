@@ -70,6 +70,7 @@ class ResidentFeynmanKacPlan:
     maximum_bridge_steps: int = 64
     resampling_kind: str = "systematic"
     resampling_schedule: str = "post-bridge"
+    finite_n_theorem_resampling_required: bool = False
     rejuvenation_population_mode: str = "terminal-only"
     analytic_population_path_required: bool = True
     common_target_identity_required: bool = True
@@ -92,10 +93,20 @@ class ResidentFeynmanKacPlan:
             raise ValueError("population relative-ESS floor must lie inside (0, 1)")
         if self.maximum_bridge_steps < 1:
             raise ValueError("certified bridge budget must be positive")
-        if self.resampling_kind != "systematic":
-            raise ValueError("CERT.8 registers exact systematic resampling only")
-        if self.resampling_schedule != "post-bridge":
-            raise ValueError("CERT.8 registers post-bridge resampling only")
+        if self.finite_n_theorem_resampling_required:
+            if self.resampling_kind != "multinomial":
+                raise ValueError(
+                    "finite-N theorem composition requires multinomial resampling"
+                )
+            if self.resampling_schedule != "post-bridge-always":
+                raise ValueError(
+                    "finite-N theorem composition requires resampling every bridge"
+                )
+        else:
+            if self.resampling_kind != "systematic":
+                raise ValueError("CERT.8 registers exact systematic resampling only")
+            if self.resampling_schedule != "post-bridge":
+                raise ValueError("CERT.8 registers post-bridge resampling only")
         if self.rejuvenation_population_mode != "terminal-only":
             raise ValueError("CERT.8 registers terminal-only rejuvenation only")
         if not self.analytic_population_path_required:
@@ -119,6 +130,9 @@ class ResidentFeynmanKacPlan:
             "maximum_bridge_steps": self.maximum_bridge_steps,
             "resampling_kind": self.resampling_kind,
             "resampling_schedule": self.resampling_schedule,
+            "finite_n_theorem_resampling_required": (
+                self.finite_n_theorem_resampling_required
+            ),
             "rejuvenation_population_mode": self.rejuvenation_population_mode,
             "analytic_population_path_required": True,
             "common_target_identity_required": True,
@@ -167,6 +181,9 @@ def build_resident_feynman_kac_plan(
     beta_grid_denominator: int = 32,
     relative_ess_floor: float = 0.8,
     maximum_bridge_steps: int = 64,
+    resampling_kind: str = "systematic",
+    resampling_schedule: str = "post-bridge",
+    finite_n_theorem_resampling_required: bool = False,
 ) -> ResidentFeynmanKacPlan:
     cutoff = int(certification_maximum_nodes)
     if str(local_rj_source_contract_hash) != contract.stable_hash:
@@ -181,6 +198,11 @@ def build_resident_feynman_kac_plan(
         beta_grid_denominator=int(beta_grid_denominator),
         relative_ess_floor=float(relative_ess_floor),
         maximum_bridge_steps=int(maximum_bridge_steps),
+        resampling_kind=str(resampling_kind),
+        resampling_schedule=str(resampling_schedule),
+        finite_n_theorem_resampling_required=bool(
+            finite_n_theorem_resampling_required
+        ),
     )
 
 
@@ -225,6 +247,7 @@ class ResidentFeynmanKacBridgeTarget:
     beta_grid_denominator: int
     second_moment_beta_numerator: int
     relative_ess_lower: float
+    prior_independence_minorization_lower: float
     current_target_hash: str
     next_target_hash: str
     second_moment_target_hash: str
@@ -250,6 +273,13 @@ class ResidentFeynmanKacBridgeTarget:
             or not 0.0 <= self.relative_ess_lower <= 1.0
         ):
             raise ValueError("bridge relative-ESS lower bound is invalid")
+        if (
+            not math.isfinite(self.prior_independence_minorization_lower)
+            or not 0.0 < self.prior_independence_minorization_lower <= 1.0
+        ):
+            raise ValueError(
+                "bridge prior-independence minorization lower bound is invalid"
+            )
         if not (
             self.current_target_hash
             and self.next_target_hash
@@ -282,6 +312,10 @@ class ResidentFeynmanKacBridgeTarget:
             ],
             "relative_ess_lower": _float_identity(
                 self.relative_ess_lower, "bridge relative ESS lower"
+            ),
+            "prior_independence_minorization_lower": _float_identity(
+                self.prior_independence_minorization_lower,
+                "prior-independence minorization lower",
             ),
             "current_target_hash": self.current_target_hash,
             "next_target_hash": self.next_target_hash,
@@ -327,6 +361,10 @@ def _bridge_from_certificate(
         beta_grid_denominator=denominator,
         second_moment_beta_numerator=second_numerator,
         relative_ess_lower=float(certificate.relative_ess_lower),
+        prior_independence_minorization_lower=math.exp(
+            certificate.proposed.core_log_evidence
+            - certificate.proposed.response_energy_log_marginal_upper
+        ),
         current_target_hash=_certificate_hash(certificate.current),
         next_target_hash=_certificate_hash(certificate.proposed),
         second_moment_target_hash=_certificate_hash(certificate.second_moment),

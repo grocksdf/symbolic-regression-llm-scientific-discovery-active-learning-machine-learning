@@ -1,4 +1,4 @@
-"""Weight diagnostics and unbiased systematic resampling."""
+"""Weight diagnostics and registered unbiased resampling mechanisms."""
 
 from __future__ import annotations
 
@@ -117,6 +117,31 @@ def systematic_resample_count(
 
 def systematic_resample(weights: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     return systematic_resample_count(weights, len(np.asarray(weights).reshape(-1)), rng)
+
+
+def multinomial_resample_count(
+    weights: np.ndarray,
+    sample_count: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Draw conditionally independent offspring for finite-N theorem paths."""
+
+    probabilities = _validated_resampling_probabilities(weights, sample_count)
+    cumulative = np.cumsum(probabilities)
+    cumulative[-1] = 1.0
+    positions = rng.random(sample_count)
+    return np.searchsorted(cumulative, positions, side="right").astype(int)
+
+
+def multinomial_resample(
+    weights: np.ndarray,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    return multinomial_resample_count(
+        weights,
+        len(np.asarray(weights).reshape(-1)),
+        rng,
+    )
 
 
 def stratified_resample_count(

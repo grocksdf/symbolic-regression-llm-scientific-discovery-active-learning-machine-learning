@@ -147,9 +147,28 @@ long-horizon context and remain binding even when a local task omits them.
   guard remains before target, response and particle access, so CERT.8 is
   still a response-free source-composition result rather than execution
   authorization.
+- `P3F.4-CERT.9` adds a decision-derived finite-particle and independent-island
+  error budget without running the resident engine. The registered 2025
+  fixed-path `L2` theorem requires conditionally independent multinomial
+  offspring at every bridge, so CERT.8 systematic resampling remains an
+  unbiased composition fact but is explicitly rejected as a finite-`N`
+  theorem shortcut. The certifiable resident branch instead resamples
+  multinomially after every bridge and mixes exact-prior independence MH with
+  the proved local/RJ kernel at a frozen probability. The response-energy
+  core evidence and global likelihood envelope give a countably-open
+  minorization for that mixture. Actual resident target and proposal ratios use
+  arbitrary-precision-prior-derived log masses, so floating underflow cannot
+  remove a legal raw AST. Every bridge must satisfy its derived mixing depth
+  before any particle is sampled. Per-island finite-`N` success is
+  amplified only across independent islands by a componentwise median with an
+  exact binomial-tail/union budget. Particles within an island remain dependent
+  and are never counted as replicates. Class-coordinate error is converted to
+  class total variation and the frozen MAP-regret budget rather than chosen
+  from observed performance.
 - Resident-SMC integration, new confirmatory materialization, predictive
   calibration, real data, acquisition, held-out access, efficacy claims, and
   formal paper superiority claims remain blocked. The next admissible phase is
-  a response-free finite-`N` and independent-island error-budget Gate that
-  composes the certified path and mixing constants with the frozen scientific
-  decision tolerance. It is not an experiment authorization.
+  a separate response-free independent-island executor/aggregation source Gate
+  that enforces the exact CERT.9 plan, random-stream separation, failure
+  accounting and componentwise-median output without running resident SMC.
+  CERT.9 is not an experiment or execution authorization.

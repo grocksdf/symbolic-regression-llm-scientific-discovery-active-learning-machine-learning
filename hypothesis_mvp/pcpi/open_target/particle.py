@@ -2,10 +2,12 @@
 
 This module is deliberately correctness-first.  It samples the registered
 countably-open grammar prior, integrates the registered linear coefficients and
-Normal--Inverse-Gamma noise state, applies prequential fractional-likelihood
-bridges chosen by conditional ESS, and uses prior-independence MH rejuvenation
-whose proposal probability is exactly known.  It does not read real data,
-acquisition pools, or held-out roles.
+Normal--Inverse-Gamma noise state, and retains both historical empirical-CESS
+paths and the response-energy-certified resident path.  The CERT.9 resident
+branch uses every-bridge multinomial resampling plus a fixed random-scan mixture
+of exact-prior independence MH and raw-state local/RJ rejuvenation.  Resident
+execution remains blocked before data validation.  The module does not read
+real data, acquisition pools, or held-out roles by itself.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from scipy.stats import t as student_t
 from hypothesis_mvp.pcpi.smc.resampling import (
     conditional_effective_sample_size,
     effective_sample_size,
+    multinomial_resample_count,
     normalize_log_weights,
     residual_resample_count,
     stratified_resample_count,
@@ -67,7 +70,15 @@ from .resident_feynman_kac import (
     select_resident_feynman_kac_bridge,
     validate_resident_feynman_kac_operation_target,
 )
+from .resident_finite_n import (
+    P3F4_RESIDENT_FINITE_N_RUN_AUTHORIZED,
+    ResidentFiniteNBridgeMixingBudget,
+    build_resident_finite_n_error_budget_plan,
+    certify_resident_finite_n_bridge_mixing,
+    validate_resident_finite_n_operation_target,
+)
 from .response_energy_certification import ResponseEnergyCertificationWorkspace
+from .semantic_lift import exact_raw_ast_prior_mass
 
 
 P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND = "raw-state-local-rj"
@@ -158,6 +169,11 @@ class OpenTargetParticleConfig:
     fixed_bridge_betas: tuple[float, ...] = (1.0,)
     certification_maximum_nodes: int = 17
     certified_beta_grid_denominator: int = 32
+    certified_maximum_observations: int = 0
+    operational_class_count: int = 0
+    map_regret_budget: float = 0.0
+    simultaneous_failure_probability: float = 0.0
+    maximum_certified_rejuvenation_steps: int = 0
 
     def __post_init__(self) -> None:
         if self.particle_count < 2:
@@ -201,10 +217,38 @@ class OpenTargetParticleConfig:
             or not 0.0 < self.proposal_mixture_weight < 1.0
         ):
             raise ValueError("proposal_mixture_weight must lie strictly inside (0, 1)")
-        if self.resampling_kind not in {"systematic", "stratified", "residual"}:
-            raise ValueError("resampling_kind must be systematic, stratified, or residual")
-        if self.resampling_schedule not in {"pre-bridge", "post-bridge"}:
-            raise ValueError("resampling_schedule must be pre-bridge or post-bridge")
+        if self.resampling_kind not in {
+            "systematic",
+            "stratified",
+            "residual",
+            "multinomial",
+        }:
+            raise ValueError(
+                "resampling_kind must be systematic, stratified, residual, or multinomial"
+            )
+        if (
+            self.resampling_kind == "multinomial"
+            and self.proposal_kind != P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND
+        ):
+            raise ValueError(
+                "resampling_kind must be systematic, stratified, or residual "
+                "outside the CERT.9 resident raw-state path"
+            )
+        if self.resampling_schedule not in {
+            "pre-bridge",
+            "post-bridge",
+            "post-bridge-always",
+        }:
+            raise ValueError(
+                "resampling_schedule must be pre-bridge, post-bridge, or post-bridge-always"
+            )
+        if (
+            self.resampling_schedule == "post-bridge-always"
+            and self.resampling_kind != "multinomial"
+        ):
+            raise ValueError(
+                "post-bridge-always is registered only for finite-N multinomial paths"
+            )
         if self.tempering_mode not in {
             "adaptive-cess",
             "fixed-grid",
@@ -280,6 +324,22 @@ class OpenTargetParticleConfig:
             raise ValueError("certification_maximum_nodes must be positive")
         if self.certified_beta_grid_denominator < 2:
             raise ValueError("certified_beta_grid_denominator must be at least two")
+        finite_n_mode = self.resampling_kind == "multinomial"
+        if finite_n_mode:
+            if self.resampling_schedule != "post-bridge-always":
+                raise ValueError("CERT.9 multinomial paths must resample every bridge")
+            if self.certified_maximum_observations < 1:
+                raise ValueError("CERT.9 requires a positive observation bound")
+            if self.operational_class_count < 2:
+                raise ValueError("CERT.9 requires at least two operational classes")
+            if not 0.0 < self.map_regret_budget < 1.0:
+                raise ValueError("CERT.9 MAP regret budget must lie inside (0, 1)")
+            if not 0.0 < self.simultaneous_failure_probability < 1.0:
+                raise ValueError("CERT.9 failure probability must lie inside (0, 1)")
+            if self.maximum_certified_rejuvenation_steps < 1:
+                raise ValueError("CERT.9 requires a positive rejuvenation-step ceiling")
+            if self.rejuvenation_steps != self.maximum_certified_rejuvenation_steps:
+                raise ValueError("CERT.9 rejuvenation depth must equal its frozen ceiling")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -299,6 +359,15 @@ class OpenTargetParticleConfig:
             "fixed_bridge_betas": list(self.fixed_bridge_betas),
             "certification_maximum_nodes": self.certification_maximum_nodes,
             "certified_beta_grid_denominator": self.certified_beta_grid_denominator,
+            "certified_maximum_observations": self.certified_maximum_observations,
+            "operational_class_count": self.operational_class_count,
+            "map_regret_budget": self.map_regret_budget,
+            "simultaneous_failure_probability": (
+                self.simultaneous_failure_probability
+            ),
+            "maximum_certified_rejuvenation_steps": (
+                self.maximum_certified_rejuvenation_steps
+            ),
         }
 
 
@@ -673,6 +742,7 @@ class _Particle:
     discrepancy_active: bool
     kernel_state_id: str
     joint_prior_probability: float
+    log_joint_prior_probability: float
     design: np.ndarray
     coefficient_dimension: int
     prior_mean: np.ndarray
@@ -692,6 +762,7 @@ class _Particle:
             discrepancy_active=self.discrepancy_active,
             kernel_state_id=self.kernel_state_id,
             joint_prior_probability=self.joint_prior_probability,
+            log_joint_prior_probability=self.log_joint_prior_probability,
             design=self.design.copy(),
             coefficient_dimension=self.coefficient_dimension,
             prior_mean=self.prior_mean.copy(),
@@ -1322,11 +1393,24 @@ def _make_particle(
     design_cache: dict[str, np.ndarray] | None = None,
     basis_cache: dict[tuple[str, str], object] | None = None,
 ) -> _Particle:
-    expression_prior = _conditional_expression_prior(
-        contract.grammar, expression, maximum_nodes
-    )
-    if expression_prior <= 0.0:
-        raise ValueError("particle expression lies outside the registered prior slice")
+    if maximum_nodes is None:
+        raw_prior = exact_raw_ast_prior_mass(
+            contract.grammar,
+            expression.node_count,
+        )
+        expression_prior = float(raw_prior)
+        log_expression_prior = (
+            math.log(raw_prior.numerator) - math.log(raw_prior.denominator)
+        )
+    else:
+        expression_prior = _conditional_expression_prior(
+            contract.grammar, expression, maximum_nodes
+        )
+        if expression_prior <= 0.0:
+            raise ValueError(
+                "particle expression lies outside the registered prior slice"
+            )
+        log_expression_prior = math.log(expression_prior)
     component_state_id = kernel_state_id if discrepancy_active else "none"
     semantic_design = build_resident_semantic_design_for_expression(
         contract,
@@ -1339,9 +1423,15 @@ def _make_particle(
     discrepancy_active = semantic_design.discrepancy_active
     kernel_state_id = semantic_design.kernel_state_id
     design = semantic_design.design
-    component_probability = expression_prior * float(
-        semantic_design.component_prior_probability
+    component_prior = semantic_design.component_prior_probability
+    component_probability = expression_prior * float(component_prior)
+    log_component_prior = (
+        math.log(component_prior.numerator)
+        - math.log(component_prior.denominator)
     )
+    log_joint_prior = log_expression_prior + log_component_prior
+    if not math.isfinite(log_joint_prior):
+        raise FloatingPointError("resident log-prior mass must remain finite")
     coefficient_dimension = 1
     prior_mean = np.zeros(design.shape[1], dtype=float)
     prior_mean[0] = contract.coefficient_noise_prior.coefficient_mean
@@ -1356,6 +1446,7 @@ def _make_particle(
         discrepancy_active=discrepancy_active,
         kernel_state_id=kernel_state_id,
         joint_prior_probability=float(component_probability),
+        log_joint_prior_probability=log_joint_prior,
         design=np.ascontiguousarray(design, dtype=float),
         coefficient_dimension=coefficient_dimension,
         prior_mean=prior_mean,
@@ -1414,10 +1505,24 @@ def evaluate_resident_particle_local_rj_transition(
         or not math.isfinite(proposed.log_marginal)
         or not math.isfinite(current.joint_prior_probability)
         or not math.isfinite(proposed.joint_prior_probability)
-        or current.joint_prior_probability <= 0.0
-        or proposed.joint_prior_probability <= 0.0
+        or current.joint_prior_probability < 0.0
+        or proposed.joint_prior_probability < 0.0
+        or not math.isfinite(current.log_joint_prior_probability)
+        or not math.isfinite(proposed.log_joint_prior_probability)
     ):
         raise ValueError("resident local/RJ endpoint masses must be finite and positive")
+    for particle in (current, proposed):
+        if (
+            particle.joint_prior_probability > 0.0
+            and abs(
+                math.log(particle.joint_prior_probability)
+                - particle.log_joint_prior_probability
+            )
+            > P3F4_RAW_STATE_LOCAL_RJ_IDENTITY_TOLERANCE
+        ):
+            raise FloatingPointError(
+                "resident probability and log masses disagree"
+            )
 
     current_key = polynomial_key(current.expression, contract.grammar.feature_count)
     proposed_key = polynomial_key(proposed.expression, contract.grammar.feature_count)
@@ -1449,12 +1554,8 @@ def evaluate_resident_particle_local_rj_transition(
         semantic_log_marginal_evaluator,
     )
     tolerance = P3F4_RAW_STATE_LOCAL_RJ_IDENTITY_TOLERANCE
-    resident_current = (
-        math.log(current.joint_prior_probability) + current.log_marginal
-    )
-    resident_proposed = (
-        math.log(proposed.joint_prior_probability) + proposed.log_marginal
-    )
+    resident_current = current.log_joint_prior_probability + current.log_marginal
+    resident_proposed = proposed.log_joint_prior_probability + proposed.log_marginal
     if (
         abs(resident_current - transition.current_target.log_target_mass) > tolerance
         or abs(resident_proposed - transition.proposed_target.log_target_mass)
@@ -1605,6 +1706,39 @@ class ScalableOpenTargetSMC:
             beta_grid_denominator=config.certified_beta_grid_denominator,
             relative_ess_floor=config.cess_target_fraction,
             maximum_bridge_steps=config.maximum_bridge_steps,
+            resampling_kind=(
+                "multinomial"
+                if config.resampling_kind == "multinomial"
+                else "systematic"
+            ),
+            resampling_schedule=(
+                "post-bridge-always"
+                if config.resampling_kind == "multinomial"
+                else "post-bridge"
+            ),
+            finite_n_theorem_resampling_required=(
+                config.resampling_kind == "multinomial"
+            ),
+        )
+        self._resident_finite_n_plan = (
+            build_resident_finite_n_error_budget_plan(
+                contract,
+                self._resident_feynman_kac_plan,
+                maximum_observations=config.certified_maximum_observations,
+                operational_class_count=config.operational_class_count,
+                map_regret_budget=config.map_regret_budget,
+                simultaneous_failure_probability=(
+                    config.simultaneous_failure_probability
+                ),
+                maximum_rejuvenation_steps_per_bridge=(
+                    config.maximum_certified_rejuvenation_steps
+                ),
+                prior_independence_kernel_probability=(
+                    config.proposal_mixture_weight
+                ),
+            )
+            if config.resampling_kind == "multinomial"
+            else None
         )
 
     @staticmethod
@@ -1671,6 +1805,8 @@ class ScalableOpenTargetSMC:
         count = len(np.asarray(weights).reshape(-1)) if sample_count is None else sample_count
         if self.config.resampling_kind == "systematic":
             return systematic_resample_count(weights, count, self.rng)
+        if self.config.resampling_kind == "multinomial":
+            return multinomial_resample_count(weights, count, self.rng)
         if self.config.resampling_kind == "stratified":
             return stratified_resample_count(weights, count, self.rng)
         if self.config.resampling_kind == "residual":
@@ -1858,6 +1994,9 @@ class ScalableOpenTargetSMC:
         proposal_index_start: int,
         resident_bridge_target: ResidentFeynmanKacBridgeTarget | None = None,
         resident_weight_update: ResidentFeynmanKacWeightUpdate | None = None,
+        resident_finite_n_bridge_budget: (
+            ResidentFiniteNBridgeMixingBudget | None
+        ) = None,
     ) -> tuple[
         int,
         int,
@@ -1879,6 +2018,20 @@ class ScalableOpenTargetSMC:
                 resident_weight_update,
                 beta=beta,
             )
+            if self._resident_finite_n_plan is not None:
+                if resident_finite_n_bridge_budget is None:
+                    raise ValueError(
+                        "finite-N rejuvenation requires its bridge mixing budget"
+                    )
+                validate_resident_finite_n_operation_target(
+                    self._resident_finite_n_plan,
+                    resident_bridge_target,
+                    resident_finite_n_bridge_budget,
+                )
+            elif resident_finite_n_bridge_budget is not None:
+                raise ValueError(
+                    "CERT.8-only rejuvenation cannot consume a CERT.9 budget"
+                )
         elif resident_bridge_target is not None or resident_weight_update is not None:
             raise ValueError(
                 "non-resident rejuvenation cannot consume a CERT.8 bridge identity"
@@ -1904,6 +2057,16 @@ class ScalableOpenTargetSMC:
                         "prior-independence"
                         if self.rng.random() < self.config.proposal_mixture_weight
                         else "complete-uniform"
+                    )
+                elif (
+                    self.config.proposal_kind
+                    == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND
+                    and self._resident_finite_n_plan is not None
+                ):
+                    proposal_component = (
+                        "prior-independence"
+                        if self.rng.random() < self.config.proposal_mixture_weight
+                        else P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND
                     )
                 else:
                     proposal_component = self.config.proposal_kind
@@ -1970,8 +2133,10 @@ class ScalableOpenTargetSMC:
                 # intermediate population observes every chain state and
                 # therefore requires the invariant source weight explicitly.
                 proposed.log_weight = current.log_weight
-                current_target = math.log(current.joint_prior_probability) + current.log_marginal
-                proposed_target = math.log(proposed.joint_prior_probability) + proposed.log_marginal
+                current_target = current.log_joint_prior_probability + current.log_marginal
+                proposed_target = (
+                    proposed.log_joint_prior_probability + proposed.log_marginal
+                )
                 if proposal_component == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND:
                     assert local_rj_proposal is not None
                     resident_transition = evaluate_resident_particle_local_rj_transition(
@@ -1989,8 +2154,9 @@ class ScalableOpenTargetSMC:
                     # The independent proposal equals the component prior, so
                     # its forward/reverse ratio cancels the prior ratio in the
                     # MH correction.
-                    log_q_ratio = math.log(current.joint_prior_probability) - math.log(
-                        proposed.joint_prior_probability
+                    log_q_ratio = (
+                        current.log_joint_prior_probability
+                        - proposed.log_joint_prior_probability
                     )
                 elif self.config.proposal_kind == "complete-uniform":
                     assert component_count is not None
@@ -2018,8 +2184,9 @@ class ScalableOpenTargetSMC:
                     # component owns its MH correction; do not use the
                     # independent-mixture q ratio above.
                     if proposal_component == "prior-independence":
-                        log_q_ratio = math.log(current.joint_prior_probability) - math.log(
-                            proposed.joint_prior_probability
+                        log_q_ratio = (
+                            current.log_joint_prior_probability
+                            - proposed.log_joint_prior_probability
                         )
                     else:
                         log_q_ratio = 0.0
@@ -2266,10 +2433,14 @@ class ScalableOpenTargetSMC:
             and (
                 not P3F4_RESIDENT_LOCAL_RJ_RUN_AUTHORIZED
                 or not P3F4_RESIDENT_FEYNMAN_KAC_RUN_AUTHORIZED
+                or (
+                    self._resident_finite_n_plan is not None
+                    and not P3F4_RESIDENT_FINITE_N_RUN_AUTHORIZED
+                )
             )
         ):
             raise RuntimeError(
-                "CERT.8 proves the resident Feynman--Kac source composition only; "
+                "CERT.9 proves the resident finite-N/island source contract only; "
                 "resident SMC execution remains blocked; experiments remain blocked"
             )
         if self.config.proposal_kind == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND:
@@ -2295,6 +2466,48 @@ class ScalableOpenTargetSMC:
             == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND
             else None
         )
+        resident_finite_n_preflight: dict[
+            tuple[int, int],
+            tuple[
+                ResidentFeynmanKacBridgeTarget,
+                ResidentFiniteNBridgeMixingBudget,
+            ],
+        ] = {}
+        if self._resident_finite_n_plan is not None:
+            assert resident_certification_workspace is not None
+            self._resident_finite_n_plan.validate_runtime_configuration(
+                particle_count=self.config.particle_count,
+                observation_count=len(y),
+                resampling_kind=self.config.resampling_kind,
+                resampling_schedule=self.config.resampling_schedule,
+                rejuvenation_steps=self.config.rejuvenation_steps,
+                proposal_mixture_weight=self.config.proposal_mixture_weight,
+            )
+            denominator = self._resident_feynman_kac_plan.beta_grid_denominator
+            for observation_index in range(len(y)):
+                previous_numerator = 0
+                bridge_count = 0
+                while previous_numerator < denominator:
+                    if bridge_count >= self.config.maximum_bridge_steps:
+                        raise RuntimeError(
+                            "finite-N preflight exceeded the frozen bridge budget"
+                        )
+                    bridge = select_resident_feynman_kac_bridge(
+                        self._resident_feynman_kac_plan,
+                        resident_certification_workspace,
+                        y[: observation_index + 1],
+                        observation_index,
+                        previous_numerator,
+                    )
+                    mixing_budget = certify_resident_finite_n_bridge_mixing(
+                        self._resident_finite_n_plan,
+                        bridge,
+                    )
+                    resident_finite_n_preflight[
+                        (observation_index, previous_numerator)
+                    ] = (bridge, mixing_budget)
+                    previous_numerator = bridge.beta_next_numerator
+                    bridge_count += 1
         self._design_cache.clear()
         self._basis_cache.clear()
         count = self.config.particle_count
@@ -2398,6 +2611,9 @@ class ScalableOpenTargetSMC:
 
                 resident_bridge_target: ResidentFeynmanKacBridgeTarget | None = None
                 resident_weight_update: ResidentFeynmanKacWeightUpdate | None = None
+                resident_finite_n_bridge_budget: (
+                    ResidentFiniteNBridgeMixingBudget | None
+                ) = None
                 if self.config.proposal_kind == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND:
                     assert resident_certification_workspace is not None
                     denominator = (
@@ -2415,6 +2631,24 @@ class ScalableOpenTargetSMC:
                         step - 1,
                         previous_numerator,
                     )
+                    if self._resident_finite_n_plan is not None:
+                        preflight_bridge, resident_finite_n_bridge_budget = (
+                            resident_finite_n_preflight[
+                                (step - 1, previous_numerator)
+                            ]
+                        )
+                        if (
+                            preflight_bridge.stable_hash
+                            != resident_bridge_target.stable_hash
+                        ):
+                            raise RuntimeError(
+                                "live bridge differs from the finite-N preflight path"
+                            )
+                        validate_resident_finite_n_operation_target(
+                            self._resident_finite_n_plan,
+                            resident_bridge_target,
+                            resident_finite_n_bridge_budget,
+                        )
                     next_beta = resident_bridge_target.beta_next
                     next_logs = self._bridge_log_marginals(
                         particles,
@@ -2474,7 +2708,12 @@ class ScalableOpenTargetSMC:
                 ess_before = effective_sample_size(normalized)
                 log_evidence += log_increment
                 log_weights = normalized
-                resampled_after_bridge = ess_before < threshold
+                resampled_after_bridge = (
+                    self.config.resampling_schedule == "post-bridge-always"
+                    or ess_before < threshold
+                )
+                if self.config.resampling_schedule == "post-bridge-always":
+                    resampling_reason = "post-bridge-finite-n-theorem"
                 if (
                     self.config.resampling_schedule == "post-bridge"
                     and next_beta < 1.0
@@ -2491,6 +2730,13 @@ class ScalableOpenTargetSMC:
                             resident_weight_update,
                             beta=next_beta,
                         )
+                        if self._resident_finite_n_plan is not None:
+                            assert resident_finite_n_bridge_budget is not None
+                            validate_resident_finite_n_operation_target(
+                                self._resident_finite_n_plan,
+                                resident_bridge_target,
+                                resident_finite_n_bridge_budget,
+                            )
                     indices = self._resample_indices(np.exp(log_weights))
                     previous = particles
                     ancestor_indices = tuple(int(index) for index in indices)
@@ -2513,7 +2759,11 @@ class ScalableOpenTargetSMC:
                     after_event_kind = (
                         "post-bridge-cess-boundary"
                         if resampling_reason == "post-bridge-cess-boundary"
-                        else "ess-threshold"
+                        else (
+                            "post-bridge-finite-n-theorem"
+                            if resampling_reason == "post-bridge-finite-n-theorem"
+                            else "ess-threshold"
+                        )
                     )
                     resampling_genealogy.append(
                         self._resampling_genealogy_event(
@@ -2564,6 +2814,9 @@ class ScalableOpenTargetSMC:
                     proposal_index_start=proposal_index,
                     resident_bridge_target=resident_bridge_target,
                     resident_weight_update=resident_weight_update,
+                    resident_finite_n_bridge_budget=(
+                        resident_finite_n_bridge_budget
+                    ),
                 )
                 move_diagnostics.extend(bridge_moves)
                 proposal_index += proposals
