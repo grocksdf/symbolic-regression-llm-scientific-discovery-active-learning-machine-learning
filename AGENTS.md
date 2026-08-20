@@ -165,10 +165,29 @@ long-horizon context and remain binding even when a local task omits them.
   and are never counted as replicates. Class-coordinate error is converted to
   class total variation and the frozen MAP-regret budget rather than chosen
   from observed performance.
-- Resident-SMC integration, new confirmatory materialization, predictive
-  calibration, real data, acquisition, held-out access, efficacy claims, and
-  formal paper superiority claims remain blocked. The next admissible phase is
-  a separate response-free independent-island executor/aggregation source Gate
-  that enforces the exact CERT.9 plan, random-stream separation, failure
-  accounting and componentwise-median output without running resident SMC.
-  CERT.9 is not an experiment or execution authorization.
+- `P3F.4-CERT.10` adds the response-free independent-island executor and
+  componentwise-median source composition. It binds the complete CERT.8
+  Feynman--Kac plan, CERT.9 finite-`N` plan, exact particle configuration,
+  support-extension-invariant operational estimand, ordered class identities,
+  projector identity and product-law coordinates. Distinct integer seeds,
+  spawned pseudorandom streams and distinct generator objects are not promoted
+  to a mathematical independence proof; an external product-randomness premise
+  remains explicit and its production implementation is unauthorized. Shared
+  generator, aliased or exactly duplicated bit-generator state, and crossed
+  coordinates are rejected. Every
+  coordinate and island failure is preserved in one batch, with no retry,
+  replacement or partial output. Componentwise medians are unnormalized MAP
+  decision scores: they are never normalized, projected onto a simplex or
+  exposed as posterior probabilities. The direct MAP regret bound is
+  `2 * epsilon`, and the exact binomial-tail union budget remains bound to all
+  operational classes. The executor guard precedes product-source, projector,
+  response, engine and particle access, so CERT.10 is not an execution result.
+- Resident-SMC integration, independent-island execution, production random-
+  source/projector implementation, new confirmatory materialization,
+  predictive calibration, real data, acquisition, held-out access, efficacy
+  claims, and formal paper superiority claims remain blocked. The next
+  admissible phase is a separate response-free implementation Gate for the
+  auditable product random source and frozen full-support operational class
+  projector. It must retain the idealized-randomness premise, process/state
+  isolation, exact plan identity and boundary-uncertainty semantics before any
+  CERT.10 authorization flag can change.

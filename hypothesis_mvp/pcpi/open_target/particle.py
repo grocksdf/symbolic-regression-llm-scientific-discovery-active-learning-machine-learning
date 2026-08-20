@@ -426,6 +426,7 @@ class OpenTargetParticleDiagnostics:
             "none",
             "pre-bridge-cess-boundary",
             "post-bridge-cess-boundary",
+            "post-bridge-finite-n-theorem",
             "ess-threshold",
             "strict-standard-resampling",
             "waste-free-source-resampling",
@@ -926,7 +927,7 @@ class OpenTargetParticleSnapshot:
 class ScalableOpenTargetResult:
     contract: OpenTargetContract
     config: OpenTargetParticleConfig
-    seed: int
+    seed: int | None
     actions: np.ndarray
     targets: np.ndarray
     particles: tuple[OpenTargetParticleSnapshot, ...]
@@ -936,6 +937,7 @@ class ScalableOpenTargetResult:
     waste_free_diagnostics: tuple[OpenTargetWasteFreeDiagnostic, ...] = ()
     resampling_genealogy: tuple[OpenTargetResamplingGenealogyDiagnostic, ...] = ()
     estimator_particles: tuple[OpenTargetParticleSnapshot, ...] = ()
+    random_stream_identity: str = ""
 
     def __post_init__(self) -> None:
         actions = np.ascontiguousarray(self.actions, dtype=float)
@@ -944,8 +946,15 @@ class ScalableOpenTargetResult:
         targets.setflags(write=False)
         object.__setattr__(self, "actions", actions)
         object.__setattr__(self, "targets", targets)
-        if self.seed < 0:
-            raise ValueError("particle result seed must be non-negative")
+        if self.seed is None:
+            if not self.random_stream_identity:
+                raise ValueError(
+                    "externally randomized particle results require a stream identity"
+                )
+        elif self.seed < 0 or self.random_stream_identity:
+            raise ValueError(
+                "seeded particle results cannot carry an external stream identity"
+            )
         if self.config.particle_count != len(self.particles):
             raise ValueError("particle result count must match its registered configuration")
         if actions.ndim != 2 or len(actions) != len(targets):
@@ -1087,6 +1096,7 @@ class ScalableOpenTargetResult:
             ),
             "config": self.config.to_dict(),
             "seed": self.seed,
+            "random_stream_identity": self.random_stream_identity,
             "particle_count": len(self.particles),
             "posterior_estimator_particle_count": len(self.posterior_particles),
             "posterior_estimator_kind": (
@@ -1668,13 +1678,37 @@ class ScalableOpenTargetSMC:
         self,
         contract: OpenTargetContract,
         config: OpenTargetParticleConfig,
-        seed: int,
+        seed: int | None,
+        *,
+        random_generator: np.random.Generator | None = None,
+        random_stream_identity: str = "",
     ) -> None:
         self.contract = contract
         self.config = config
-        self.seed = int(seed)
-        if self.seed < 0:
-            raise ValueError("particle seed must be non-negative")
+        if random_generator is None:
+            if seed is None:
+                raise ValueError("particle seed is required without an external generator")
+            self.seed = int(seed)
+            if self.seed < 0:
+                raise ValueError("particle seed must be non-negative")
+            if random_stream_identity:
+                raise ValueError(
+                    "seeded particle engines cannot carry an external stream identity"
+                )
+            self.random_stream_identity = ""
+            self.rng = np.random.default_rng(self.seed)
+        else:
+            if seed is not None:
+                raise ValueError(
+                    "external particle randomness cannot be combined with an integer seed"
+                )
+            if not isinstance(random_generator, np.random.Generator):
+                raise TypeError("external particle randomness must be a NumPy Generator")
+            if not random_stream_identity:
+                raise ValueError("external particle randomness requires a stream identity")
+            self.seed = None
+            self.random_stream_identity = str(random_stream_identity)
+            self.rng = random_generator
         if (
             config.maximum_nodes is not None
             and config.maximum_nodes != contract.reference_slice_maximum_nodes
@@ -1682,7 +1716,6 @@ class ScalableOpenTargetSMC:
             raise ValueError(
                 "finite-slice particle target must match the registered reference slice"
             )
-        self.rng = np.random.default_rng(self.seed)
         self._design_cache: dict[str, np.ndarray] = {}
         self._basis_cache: dict[tuple[str, str], object] = {}
         self._raw_state_local_rj_plan = build_raw_state_local_rj_plan(contract)
@@ -2976,6 +3009,7 @@ class ScalableOpenTargetSMC:
             waste_free_diagnostics=tuple(waste_free_diagnostics),
             resampling_genealogy=tuple(resampling_genealogy),
             estimator_particles=tuple(estimator_snapshots),
+            random_stream_identity=self.random_stream_identity,
         )
 
 
