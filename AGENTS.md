@@ -92,9 +92,16 @@ long-horizon context and remain binding even when a local task omits them.
 ## Current authorization boundary
 
 - `P3F.4-CERT.CF.1` remains a permanent confirmatory NO-GO.
-- `P3F.4-CERT.2` authorizes only a response-energy, dependency-aware static
-  development certification layer after proof-review closure.
+- `P3F.4-CERT.2` supplies the response-energy, dependency-aware static
+  certification layer; `CERT.3` supplies the exact semantic-core/raw-AST lift;
+  and `CERT.4` supplies a standalone complete raw `(T,d)` envelope anchor.
+- The CERT.4 resident audit is NO-GO for composition: the open resident sampler
+  has an `int64` shell ceiling, raw-expression floating evaluation is not
+  exactly class-constant, and no resident raw-AST local/RJ proposal is
+  implemented. Finite independence-proposal formulas pass only on their
+  declared finite support.
 - Resident-SMC integration, new confirmatory materialization, predictive
   calibration, real data, acquisition, held-out access, efficacy claims, and
-  formal paper superiority claims remain blocked until their preceding Gates
-  pass.
+  formal paper superiority claims remain blocked until canonical target
+  evaluation, arbitrary-precision resident support, and a separately proved
+  resident proposal kernel pass a response-free common-target Gate.

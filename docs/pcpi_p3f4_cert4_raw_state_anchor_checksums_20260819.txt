@@ -1,0 +1,31 @@
+P3F.4-CERT.4 complete raw-state envelope anchor and resident static audit
+
+GitHub main baseline:
+6410f1e509d90c656a3a32cc113c16deeb776265
+
+SHA-256:
+a29dc25c3a60198d52660b39703178d303b9ff4d5f5b05af9c4cef6d727ad3bc  AGENTS.md
+de165f96b93ed5e6dc5ff8109b953832ce0c85ad469a0716a4cde5ff9c217de1  docs/pcpi_p3f4_cert4_complete_raw_state_anchor_contract_20260819.md
+4ae3f3ba5fd39e6cdc534adf8c9724605e9960eb1f3492112f7a5d4ecb0970d7  docs/pcpi_p3f4_cert4_resident_kernel_audit_20260819.md
+466ff703159bdae06d55f102996054d0175352d63ffd60d32e53c0870c20648d  hypothesis_mvp/pcpi/open_target/__init__.py
+9543590d53e2cc1526215691f75599acb4d43589fe1d98dd2c6ced598b8c806c  hypothesis_mvp/pcpi/open_target/raw_state_anchor.py
+646918ddbcfec9b099e132accfb96b7b1d4a024bd61a1c72777d49fb8426cbc0  scripts/run_pcpi_p3f4_cert4_response_free_checks.py
+58330858539f4c36a773030bb297d37e0f071ac984da40075e24ccdf97f04950  tests/test_pcpi_p3f4_raw_state_anchor.py
+51c7f326a3268b15135732911227a2208d485c55ae668bb57d02f7f707362af2  tests/test_pcpi_p3f4_resident_kernel_static_audit.py
+
+Verification boundary:
+- 15 response-free exact algebraic/combinatorial and static audit checks passed;
+- raw-AST unranking covered complete small shells and endpoint ranks in a
+  67-bit grammar shell;
+- the anchor normalized on the common raw `(T,d)` state space and pairwise MH
+  detailed balance covered core/core, core/tail, and tail/tail states;
+- resident finite-support independence formulas passed their target-invariance
+  audit;
+- the resident integration Gate remains NO-GO because its open sampler has an
+  `int64` ceiling, raw evaluation is not exactly class-constant, and a raw-AST
+  local/RJ proposal is absent;
+- syntax preflight passed for 199 Python files;
+- pytest was unavailable in the work container, so the registered runner
+  invoked the exact test functions directly;
+- no resident SMC, response materialization, simulated/formal/real experiment,
+  confirmatory run, acquisition, validation, or held-out access occurred.
