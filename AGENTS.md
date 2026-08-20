@@ -135,9 +135,21 @@ long-horizon context and remain binding even when a local task omits them.
   stochastic, reversible, and invariant. The corresponding `run()` path is
   hard-blocked before data validation or particle sampling, so this is a
   source-composition result rather than resident-SMC execution authorization.
+- `P3F.4-CERT.8` binds the response-energy analytic normalizer certificate,
+  exact rational beta grid, incremental potential, systematic resampling and
+  CERT.7 rejuvenation to one immutable resident Feynman--Kac target identity.
+  It chooses the largest grid step whose population relative-ESS lower bound
+  is at least `0.8`; empirical CESS is diagnostic only, a forced terminal step
+  is forbidden, and only the response prefix through the current observation
+  may enter the path. Exact finite resampling is unbiased, the resample-move
+  composition is invariant, and the actual censored local/RJ matrix is
+  irreducible, aperiodic and has a positive finite spectral gap. The `run()`
+  guard remains before target, response and particle access, so CERT.8 is
+  still a response-free source-composition result rather than execution
+  authorization.
 - Resident-SMC integration, new confirmatory materialization, predictive
   calibration, real data, acquisition, held-out access, efficacy claims, and
   formal paper superiority claims remain blocked. The next admissible phase is
-  a response-free Gate for the full-open Feynman--Kac bridge/path and mixing
-  contract before any resident execution can be enabled; it is not an
-  experiment authorization.
+  a response-free finite-`N` and independent-island error-budget Gate that
+  composes the certified path and mixing constants with the frozen scientific
+  decision tolerance. It is not an experiment authorization.

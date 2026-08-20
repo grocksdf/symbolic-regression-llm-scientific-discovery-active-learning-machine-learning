@@ -27,8 +27,8 @@ from .certification import (
     uniform_log_marginal_envelope,
 )
 from .grammar import TypedExpression
-from .particle import _sample_expression_of_size
 from .posterior import OpenTargetContract
+from .raw_state_local_rj import draw_exact_raw_ast_shell
 
 
 P3F4_RESPONSE_ENERGY_SCHEMA = (
@@ -37,6 +37,23 @@ P3F4_RESPONSE_ENERGY_SCHEMA = (
 P3F4_RESPONSE_ENERGY_GATE_SCHEMA = (
     "pcpi-p3f4-response-energy-dependency-aware-gate-v1"
 )
+
+
+class _NumpyGeneratorByteSource:
+    """Local exact-byte adapter that keeps certification independent of SMC."""
+
+    def __init__(self, generator: np.random.Generator) -> None:
+        if not isinstance(generator, np.random.Generator):
+            raise TypeError("tail certification draw requires a NumPy Generator")
+        self._generator = generator
+
+    def bytes(self, length: int) -> bytes:
+        if type(length) is not int or length < 0:
+            raise ValueError("uniform-byte request length must be non-negative")
+        result = self._generator.bytes(length)
+        if not isinstance(result, bytes) or len(result) != length:
+            raise TypeError("NumPy generator returned an invalid byte string")
+        return result
 
 MixingStatus = Literal[
     "passed",
@@ -469,7 +486,11 @@ def sample_conditional_raw_tail_expression(
     rho = contract.grammar.continuation_probability
     residual_size = int(rng.geometric(1.0 - rho))
     node_count = cutoff + residual_size
-    expression = _sample_expression_of_size(contract.grammar, node_count, rng)
+    expression = draw_exact_raw_ast_shell(
+        contract.grammar,
+        node_count,
+        _NumpyGeneratorByteSource(rng),
+    ).expression
     probability = (
         contract.grammar.prior_probability(expression)
         / contract.grammar.tail_mass(cutoff)

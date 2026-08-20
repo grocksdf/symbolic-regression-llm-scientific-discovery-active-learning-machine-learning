@@ -58,6 +58,16 @@ from .resident_common_target import (
     build_resident_semantic_design_for_expression,
     evaluate_resident_common_target_proposal,
 )
+from .resident_feynman_kac import (
+    P3F4_RESIDENT_FEYNMAN_KAC_RUN_AUTHORIZED,
+    ResidentFeynmanKacBridgeTarget,
+    ResidentFeynmanKacWeightUpdate,
+    apply_resident_feynman_kac_weight_update,
+    build_resident_feynman_kac_plan,
+    select_resident_feynman_kac_bridge,
+    validate_resident_feynman_kac_operation_target,
+)
+from .response_energy_certification import ResponseEnergyCertificationWorkspace
 
 
 P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND = "raw-state-local-rj"
@@ -146,6 +156,8 @@ class OpenTargetParticleConfig:
     rejuvenation_population_mode: str = "terminal-only"
     tempering_mode: str = "adaptive-cess"
     fixed_bridge_betas: tuple[float, ...] = (1.0,)
+    certification_maximum_nodes: int = 17
+    certified_beta_grid_denominator: int = 32
 
     def __post_init__(self) -> None:
         if self.particle_count < 2:
@@ -193,8 +205,15 @@ class OpenTargetParticleConfig:
             raise ValueError("resampling_kind must be systematic, stratified, or residual")
         if self.resampling_schedule not in {"pre-bridge", "post-bridge"}:
             raise ValueError("resampling_schedule must be pre-bridge or post-bridge")
-        if self.tempering_mode not in {"adaptive-cess", "fixed-grid"}:
-            raise ValueError("tempering_mode must be adaptive-cess or fixed-grid")
+        if self.tempering_mode not in {
+            "adaptive-cess",
+            "fixed-grid",
+            "certified-population-relative-ess",
+        }:
+            raise ValueError(
+                "tempering_mode must be adaptive-cess, fixed-grid, or "
+                "certified-population-relative-ess"
+            )
         fixed_betas = tuple(float(value) for value in self.fixed_bridge_betas)
         object.__setattr__(self, "fixed_bridge_betas", fixed_betas)
         if (
@@ -257,6 +276,10 @@ class OpenTargetParticleConfig:
             raise ValueError(
                 "acceptance Rao-Blackwellization requires one MH proposal per source"
             )
+        if self.certification_maximum_nodes < 1:
+            raise ValueError("certification_maximum_nodes must be positive")
+        if self.certified_beta_grid_denominator < 2:
+            raise ValueError("certified_beta_grid_denominator must be at least two")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -274,6 +297,8 @@ class OpenTargetParticleConfig:
             "rejuvenation_population_mode": self.rejuvenation_population_mode,
             "tempering_mode": self.tempering_mode,
             "fixed_bridge_betas": list(self.fixed_bridge_betas),
+            "certification_maximum_nodes": self.certification_maximum_nodes,
+            "certified_beta_grid_denominator": self.certified_beta_grid_denominator,
         }
 
 
@@ -299,6 +324,8 @@ class OpenTargetParticleDiagnostics:
     parent_particle_ids: tuple[int, ...]
     child_particle_ids: tuple[int, ...]
     resampling_reason: str = "none"
+    population_relative_ess_lower: float | None = None
+    feynman_kac_target_hash: str = ""
 
     def __post_init__(self) -> None:
         count = len(self.ancestor_indices)
@@ -359,6 +386,19 @@ class OpenTargetParticleDiagnostics:
             raise ValueError("ESS-threshold resampling decision is inconsistent")
         if not math.isfinite(self.log_evidence_increment):
             raise ValueError("bridge log evidence increment must be finite")
+        if self.population_relative_ess_lower is None:
+            if self.feynman_kac_target_hash:
+                raise ValueError(
+                    "uncertified bridge cannot carry a Feynman--Kac target hash"
+                )
+        elif (
+            not math.isfinite(self.population_relative_ess_lower)
+            or not 0.0 <= self.population_relative_ess_lower <= 1.0
+            or not self.feynman_kac_target_hash
+        ):
+            raise ValueError(
+                "certified bridge requires a valid population-relative-ESS lower bound"
+            )
         if self.distinct_root_ancestors < 1 or not math.isfinite(self.root_entropy):
             raise ValueError("root ancestry diagnostics must be finite and non-empty")
         if self.proposals < 0 or self.acceptances < 0 or self.acceptances > self.proposals:
@@ -1002,6 +1042,10 @@ class ScalableOpenTargetResult:
                     "beta_previous": item.beta_previous,
                     "beta_current": item.beta_current,
                     "conditional_ess": item.conditional_ess,
+                    "population_relative_ess_lower": (
+                        item.population_relative_ess_lower
+                    ),
+                    "feynman_kac_target_hash": item.feynman_kac_target_hash,
                     "effective_sample_size_before": item.effective_sample_size_before,
                     "effective_sample_size_after": item.effective_sample_size_after,
                     "resampled": item.resampled,
@@ -1551,6 +1595,17 @@ class ScalableOpenTargetSMC:
                 self._raw_state_local_rj_plan,
             )
         )
+        self._resident_feynman_kac_plan = build_resident_feynman_kac_plan(
+            contract,
+            self._resident_local_rj_composition.stable_hash,
+            local_rj_source_contract_hash=(
+                self._resident_local_rj_composition.contract_hash
+            ),
+            certification_maximum_nodes=config.certification_maximum_nodes,
+            beta_grid_denominator=config.certified_beta_grid_denominator,
+            relative_ess_floor=config.cess_target_fraction,
+            maximum_bridge_steps=config.maximum_bridge_steps,
+        )
 
     @staticmethod
     def _validated_data(
@@ -1801,6 +1856,8 @@ class ScalableOpenTargetSMC:
         observation_step: int,
         bridge_step: int,
         proposal_index_start: int,
+        resident_bridge_target: ResidentFeynmanKacBridgeTarget | None = None,
+        resident_weight_update: ResidentFeynmanKacWeightUpdate | None = None,
     ) -> tuple[
         int,
         int,
@@ -1811,6 +1868,21 @@ class ScalableOpenTargetSMC:
         acceptances = 0
         move_diagnostics: list[OpenTargetMoveDiagnostic] = []
         intermediate_pool: list[_Particle] = []
+        if self.config.proposal_kind == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND:
+            if resident_bridge_target is None or resident_weight_update is None:
+                raise ValueError(
+                    "resident local/RJ rejuvenation requires the certified bridge update"
+                )
+            validate_resident_feynman_kac_operation_target(
+                self._resident_feynman_kac_plan,
+                resident_bridge_target,
+                resident_weight_update,
+                beta=beta,
+            )
+        elif resident_bridge_target is not None or resident_weight_update is not None:
+            raise ValueError(
+                "non-resident rejuvenation cannot consume a CERT.8 bridge identity"
+            )
         component_count = (
             _finite_component_count(self.contract, self.config.maximum_nodes)
             if self.config.proposal_kind in {
@@ -2191,13 +2263,38 @@ class ScalableOpenTargetSMC:
     ) -> ScalableOpenTargetResult:
         if (
             self.config.proposal_kind == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND
-            and not P3F4_RESIDENT_LOCAL_RJ_RUN_AUTHORIZED
+            and (
+                not P3F4_RESIDENT_LOCAL_RJ_RUN_AUTHORIZED
+                or not P3F4_RESIDENT_FEYNMAN_KAC_RUN_AUTHORIZED
+            )
         ):
             raise RuntimeError(
-                "CERT.7 proves resident local/RJ source composition only; "
-                "resident SMC execution remains blocked"
+                "CERT.8 proves the resident Feynman--Kac source composition only; "
+                "resident SMC execution remains blocked; experiments remain blocked"
+            )
+        if self.config.proposal_kind == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND:
+            self._resident_feynman_kac_plan.validate_runtime_configuration(
+                maximum_nodes=self.config.maximum_nodes,
+                tempering_mode=self.config.tempering_mode,
+                resampling_kind=self.config.resampling_kind,
+                resampling_schedule=self.config.resampling_schedule,
+                rejuvenation_population_mode=(
+                    self.config.rejuvenation_population_mode
+                ),
+                cess_target_fraction=self.config.cess_target_fraction,
+                maximum_bridge_steps=self.config.maximum_bridge_steps,
             )
         x, y = self._validated_data(self.contract, actions, targets)
+        resident_certification_workspace = (
+            ResponseEnergyCertificationWorkspace(
+                self.contract,
+                x,
+                self.config.certification_maximum_nodes,
+            )
+            if self.config.proposal_kind
+            == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND
+            else None
+        )
         self._design_cache.clear()
         self._basis_cache.clear()
         count = self.config.particle_count
@@ -2299,22 +2396,79 @@ class ScalableOpenTargetSMC:
                         "a nonterminal bridge began at the CESS boundary"
                     )
 
-                next_beta, conditional_ess, next_logs = self._adaptive_bridge_beta(
-                    particles,
-                    log_weights,
-                    step - 1,
-                    float(target),
-                    beta,
-                    bridge_step,
-                )
+                resident_bridge_target: ResidentFeynmanKacBridgeTarget | None = None
+                resident_weight_update: ResidentFeynmanKacWeightUpdate | None = None
+                if self.config.proposal_kind == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND:
+                    assert resident_certification_workspace is not None
+                    denominator = (
+                        self._resident_feynman_kac_plan.beta_grid_denominator
+                    )
+                    previous_numerator = int(round(beta * denominator))
+                    if abs(beta - previous_numerator / denominator) > 2e-12:
+                        raise RuntimeError(
+                            "resident bridge beta left the certified rational grid"
+                        )
+                    resident_bridge_target = select_resident_feynman_kac_bridge(
+                        self._resident_feynman_kac_plan,
+                        resident_certification_workspace,
+                        y[:step],
+                        step - 1,
+                        previous_numerator,
+                    )
+                    next_beta = resident_bridge_target.beta_next
+                    next_logs = self._bridge_log_marginals(
+                        particles,
+                        step - 1,
+                        float(target),
+                        next_beta,
+                    )
+                    conditional_ess = math.nan
+                else:
+                    next_beta, conditional_ess, next_logs = self._adaptive_bridge_beta(
+                        particles,
+                        log_weights,
+                        step - 1,
+                        float(target),
+                        beta,
+                        bridge_step,
+                    )
                 current_logs = np.asarray(
                     [particle.log_marginal for particle in particles],
                     dtype=float,
                 )
                 increments = next_logs - current_logs
-                normalized, log_increment = normalize_log_weights(
-                    log_weights + increments
-                )
+                if resident_bridge_target is not None:
+                    # Empirical CESS is retained only as a diagnostic.  Path
+                    # selection above is owned by the analytic population
+                    # certificate and cannot branch on this value.
+                    conditional_ess = self._conditional_ess(
+                        log_weights,
+                        increments,
+                    )
+                    resident_weight_update = apply_resident_feynman_kac_weight_update(
+                        self._resident_feynman_kac_plan,
+                        resident_bridge_target,
+                        log_weights,
+                        current_logs,
+                        next_logs,
+                    )
+                    validate_resident_feynman_kac_operation_target(
+                        self._resident_feynman_kac_plan,
+                        resident_bridge_target,
+                        resident_weight_update,
+                        beta=next_beta,
+                    )
+                    normalized = np.asarray(
+                        resident_weight_update.normalized_log_weights,
+                        dtype=float,
+                    )
+                    log_increment = (
+                        resident_weight_update.log_normalizer_increment
+                    )
+                else:
+                    normalized, log_increment = normalize_log_weights(
+                        log_weights + increments
+                    )
                 for particle, value in zip(particles, next_logs, strict=True):
                     particle.log_marginal = float(value)
                 ess_before = effective_sample_size(normalized)
@@ -2329,6 +2483,14 @@ class ScalableOpenTargetSMC:
                     resampled_after_bridge = True
                     resampling_reason = "post-bridge-cess-boundary"
                 if resampled_after_bridge:
+                    if resident_bridge_target is not None:
+                        assert resident_weight_update is not None
+                        validate_resident_feynman_kac_operation_target(
+                            self._resident_feynman_kac_plan,
+                            resident_bridge_target,
+                            resident_weight_update,
+                            beta=next_beta,
+                        )
                     indices = self._resample_indices(np.exp(log_weights))
                     previous = particles
                     ancestor_indices = tuple(int(index) for index in indices)
@@ -2400,6 +2562,8 @@ class ScalableOpenTargetSMC:
                     observation_step=step,
                     bridge_step=bridge_step + 1,
                     proposal_index_start=proposal_index,
+                    resident_bridge_target=resident_bridge_target,
+                    resident_weight_update=resident_weight_update,
                 )
                 move_diagnostics.extend(bridge_moves)
                 proposal_index += proposals
@@ -2481,6 +2645,16 @@ class ScalableOpenTargetSMC:
                         parent_particle_ids=parent_particle_ids,
                         child_particle_ids=child_particle_ids,
                         resampling_reason=resampling_reason,
+                        population_relative_ess_lower=(
+                            None
+                            if resident_bridge_target is None
+                            else resident_bridge_target.relative_ess_lower
+                        ),
+                        feynman_kac_target_hash=(
+                            ""
+                            if resident_bridge_target is None
+                            else resident_bridge_target.stable_hash
+                        ),
                     )
                 )
                 beta = next_beta
