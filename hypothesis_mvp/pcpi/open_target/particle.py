@@ -11,6 +11,7 @@ acquisition pools, or held-out roles.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
 import math
 
 import numpy as np
@@ -40,13 +41,91 @@ from .raw_state_anchor import (
     sample_raw_state_component,
 )
 from .raw_state_local_rj import (
+    P3F4_RAW_STATE_LOCAL_RJ_IDENTITY_TOLERANCE,
+    RawStateLocalRJPlan,
+    RawStateLocalRJProposal,
+    RawStateLocalRJState,
+    build_raw_state_local_rj_plan,
     draw_exact_raw_ast_prior,
     draw_exact_raw_ast_shell,
+    sample_raw_state_local_rj_proposal,
 )
 from .resident_common_target import (
     NumpyGeneratorByteSource,
+    ResidentCommonTargetPlan,
+    ResidentCommonTargetTransition,
+    build_resident_common_target_plan,
     build_resident_semantic_design_for_expression,
+    evaluate_resident_common_target_proposal,
 )
+
+
+P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND = "raw-state-local-rj"
+P3F4_RESIDENT_LOCAL_RJ_COMPOSITION_SCHEMA = (
+    "pcpi-p3f4-resident-local-rj-source-composition-v1"
+)
+P3F4_RESIDENT_LOCAL_RJ_RUN_AUTHORIZED = False
+
+
+@dataclass(frozen=True)
+class ResidentLocalRJSourceComposition:
+    """Frozen identity for the CERT.7 source-composition Gate."""
+
+    schema: str
+    contract_hash: str
+    common_target_plan_hash: str
+    local_rj_plan_hash: str
+    resident_rejuvenation_import_authorized: bool = True
+    resident_smc_integration_authorized: bool = False
+    resident_smc_invoked: bool = False
+
+    def __post_init__(self) -> None:
+        if self.schema != P3F4_RESIDENT_LOCAL_RJ_COMPOSITION_SCHEMA:
+            raise ValueError("resident local/RJ composition schema is not registered")
+        if (
+            not self.contract_hash
+            or not self.common_target_plan_hash
+            or not self.local_rj_plan_hash
+        ):
+            raise ValueError("resident local/RJ composition identity is incomplete")
+        if not self.resident_rejuvenation_import_authorized:
+            raise ValueError("CERT.7 must import the proved adapter into rejuvenation")
+        if self.resident_smc_integration_authorized or self.resident_smc_invoked:
+            raise ValueError("CERT.7 cannot authorize or invoke resident SMC")
+
+    @property
+    def stable_hash(self) -> str:
+        payload = "|".join(
+            (
+                self.schema,
+                self.contract_hash,
+                self.common_target_plan_hash,
+                self.local_rj_plan_hash,
+                "rejuvenation-import=true",
+                "smc-integration=false",
+                "smc-invoked=false",
+            )
+        )
+        return sha256(payload.encode("utf-8")).hexdigest()
+
+
+def build_resident_local_rj_source_composition(
+    contract: OpenTargetContract,
+    common_target_plan: ResidentCommonTargetPlan,
+    local_rj_plan: RawStateLocalRJPlan,
+) -> ResidentLocalRJSourceComposition:
+    if (
+        common_target_plan.contract_hash != contract.stable_hash
+        or common_target_plan.grammar_hash != contract.grammar.stable_hash
+        or common_target_plan.local_rj_plan_hash != local_rj_plan.stable_hash
+    ):
+        raise ValueError("resident local/RJ source plans do not share one target")
+    return ResidentLocalRJSourceComposition(
+        schema=P3F4_RESIDENT_LOCAL_RJ_COMPOSITION_SCHEMA,
+        contract_hash=contract.stable_hash,
+        common_target_plan_hash=common_target_plan.stable_hash,
+        local_rj_plan_hash=local_rj_plan.stable_hash,
+    )
 
 
 @dataclass(frozen=True)
@@ -91,10 +170,19 @@ class OpenTargetParticleConfig:
             "complete-uniform",
             "prior-uniform-mixture",
             "prior-uniform-kernel-mixture",
+            P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND,
         }:
             raise ValueError(
                 "P3F.3 registers prior-independence, complete-uniform, and "
-                "prior-uniform-mixture and prior-uniform-kernel-mixture proposals"
+                "prior-uniform-mixture and prior-uniform-kernel-mixture proposals; "
+                "CERT.7 registers the response-free raw-state local/RJ source path"
+            )
+        if (
+            self.proposal_kind == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND
+            and self.maximum_nodes is not None
+        ):
+            raise ValueError(
+                "resident raw-state local/RJ requires maximum_nodes=None"
             )
         if (
             not math.isfinite(self.proposal_mixture_weight)
@@ -145,6 +233,13 @@ class OpenTargetParticleConfig:
         ):
             raise ValueError(
                 "waste-free population modes require at least two rejuvenation steps"
+            )
+        if (
+            self.proposal_kind == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND
+            and self.rejuvenation_population_mode != "terminal-only"
+        ):
+            raise ValueError(
+                "CERT.7 raw-state local/RJ source composition is terminal-only"
             )
         if (
             self.rejuvenation_population_mode == "waste-free-full-population"
@@ -454,6 +549,11 @@ class OpenTargetMoveDiagnostic:
     current_kernel_state_id: str
     proposed_kernel_state_id: str
     move_type: str
+    local_rj_site_index: int = -1
+    local_rj_site_path: tuple[int, ...] = ()
+    local_rj_move_type: str = "not-applicable"
+    log_proposal_ratio: float = 0.0
+    log_abs_jacobian: float = 0.0
 
     def __post_init__(self) -> None:
         if self.observation_step < 1 or self.bridge_step < 1:
@@ -465,9 +565,14 @@ class OpenTargetMoveDiagnostic:
             "complete-uniform",
             "prior-uniform-mixture",
             "prior-uniform-kernel-mixture",
+            P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND,
         }:
             raise ValueError("move proposal kind is not registered")
-        if self.proposal_component not in {"prior-independence", "complete-uniform"}:
+        if self.proposal_component not in {
+            "prior-independence",
+            "complete-uniform",
+            P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND,
+        }:
             raise ValueError("move proposal component is not registered")
         if not math.isfinite(self.log_acceptance):
             raise ValueError("move log acceptance must be finite")
@@ -492,6 +597,34 @@ class OpenTargetMoveDiagnostic:
             "cross-equivalence-and-state-change",
         }:
             raise ValueError("move type is not registered")
+        if not math.isfinite(self.log_proposal_ratio):
+            raise ValueError("move proposal ratio must be finite")
+        if not math.isfinite(self.log_abs_jacobian) or self.log_abs_jacobian != 0.0:
+            raise ValueError("resident discrete local/RJ move must have unit Jacobian")
+        if self.proposal_component == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND:
+            if self.proposal_kind != P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND:
+                raise ValueError("local/RJ proposal component requires the local/RJ kernel")
+            if self.local_rj_site_index < 0:
+                raise ValueError("local/RJ diagnostic site index must be non-negative")
+            if (
+                not isinstance(self.local_rj_site_path, tuple)
+                or any(type(index) is not int or index < 0 for index in self.local_rj_site_path)
+            ):
+                raise ValueError("local/RJ diagnostic site path is invalid")
+            if self.local_rj_move_type not in {
+                "grow",
+                "prune",
+                "replace",
+                "component-refresh",
+                "self",
+            }:
+                raise ValueError("local/RJ diagnostic move type is not registered")
+        elif (
+            self.local_rj_site_index != -1
+            or self.local_rj_site_path != ()
+            or self.local_rj_move_type != "not-applicable"
+        ):
+            raise ValueError("non-local proposal cannot carry local/RJ diagnostics")
 
 
 @dataclass
@@ -1190,6 +1323,105 @@ def _make_particle(
     )
 
 
+def _particle_component_state_id(particle: _Particle) -> str:
+    if particle.discrepancy_active:
+        if particle.kernel_state_id == "none":
+            raise ValueError("resident particle discrepancy identity is inconsistent")
+        return particle.kernel_state_id
+    if particle.kernel_state_id != "none":
+        raise ValueError("resident particle discrepancy identity is inconsistent")
+    return "none"
+
+
+def evaluate_resident_particle_local_rj_transition(
+    contract: OpenTargetContract,
+    composition: ResidentLocalRJSourceComposition,
+    common_target_plan: ResidentCommonTargetPlan,
+    local_rj_plan: RawStateLocalRJPlan,
+    proposal: RawStateLocalRJProposal,
+    current: _Particle,
+    proposed: _Particle,
+) -> ResidentCommonTargetTransition:
+    """Evaluate one actual resident endpoint pair through the CERT.6 adapter.
+
+    This helper contains no observations and performs no sampling.  The actual
+    rejuvenation branch constructs its two collapsed endpoint particles first,
+    then delegates its proposal ratio and acceptance calculation here.
+    """
+
+    if (
+        composition.contract_hash != contract.stable_hash
+        or composition.common_target_plan_hash != common_target_plan.stable_hash
+        or composition.local_rj_plan_hash != local_rj_plan.stable_hash
+        or proposal.plan_hash != local_rj_plan.stable_hash
+    ):
+        raise ValueError("resident local/RJ composition identity is inconsistent")
+    current_component = _particle_component_state_id(current)
+    proposed_component = _particle_component_state_id(proposed)
+    if (
+        proposal.current_state.expression != current.expression
+        or proposal.current_state.component_state_id != current_component
+        or proposal.proposed_state.expression != proposed.expression
+        or proposal.proposed_state.component_state_id != proposed_component
+    ):
+        raise ValueError("resident particles do not match the local/RJ endpoints")
+    if (
+        not math.isfinite(current.log_marginal)
+        or not math.isfinite(proposed.log_marginal)
+        or not math.isfinite(current.joint_prior_probability)
+        or not math.isfinite(proposed.joint_prior_probability)
+        or current.joint_prior_probability <= 0.0
+        or proposed.joint_prior_probability <= 0.0
+    ):
+        raise ValueError("resident local/RJ endpoint masses must be finite and positive")
+
+    current_key = polynomial_key(current.expression, contract.grammar.feature_count)
+    proposed_key = polynomial_key(proposed.expression, contract.grammar.feature_count)
+    semantic_logs: dict[tuple[object, str], float] = {}
+    for identity, log_marginal in (
+        ((current_key, current_component), float(current.log_marginal)),
+        ((proposed_key, proposed_component), float(proposed.log_marginal)),
+    ):
+        previous = semantic_logs.get(identity)
+        if previous is not None and previous != log_marginal:
+            raise FloatingPointError(
+                "resident aliases disagree on one semantic log marginal"
+            )
+        semantic_logs[identity] = log_marginal
+
+    def semantic_log_marginal_evaluator(key, component_state_id: str) -> float:
+        try:
+            return semantic_logs[(key, component_state_id)]
+        except KeyError as error:
+            raise ValueError(
+                "common-target adapter requested an unknown resident endpoint"
+            ) from error
+
+    transition = evaluate_resident_common_target_proposal(
+        contract,
+        common_target_plan,
+        local_rj_plan,
+        proposal,
+        semantic_log_marginal_evaluator,
+    )
+    tolerance = P3F4_RAW_STATE_LOCAL_RJ_IDENTITY_TOLERANCE
+    resident_current = (
+        math.log(current.joint_prior_probability) + current.log_marginal
+    )
+    resident_proposed = (
+        math.log(proposed.joint_prior_probability) + proposed.log_marginal
+    )
+    if (
+        abs(resident_current - transition.current_target.log_target_mass) > tolerance
+        or abs(resident_proposed - transition.proposed_target.log_target_mass)
+        > tolerance
+    ):
+        raise FloatingPointError(
+            "resident particle and common-target log masses disagree"
+        )
+    return transition
+
+
 def _sample_prior_particle(
     contract: OpenTargetContract,
     actions: np.ndarray,
@@ -1308,6 +1540,17 @@ class ScalableOpenTargetSMC:
         self.rng = np.random.default_rng(self.seed)
         self._design_cache: dict[str, np.ndarray] = {}
         self._basis_cache: dict[tuple[str, str], object] = {}
+        self._raw_state_local_rj_plan = build_raw_state_local_rj_plan(contract)
+        self._resident_common_target_plan = build_resident_common_target_plan(
+            contract
+        )
+        self._resident_local_rj_composition = (
+            build_resident_local_rj_source_composition(
+                contract,
+                self._resident_common_target_plan,
+                self._raw_state_local_rj_plan,
+            )
+        )
 
     @staticmethod
     def _validated_data(
@@ -1580,6 +1823,7 @@ class ScalableOpenTargetSMC:
         for index, current in enumerate(particles):
             for _ in range(self.config.rejuvenation_steps):
                 proposals += 1
+                local_rj_proposal: RawStateLocalRJProposal | None = None
                 if self.config.proposal_kind in {
                     "prior-uniform-mixture",
                     "prior-uniform-kernel-mixture",
@@ -1597,6 +1841,32 @@ class ScalableOpenTargetSMC:
                         actions,
                         self.rng,
                         self.config.maximum_nodes,
+                        particle_id=current.particle_id,
+                        root_ancestor_id=current.root_ancestor_id,
+                        design_cache=self._design_cache,
+                        basis_cache=self._basis_cache,
+                    )
+                elif proposal_component == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND:
+                    current_state = RawStateLocalRJState(
+                        current.expression,
+                        _particle_component_state_id(current),
+                    )
+                    local_rj_proposal = sample_raw_state_local_rj_proposal(
+                        self.contract,
+                        self._raw_state_local_rj_plan,
+                        current_state,
+                        NumpyGeneratorByteSource(self.rng),
+                    )
+                    proposed_component_state_id = (
+                        local_rj_proposal.proposed_state.component_state_id
+                    )
+                    proposed = _make_particle(
+                        self.contract,
+                        actions,
+                        local_rj_proposal.proposed_state.expression,
+                        proposed_component_state_id != "none",
+                        proposed_component_state_id,
+                        None,
                         particle_id=current.particle_id,
                         root_ancestor_id=current.root_ancestor_id,
                         design_cache=self._design_cache,
@@ -1630,7 +1900,20 @@ class ScalableOpenTargetSMC:
                 proposed.log_weight = current.log_weight
                 current_target = math.log(current.joint_prior_probability) + current.log_marginal
                 proposed_target = math.log(proposed.joint_prior_probability) + proposed.log_marginal
-                if self.config.proposal_kind == "prior-independence":
+                if proposal_component == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND:
+                    assert local_rj_proposal is not None
+                    resident_transition = evaluate_resident_particle_local_rj_transition(
+                        self.contract,
+                        self._resident_local_rj_composition,
+                        self._resident_common_target_plan,
+                        self._raw_state_local_rj_plan,
+                        local_rj_proposal,
+                        current,
+                        proposed,
+                    )
+                    log_q_ratio = local_rj_proposal.log_proposal_ratio
+                    log_acceptance = resident_transition.log_acceptance
+                elif self.config.proposal_kind == "prior-independence":
                     # The independent proposal equals the component prior, so
                     # its forward/reverse ratio cancels the prior ratio in the
                     # MH correction.
@@ -1668,7 +1951,8 @@ class ScalableOpenTargetSMC:
                         )
                     else:
                         log_q_ratio = 0.0
-                log_acceptance = proposed_target - current_target + log_q_ratio
+                if proposal_component != P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND:
+                    log_acceptance = proposed_target - current_target + log_q_ratio
                 accepted = math.log(self.rng.random()) < min(0.0, log_acceptance)
                 (
                     current_raw,
@@ -1703,6 +1987,27 @@ class ScalableOpenTargetSMC:
                         current_kernel_state_id=current.kernel_state_id,
                         proposed_kernel_state_id=proposed.kernel_state_id,
                         move_type=move_type,
+                        local_rj_site_index=(
+                            -1
+                            if local_rj_proposal is None
+                            else local_rj_proposal.site_index
+                        ),
+                        local_rj_site_path=(
+                            ()
+                            if local_rj_proposal is None
+                            else local_rj_proposal.site_path
+                        ),
+                        local_rj_move_type=(
+                            "not-applicable"
+                            if local_rj_proposal is None
+                            else local_rj_proposal.move_type
+                        ),
+                        log_proposal_ratio=float(log_q_ratio),
+                        log_abs_jacobian=(
+                            0.0
+                            if local_rj_proposal is None
+                            else local_rj_proposal.log_abs_jacobian
+                        ),
                     )
                 )
                 if (
@@ -1884,6 +2189,14 @@ class ScalableOpenTargetSMC:
         actions: np.ndarray,
         targets: np.ndarray,
     ) -> ScalableOpenTargetResult:
+        if (
+            self.config.proposal_kind == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND
+            and not P3F4_RESIDENT_LOCAL_RJ_RUN_AUTHORIZED
+        ):
+            raise RuntimeError(
+                "CERT.7 proves resident local/RJ source composition only; "
+                "resident SMC execution remains blocked"
+            )
         x, y = self._validated_data(self.contract, actions, targets)
         self._design_cache.clear()
         self._basis_cache.clear()
@@ -2398,12 +2711,18 @@ def proposal_invariance_certificate(
 
 
 __all__ = [
+    "P3F4_RESIDENT_LOCAL_RJ_COMPOSITION_SCHEMA",
+    "P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND",
+    "P3F4_RESIDENT_LOCAL_RJ_RUN_AUTHORIZED",
     "OpenTargetParticleConfig",
     "OpenTargetParticleDiagnostics",
     "OpenTargetMoveDiagnostic",
     "OpenTargetParticleSnapshot",
     "ScalableOpenTargetResult",
     "ScalableOpenTargetSMC",
+    "ResidentLocalRJSourceComposition",
+    "build_resident_local_rj_source_composition",
+    "evaluate_resident_particle_local_rj_transition",
     "proposal_invariance_certificate",
     "sample_open_prior_expression",
 ]

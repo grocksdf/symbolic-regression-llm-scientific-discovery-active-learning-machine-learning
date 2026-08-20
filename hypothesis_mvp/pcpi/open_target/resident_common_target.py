@@ -297,7 +297,7 @@ def _validate_common_plan(
         raise ValueError("resident common-target plan does not match the target")
 
 
-def _evaluate_transition(
+def evaluate_resident_common_target_proposal(
     contract: OpenTargetContract,
     common_plan: ResidentCommonTargetPlan,
     local_rj_plan: RawStateLocalRJPlan,
@@ -354,7 +354,7 @@ def build_resident_common_target_transition(
         regenerated_subtree,
         regenerated_component_state_id,
     )
-    return _evaluate_transition(
+    return evaluate_resident_common_target_proposal(
         contract,
         common_plan,
         local_rj_plan,
@@ -377,7 +377,7 @@ def sample_resident_common_target_transition(
         current_state,
         source,
     )
-    return _evaluate_transition(
+    return evaluate_resident_common_target_proposal(
         contract,
         common_plan,
         local_rj_plan,
@@ -396,5 +396,6 @@ __all__ = [
     "build_resident_common_target_transition",
     "build_resident_semantic_design",
     "build_resident_semantic_design_for_expression",
+    "evaluate_resident_common_target_proposal",
     "sample_resident_common_target_transition",
 ]

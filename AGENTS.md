@@ -124,9 +124,20 @@ long-horizon context and remain binding even when a local task omits them.
   adapter deliberately does not import `_rejuvenate` or call
   `ScalableOpenTargetSMC.run`; resident integration remains unauthorized until
   a separate source-composition Gate proves the actual rejuvenation path.
+- `P3F.4-CERT.7` imports the proved proposal and common-target adapter into an
+  actual `raw-state-local-rj` branch of resident `_rejuvenate`. The branch is
+  restricted to the complete open support (`maximum_nodes=None`) and the
+  terminal-only population mode. Resident endpoint particles must match the
+  exact raw/component proposal endpoints, semantic aliases must have identical
+  collapsed log marginals, and resident versus adapter target log masses must
+  agree before the adapter-owned proposal ratio and acceptance value can be
+  used. A finite censored matrix built through this resident endpoint helper is
+  stochastic, reversible, and invariant. The corresponding `run()` path is
+  hard-blocked before data validation or particle sampling, so this is a
+  source-composition result rather than resident-SMC execution authorization.
 - Resident-SMC integration, new confirmatory materialization, predictive
   calibration, real data, acquisition, held-out access, efficacy claims, and
   formal paper superiority claims remain blocked. The next admissible phase is
-  a response-free import of the CERT.6 adapter into the actual resident
-  rejuvenation path, followed by a source and finite-transition composition
-  proof; it is not an experiment authorization.
+  a response-free Gate for the full-open Feynman--Kac bridge/path and mixing
+  contract before any resident execution can be enabled; it is not an
+  experiment authorization.

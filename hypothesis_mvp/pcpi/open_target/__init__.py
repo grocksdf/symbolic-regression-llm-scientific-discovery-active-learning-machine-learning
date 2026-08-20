@@ -38,6 +38,9 @@ from .sequential import (
     run_exhaustive_sequential_smc_reference,
 )
 from .particle import (
+    P3F4_RESIDENT_LOCAL_RJ_COMPOSITION_SCHEMA,
+    P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND,
+    P3F4_RESIDENT_LOCAL_RJ_RUN_AUTHORIZED,
     OpenTargetParticleConfig,
     OpenTargetParticleDiagnostics,
     OpenTargetMoveDiagnostic,
@@ -46,6 +49,9 @@ from .particle import (
     OpenTargetWasteFreeDiagnostic,
     ScalableOpenTargetResult,
     ScalableOpenTargetSMC,
+    ResidentLocalRJSourceComposition,
+    build_resident_local_rj_source_composition,
+    evaluate_resident_particle_local_rj_transition,
     proposal_invariance_certificate,
     sample_open_prior_expression,
 )
@@ -141,6 +147,7 @@ from .resident_common_target import (
     build_resident_common_target_transition,
     build_resident_semantic_design,
     build_resident_semantic_design_for_expression,
+    evaluate_resident_common_target_proposal,
     sample_resident_common_target_transition,
 )
 from .full_population import (
@@ -192,6 +199,9 @@ __all__ = [
     "ExhaustiveSequentialSMCResult",
     "run_exhaustive_sequential_smc_reference",
     "OpenTargetParticleConfig",
+    "P3F4_RESIDENT_LOCAL_RJ_COMPOSITION_SCHEMA",
+    "P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND",
+    "P3F4_RESIDENT_LOCAL_RJ_RUN_AUTHORIZED",
     "OpenTargetParticleDiagnostics",
     "OpenTargetMoveDiagnostic",
     "OpenTargetParticleSnapshot",
@@ -199,6 +209,9 @@ __all__ = [
     "OpenTargetWasteFreeDiagnostic",
     "ScalableOpenTargetResult",
     "ScalableOpenTargetSMC",
+    "ResidentLocalRJSourceComposition",
+    "build_resident_local_rj_source_composition",
+    "evaluate_resident_particle_local_rj_transition",
     "proposal_invariance_certificate",
     "sample_open_prior_expression",
     "P3F4_CERTIFICATION_SCHEMA",
@@ -282,6 +295,7 @@ __all__ = [
     "build_resident_common_target_transition",
     "build_resident_semantic_design",
     "build_resident_semantic_design_for_expression",
+    "evaluate_resident_common_target_proposal",
     "sample_resident_common_target_transition",
     "STANDARD_METHOD",
     "WASTE_FREE_METHOD",
