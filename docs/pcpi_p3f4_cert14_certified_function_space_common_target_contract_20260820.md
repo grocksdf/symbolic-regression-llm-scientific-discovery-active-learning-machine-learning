@@ -253,7 +253,12 @@ CERT.14 retains the 109 CERT.3--CERT.13 checks and adds 14 checks covering:
 13. absence of inverse, retry, regularization and floating factor bases; and
 14. the pre-access operational result guard.
 
-The registered identity is `123/123`; 229 Python files are syntax checked.
+The original registered identity is `123/123`. CERT.14-R1 adds one deterministic
+scope check, giving `124/124`, and defines the syntax population as every Python
+file returned by `git ls-files -- '*.py'`. The frozen R1 source tree contains
+229 such files. Ignored build products, local environments and untracked files
+cannot enlarge or shrink that source identity; any tracked invalid Python file
+still fails closed.
 No simulated, formal, real, held-out or confirmatory experiment is run.
 
 ## 10. Remaining execution gap

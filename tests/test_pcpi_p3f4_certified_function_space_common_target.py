@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from fractions import Fraction
 import inspect
+from pathlib import Path
+import runpy
+import subprocess
+from tempfile import TemporaryDirectory
 
 from hypothesis_mvp.pcpi.open_target import (
     P3F4_CERT11_OPERATIONAL_ESTIMAND_SCHEMA,
@@ -454,3 +458,47 @@ def test_operational_guard_precedes_state_result_particle_and_candidate_access()
         "if not P3F4_CERT14_OPERATIONAL_TARGET_RESULT_ACCESS_AUTHORIZED"
     ) < source.index("raise AssertionError")
     assert particle_implementation.P3F4_CERT14_RESIDENT_SMC_RUN_AUTHORIZED is False
+
+
+def test_syntax_scope_is_exactly_git_tracked_python_source() -> None:
+    root = Path(__file__).resolve().parents[1]
+    runner = runpy.run_path(
+        str(root / "scripts/run_pcpi_p3f4_cert14_response_free_checks.py")
+    )
+    syntax_check = runner["_syntax_check"]
+    with TemporaryDirectory(prefix="pcpi-cert14-r1-") as temporary:
+        fixture = Path(temporary)
+        subprocess.run(
+            ("git", "init", "--quiet", str(fixture)),
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        (fixture / ".gitignore").write_text("ignored/\n", encoding="utf-8")
+        (fixture / "tracked_good.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (fixture / "untracked_bad.py").write_text("if :\n", encoding="utf-8")
+        (fixture / "ignored").mkdir()
+        (fixture / "ignored" / "ignored_bad.py").write_text(
+            "if :\n",
+            encoding="utf-8",
+        )
+        subprocess.run(
+            ("git", "-C", str(fixture), "add", ".gitignore", "tracked_good.py"),
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        assert syntax_check(fixture) == 1
+        (fixture / "tracked_bad.py").write_text("if :\n", encoding="utf-8")
+        subprocess.run(
+            ("git", "-C", str(fixture), "add", "tracked_bad.py"),
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            syntax_check(fixture)
+        except SyntaxError:
+            pass
+        else:
+            raise AssertionError("tracked invalid Python source must fail the syntax Gate")

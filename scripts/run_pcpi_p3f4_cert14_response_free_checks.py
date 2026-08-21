@@ -6,6 +6,7 @@ from importlib import metadata
 import json
 from pathlib import Path
 import runpy
+import subprocess
 import sys
 
 
@@ -34,15 +35,34 @@ EXPECTED_CHECKS[
     "test_resident_engine_blocks_before_data_and_retires_float_target_branch",
     "test_arb_path_has_no_inverse_retry_regularization_or_float_factor_basis",
     "test_operational_guard_precedes_state_result_particle_and_candidate_access",
+    "test_syntax_scope_is_exactly_git_tracked_python_source",
 )
 
 
-def _syntax_check(root: Path) -> int:
-    files = tuple(
-        path
-        for path in root.rglob("*.py")
-        if not any(part in {".git", ".venv", "evidence"} for part in path.parts)
+def _tracked_python_files(root: Path) -> tuple[Path, ...]:
+    completed = subprocess.run(
+        ("git", "-C", str(root), "ls-files", "-z", "--", "*.py"),
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
+    relatives = tuple(
+        Path(item.decode("utf-8"))
+        for item in completed.stdout.split(b"\0")
+        if item
+    )
+    if not relatives:
+        raise RuntimeError("CERT.14 syntax scope contains no tracked Python source")
+    if any(path.is_absolute() or ".." in path.parts for path in relatives):
+        raise RuntimeError("CERT.14 received an invalid tracked Python path")
+    files = tuple(root / relative for relative in relatives)
+    if any(not path.is_file() for path in files):
+        raise RuntimeError("CERT.14 tracked Python source is absent from the worktree")
+    return files
+
+
+def _syntax_check(root: Path) -> int:
+    files = _tracked_python_files(root)
     for path in files:
         compile(path.read_text(encoding="utf-8"), str(path), "exec")
     return len(files)
@@ -64,20 +84,22 @@ def main() -> int:
                 raise RuntimeError(f"registered response-free check is absent: {name}")
             check()
             passed.append(name)
-    if len(passed) != 123:
-        raise RuntimeError("CERT.14 response-free check identity is not exactly 123")
+    if len(passed) != 124:
+        raise RuntimeError("CERT.14-R1 response-free check identity is not exactly 124")
     syntax_count = _syntax_check(root)
     print(
         json.dumps(
             {
                 "schema": (
                     "pcpi-p3f4-cert14-certified-function-space-common-target-"
-                    "response-free-checks-v1"
+                    "response-free-checks-v2"
                 ),
                 "status": "passed",
                 "checks_passed": passed,
                 "check_count": len(passed),
                 "python_files_syntax_checked": syntax_count,
+                "python_syntax_scope": "git-tracked-python-files",
+                "ignored_or_untracked_python_files_excluded": True,
                 "role": (
                     "response-free exact-H0 weighted function-space marginal, "
                     "bridge/local-RJ common-target and sparse candidate composition"

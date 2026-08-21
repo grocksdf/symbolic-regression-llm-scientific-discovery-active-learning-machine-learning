@@ -255,6 +255,13 @@ long-horizon context and remain binding even when a local task omits them.
   closed before use, and all operational target/result/island/SMC flags remain
   false. No inverse, approximate Arb, midpoint promotion, jitter, regularizer,
   tolerance rank or result-dependent precision retry is admitted.
+- `P3F.4-CERT.14-R1` repairs only the response-free syntax-population identity.
+  Syntax compilation is now over the exact Git-tracked `*.py` source set, not
+  every filesystem Python file. Ignored environments, build products and other
+  untracked local artifacts therefore cannot change the Gate count, while any
+  tracked invalid source still fails. One deterministic fixture proves both
+  directions. The common target, all execution guards, experiment prohibitions,
+  numerical precision and scientific claim boundary are unchanged.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out
