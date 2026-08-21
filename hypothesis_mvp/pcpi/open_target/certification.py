@@ -521,11 +521,11 @@ class SemanticCertificationWorkspace:
         values = np.asarray(tuple(float(value) for value in betas), dtype=float)
         index = int(observation_index)
         tolerance = float(mixing_total_variation_tolerance)
+        if len(y) != len(self.actions) or not np.all(np.isfinite(y)):
+            raise ValueError("certificate targets must align with the action grid")
         if (
             index < 0
-            or index >= len(self.actions)
-            or len(y) not in {index + 1, len(self.actions)}
-            or not np.all(np.isfinite(y))
+            or index >= len(y)
             or not len(values)
             or not np.all(np.isfinite(values))
             or np.any(values < 0.0)
@@ -534,12 +534,6 @@ class SemanticCertificationWorkspace:
         if not math.isfinite(tolerance) or not 0.0 < tolerance < 1.0:
             raise ValueError("mixing TV tolerance must lie strictly inside (0, 1)")
 
-        # A resident bridge supplies exactly the observed prefix.  Padding
-        # inaccessible later responses with zero is algebraically inert
-        # because every later likelihood power is zero, while retaining the
-        # frozen selection-visible design grid used by discrepancy projection.
-        padded_targets = np.zeros(len(self.actions), dtype=float)
-        padded_targets[: len(y)] = y
         core_evidence = np.zeros(len(values), dtype=float)
         maximum_log_marginal = np.full(len(values), -math.inf, dtype=float)
         component_priors = self._component_priors()
@@ -548,7 +542,7 @@ class SemanticCertificationWorkspace:
             for state_id, state_probability in component_priors:
                 log_marginals = _single_row_fractional_log_marginal_grid(
                     self._component_design(item, state_id),
-                    padded_targets,
+                    y,
                     index,
                     values,
                     self.contract,

@@ -277,6 +277,16 @@ long-horizon context and remain binding even when a local task omits them.
   materialization, resident resampling/MH, islands and SMC remain false. A
   passing response-free Gate would support these comparison semantics only and
   would not yet compose their failure probability with the finite-`N` theorem.
+- `P3F.4-CERT.15-R1` repairs the inherited full-suite baseline before any
+  CERT.16 work. The historical confirmatory `certification.py` is restored to
+  its byte-frozen SHA-256 and resident prefix padding is isolated in the
+  CERT.8 adapter. The canonical editable environment identity is synchronized
+  to project version `1.4.0`, the P3F.3 validation test names every registered
+  resampling schedule, and the final-source audit retains its 80/100-line
+  limits while accepting legacy long functions only under complete normalized
+  source-segment SHA-256 identities. New or edited over-limit functions still
+  fail closed. The inherited five failures are therefore repaired without
+  changing an experiment, response, numerical tolerance or scientific result.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out

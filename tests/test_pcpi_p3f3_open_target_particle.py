@@ -58,7 +58,10 @@ def test_p3f3_config_rejects_unregistered_proposal() -> None:
 
 
 def test_p3f3_config_rejects_unregistered_resampling_schedule() -> None:
-    with pytest.raises(ValueError, match="pre-bridge or post-bridge"):
+    with pytest.raises(
+        ValueError,
+        match="pre-bridge, post-bridge, or post-bridge-always",
+    ):
         OpenTargetParticleConfig(resampling_schedule="adaptive")
 
 

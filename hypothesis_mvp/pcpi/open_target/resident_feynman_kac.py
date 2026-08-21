@@ -405,8 +405,10 @@ def select_resident_feynman_kac_bridge(
         }
     )
     beta_values = tuple(value / denominator for value in beta_numerators)
+    padded_targets = np.zeros(len(workspace.actions), dtype=float)
+    padded_targets[: len(y)] = y
     certificates = workspace.certify_observation_beta_grid(
-        y,
+        padded_targets,
         observation_index,
         beta_values,
     )

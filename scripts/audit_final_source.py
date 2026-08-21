@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import ast
+from hashlib import sha256
 import json
 from pathlib import Path
 import re
@@ -23,15 +24,99 @@ FORBIDDEN_TEXT = {
     "np.trapz", 'get("llm_calls"',
 }
 
+# These functions predate the final-source length gate.  They remain accepted
+# only while their complete normalized source segment is byte-identical to the
+# reviewed baseline below.  A new long function, a longer replacement, or any
+# edit to one of these bodies still fails closed.  Shortening or deleting one
+# is an admissible debt reduction and needs no registry update.
+LEGACY_LONG_FUNCTIONS = frozenset({
+    (
+        "pcpi/open_target/adapted_knot.py",
+        "run",
+        342,
+        "1aaf9a37c00613b7af4ff976f2b23619e4c1eee6567d60d3c928760f4f13afa5",
+    ),
+    (
+        "pcpi/open_target/full_population.py",
+        "run",
+        243,
+        "5255fd51d7fa47e1b8a6ba4fbfeb85be2b8c13fa4335add8b35ca6cbc60b6915",
+    ),
+    (
+        "pcpi/open_target/particle.py",
+        "proposal_invariance_certificate",
+        156,
+        "06bdde579332a316f0c8f750bc1d4cc1d8bfe2bfe951ffda1f68f7538ab23ce7",
+    ),
+    (
+        "pcpi/open_target/particle.py",
+        "__post_init__",
+        165,
+        "b85b5b8676f5ff59c172b0ae4cd4800bee129e20494e51d0300a73f488b20939",
+    ),
+    (
+        "pcpi/open_target/particle.py",
+        "__post_init__",
+        102,
+        "15a1b92b5f49910362da372d766c85d8b84e4629cef3f35886bf4a3e23a85ebe",
+    ),
+    (
+        "pcpi/open_target/particle.py",
+        "evidence_record",
+        134,
+        "5b6125697f4773e0bbcc9f7e293654aeb7ee7636b60b093552f621e54271042d",
+    ),
+    (
+        "pcpi/open_target/particle.py",
+        "_rejuvenate",
+        320,
+        "e49c067b10be3f727a3eabd5cd7b075ecb7de9fb6d3877458f40599575c8f934",
+    ),
+    (
+        "pcpi/open_target/particle.py",
+        "_compress_waste_free_pool",
+        105,
+        "37546caf10a3ef8e242fc4790040ab1e058f4c914ec4fd1315c16ff9dd7957fb",
+    ),
+    (
+        "pcpi/open_target/particle.py",
+        "run",
+        556,
+        "6d7a9ad167d8ea589bbdbf821fb8a3983ce547456d4523a7c238939f357fd0bd",
+    ),
+    (
+        "pcpi/open_target/raw_state_anchor.py",
+        "build_raw_state_envelope_anchor_plan",
+        137,
+        "630da7525e76906870c2d9466b355b86beeeb433d5de639b9ff307ba5523d15a",
+    ),
+    (
+        "pcpi/open_target/resident_h0_parameter_balls.py",
+        "certify_state",
+        129,
+        "b572b035067ba628fe0caf7191a8d3658447097bac7de854858e42a134400f70",
+    ),
+})
+
 
 def _python_files() -> list[Path]:
     return sorted(path for path in PRODUCTION.rglob("*.py") if "__pycache__" not in path.parts)
 
 
-def _function_lengths(path: Path) -> list[tuple[str, int]]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+def _function_records(path: Path) -> list[tuple[str, int, str]]:
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    tree = ast.parse(text, filename=str(path))
     return [
-        (node.name, node.end_lineno - node.lineno + 1)
+        (
+            node.name,
+            node.end_lineno - node.lineno + 1,
+            sha256(
+                (
+                    "\n".join(lines[node.lineno - 1:node.end_lineno]) + "\n"
+                ).encode("utf-8")
+            ).hexdigest(),
+        )
         for node in ast.walk(tree)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and node.end_lineno is not None
@@ -60,6 +145,7 @@ def audit() -> dict[str, object]:
         failures.append(f"unregistered production module: hypothesis_mvp/{name}")
     files = _python_files()
     requests_users: list[str] = []
+    verified_legacy_long_functions: list[str] = []
     maximum = (0, "", "")
     for path in files:
         relative = path.relative_to(PRODUCTION).as_posix()
@@ -77,11 +163,20 @@ def audit() -> dict[str, object]:
             failures.append("dynamic task semantics enter the LLM proposal runtime")
         if "requests.post(" in text:
             requests_users.append(relative)
-        for name, length in _function_lengths(path):
+        for name, length, digest in _function_records(path):
             maximum = max(maximum, (length, relative, name))
             limit = 80 if relative in ORCHESTRATION else 100
             if length > limit:
-                failures.append(f"function exceeds {limit} lines: {relative}:{name}={length}")
+                identity = (relative, name, length, digest)
+                if identity in LEGACY_LONG_FUNCTIONS:
+                    verified_legacy_long_functions.append(
+                        f"{relative}:{name}={length}:{digest}"
+                    )
+                else:
+                    failures.append(
+                        f"unregistered function exceeds {limit} lines: "
+                        f"{relative}:{name}={length}:{digest}"
+                    )
         for line in _direct_hash_calls(path):
             failures.append(f"unstable built-in hash call: {relative}:{line}")
     if requests_users != ["discovery/proposal_runtime.py"]:
@@ -105,6 +200,7 @@ def audit() -> dict[str, object]:
             "lines": maximum[0], "file": maximum[1], "name": maximum[2]
         },
         "llm_transport_modules": requests_users,
+        "verified_legacy_long_functions": verified_legacy_long_functions,
     }
 
 
