@@ -287,8 +287,8 @@ long-horizon context and remain binding even when a local task omits them.
   source-segment SHA-256 identities. New or edited over-limit functions still
   fail closed. The inherited five failures are therefore repaired without
   changing an experiment, response, numerical tolerance or scientific result.
-- `P3F.4-CERT.16` is the frozen response-free conditional integration candidate
-  awaiting identity-bound user execution. It uses only the exact slack between
+- `P3F.4-CERT.16` passed its identity-bound user execution on source
+  `3f7416b3559496464c99c42d4a6078dcd3612d7a`. It uses only the exact slack between
   CERT.9's independent-island bound and the registered simultaneous failure
   probability, and freezes one equal per-comparison allocation over the full
   `K*N*S*(1+M)` coordinate space. The implicit rank is a complete bijection;
@@ -302,16 +302,32 @@ long-horizon context and remain binding even when a local task omits them.
   Philox address uniqueness is proved, but PRNG output is not promoted to
   mathematical ideal-bit independence. All bit, island and SMC execution flags
   remain false.
+- `P3F.4-CERT.17` is the frozen response-free pre-bit refinement candidate
+  awaiting identity-bound user execution. It replaces the invalid requirement
+  that one fixed 512-bit precision cover the entire countably-open state space
+  with the preregistered threshold-blind schedule `p_r = 512 * 2^r`. Valid
+  outward boundary enclosures are intersected before any threshold access, and
+  the first envelope whose complete ambiguity bound fits CERT.16's unchanged
+  `rho` is certified. Exact rational checks show that both the MH grid floor
+  `2 * 2^-256` and the full `N-1`-boundary multinomial grid floor are strictly
+  below `rho`; threshold-bit extension is neither needed nor authorized.
+  Conditional on actual evaluator widths converging to zero, every finite state
+  has a finite eligible round, without claiming one uniform precision or
+  runtime ceiling. Operational CERT.13/14 evaluator convergence remains
+  unproved, and their current normalization construction is still quadratic in
+  particle count. All evaluator, bit, island and SMC execution flags remain
+  false, and the external ideal-bit premise is unchanged.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out
   access, efficacy claims, and formal paper superiority claims remain blocked.
-  The next admissible action is the one-time response-free CERT.16 Gate on its
-  frozen source identity. After a pass, the next theorem phase must establish a
-  response-independent uniform ambiguity envelope over every reachable
-  pre-threshold state and state an explicitly accepted ideal-bit/product-law
-  premise; a runtime success subset or distinct Philox addresses cannot replace
-  either proof. Ordinary SciPy CDF values,
+  The next admissible action is the one-time response-free CERT.17 Gate on its
+  frozen source identity. After a pass, the next theorem phase must bind the
+  actual CERT.13/14 evaluators to the preregistered refinement schedule, prove
+  convergence over every legal finite pre-threshold state, and implement a
+  rigorous linear-time normalization aggregation. It must also state an
+  explicitly accepted ideal-bit/product-law premise; a runtime success subset
+  or distinct Philox addresses cannot replace either proof. Ordinary SciPy CDF values,
   `nextafter`, rounded snapshot arrays, observed-class `other` buckets,
   post-hoc normalization, jitter, regularization and tolerance relaxation are
   not admissible substitutes.
