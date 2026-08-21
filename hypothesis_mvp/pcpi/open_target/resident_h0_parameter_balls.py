@@ -361,6 +361,210 @@ class CertifiedH0StateParameterResult:
 
 
 @dataclass(frozen=True)
+class CertifiedFunctionSpacePriorResult:
+    """Response-free enclosure of the common latent function-space prior."""
+
+    provider_contract_hash: str
+    state_id: str
+    polynomial_key: PolynomialKey
+    component_state_id: str
+    domain_rows_hash: str
+    observation_indices: tuple[int, ...]
+    prediction_indices: tuple[int, ...]
+    latent_covariance: tuple[tuple[CertifiedDyadicInterval, ...], ...]
+    prior_location: tuple[CertifiedDyadicInterval, ...]
+    projected_rbf_audit: CertifiedProjectedRBFAudit | None
+    working_precision_bits: int = _PROVIDER_WORKING_PRECISION_BITS
+    validated_solve_algorithm: str = _VALIDATED_SOLVE_ALGORITHM
+    future_response_access: bool = False
+    rounded_snapshot_arrays_treated_as_exact: bool = False
+
+    def __post_init__(self) -> None:
+        dimension = len(self.latent_covariance)
+        if (
+            not self.provider_contract_hash
+            or not self.state_id
+            or not self.domain_rows_hash
+            or not self.observation_indices
+            or not self.prediction_indices
+            or dimension < 1
+            or len(self.prior_location) != dimension
+            or any(len(row) != dimension for row in self.latent_covariance)
+            or any(index < 0 or index >= dimension for index in self.observation_indices)
+            or any(index < 0 or index >= dimension for index in self.prediction_indices)
+            or self.working_precision_bits != _PROVIDER_WORKING_PRECISION_BITS
+            or self.validated_solve_algorithm != _VALIDATED_SOLVE_ALGORITHM
+            or self.future_response_access
+            or self.rounded_snapshot_arrays_treated_as_exact
+        ):
+            raise ValueError("CERT.14 function-space prior result is invalid")
+
+
+@dataclass(frozen=True)
+class _ArbFunctionSpacePriorWorkspace:
+    """Internal fixed-precision workspace shared by CERT.13 and CERT.14."""
+
+    polynomial_key: PolynomialKey
+    component_state_id: str
+    state_id: str
+    prediction_indices: tuple[int, ...]
+    observation_indices: tuple[int, ...]
+    latent_covariance: object
+    prior_location: tuple[object, ...]
+    projected_rbf_audit: CertifiedProjectedRBFAudit | None
+
+
+def _arb_standardized_domain(domain, arb):
+    raw = tuple(
+        tuple(_fraction_to_arb(value, arb) for value in row)
+        for row in domain
+    )
+    columns: list[tuple[object, ...]] = []
+    count = arb(len(domain))
+    for column in _active_standardizer_columns(domain):
+        values = tuple(row[column] for row in raw)
+        center = sum(values, arb(0)) / count
+        variance = sum(
+            ((value - center) * (value - center) for value in values),
+            arb(0),
+        ) / count
+        if not variance.lower() > arb(0):
+            raise ArithmeticError(
+                "CERT.14 standardizer variance is not certified positive"
+            )
+        scale = variance.sqrt()
+        columns.append(tuple((value - center) / scale for value in values))
+    return tuple(
+        tuple(column[row] for column in columns)
+        for row in range(len(domain))
+    )
+
+
+def _arb_projected_rbf(
+    provider,
+    key,
+    component_state_id,
+    domain,
+    standardized,
+    arb,
+    arb_mat,
+):
+    design_fraction = _evaluate_polynomial_key_fraction(key, domain)
+    class_id = semantic_class_id(
+        key,
+        provider.target_contract.grammar.feature_count,
+    )
+    state_id = f"{class_id}|{component_state_id}"
+    g = tuple(_fraction_to_arb(value, arb) for value in design_fraction)
+    dimension = len(domain)
+    kernel_state = provider._kernel_state(component_state_id)
+    if kernel_state is None:
+        return g, arb_mat(dimension, dimension), None, state_id
+    length_scale = _fraction_to_arb(
+        _float_identity(kernel_state.length_scale, "RBF length scale"),
+        arb,
+    )
+    kernel = arb_mat(
+        [
+            [
+                (
+                    -sum(
+                        (
+                            (a - b) * (a - b)
+                            for a, b in zip(
+                                standardized[left],
+                                standardized[right],
+                                strict=True,
+                            )
+                        ),
+                        arb(0),
+                    )
+                    / (arb(2) * length_scale * length_scale)
+                ).exp()
+                for right in range(dimension)
+            ]
+            for left in range(dimension)
+        ]
+    )
+    if all(value == 0 for value in design_fraction):
+        projected = kernel
+        constraint = tuple(arb(0) for _ in range(dimension))
+        vacuous = True
+    else:
+        kg = tuple(
+            _dot(tuple(kernel[row, column] for column in range(dimension)), g, arb)
+            for row in range(dimension)
+        )
+        gram = _dot(g, kg, arb)
+        if not gram.lower() > arb(0):
+            raise ArithmeticError(
+                "CERT.14 projected-RBF Gram scalar is not certified positive"
+            )
+        projected = arb_mat(
+            [
+                [
+                    kernel[row, column] - kg[row] * kg[column] / gram
+                    for column in range(dimension)
+                ]
+                for row in range(dimension)
+            ]
+        )
+        constraint = tuple(
+            _dot(
+                tuple(projected[row, column] for column in range(dimension)),
+                g,
+                arb,
+            )
+            for row in range(dimension)
+        )
+        if any(not value.contains(0) for value in constraint):
+            raise ArithmeticError("CERT.14 projected covariance lost orthogonality")
+        vacuous = False
+    audit = CertifiedProjectedRBFAudit(
+        state_id=state_id,
+        kernel_state_id=kernel_state.state_id,
+        kernel=_matrix_to_intervals(kernel),
+        projected_covariance=_matrix_to_intervals(projected),
+        constraint_product=tuple(
+            _arb_to_dyadic_interval(value) for value in constraint
+        ),
+        vacuous_zero_design_constraint=vacuous,
+    )
+    return g, projected, audit, state_id
+
+
+def _arb_latent_function_prior(provider, g, projected, arb, arb_mat):
+    prior = provider.target_contract.coefficient_noise_prior
+    coefficient_precision = _fraction_to_arb(
+        _float_identity(prior.coefficient_precision, "coefficient precision"),
+        arb,
+    )
+    discrepancy_precision = _fraction_to_arb(
+        _float_identity(
+            provider.target_contract.discrepancy_prior.discrepancy_precision,
+            "discrepancy precision",
+        ),
+        arb,
+    )
+    coefficient_mean = _fraction_to_arb(
+        _float_identity(prior.coefficient_mean, "coefficient mean"),
+        arb,
+    )
+    dimension = len(g)
+    latent = arb_mat(
+        [
+            [
+                g[row] * g[column] / coefficient_precision
+                + projected[row, column] / discrepancy_precision
+                for column in range(dimension)
+            ]
+            for row in range(dimension)
+        ]
+    )
+    return latent, tuple(coefficient_mean * value for value in g)
+
+
+@dataclass(frozen=True)
 class CertifiedFullStateH0ParameterBallProvider:
     """Factorisation-free Arb provider for every exact semantic raw state."""
 
@@ -483,6 +687,99 @@ class CertifiedFullStateH0ParameterBallProvider:
             raise ValueError("CERT.13 state names an unknown discrepancy component")
         return matches[0]
 
+    @property
+    def domain_rows_hash(self) -> str:
+        payload = {
+            "schema": "pcpi-p3f4-cert14-common-function-space-domain-v1",
+            "provider_contract_hash": self.parameter_provider_contract_hash,
+            "domain_rows": _fraction_rows_payload(self.domain_rows),
+            "active_standardizer_columns": _active_standardizer_columns(
+                self.domain_rows
+            ),
+        }
+        return sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+
+    def _build_arb_function_space_prior(
+        self,
+        key: PolynomialKey,
+        component_state_id: str,
+        arb,
+        arb_mat,
+    ) -> _ArbFunctionSpacePriorWorkspace:
+        """Build the one common latent covariance without reading responses."""
+
+        domain = self.domain_rows
+        prediction_indices = tuple(domain.index(row) for row in self.prediction_rows)
+        observation_indices = tuple(
+            domain.index(row) for row in self.history.action_fractions
+        )
+        standardized = _arb_standardized_domain(domain, arb)
+        g, projected, audit, state_id = _arb_projected_rbf(
+            self,
+            key,
+            component_state_id,
+            domain,
+            standardized,
+            arb,
+            arb_mat,
+        )
+        latent, prior_location = _arb_latent_function_prior(
+            self,
+            g,
+            projected,
+            arb,
+            arb_mat,
+        )
+        return _ArbFunctionSpacePriorWorkspace(
+            polynomial_key=tuple(key),
+            component_state_id=component_state_id,
+            state_id=state_id,
+            prediction_indices=prediction_indices,
+            observation_indices=observation_indices,
+            latent_covariance=latent,
+            prior_location=prior_location,
+            projected_rbf_audit=audit,
+        )
+
+    def certify_function_space_prior(
+        self,
+        polynomial_key: PolynomialKey,
+        component_state_id: str,
+    ) -> CertifiedFunctionSpacePriorResult:
+        """Export only the response-free prior shared by every resident operation."""
+
+        try:
+            from flint import arb, arb_mat, ctx
+        except ImportError as error:
+            raise RuntimeError(
+                "CERT.14 requires the pinned python-flint backend"
+            ) from error
+        key = tuple(polynomial_key)
+        with ctx.workprec(self.working_precision_bits):
+            workspace = self._build_arb_function_space_prior(
+                key,
+                component_state_id,
+                arb,
+                arb_mat,
+            )
+            return CertifiedFunctionSpacePriorResult(
+                provider_contract_hash=self.parameter_provider_contract_hash,
+                state_id=workspace.state_id,
+                polynomial_key=key,
+                component_state_id=component_state_id,
+                domain_rows_hash=self.domain_rows_hash,
+                observation_indices=workspace.observation_indices,
+                prediction_indices=workspace.prediction_indices,
+                latent_covariance=_matrix_to_intervals(
+                    workspace.latent_covariance
+                ),
+                prior_location=tuple(
+                    _arb_to_dyadic_interval(value)
+                    for value in workspace.prior_location
+                ),
+                projected_rbf_audit=workspace.projected_rbf_audit,
+            )
+
     def certify_state(
         self,
         polynomial_key: PolynomialKey,
@@ -496,143 +793,22 @@ class CertifiedFullStateH0ParameterBallProvider:
             raise RuntimeError("CERT.13 requires the pinned python-flint backend") from error
 
         key = tuple(polynomial_key)
-        domain = self.domain_rows
-        feature_count = self.target_contract.grammar.feature_count
-        design_fraction = _evaluate_polynomial_key_fraction(key, domain)
-        class_id = semantic_class_id(key, feature_count)
-        state_id = f"{class_id}|{component_state_id}"
-        prediction_index = tuple(domain.index(row) for row in self.prediction_rows)
-        observation_index = tuple(
-            domain.index(row) for row in self.history.action_fractions
-        )
-        kernel_state = self._kernel_state(component_state_id)
-
         with ctx.workprec(self.working_precision_bits):
-            raw = tuple(
-                tuple(_fraction_to_arb(value, arb) for value in row)
-                for row in domain
-            )
-            active = _active_standardizer_columns(domain)
-            standardized_columns: list[tuple[object, ...]] = []
-            count = arb(len(domain))
-            for column in active:
-                values = tuple(row[column] for row in raw)
-                center = sum(values, arb(0)) / count
-                variance = sum(
-                    ((value - center) * (value - center) for value in values),
-                    arb(0),
-                ) / count
-                if not variance.lower() > arb(0):
-                    raise ArithmeticError("CERT.13 standardizer variance is not certified positive")
-                scale = variance.sqrt()
-                standardized_columns.append(tuple((value - center) / scale for value in values))
-            standardized = tuple(
-                tuple(column[row] for column in standardized_columns)
-                for row in range(len(domain))
-            )
-
-            g = tuple(_fraction_to_arb(value, arb) for value in design_fraction)
-            dimension = len(domain)
-            projected_audit: CertifiedProjectedRBFAudit | None = None
-            if kernel_state is None:
-                projected = arb_mat(dimension, dimension)
-            else:
-                length_scale = _fraction_to_arb(
-                    _float_identity(kernel_state.length_scale, "RBF length scale"),
-                    arb,
-                )
-                kernel_rows: list[list[object]] = []
-                for left in range(dimension):
-                    row_values: list[object] = []
-                    for right in range(dimension):
-                        squared_distance = sum(
-                            (
-                                (a - b) * (a - b)
-                                for a, b in zip(
-                                    standardized[left],
-                                    standardized[right],
-                                    strict=True,
-                                )
-                            ),
-                            arb(0),
-                        )
-                        row_values.append(
-                            (-squared_distance / (arb(2) * length_scale * length_scale)).exp()
-                        )
-                    kernel_rows.append(row_values)
-                kernel = arb_mat(kernel_rows)
-                if all(value == 0 for value in design_fraction):
-                    projected = kernel
-                    constraint = tuple(arb(0) for _ in range(dimension))
-                    vacuous = True
-                else:
-                    kg = tuple(
-                        _dot(
-                            tuple(kernel[row, column] for column in range(dimension)),
-                            g,
-                            arb,
-                        )
-                        for row in range(dimension)
-                    )
-                    gram = _dot(g, kg, arb)
-                    if not gram.lower() > arb(0):
-                        raise ArithmeticError(
-                            "CERT.13 projected-RBF Gram scalar is not certified positive"
-                        )
-                    projected = arb_mat(
-                        [
-                            [
-                                kernel[row, column] - kg[row] * kg[column] / gram
-                                for column in range(dimension)
-                            ]
-                            for row in range(dimension)
-                        ]
-                    )
-                    constraint = tuple(
-                        _dot(
-                            tuple(projected[row, column] for column in range(dimension)),
-                            g,
-                            arb,
-                        )
-                        for row in range(dimension)
-                    )
-                    if any(not value.contains(0) for value in constraint):
-                        raise ArithmeticError("CERT.13 projected covariance lost orthogonality")
-                    vacuous = False
-                projected_audit = CertifiedProjectedRBFAudit(
-                    state_id=state_id,
-                    kernel_state_id=kernel_state.state_id,
-                    kernel=_matrix_to_intervals(kernel),
-                    projected_covariance=_matrix_to_intervals(projected),
-                    constraint_product=tuple(_arb_to_dyadic_interval(value) for value in constraint),
-                    vacuous_zero_design_constraint=vacuous,
-                )
-
-            prior = self.target_contract.coefficient_noise_prior
-            coefficient_precision = _fraction_to_arb(
-                _float_identity(prior.coefficient_precision, "coefficient precision"), arb
-            )
-            discrepancy_precision = _fraction_to_arb(
-                _float_identity(
-                    self.target_contract.discrepancy_prior.discrepancy_precision,
-                    "discrepancy precision",
-                ),
+            workspace = self._build_arb_function_space_prior(
+                key,
+                component_state_id,
                 arb,
+                arb_mat,
             )
-            coefficient_mean = _fraction_to_arb(
-                _float_identity(prior.coefficient_mean, "coefficient mean"), arb
-            )
-            latent = arb_mat(
-                [
-                    [
-                        g[row] * g[column] / coefficient_precision
-                        + projected[row, column] / discrepancy_precision
-                        for column in range(dimension)
-                    ]
-                    for row in range(dimension)
-                ]
-            )
-            prior_location = tuple(coefficient_mean * value for value in g)
+            # The shared builder owns the projected entry
+            # kernel[row, column] - kg[row] * kg[column] / gram.
+            state_id = workspace.state_id
+            prediction_index = workspace.prediction_indices
+            observation_index = workspace.observation_indices
+            latent = workspace.latent_covariance
+            prior_location = workspace.prior_location
+            projected_audit = workspace.projected_rbf_audit
+            prior = self.target_contract.coefficient_noise_prior
             residual = tuple(
                 _fraction_to_arb(target, arb) - prior_location[index]
                 for target, index in zip(

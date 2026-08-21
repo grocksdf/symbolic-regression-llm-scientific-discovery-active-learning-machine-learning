@@ -238,15 +238,34 @@ long-horizon context and remain binding even when a local task omits them.
   compatible mass remains only in the upper bound. Only the standalone
   algebraic constructor is authorized. Operational `H0`, CDF/projector result,
   island and SMC access remain blocked.
+- `P3F.4-CERT.14` replaces authority for the resident floating factor-basis
+  collapsed target with the same 512-bit Arb function-space covariance builder
+  used by CERT.13. For an exact rational bridge weight matrix `W`, it evaluates
+  the symmetric system `I + sqrt(W) P sqrt(W)`, its determinant and validated
+  `precond` solve, and the Gaussian/NIG weighted collapsed log marginal. Only
+  the response prefix through the current bridge coordinate may be accessed;
+  changing a future frozen response leaves the earlier ball unchanged. Bridge
+  potentials are outward differences of two balls carrying one immutable
+  target identity. Local/RJ acceptance combines those balls with exact raw-AST,
+  component and forward/reverse auxiliary fractions and a unit Jacobian; an
+  unresolved interval is not converted to a decision. Exact finite rational MH
+  matrices verify detailed balance and target invariance, and the sparse
+  fixed-candidate adapter carries the same target hash without normalization or
+  class-vector materialization. The resident float target branch now fails
+  closed before use, and all operational target/result/island/SMC flags remain
+  false. No inverse, approximate Arb, midpoint promotion, jitter, regularizer,
+  tolerance rank or result-dependent precision retry is admitted.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out
   access, efficacy claims, and formal paper superiority claims remain blocked.
-  The next admissible phase is a separate response-free Gate that replaces the
-  resident floating factor-basis collapsed likelihood with the same certified
-  function-space projected covariance and proves one target identity through
-  bridge weights, local/RJ acceptance and the sparse fixed-candidate result
-  adapter. Until that composition passes, CERT.13 parameter balls may not be
-  joined to resident particles. Ordinary SciPy CDF values, `nextafter`, rounded
-  snapshot arrays, observed-class `other` buckets, post-hoc normalization,
-  jitter, regularization and tolerance relaxation are not admissible substitutes.
+  The next admissible phase is a response-free certified comparison/sampling
+  Gate for outward log normalization, exact-bit random thresholds, multinomial
+  inverse-CDF resampling and MH uniform comparisons, with every unresolved
+  comparison propagated as a complete failure. Its precision and bit budgets
+  must be frozen independently of observed performance. Until that Gate and a
+  later integration Gate pass, CERT.14 balls may not be converted to sampled
+  indices or accept/reject outcomes. Ordinary SciPy CDF values, `nextafter`,
+  rounded snapshot arrays, observed-class `other` buckets, post-hoc
+  normalization, jitter, regularization and tolerance relaxation are not
+  admissible substitutes.

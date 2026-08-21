@@ -77,6 +77,10 @@ from .resident_finite_n import (
     certify_resident_finite_n_bridge_mixing,
     validate_resident_finite_n_operation_target,
 )
+from .resident_certified_flags import (
+    P3F4_CERT14_FLOAT_FACTOR_BASIS_RESIDENT_TARGET_AUTHORIZED,
+    P3F4_CERT14_RESIDENT_SMC_RUN_AUTHORIZED,
+)
 from .response_energy_certification import ResponseEnergyCertificationWorkspace
 from .semantic_lift import exact_raw_ast_prior_mass
 
@@ -1910,6 +1914,14 @@ class ScalableOpenTargetSMC:
         target: float,
         beta: float,
     ) -> np.ndarray:
+        if (
+            self.config.proposal_kind == P3F4_RESIDENT_LOCAL_RJ_PROPOSAL_KIND
+            and not P3F4_CERT14_FLOAT_FACTOR_BASIS_RESIDENT_TARGET_AUTHORIZED
+        ):
+            raise RuntimeError(
+                "CERT.14 retired the resident floating factor-basis collapsed "
+                "target; certified interval execution remains blocked"
+            )
         return np.asarray(
             [
                 _tempered_log_marginal(
@@ -2044,6 +2056,11 @@ class ScalableOpenTargetSMC:
             if resident_bridge_target is None or resident_weight_update is None:
                 raise ValueError(
                     "resident local/RJ rejuvenation requires the certified bridge update"
+                )
+            if not P3F4_CERT14_RESIDENT_SMC_RUN_AUTHORIZED:
+                raise RuntimeError(
+                    "CERT.14 proves only the certified common-target composition; "
+                    "resident rejuvenation execution remains blocked"
                 )
             validate_resident_feynman_kac_operation_target(
                 self._resident_feynman_kac_plan,
@@ -2466,6 +2483,7 @@ class ScalableOpenTargetSMC:
             and (
                 not P3F4_RESIDENT_LOCAL_RJ_RUN_AUTHORIZED
                 or not P3F4_RESIDENT_FEYNMAN_KAC_RUN_AUTHORIZED
+                or not P3F4_CERT14_RESIDENT_SMC_RUN_AUTHORIZED
                 or (
                     self._resident_finite_n_plan is not None
                     and not P3F4_RESIDENT_FINITE_N_RUN_AUTHORIZED
