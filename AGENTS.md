@@ -262,8 +262,8 @@ long-horizon context and remain binding even when a local task omits them.
   tracked invalid source still fails. One deterministic fixture proves both
   directions. The common target, all execution guards, experiment prohibitions,
   numerical precision and scientific claim boundary are unchanged.
-- `P3F.4-CERT.15` is the frozen response-free comparison/sampling candidate
-  awaiting its identity-bound user execution. It normalizes CERT.14 log-mass
+- `P3F.4-CERT.15` passed its identity-bound user execution on repaired source
+  `7f8f961900c8f1cd739bb84d23c33c57f848640e`. It normalizes CERT.14 log-mass
   balls with monotone outward Arb ratios and interprets each fixed 256-bit
   string as the complete half-open dyadic cell of ideal uniforms sharing that
   prefix. Multinomial inverse-CDF or MH output is returned only when the whole
@@ -274,9 +274,9 @@ long-horizon context and remain binding even when a local task omits them.
   partial ancestor vector is admitted. The small dyadic law check is exact
   deterministic enumeration, not a simulated experiment. Only standalone
   comparison composition is a candidate authorization; product-bit
-  materialization, resident resampling/MH, islands and SMC remain false. A
-  passing response-free Gate would support these comparison semantics only and
-  would not yet compose their failure probability with the finite-`N` theorem.
+  materialization, resident resampling/MH, islands and SMC remain false. The
+  passing response-free Gate supports these comparison semantics only and does
+  not by itself compose their failure probability with the finite-`N` theorem.
 - `P3F.4-CERT.15-R1` repairs the inherited full-suite baseline before any
   CERT.16 work. The historical confirmatory `certification.py` is restored to
   its byte-frozen SHA-256 and resident prefix padding is isolated in the
@@ -287,16 +287,31 @@ long-horizon context and remain binding even when a local task omits them.
   source-segment SHA-256 identities. New or edited over-limit functions still
   fail closed. The inherited five failures are therefore repaired without
   changing an experiment, response, numerical tolerance or scientific result.
+- `P3F.4-CERT.16` is the frozen response-free conditional integration candidate
+  awaiting identity-bound user execution. It uses only the exact slack between
+  CERT.9's independent-island bound and the registered simultaneous failure
+  probability, and freezes one equal per-comparison allocation over the full
+  `K*N*S*(1+M)` coordinate space. The implicit rank is a complete bijection;
+  each coordinate binds its CERT.11 island-stream hash, key commitment and a
+  domain-separated 256-bit Philox counter block. An over-budget local bound is
+  rejected before bit access and any unresolved comparison aborts the complete
+  island batch without retry or partial output. The Gate proves only the
+  conditional algebraic identity `B_N + Q*rho = alpha`: a runtime precheck does
+  not bound the probability of entering an over-budget state. A uniform
+  response-free comparison envelope over all reachable states remains false.
+  Philox address uniqueness is proved, but PRNG output is not promoted to
+  mathematical ideal-bit independence. All bit, island and SMC execution flags
+  remain false.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out
   access, efficacy claims, and formal paper superiority claims remain blocked.
-  The next admissible action is the one-time response-free CERT.15 Gate on its
-  frozen source identity. Until it passes, its candidate comparison results are
-  not evidence. Even after a pass, a later response-free integration Gate must
-  allocate comparison-failure probability jointly with the CERT.9 finite-`N`
-  error and bind every bit coordinate to the CERT.11 product-source manifest
-  before resident execution can be considered. Ordinary SciPy CDF values,
+  The next admissible action is the one-time response-free CERT.16 Gate on its
+  frozen source identity. After a pass, the next theorem phase must establish a
+  response-independent uniform ambiguity envelope over every reachable
+  pre-threshold state and state an explicitly accepted ideal-bit/product-law
+  premise; a runtime success subset or distinct Philox addresses cannot replace
+  either proof. Ordinary SciPy CDF values,
   `nextafter`, rounded snapshot arrays, observed-class `other` buckets,
   post-hoc normalization, jitter, regularization and tolerance relaxation are
   not admissible substitutes.
