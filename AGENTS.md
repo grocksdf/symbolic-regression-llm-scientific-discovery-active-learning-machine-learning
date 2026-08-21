@@ -262,17 +262,31 @@ long-horizon context and remain binding even when a local task omits them.
   tracked invalid source still fails. One deterministic fixture proves both
   directions. The common target, all execution guards, experiment prohibitions,
   numerical precision and scientific claim boundary are unchanged.
+- `P3F.4-CERT.15` is the frozen response-free comparison/sampling candidate
+  awaiting its identity-bound user execution. It normalizes CERT.14 log-mass
+  balls with monotone outward Arb ratios and interprets each fixed 256-bit
+  string as the complete half-open dyadic cell of ideal uniforms sharing that
+  prefix. Multinomial inverse-CDF or MH output is returned only when the whole
+  cell has one decision for every target represented by the probability ball;
+  otherwise the complete operation fails with an explicit unresolved-
+  probability upper bound. No midpoint, discrete left-endpoint surrogate,
+  modulo reduction, adaptive bit extension, precision retry, replacement or
+  partial ancestor vector is admitted. The small dyadic law check is exact
+  deterministic enumeration, not a simulated experiment. Only standalone
+  comparison composition is a candidate authorization; product-bit
+  materialization, resident resampling/MH, islands and SMC remain false. A
+  passing response-free Gate would support these comparison semantics only and
+  would not yet compose their failure probability with the finite-`N` theorem.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out
   access, efficacy claims, and formal paper superiority claims remain blocked.
-  The next admissible phase is a response-free certified comparison/sampling
-  Gate for outward log normalization, exact-bit random thresholds, multinomial
-  inverse-CDF resampling and MH uniform comparisons, with every unresolved
-  comparison propagated as a complete failure. Its precision and bit budgets
-  must be frozen independently of observed performance. Until that Gate and a
-  later integration Gate pass, CERT.14 balls may not be converted to sampled
-  indices or accept/reject outcomes. Ordinary SciPy CDF values, `nextafter`,
-  rounded snapshot arrays, observed-class `other` buckets, post-hoc
-  normalization, jitter, regularization and tolerance relaxation are not
-  admissible substitutes.
+  The next admissible action is the one-time response-free CERT.15 Gate on its
+  frozen source identity. Until it passes, its candidate comparison results are
+  not evidence. Even after a pass, a later response-free integration Gate must
+  allocate comparison-failure probability jointly with the CERT.9 finite-`N`
+  error and bind every bit coordinate to the CERT.11 product-source manifest
+  before resident execution can be considered. Ordinary SciPy CDF values,
+  `nextafter`, rounded snapshot arrays, observed-class `other` buckets,
+  post-hoc normalization, jitter, regularization and tolerance relaxation are
+  not admissible substitutes.
