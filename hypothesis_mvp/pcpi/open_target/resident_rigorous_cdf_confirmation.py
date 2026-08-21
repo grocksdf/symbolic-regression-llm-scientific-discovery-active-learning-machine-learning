@@ -266,6 +266,18 @@ def _exact_arb_to_fraction(value) -> Fraction:
     return _binary_mantissa_exponent_to_fraction(int(mantissa), int(exponent))
 
 
+def _intersect_arb_with_unit_interval(value, arb_type):
+    """Intersect an outward ball with a proved exact ``[0, 1]`` domain."""
+
+    lower = max(Fraction(0, 1), _exact_arb_to_fraction(value.lower()))
+    upper = min(Fraction(1, 1), _exact_arb_to_fraction(value.upper()))
+    if lower > upper:
+        raise ArithmeticError("CERT.12 special-function argument lost its domain")
+    return arb_type(_fraction_to_binary_mantissa_exponent(lower)).union(
+        arb_type(_fraction_to_binary_mantissa_exponent(upper))
+    )
+
+
 def _student_t_cdf_at_exact_standardized_endpoint(
     standardized_endpoint,
     degrees_of_freedom,
@@ -274,8 +286,28 @@ def _student_t_cdf_at_exact_standardized_endpoint(
     endpoint = _exact_arb_to_fraction(standardized_endpoint)
     if endpoint == 0:
         return arb_type(1) / 2
-    beta_argument = degrees_of_freedom / (
-        degrees_of_freedom + standardized_endpoint * standardized_endpoint
+    squared = standardized_endpoint * standardized_endpoint
+    denominator = degrees_of_freedom + squared
+    if squared.upper() <= degrees_of_freedom.lower():
+        # Near zero, evaluate the complementary beta argument.  This avoids
+        # passing an enclosure touching one to beta_lower, whose derivative is
+        # singular for b=1/2.  The identity is exact:
+        # I_z(a,b) = 1 - I_(1-z)(b,a).
+        beta_argument = _intersect_arb_with_unit_interval(
+            squared / denominator,
+            arb_type,
+        )
+        beta_value = beta_argument.beta_lower(
+            arb_type(1) / 2,
+            degrees_of_freedom / 2,
+            regularized=True,
+        )
+        if endpoint < 0:
+            return arb_type(1) / 2 - beta_value / 2
+        return arb_type(1) / 2 + beta_value / 2
+    beta_argument = _intersect_arb_with_unit_interval(
+        degrees_of_freedom / denominator,
+        arb_type,
     )
     beta_value = beta_argument.beta_lower(
         degrees_of_freedom / 2,
@@ -834,7 +866,7 @@ class ResidentSplitIslandMAPCertificate:
         if not 0 <= failure < 1 or self.status not in {"certified", "abstain"}:
             raise ValueError("CERT.12 MAP certificate decision is invalid")
         if self.status == "certified":
-            if regret is None or regret != competitor - lower or regret < 0:
+            if regret is None or regret != max(Fraction(0, 1), competitor - lower):
                 raise ValueError("CERT.12 certified MAP regret identity is invalid")
         elif regret is not None:
             raise ValueError("CERT.12 abstention may not claim a MAP regret bound")
@@ -864,7 +896,7 @@ def certify_split_island_map_candidate(
     competitor = 1 - lower
     if median >= plan.confirmation_median_threshold:
         status = "certified"
-        regret: Fraction | None = competitor - lower
+        regret: Fraction | None = max(Fraction(0, 1), competitor - lower)
         if regret > plan.map_regret_budget:
             raise ArithmeticError("CERT.12 certified regret exceeded its frozen budget")
     else:

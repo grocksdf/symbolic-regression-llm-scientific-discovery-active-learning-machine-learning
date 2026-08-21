@@ -217,14 +217,36 @@ long-horizon context and remain binding even when a local task omits them.
   no island is reused, and there is no retry, seed selection, class-space
   enumeration, result-derived threshold, normalization or posterior-vector
   claim. The external product-entropy premise remains explicit.
+- `P3F.4-CERT.13` reconstructs complete predictive Student-t parameter balls
+  from an exact frozen `H0` identity rather than resident NumPy snapshots. It
+  evaluates every polynomial semantic key over the exact registered binary
+  domain, chooses varying standardizer coordinates by exact equality, builds
+  the RBF kernel in 512-bit Arb, and replaces the floating `eigh`/SVD factor
+  with the factorisation-free conditional covariance
+  `K - K g (g^T K g)^-1 g^T K`. The zero polynomial receives the exact vacuous
+  constraint. A validated `arb_mat.solve(..., algorithm="precond")` then gives
+  the conjugate Gaussian/NIG location, scale-squared and degrees-of-freedom
+  balls for every frozen action/threshold coordinate. No approximate solve,
+  matrix inverse, jitter, regularizer, tolerance rank, precision retry or
+  rounded posterior input is admitted. CERT.13 also repairs the CERT.12
+  special-function endpoint at zero by exact beta-domain intersection and a
+  complementary incomplete-beta identity, and repairs the majority-mass
+  regret certificate to use the nonnegative upper bound
+  `max(0, 1 - 2*lower)`. A candidate-only sparse projector propagates exact
+  lower/upper mass for the selection-fixed class without materializing a full
+  `6^d` vector; its lower bound composes with confirmation while all uncertain
+  compatible mass remains only in the upper bound. Only the standalone
+  algebraic constructor is authorized. Operational `H0`, CDF/projector result,
+  island and SMC access remain blocked.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out
   access, efficacy claims, and formal paper superiority claims remain blocked.
-  The next admissible phase is a separate response-free Gate that constructs
-  full-state posterior predictive parameter balls directly from frozen `H0`,
-  including a certified structurewise RBF discrepancy design, and composes
-  the sparse candidate/confirmation projector without exposing a fixed full-
-  class vector. Ordinary SciPy CDF values, `nextafter`, rounded snapshot arrays,
-  observed-class `other` buckets, post-hoc normalization and tolerance
-  relaxation are not admissible substitutes.
+  The next admissible phase is a separate response-free Gate that replaces the
+  resident floating factor-basis collapsed likelihood with the same certified
+  function-space projected covariance and proves one target identity through
+  bridge weights, local/RJ acceptance and the sparse fixed-candidate result
+  adapter. Until that composition passes, CERT.13 parameter balls may not be
+  joined to resident particles. Ordinary SciPy CDF values, `nextafter`, rounded
+  snapshot arrays, observed-class `other` buckets, post-hoc normalization,
+  jitter, regularization and tolerance relaxation are not admissible substitutes.
