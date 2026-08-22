@@ -78,6 +78,16 @@ def _clip_probability_interval(
     return CertifiedDyadicInterval(clipped_lower, clipped_upper)
 
 
+def _registered_refinement_precision(initial_bits: int, requested: int | None) -> int:
+    precision = int(initial_bits if requested is None else requested)
+    if precision < initial_bits or precision % initial_bits:
+        raise ValueError("CERT.17 precision left the registered doubling schedule")
+    ratio = precision // initial_bits
+    if ratio & (ratio - 1):
+        raise ValueError("CERT.17 precision left the registered doubling schedule")
+    return precision
+
+
 @dataclass(frozen=True)
 class CertifiedComparisonSamplingPlan:
     """Immutable CERT.15 numerical, bit and authorization identity."""
@@ -233,8 +243,10 @@ class CertifiedNormalizedLogMasses:
 def certify_outward_log_normalization(
     plan: CertifiedComparisonSamplingPlan,
     log_mass_intervals: Sequence[CertifiedDyadicInterval],
+    *,
+    working_precision_bits: int | None = None,
 ) -> CertifiedNormalizedLogMasses:
-    """Normalize log-mass balls using monotone ratio bounds in 512-bit Arb."""
+    """Normalize log-mass balls in linear time with monotone outward ratios."""
 
     intervals = tuple(log_mass_intervals)
     if len(intervals) < 2:
@@ -246,22 +258,39 @@ def certify_outward_log_normalization(
     except ImportError as error:
         raise RuntimeError("CERT.15 requires pinned python-flint") from error
 
+    precision = _registered_refinement_precision(
+        plan.working_precision_bits,
+        working_precision_bits,
+    )
     probabilities: list[CertifiedDyadicInterval] = []
-    with ctx.workprec(plan.working_precision_bits):
-        for index, interval in enumerate(intervals):
-            lower_denominator = arb(1)
-            upper_denominator = arb(1)
-            for other_index, other in enumerate(intervals):
-                if other_index == index:
-                    continue
-                lower_denominator += _fraction_to_arb(
-                    other.upper - interval.lower,
-                    arb,
-                ).exp()
-                upper_denominator += _fraction_to_arb(
-                    other.lower - interval.upper,
-                    arb,
-                ).exp()
+    with ctx.workprec(precision):
+        shift = max(interval.upper for interval in intervals)
+        lower_terms = tuple(
+            _fraction_to_arb(interval.lower - shift, arb).exp()
+            for interval in intervals
+        )
+        upper_terms = tuple(
+            _fraction_to_arb(interval.upper - shift, arb).exp()
+            for interval in intervals
+        )
+        lower_total = sum(lower_terms, arb(0))
+        upper_total = sum(upper_terms, arb(0))
+        for interval, lower_term, upper_term in zip(
+            intervals,
+            lower_terms,
+            upper_terms,
+            strict=True,
+        ):
+            lower_excluding = upper_total - upper_term
+            upper_excluding = lower_total - lower_term
+            lower_denominator = arb(1) + _fraction_to_arb(
+                shift - interval.lower,
+                arb,
+            ).exp() * lower_excluding
+            upper_denominator = arb(1) + _fraction_to_arb(
+                shift - interval.upper,
+                arb,
+            ).exp() * upper_excluding
             lower_ball = arb(1) / lower_denominator
             upper_ball = arb(1) / upper_denominator
             probabilities.append(
@@ -513,6 +542,7 @@ def finite_dyadic_inverse_cdf_audit(
 def _acceptance_probability_interval(
     plan: CertifiedComparisonSamplingPlan,
     acceptance: CertifiedLocalRJAcceptanceBall,
+    working_precision_bits: int | None = None,
 ) -> CertifiedDyadicInterval:
     if acceptance.plan_hash != plan.common_target_plan_hash:
         raise ValueError("CERT.15 MH acceptance crossed common-target plans")
@@ -522,13 +552,32 @@ def _acceptance_probability_interval(
         from flint import arb, ctx
     except ImportError as error:
         raise RuntimeError("CERT.15 requires pinned python-flint") from error
-    with ctx.workprec(plan.working_precision_bits):
+    precision = _registered_refinement_precision(
+        plan.working_precision_bits,
+        working_precision_bits,
+    )
+    with ctx.workprec(precision):
         lower_ball = _fraction_to_arb(acceptance.log_acceptance.lower, arb).exp()
         upper_ball = _fraction_to_arb(acceptance.log_acceptance.upper, arb).exp()
         return _clip_probability_interval(
             _arb_endpoint_to_fraction(lower_ball.lower()),
             _arb_endpoint_to_fraction(upper_ball.upper()),
         )
+
+
+def certify_mh_acceptance_probability_interval(
+    plan: CertifiedComparisonSamplingPlan,
+    acceptance: CertifiedLocalRJAcceptanceBall,
+    *,
+    working_precision_bits: int | None = None,
+) -> CertifiedDyadicInterval:
+    """Export one outward MH probability boundary without reading a threshold."""
+
+    return _acceptance_probability_interval(
+        plan,
+        acceptance,
+        working_precision_bits,
+    )
 
 
 @dataclass(frozen=True)
@@ -634,6 +683,7 @@ __all__ = [
     "build_certified_comparison_sampling_plan",
     "certified_mh_uniform_comparison",
     "certified_multinomial_inverse_cdf",
+    "certify_mh_acceptance_probability_interval",
     "certify_outward_log_normalization",
     "exact_bit_uniform_threshold",
     "finite_dyadic_inverse_cdf_audit",

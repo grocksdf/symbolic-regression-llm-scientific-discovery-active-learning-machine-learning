@@ -302,8 +302,8 @@ long-horizon context and remain binding even when a local task omits them.
   Philox address uniqueness is proved, but PRNG output is not promoted to
   mathematical ideal-bit independence. All bit, island and SMC execution flags
   remain false.
-- `P3F.4-CERT.17` is the frozen response-free pre-bit refinement candidate
-  awaiting identity-bound user execution. It replaces the invalid requirement
+- `P3F.4-CERT.17` passed its identity-bound user execution on source
+  `1c05dfb81484f6a7eeee79f1290964e4bb964884`. It replaces the invalid requirement
   that one fixed 512-bit precision cover the entire countably-open state space
   with the preregistered threshold-blind schedule `p_r = 512 * 2^r`. Valid
   outward boundary enclosures are intersected before any threshold access, and
@@ -313,21 +313,36 @@ long-horizon context and remain binding even when a local task omits them.
   below `rho`; threshold-bit extension is neither needed nor authorized.
   Conditional on actual evaluator widths converging to zero, every finite state
   has a finite eligible round, without claiming one uniform precision or
-  runtime ceiling. Operational CERT.13/14 evaluator convergence remains
-  unproved, and their current normalization construction is still quadratic in
-  particle count. All evaluator, bit, island and SMC execution flags remain
-  false, and the external ideal-bit premise is unchanged.
+  runtime ceiling. At this stage operational CERT.13/14 evaluator convergence
+  remained unproved and normalization was still quadratic in particle count.
+  All evaluator, bit, island and SMC execution flags remained false, and the
+  external ideal-bit premise was unchanged.
+- `P3F.4-CERT.18` is the frozen response-free actual-Arb refinement candidate
+  awaiting identity-bound user execution. The actual exact-input CERT.13/14
+  function-space builder, collapsed target, exact local/RJ ratio and MH
+  probability now accept only the preregistered `512 * 2^r` rounds and compose
+  into CERT.17 before threshold access. The Gate checks overlapping, tightening
+  512/1024-bit enclosures on the actual path and retains the FLINT inclusion and
+  convergence semantics as an explicit third-party numerical premise rather
+  than claiming software infallibility. CERT.15 normalization now shares two
+  shifted endpoint sums across all particles and excludes each self term,
+  replacing the nested pairwise loop by at most `4N` exponential evaluations,
+  `O(N)` time and `O(N)` memory. Equal-mass containment, shift invariance and an
+  independent 2048-bit point expression are checked deterministically. This
+  removes the quadratic normalization bottleneck but does not make the frozen
+  `N=212408`, `K=27`, `Q=368876229120` plan experimentally feasible. All
+  operational, bit, island and SMC flags remain false.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out
   access, efficacy claims, and formal paper superiority claims remain blocked.
-  The next admissible action is the one-time response-free CERT.17 Gate on its
-  frozen source identity. After a pass, the next theorem phase must bind the
-  actual CERT.13/14 evaluators to the preregistered refinement schedule, prove
-  convergence over every legal finite pre-threshold state, and implement a
-  rigorous linear-time normalization aggregation. It must also state an
-  explicitly accepted ideal-bit/product-law premise; a runtime success subset
-  or distinct Philox addresses cannot replace either proof. Ordinary SciPy CDF values,
+  The next admissible action is the one-time response-free CERT.18 Gate on its
+  frozen source identity. After a pass, the next theorem phase must replace the
+  loose and computationally infeasible finite-particle/island guarantee with a
+  sharper response-independent decision theorem or a different exact estimator
+  before any real experiment. It must also state an explicitly accepted
+  ideal-bit/product-law premise; a runtime success subset or distinct Philox
+  addresses cannot replace either proof. Ordinary SciPy CDF values,
   `nextafter`, rounded snapshot arrays, observed-class `other` buckets,
   post-hoc normalization, jitter, regularization and tolerance relaxation are
   not admissible substitutes.

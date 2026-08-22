@@ -105,6 +105,16 @@ def _interval_subtract(
     )
 
 
+def _registered_refinement_precision(initial_bits: int, requested: int | None) -> int:
+    precision = int(initial_bits if requested is None else requested)
+    if precision < initial_bits or precision % initial_bits:
+        raise ValueError("CERT.17 precision left the registered doubling schedule")
+    ratio = precision // initial_bits
+    if ratio & (ratio - 1):
+        raise ValueError("CERT.17 precision left the registered doubling schedule")
+    return precision
+
+
 @dataclass(frozen=True)
 class CertifiedResidentFunctionSpacePlan:
     """Immutable identity shared by every CERT.14 resident operation."""
@@ -436,6 +446,7 @@ def certify_collapsed_bridge_target(
     *,
     observation_index: int,
     beta_numerator: int,
+    working_precision_bits: int | None = None,
 ) -> CertifiedCollapsedBridgeTargetBall:
     """Evaluate one weighted Gaussian/NIG marginal with validated Arb algebra."""
 
@@ -447,7 +458,11 @@ def certify_collapsed_bridge_target(
     except ImportError as error:
         raise RuntimeError("CERT.14 requires pinned python-flint") from error
     key = tuple(polynomial_state_key)
-    with ctx.workprec(plan.working_precision_bits):
+    precision = _registered_refinement_precision(
+        plan.working_precision_bits,
+        working_precision_bits,
+    )
+    with ctx.workprec(precision):
         workspace = provider._build_arb_function_space_prior(
             key,
             component_state_id,
@@ -568,6 +583,49 @@ class CertifiedLocalRJAcceptanceBall:
             raise ValueError("CERT.14 local/RJ acceptance ball is invalid")
 
 
+def _certify_exact_local_rj_log_ratio(
+    plan: CertifiedResidentFunctionSpacePlan,
+    provider: CertifiedFullStateH0ParameterBallProvider,
+    local_rj_plan: RawStateLocalRJPlan,
+    proposal: RawStateLocalRJProposal,
+    working_precision_bits: int | None,
+) -> CertifiedDyadicInterval:
+    try:
+        from flint import arb, ctx
+    except ImportError as error:
+        raise RuntimeError("CERT.14 requires pinned python-flint") from error
+    grammar = provider.target_contract.grammar
+    current_expression_prior = exact_raw_ast_prior_mass(
+        grammar,
+        proposal.current_state.expression.node_count,
+    )
+    proposed_expression_prior = exact_raw_ast_prior_mass(
+        grammar,
+        proposal.proposed_state.expression.node_count,
+    )
+    component_prior = local_rj_plan.component_prior
+    current_component_prior = component_prior.atom(
+        proposal.current_state.component_state_id
+    ).prior_probability
+    proposed_component_prior = component_prior.atom(
+        proposal.proposed_state.component_state_id
+    ).prior_probability
+    precision = _registered_refinement_precision(
+        plan.working_precision_bits,
+        working_precision_bits,
+    )
+    with ctx.workprec(precision):
+        log_exact_ratio = (
+            _fraction_to_arb(proposed_expression_prior, arb).log()
+            + _fraction_to_arb(proposed_component_prior, arb).log()
+            - _fraction_to_arb(current_expression_prior, arb).log()
+            - _fraction_to_arb(current_component_prior, arb).log()
+            + _fraction_to_arb(proposal.reverse_auxiliary_probability, arb).log()
+            - _fraction_to_arb(proposal.forward_auxiliary_probability, arb).log()
+        )
+        return _arb_to_dyadic_interval(log_exact_ratio)
+
+
 def certify_local_rj_acceptance(
     plan: CertifiedResidentFunctionSpacePlan,
     provider: CertifiedFullStateH0ParameterBallProvider,
@@ -575,6 +633,8 @@ def certify_local_rj_acceptance(
     proposal: RawStateLocalRJProposal,
     current: CertifiedCollapsedBridgeTargetBall,
     proposed: CertifiedCollapsedBridgeTargetBall,
+    *,
+    working_precision_bits: int | None = None,
 ) -> CertifiedLocalRJAcceptanceBall:
     if (
         local_rj_plan.stable_hash != plan.local_rj_plan_hash
@@ -600,42 +660,13 @@ def certify_local_rj_acceptance(
     ):
         raise ValueError("CERT.14 local/RJ endpoints crossed target identities")
 
-    try:
-        from flint import arb, ctx
-    except ImportError as error:
-        raise RuntimeError("CERT.14 requires pinned python-flint") from error
-
-    current_expression_prior = exact_raw_ast_prior_mass(
-        provider.target_contract.grammar,
-        proposal.current_state.expression.node_count,
+    exact_ratio_ball = _certify_exact_local_rj_log_ratio(
+        plan,
+        provider,
+        local_rj_plan,
+        proposal,
+        working_precision_bits,
     )
-    proposed_expression_prior = exact_raw_ast_prior_mass(
-        provider.target_contract.grammar,
-        proposal.proposed_state.expression.node_count,
-    )
-    current_component_prior = local_rj_plan.component_prior.atom(
-        proposal.current_state.component_state_id
-    ).prior_probability
-    proposed_component_prior = local_rj_plan.component_prior.atom(
-        proposal.proposed_state.component_state_id
-    ).prior_probability
-
-    with ctx.workprec(plan.working_precision_bits):
-        log_exact_ratio = (
-            _fraction_to_arb(proposed_expression_prior, arb).log()
-            + _fraction_to_arb(proposed_component_prior, arb).log()
-            - _fraction_to_arb(current_expression_prior, arb).log()
-            - _fraction_to_arb(current_component_prior, arb).log()
-            + _fraction_to_arb(
-                proposal.reverse_auxiliary_probability,
-                arb,
-            ).log()
-            - _fraction_to_arb(
-                proposal.forward_auxiliary_probability,
-                arb,
-            ).log()
-        )
-        exact_ratio_ball = _arb_to_dyadic_interval(log_exact_ratio)
     marginal_ratio = _interval_subtract(
         proposed.log_marginal,
         current.log_marginal,
