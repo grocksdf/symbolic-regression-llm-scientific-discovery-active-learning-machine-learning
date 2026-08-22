@@ -317,8 +317,8 @@ long-horizon context and remain binding even when a local task omits them.
   remained unproved and normalization was still quadratic in particle count.
   All evaluator, bit, island and SMC execution flags remained false, and the
   external ideal-bit premise was unchanged.
-- `P3F.4-CERT.18` is the frozen response-free actual-Arb refinement candidate
-  awaiting identity-bound user execution. The actual exact-input CERT.13/14
+- `P3F.4-CERT.18` passed its identity-bound user execution on source
+  `f2a124baae3915c030d3844549b9231415bb4965`. The actual exact-input CERT.13/14
   function-space builder, collapsed target, exact local/RJ ratio and MH
   probability now accept only the preregistered `512 * 2^r` rounds and compose
   into CERT.17 before threshold access. The Gate checks overlapping, tightening
@@ -332,17 +332,38 @@ long-horizon context and remain binding even when a local task omits them.
   removes the quadratic normalization bottleneck but does not make the frozen
   `N=212408`, `K=27`, `Q=368876229120` plan experimentally feasible. All
   operational, bit, island and SMC flags remain false.
+- `P3F.4-CERT.19` is the frozen response-free exact-rejection confirmation
+  candidate awaiting identity-bound user execution. It derives, rather than
+  attributes to the published theorem statement, a single-island arbitrary-
+  alpha corollary from the free failure parameters in the Marion--Mathews--
+  Schmidler appendix. For the CERT.12 values it reduces confirmation to one
+  island with `N=69197`, but honestly retains a `4428608000` direct-SMC
+  worst-case target-evaluation bound and therefore does not authorize that
+  route. The replacement estimator assigns exact positive dyadic tickets to
+  every semantic-core atom and one full-support analytic-tail atom, uses
+  outward mass bounds to obtain an exact rejection domination constant, and
+  verifies on finite rational laws that accepted states are iid from the
+  declared posterior. A response-frozen Chernoff proposal cap converts low
+  acceptance into whole-procedure abstention without retry, replacement or
+  partial output. Fresh fixed-candidate confirmation uses preregistered stages
+  and exact rational binomial upper tails at mass `(1-r)/2`, with a Bonferroni
+  familywise error budget and no class-count union. The local-mixing SMC theorem
+  was audited from its primary source and rejected because its finite
+  partition, minimum partition-mass and restricted-kernel premises do not close
+  on the countably-open operational target. Actual CERT.14 atom-ball binding,
+  ticket/rejection execution, threshold-blind comparison composition, cap
+  state machine, production stage freeze and the ideal-bit premise remain
+  blocked.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out
   access, efficacy claims, and formal paper superiority claims remain blocked.
-  The next admissible action is the one-time response-free CERT.18 Gate on its
-  frozen source identity. After a pass, the next theorem phase must replace the
-  loose and computationally infeasible finite-particle/island guarantee with a
-  sharper response-independent decision theorem or a different exact estimator
-  before any real experiment. It must also state an explicitly accepted
-  ideal-bit/product-law premise; a runtime success subset or distinct Philox
-  addresses cannot replace either proof. Ordinary SciPy CDF values,
+  The next admissible action is the one-time response-free CERT.19 Gate on its
+  frozen source identity. After a pass, the next source phase must compose the
+  exact rejection estimator with the actual CERT.14/17/18 target-ball and
+  comparison paths before any real experiment. It must also state an
+  explicitly accepted ideal-bit/product-law premise; a runtime success subset
+  or distinct Philox addresses cannot replace either proof. Ordinary SciPy CDF values,
   `nextafter`, rounded snapshot arrays, observed-class `other` buckets,
   post-hoc normalization, jitter, regularization and tolerance relaxation are
   not admissible substitutes.
