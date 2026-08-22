@@ -1,0 +1,48 @@
+{
+  "schema": "pcpi-p3f4-cert21-guarded-exact-rejection-runner-freeze-v1",
+  "stage": "P3F.4-CERT.21",
+  "source_contract": "P3F.4-CERT.20",
+  "freeze_timing": "before operational H0, entropy, output, real-data, acquisition, or heldout access",
+  "execution_order": [
+    "validate-all-plan-identities",
+    "materialize-selection-coordinate-source",
+    "complete-selection-or-terminal-abstention",
+    "freeze-one-candidate",
+    "materialize-fresh-confirmation-coordinate-source",
+    "confirm-at-first-crossed-frozen-stage-or-terminal-abstention",
+    "publish-one-indivisible-terminal-ledger"
+  ],
+  "coordinate_policy": {
+    "selection": "cert20/candidate-selection",
+    "confirmation": "cert20/fixed-candidate-confirmation",
+    "shared_coordinate": false,
+    "external_product_law": "inherited-explicit-CERT20-premise"
+  },
+  "failure_policy": {
+    "cap": "erase-partial-marks-and-abstain",
+    "arb_or_entropy_draw_failure": "erase-partial-marks-and-abstain",
+    "programming_assertion": "propagate-do-not-mask",
+    "retry": "forbidden",
+    "candidate_replacement": "forbidden",
+    "partial_result": "forbidden"
+  },
+  "ledger": {
+    "schema": "pcpi-p3f4-cert21-indivisible-evidence-ledger-v1",
+    "format": "canonical-json",
+    "integrity": "sha256-over-complete-ledger-payload",
+    "publication": "fsync-staging-then-no-overwrite-hardlink",
+    "existing_target": "fail-no-overwrite-no-retry",
+    "abstention_visibility": "transcript-hashes-and-counts-only-no-candidate-or-partial-state-ids"
+  },
+  "authorization": {
+    "standalone_state_machine": true,
+    "atomic_ledger_writer": true,
+    "operational_execution": false,
+    "operational_h0_access": false,
+    "system_entropy_access": false,
+    "real_data_access": false,
+    "acquisition_access": false,
+    "heldout_access": false,
+    "formal_experiment": false
+  }
+}

@@ -354,8 +354,8 @@ long-horizon context and remain binding even when a local task omits them.
   ticket/rejection execution, threshold-blind comparison composition, cap
   state machine, production stage freeze and the ideal-bit premise remained
   blocked at that Gate.
-- `P3F.4-CERT.20` is the frozen actual-source composition candidate awaiting
-  identity-bound user execution. It binds the complete final-`H0` semantic-
+- `P3F.4-CERT.20` passed its identity-bound user execution on source
+  `745f4deb737d2419b7f691a532dd622a067f00fc`. It binds the complete final-`H0` semantic-
   core/component table of CERT.14 Arb log-marginal balls to CERT.19's exact
   dyadic ticket plan. Outward exponentiation is separated from the exact
   generally non-dyadic rational prior product, so no binary rounding is
@@ -376,14 +376,31 @@ long-horizon context and remain binding even when a local task omits them.
   every partial state and terminal abstention forbids retry. Operational `H0`,
   real-data, heldout, acquisition, resident-SMC and formal-experiment access
   remain false.
+- `P3F.4-CERT.21` is the frozen guarded-runner candidate awaiting identity-
+  bound user execution. It binds the CERT.20 source, CERT.14/17/18 evaluator
+  identities and explicit ideal-byte premise into one ordered selection then
+  confirmation transaction. Exact proposal audits form a domain-bound SHA-256
+  transcript chain. Cap exhaustion and registered Arb, entropy or input
+  failures erase all partial accepted marks and return abstention; programming
+  assertions and process interrupts are not disguised as scientific
+  abstentions. Selection and confirmation byte sources retain disjoint logical
+  domains, confirmation stops at the first crossed frozen stage, and an
+  overall abstention exposes neither candidate nor selection/confirmation
+  state IDs. The canonical terminal ledger is fsynced to staging and published
+  by a no-overwrite same-filesystem hard link, carries a complete-payload hash,
+  and rejects tampering or rerun overwrite. The operational entry remains
+  blocked before provider, entropy and output access. Operational `H0`, system
+  entropy, real-data, heldout, acquisition and formal-experiment flags all
+  remain false.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out
   access, efficacy claims, and formal paper superiority claims remain blocked.
-  The next admissible action is the one-time response-free CERT.20 Gate on its
-  frozen source identity. After a pass, the next source phase must build and
-  Gate the guarded operational selection/confirmation runner and indivisible
-  evidence ledger before any real experiment. A runtime success subset or
+  The next admissible action is the one-time response-free CERT.21 Gate on its
+  frozen source identity. After a pass, the next Gate must bind the registered
+  operational `H0` and no-overwrite output identities and audit the complete
+  core-table, proposal-cap, wall-clock and storage costs before authorizing one
+  user-run experiment. A runtime success subset or
   distinct Philox addresses cannot replace the accepted product-law premise.
   Ordinary SciPy CDF values,
   `nextafter`, rounded snapshot arrays, observed-class `other` buckets,
