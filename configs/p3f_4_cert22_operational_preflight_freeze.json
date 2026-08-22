@@ -1,0 +1,66 @@
+{
+  "schema": "pcpi-p3f4-cert22-operational-preflight-freeze-v1",
+  "stage": "P3F.4-CERT.22",
+  "freeze_timing": "before operational H0 values, entropy, output materialization, real execution, acquisition, validation, or heldout access",
+  "registered_real_family": {
+    "config": "configs/p3b_real_acquisition.json",
+    "datasets": [
+      {"dataset_id": "uci_ccpp", "feature_count": 4},
+      {"dataset_id": "uci_gas_turbine_co", "feature_count": 9},
+      {"dataset_id": "uci_gas_turbine_nox", "feature_count": 9}
+    ],
+    "seed_count": 8,
+    "initial_observation_budget": 32,
+    "required_h0_artifact_count": 24,
+    "initial_index_rule": "stable-budget-indices/development-row-ids/subset-seed-initial",
+    "standardizer_rule": "fit-development-standardizer-on-selected-initial-H0-only",
+    "bound_h0_artifact_count": 0
+  },
+  "inherited_target": {
+    "config": "configs/p3f_4_semantic_envelope_certification_confirmatory_freeze.json",
+    "feature_count": 1,
+    "semantic_core_maximum_nodes": 17,
+    "component_count": 3
+  },
+  "inherited_executable_source_fixture": {
+    "feature_count": 1,
+    "maximum_nodes": 1,
+    "complete_core_target_ball_count": 6,
+    "role": "deterministic-source-composition-fixture-not-operational-scale"
+  },
+  "response_free_scale_lower_bounds": {
+    "method": "all-monomials-through-degree-floor((J+1)/2)-must-be-reachable",
+    "ccpp_semantic_classes_per_h0": 715,
+    "gas_semantic_classes_per_h0": 48620,
+    "complete_target_balls_across_24_h0_minimum": 2350920,
+    "interpretation": "strict lower bound only; the complete polynomial semantic core can be much larger"
+  },
+  "decision": {
+    "status": "no-go",
+    "blockers": [
+      "registered-real-dimensions-not-bound-by-frozen-target",
+      "executable-source-fixture-does-not-bind-frozen-target-scale",
+      "operational-h0-artifact-identities-absent",
+      "complete-multidimensional-core-constructor-not-source-gated",
+      "certified-wall-clock-bound-absent",
+      "certified-storage-bound-absent"
+    ],
+    "threshold_or_budget_change": "forbidden",
+    "next_root_repair": "dimension-generic operational target binding plus lazy-or-streamed exact core construction with response-free time/storage certification"
+  },
+  "output": {
+    "identity": "derived-from-h0-family-and-frozen-target-source-runner-config-identities",
+    "publication": "reserved-identity-only-no-overwrite",
+    "materialization": false
+  },
+  "authorization": {
+    "response_free_preflight": true,
+    "operational_h0_binding": false,
+    "operational_execution": false,
+    "system_entropy": false,
+    "output_materialization": false,
+    "real_data_access": false,
+    "heldout_access": false,
+    "formal_experiment": false
+  }
+}

@@ -376,8 +376,9 @@ long-horizon context and remain binding even when a local task omits them.
   every partial state and terminal abstention forbids retry. Operational `H0`,
   real-data, heldout, acquisition, resident-SMC and formal-experiment access
   remain false.
-- `P3F.4-CERT.21` is the frozen guarded-runner candidate awaiting identity-
-  bound user execution. It binds the CERT.20 source, CERT.14/17/18 evaluator
+- `P3F.4-CERT.21` passed its identity-bound user execution on source
+  `e2787a7f2c6f9303ee32b4ae7b1ae5ec2ee8bd95`. It binds the CERT.20 source,
+  CERT.14/17/18 evaluator
   identities and explicit ideal-byte premise into one ordered selection then
   confirmation transaction. Exact proposal audits form a domain-bound SHA-256
   transcript chain. Cap exhaustion and registered Arb, entropy or input
@@ -392,15 +393,29 @@ long-horizon context and remain binding even when a local task omits them.
   blocked before provider, entropy and output access. Operational `H0`, system
   entropy, real-data, heldout, acquisition and formal-experiment flags all
   remain false.
+- `P3F.4-CERT.22` is the frozen response-free operational-preflight NO-GO
+  candidate. It found that the only frozen target has `feature_count=1` and
+  the executable CERT.20/21 source fixture covers only `J=1`, while the
+  registered real family comprises CCPP (`d=4`) and two Gas Turbine targets
+  (`d=9`) over eight seeds each, hence 24 distinct initial `H0` artifacts.
+  Those artifact hashes are intentionally absent because operational response
+  access remains closed. An analytic monomial subset gives a strict lower
+  bound of 2,350,920 core/component target balls across those histories at
+  `J=17`; the full polynomial semantic core can only be larger. No measured
+  wall-clock or storage value is guessed. Dimension binding, full-scale source
+  construction, operational `H0` identities, and certified time/storage bounds
+  are therefore explicit blockers. The Gate may pass only with status
+  `passed-no-go`; it reserves a deterministic no-overwrite output identity but
+  cannot materialize it or authorize an experiment.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out
   access, efficacy claims, and formal paper superiority claims remain blocked.
-  The next admissible action is the one-time response-free CERT.21 Gate on its
-  frozen source identity. After a pass, the next Gate must bind the registered
-  operational `H0` and no-overwrite output identities and audit the complete
-  core-table, proposal-cap, wall-clock and storage costs before authorizing one
-  user-run experiment. A runtime success subset or
+  The next admissible action is the one-time response-free CERT.22 NO-GO Gate.
+  After it records the blocker, repair must be dimension-generic and replace
+  eager full-core materialization with a lazy or streamed exact construction
+  whose complete operational time/storage costs are certified before any H0 is
+  opened. A runtime success subset or
   distinct Philox addresses cannot replace the accepted product-law premise.
   Ordinary SciPy CDF values,
   `nextafter`, rounded snapshot arrays, observed-class `other` buckets,
