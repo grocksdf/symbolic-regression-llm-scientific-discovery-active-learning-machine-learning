@@ -332,8 +332,8 @@ long-horizon context and remain binding even when a local task omits them.
   removes the quadratic normalization bottleneck but does not make the frozen
   `N=212408`, `K=27`, `Q=368876229120` plan experimentally feasible. All
   operational, bit, island and SMC flags remain false.
-- `P3F.4-CERT.19` is the frozen response-free exact-rejection confirmation
-  candidate awaiting identity-bound user execution. It derives, rather than
+- `P3F.4-CERT.19` passed its identity-bound user execution on source
+  `508c7e1d912751f5ef5d091b0be3580a0e11fb61`. It derives, rather than
   attributes to the published theorem statement, a single-island arbitrary-
   alpha corollary from the free failure parameters in the Marion--Mathews--
   Schmidler appendix. For the CERT.12 values it reduces confirmation to one
@@ -352,18 +352,40 @@ long-horizon context and remain binding even when a local task omits them.
   partition, minimum partition-mass and restricted-kernel premises do not close
   on the countably-open operational target. Actual CERT.14 atom-ball binding,
   ticket/rejection execution, threshold-blind comparison composition, cap
-  state machine, production stage freeze and the ideal-bit premise remain
-  blocked.
+  state machine, production stage freeze and the ideal-bit premise remained
+  blocked at that Gate.
+- `P3F.4-CERT.20` is the frozen actual-source composition candidate awaiting
+  identity-bound user execution. It binds the complete final-`H0` semantic-
+  core/component table of CERT.14 Arb log-marginal balls to CERT.19's exact
+  dyadic ticket plan. Outward exponentiation is separated from the exact
+  generally non-dyadic rational prior product, so no binary rounding is
+  introduced. Exact ticket selection calls the proved semantic-core raw-AST
+  lift or the component-times-analytic-tail lift. Rejection probabilities are
+  evaluated by the actual CERT.18 evaluator at CERT.17's frozen
+  `512 * 2^r` precision values and intersected before each new 256-bit prefix.
+  This separately registered lazy-uniform algorithm terminates almost surely
+  and returns the exact Bernoulli decision under the explicit FLINT convergence
+  and ideal continuous-uniform premises; it does not reinterpret CERT.16's
+  unresolved finite-cell event as exact. The external iid ideal-byte law is
+  now explicitly accepted and materialized through `secrets.token_bytes`,
+  while physical independence remains unproved by source and no deterministic
+  PRNG is promoted to an ideal product law. Production freezes `J=17`, 32-bit
+  proposal tickets, cap budget `1/100`, an independent 8192-draw empirical-mode
+  selection pilot with lexical tie break, and confirmation stages
+  `(512,2048,8192,32768)` on a disjoint coordinate domain. A cap miss erases
+  every partial state and terminal abstention forbids retry. Operational `H0`,
+  real-data, heldout, acquisition, resident-SMC and formal-experiment access
+  remain false.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out
   access, efficacy claims, and formal paper superiority claims remain blocked.
-  The next admissible action is the one-time response-free CERT.19 Gate on its
-  frozen source identity. After a pass, the next source phase must compose the
-  exact rejection estimator with the actual CERT.14/17/18 target-ball and
-  comparison paths before any real experiment. It must also state an
-  explicitly accepted ideal-bit/product-law premise; a runtime success subset
-  or distinct Philox addresses cannot replace either proof. Ordinary SciPy CDF values,
+  The next admissible action is the one-time response-free CERT.20 Gate on its
+  frozen source identity. After a pass, the next source phase must build and
+  Gate the guarded operational selection/confirmation runner and indivisible
+  evidence ledger before any real experiment. A runtime success subset or
+  distinct Philox addresses cannot replace the accepted product-law premise.
+  Ordinary SciPy CDF values,
   `nextafter`, rounded snapshot arrays, observed-class `other` buckets,
   post-hoc normalization, jitter, regularization and tolerance relaxation are
   not admissible substitutes.

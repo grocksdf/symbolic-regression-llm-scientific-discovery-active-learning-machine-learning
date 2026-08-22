@@ -1,0 +1,48 @@
+{
+  "schema": "pcpi-p3f4-cert20-exact-rejection-source-freeze-v1",
+  "stage": "P3F.4-CERT.20",
+  "freeze_timing": "before any new response, candidate selection, confirmation, real-data, acquisition, or heldout access",
+  "target": {
+    "semantic_core_maximum_nodes": 17,
+    "final_h0_bridge_beta": "1/1",
+    "target_ball_path": "CERT14 actual exact-input Arb through CERT18 precision schedule",
+    "initial_working_precision_bits": 512,
+    "precision_growth_factor": 2
+  },
+  "proposal": {
+    "ticket_bits": 32,
+    "core_draw": "exact-semantic-class-conditional-raw-ast-lift",
+    "tail_draw": "exact-component-prior-times-conditional-raw-ast-tail",
+    "proposal_cap_failure_probability": "1/100",
+    "proposal_cap_formula": "CERT19 exact-integer Chernoff cap from frozen acceptance lower bound",
+    "incomplete_batch_policy": "erase-and-abstain-no-retry-no-partial-output"
+  },
+  "candidate_selection": {
+    "engine": "independent-exact-rejection-pilot-empirical-mode",
+    "accepted_sample_count": 8192,
+    "tie_break": "registered-class-id-lexicographic",
+    "coordinate_domain": "cert20/candidate-selection",
+    "retry": "forbidden"
+  },
+  "fixed_candidate_confirmation": {
+    "accepted_sample_stages": [512, 2048, 8192, 32768],
+    "map_regret_budget": "1/50",
+    "familywise_failure_probability": "1/20",
+    "coordinate_domain": "cert20/fixed-candidate-confirmation",
+    "candidate_replacement": "forbidden"
+  },
+  "randomness_premise": {
+    "accepted_external_model": "iid-uniform-bytes-independent-across-all-coordinates",
+    "materialization": "python-secrets-token-bytes/os-csprng",
+    "physical_independence_proved_by_source": false,
+    "deterministic_prng_promoted_to_ideal_law": false
+  },
+  "authorization": {
+    "standalone_source_composition": true,
+    "operational_h0_target_access": false,
+    "real_data_access": false,
+    "heldout_access": false,
+    "resident_smc": false,
+    "formal_experiment": false
+  }
+}
