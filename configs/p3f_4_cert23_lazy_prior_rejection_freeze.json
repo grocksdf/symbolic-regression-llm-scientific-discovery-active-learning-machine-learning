@@ -1,0 +1,56 @@
+{
+  "schema": "pcpi-p3f4-cert23-lazy-prior-rejection-freeze-v1",
+  "stage": "P3F.4-CERT.23",
+  "freeze_timing": "after CERT22 passed-no-go and before operational H0, entropy, output, real-data, acquisition, validation, or heldout access",
+  "proposal": {
+    "law": "complete-raw-ast-prior-times-component-prior",
+    "raw_ast_shell_law": "registered-geometric-on-positive-node-count",
+    "raw_ast_within_shell_law": "uniform-exact-arbitrary-precision-unranking",
+    "component_law": "registered-exact-integer-ticket-prior",
+    "semantic_core_enumeration": false,
+    "maximum_nodes": null,
+    "dyadic_core_atom_tickets": false,
+    "feature_count_restriction": null
+  },
+  "rejection": {
+    "acceptance_probability": "likelihood(state)/global-likelihood-envelope",
+    "accepted_law": "raw-prior(state)*likelihood(state)/evidence",
+    "target_ball_evaluation": "one-proposed-state-at-a-time-through-cert18",
+    "acceptance_lower_bound": "sum-over-frozen-terminal-by-component-anchor-prior-mass-times-likelihood-lower-divided-by-envelope-upper",
+    "anchor_family": "one-and-each-variable-cross-all-registered-components",
+    "anchor_target_ball_complexity": "3*(feature_count+1)",
+    "proposal_cap_failure_probability": "1/100",
+    "cap_policy": "exact-integer-chernoff-cap-then-erase-and-abstain",
+    "retry": "forbidden"
+  },
+  "candidate_selection": {
+    "accepted_sample_count": 8192,
+    "coordinate_domain": "cert23/candidate-selection"
+  },
+  "fixed_candidate_confirmation": {
+    "accepted_sample_stages": [512, 2048, 8192, 32768],
+    "map_regret_budget": "1/50",
+    "familywise_failure_probability": "1/20",
+    "coordinate_domain": "cert23/fixed-candidate-confirmation"
+  },
+  "complexity_claim": {
+    "eager_semantic_class_table_size": 0,
+    "eager_core_target_ball_count": 0,
+    "proposal_target_ball_count": 1,
+    "preflight_anchor_target_ball_count": "3*(feature_count+1)",
+    "persistent_proposal_state": "one-raw-ast-one-component-and-fixed-plan",
+    "algebraic_fixture_selection_cap": 210405467,
+    "algebraic_fixture_confirmation_cap": 326128474,
+    "algebraic_fixture_cap_role": "negative-feasibility-diagnostic-for-loose-fixture-envelope-not-operational-evidence",
+    "wall_clock_feasibility": "not-yet-certified-until-operational-dimension-and-H0-binding"
+  },
+  "authorization": {
+    "standalone_source": true,
+    "operational_h0_access": false,
+    "operational_execution": false,
+    "system_entropy": false,
+    "real_data_access": false,
+    "heldout_access": false,
+    "formal_experiment": false
+  }
+}

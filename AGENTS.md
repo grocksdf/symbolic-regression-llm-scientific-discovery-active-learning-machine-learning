@@ -393,8 +393,9 @@ long-horizon context and remain binding even when a local task omits them.
   blocked before provider, entropy and output access. Operational `H0`, system
   entropy, real-data, heldout, acquisition and formal-experiment flags all
   remain false.
-- `P3F.4-CERT.22` is the frozen response-free operational-preflight NO-GO
-  candidate. It found that the only frozen target has `feature_count=1` and
+- `P3F.4-CERT.22` passed its identity-bound user execution on source
+  `851757d1108dc6be46fe46439a85275a5b03ca2a` with the registered decision
+  `passed-no-go`. It found that the only frozen target has `feature_count=1` and
   the executable CERT.20/21 source fixture covers only `J=1`, while the
   registered real family comprises CCPP (`d=4`) and two Gas Turbine targets
   (`d=9`) over eight seeds each, hence 24 distinct initial `H0` artifacts.
@@ -407,15 +408,31 @@ long-horizon context and remain binding even when a local task omits them.
   are therefore explicit blockers. The Gate may pass only with status
   `passed-no-go`; it reserves a deterministic no-overwrite output identity but
   cannot materialize it or authorize an experiment.
+- `P3F.4-CERT.23` is the frozen response-free lazy-source candidate. It removes
+  the CERT.22 eager-core blocker at the probability-law level by proposing
+  directly from the complete countably-open raw-AST prior times the exact
+  registered component prior. Under the existing global likelihood envelope
+  `M`, the exact acceptance probability is `L(T,d)/M`; conditioning on
+  acceptance therefore gives `p(T,d)L(T,d)/Z` because the proposal prior
+  cancels exactly. Each proposal evaluates only its own CERT.18 target ball.
+  There is no semantic-shell enumeration, `J`, complete class/component table,
+  or dyadic core-atom ticket grid. A response-independent anchor family of
+  `one` plus every variable crossed with every component needs only
+  `3(d+1)` target balls and gives a positive exact lower bound for the fixed
+  no-retry proposal cap. The exact proposal implementation is checked at the
+  registered real widths `d=4` and `d=9`. This closes source scalability, not
+  operational feasibility: actual H0 binding, the observed response-frozen
+  cap audit and wall-clock/storage certification remain blocked, and every
+  operational/real/heldout/formal-experiment flag remains false.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out
   access, efficacy claims, and formal paper superiority claims remain blocked.
-  The next admissible action is the one-time response-free CERT.22 NO-GO Gate.
-  After it records the blocker, repair must be dimension-generic and replace
-  eager full-core materialization with a lazy or streamed exact construction
-  whose complete operational time/storage costs are certified before any H0 is
-  opened. A runtime success subset or
+  The next admissible action is the one-time response-free CERT.23 Gate. After
+  a pass, a new Gate must bind all registered dimensions and H0 identities,
+  evaluate only the frozen linear anchor family, and reject before entropy if
+  either proposal cap, wall-clock or storage ceilings are infeasible. A runtime
+  success subset or
   distinct Philox addresses cannot replace the accepted product-law premise.
   Ordinary SciPy CDF values,
   `nextafter`, rounded snapshot arrays, observed-class `other` buckets,
