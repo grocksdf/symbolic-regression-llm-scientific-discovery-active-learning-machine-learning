@@ -359,3 +359,13 @@ likelihood-power reference family. P3H.4 is correctness-only and keeps real
 acquisition blocked. The next admissible phase is a separately frozen
 family-wide calibration-only Gate with candidate and held-out responses closed.
 See `docs/pcpi_p3h4_likelihood_power_residual_family_contract_20260826.md`.
+
+The frozen P3H.4 Gate passed all nine decisions on commit `c702d408`. The
+three correctness-fixture powers produced distinct own-target PIT sequences;
+raw history was absent from the acquisition bundle; exact object binding
+rejected a separately refitted equivalent posterior; and chronological order
+changed residual states while final batch posterior probabilities agreed to
+`8.61e-16`. The combined P3H.3/P3H.4 suite passed 22/22 and the complete
+repository passed 683/683. Both P3H.2-to-family transfer and family-wide
+calibration remain explicitly false, so real acquisition is still blocked.
+See `docs/pcpi_p3h4_correctness_result_20260826.md`.
