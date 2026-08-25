@@ -503,6 +503,10 @@ long-horizon context and remain binding even when a local task omits them.
   remain sealed even if all 24 runs are nonrejected. A later acquisition Gate
   must integrate the transformed predictive density into the utility; it may
   not reuse the Student-t component EIG implementation unchanged.
+- The committed P3H.1 correctness artifact at source `db00f91d` passes all
+  eight registered decisions with no real, validation, candidate or held-out
+  access. P3H.2 must re-execute this prerequisite before dependency snapshot
+  or data loading and must preserve the result in its terminal ledger.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out

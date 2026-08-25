@@ -97,6 +97,8 @@ chain-rule density, split-count exchangeability, unchanged scientific updates
 and future-response isolation. P3H.2 is calibration-only: even a 24/24 pass
 cannot open candidate responses or run acquisition. See
 `docs/pcpi_p3h_semiparametric_residual_contract_20260825.md`.
+The committed-source P3H.1 result passes all eight registered correctness
+decisions; see `docs/pcpi_p3h1_correctness_result_20260825.md`.
 
 The P3D.2 audit also exposes an exact semantic mismatch: for `eta<1`, ordinary
 class mutual information is not the expected entropy reduction of the actual
