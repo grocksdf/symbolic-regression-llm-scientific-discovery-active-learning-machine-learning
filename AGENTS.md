@@ -481,6 +481,15 @@ long-horizon context and remain binding even when a local task omits them.
   no group and receives no synthetic regime. The uniform-`R^2` quadrature is
   independently refined from three to five nodes; every response-access and
   calibration boundary remains unchanged.
+- `P3G.5` also returned 8/24 rejections and is immutable negative evidence.
+  The observed year nuisance reduced the Gas CO geometric-mean maximum-e-value
+  ratio to about `0.49` versus P3G.4, but it exchanged resolved failures for
+  new failures. CCPP seed `2026080706` persisted. This closes the P3G sequence:
+  do not tune another finite coefficient precision, R2 node set, projected-RBF
+  rank, noise profile, seed rule, threshold or linear regime against these
+  results. A P3H continuation must reconstruct the conditional residual law
+  semiparametrically, retain response isolation and the unchanged real-data
+  Gate, and pass correctness tests before another user-executed real run.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out

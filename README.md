@@ -79,6 +79,14 @@ class identity, and refines the uniform-`R^2` quadrature from three to five
 nodes. CCPP receives no fabricated group. See
 `docs/pcpi_p3g5_observed_regime_contract_20260825.md`.
 
+P3G.5 also returned 8/24 rejections. The observed year nuisance materially
+reduced aggregate Gas CO evidence against calibration but exchanged resolved
+seed failures for new ones. This rejects further finite-state/linear-regime
+patching of the current response family. The frozen audit is in
+`docs/pcpi_p3g5_real_result_audit_20260825.md`; acquisition and held-out remain
+closed. The next mainline must be a semiparametric residual-law reconstruction,
+not P3G.6 hyperparameter tuning.
+
 The P3D.2 audit also exposes an exact semantic mismatch: for `eta<1`, ordinary
 class mutual information is not the expected entropy reduction of the actual
 power-likelihood update. P3E.1 repairs this loss/update alignment only on an
