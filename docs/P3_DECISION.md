@@ -333,3 +333,12 @@ intervals overlap. Fine/coarse radii remain asymptotic numerical diagnostics,
 not finite-order theorems. P3H.3 accesses no real data or response and does not
 authorize operational acquisition. See
 `docs/pcpi_p3h3_semiparametric_acquisition_contract_20260825.md`.
+
+The frozen P3H.3 Gate then passed all nine decisions on commit `ef8ffcf9`.
+Targeted P3H.3, prior acquisition and discrepancy regressions passed 13/13,
+63/63 and 8/8 respectively; the complete repository passed 674/674. No real or
+simulated data were accessed. The transformed fixture changed the class-EIG by
+up to `0.08693`, both projected marginals met their frozen tolerances, and the
+overlapping fixture returned no selection. The status remains correctness-only
+and operational execution remains unauthorized. See
+`docs/pcpi_p3h3_correctness_result_20260825.md`.
