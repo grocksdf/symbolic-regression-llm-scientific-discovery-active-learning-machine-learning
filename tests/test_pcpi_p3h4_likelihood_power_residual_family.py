@@ -14,6 +14,8 @@ from hypothesis_mvp.pcpi import (
     P3H4_RESIDUAL_FAMILY_METHOD,
     P3H4_STATE_BINDING,
     PosteriorModel,
+    advance_likelihood_power_residual_family,
+    reconstruct_conditioned_likelihood_power_residual_family,
     reconstruct_likelihood_power_residual_family,
 )
 from hypothesis_mvp.pcpi.real_acquisition import _bound_semiparametric_residual_laws
@@ -186,6 +188,96 @@ def test_invalid_engine_family_fails_closed() -> None:
     with pytest.raises(ValueError, match="one bank"):
         reconstruct_likelihood_power_residual_family(
             (engines[0], other), actions, targets
+        )
+
+
+def test_one_step_posterior_update_is_exactly_batch_equivalent() -> None:
+    actions, targets = _history()
+    for engine in _engines():
+        posterior = engine.prior_posterior()
+        for index, (action, target) in enumerate(
+            zip(actions, targets, strict=True), start=1
+        ):
+            posterior = engine.update_one(posterior, action, float(target))
+            batch = engine.fit_batch(actions[:index], targets[:index])
+            np.testing.assert_allclose(
+                [member.probability for member in posterior.members],
+                [member.probability for member in batch.members],
+                atol=3e-14,
+            )
+            for left, right in zip(
+                posterior.members, batch.members, strict=True
+            ):
+                np.testing.assert_allclose(
+                    left.state.precision, right.state.precision, atol=3e-14
+                )
+                np.testing.assert_allclose(
+                    left.state.information, right.state.information, atol=3e-14
+                )
+
+
+def test_conditioning_prefix_fits_base_but_never_enters_residual_history() -> None:
+    actions, targets = _history()
+    family = reconstruct_conditioned_likelihood_power_residual_family(
+        _engines(), actions[:4], targets[:4], actions[4:8], targets[4:8]
+    )
+    assert family.conditioning_count == 4
+    assert family.observation_count == 4
+    assert all(
+        len(state.residual_state.raw_pits) == 4 for state in family.model_states
+    )
+    for state in family.model_states:
+        batch = state.engine.fit_batch(actions[:8], targets[:8])
+        np.testing.assert_allclose(
+            [member.probability for member in state.posterior.members],
+            [member.probability for member in batch.members],
+            atol=3e-14,
+        )
+
+
+def test_incremental_family_advance_matches_full_conditioned_reconstruction() -> None:
+    actions, targets = _history()
+    engines = _engines()
+    initial = reconstruct_conditioned_likelihood_power_residual_family(
+        engines, actions[:4], targets[:4], actions[4:8], targets[4:8]
+    )
+    advanced = advance_likelihood_power_residual_family(
+        initial,
+        actions[:4],
+        targets[:4],
+        actions[4:9],
+        targets[4:9],
+    )
+    rebuilt = reconstruct_conditioned_likelihood_power_residual_family(
+        engines, actions[:4], targets[:4], actions[4:9], targets[4:9]
+    )
+    assert advanced.stable_hash == rebuilt.stable_hash
+    assert advanced.history_commitment == rebuilt.history_commitment
+    for left, right in zip(
+        advanced.model_states, rebuilt.model_states, strict=True
+    ):
+        assert left.residual_state.raw_pits == right.residual_state.raw_pits
+        np.testing.assert_allclose(
+            [member.probability for member in left.posterior.members],
+            [member.probability for member in right.posterior.members],
+            atol=3e-14,
+        )
+
+
+def test_incremental_advance_rejects_changed_prefix() -> None:
+    actions, targets = _history()
+    family = reconstruct_conditioned_likelihood_power_residual_family(
+        _engines(), actions[:4], targets[:4], actions[4:8], targets[4:8]
+    )
+    changed = targets.copy()
+    changed[5] += 0.1
+    with pytest.raises(ValueError, match="prefix commitment changed"):
+        advance_likelihood_power_residual_family(
+            family,
+            actions[:4],
+            targets[:4],
+            actions[4:9],
+            changed[4:9],
         )
 
 

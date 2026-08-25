@@ -99,6 +99,8 @@ from .likelihood_power_residuals import (
     P3H4_STATE_BINDING,
     LikelihoodPowerResidualFamily,
     LikelihoodPowerResidualModelState,
+    advance_likelihood_power_residual_family,
+    reconstruct_conditioned_likelihood_power_residual_family,
     reconstruct_likelihood_power_residual_family,
 )
 from .decision import (
@@ -230,6 +232,8 @@ __all__ = [
     "P3H4_STATE_BINDING",
     "LikelihoodPowerResidualFamily",
     "LikelihoodPowerResidualModelState",
+    "advance_likelihood_power_residual_family",
+    "reconstruct_conditioned_likelihood_power_residual_family",
     "reconstruct_likelihood_power_residual_family",
     "REFERENCE_DOMINANCE_METHOD",
     "REFERENCE_FALLBACK_MODE",

@@ -369,3 +369,21 @@ changed residual states while final batch posterior probabilities agreed to
 repository passed 683/683. Both P3H.2-to-family transfer and family-wide
 calibration remain explicitly false, so real acquisition is still blocked.
 See `docs/pcpi_p3h4_correctness_result_20260826.md`.
+
+## P3H.5 family-wide calibration-only Gate
+
+P3H.5 freezes a 96-coordinate corrected-PIT audit over three datasets, eight
+seeds and likelihood powers `[0.125, 0.25, 0.5, 1.0]`. The global false-alarm
+budget remains `1/100`; equal allocation is therefore `1/9600` per coordinate,
+with boundary 9600. Reusing P3H.2's 2400 boundary is forbidden because it would
+not close the expanded familywise budget.
+
+The initial 32 observations are now role-separated before new real results:
+the first 16 fit the response standardizer, design transform and base warmup;
+the final 16 form the strict-prefix residual-training sequence. This removes
+the hidden dependence that would arise from fitting a target standardizer on
+future responses inside the same claimed prequential residual sequence.
+Validation states are used only for the family calibration audit and discarded
+afterward. Candidate rows contribute only a subset commitment; candidate
+responses, acquisition and held-out remain closed for both terminal outcomes.
+See `docs/pcpi_p3h5_likelihood_power_family_calibration_contract_20260826.md`.

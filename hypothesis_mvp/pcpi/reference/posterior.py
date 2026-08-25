@@ -273,6 +273,42 @@ class SequentialReferencePosterior:
             log_marginals.append(_log_marginal(state))
         return self._normalize(tuple(states), tuple(log_marginals))
 
+    def update_one(
+        self,
+        posterior: ExactPosterior,
+        action: np.ndarray,
+        target: float,
+    ) -> ExactPosterior:
+        """Apply one exact conjugate update to this target's current posterior."""
+
+        values = np.asarray(action, dtype=float)
+        if values.ndim == 1:
+            values = values[None, :]
+        response = float(target)
+        if (
+            values.ndim != 2
+            or values.shape[0] != 1
+            or not np.all(np.isfinite(values))
+            or not math.isfinite(response)
+            or posterior.bank_hash != self.bank.stable_hash
+            or posterior.likelihood_power != self.likelihood_power
+            or tuple(member.structure for member in posterior.members)
+            != self.bank.structures
+        ):
+            raise ValueError("one-step posterior update target is inconsistent")
+        states = tuple(
+            _update_state(
+                member.state,
+                self._design(values, member.structure)[0],
+                response,
+                self.likelihood_power,
+            )
+            for member in posterior.members
+        )
+        return self._normalize(
+            states, tuple(_log_marginal(state) for state in states)
+        )
+
     def log_marginal_quadrature(
         self,
         structure: ReferenceStructure,

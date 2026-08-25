@@ -1,0 +1,150 @@
+{
+  "schema": "pcpi-p3h5-likelihood-power-family-calibration-gate-v1",
+  "stage": "P3H.5",
+  "role": "family-wide-real-calibration-only-gate",
+  "predecessors": [
+    {
+      "stage": "P3H.2",
+      "source_commit": "e647cb79011f264db7d12e17bab7ae9756e8f128",
+      "result_status": "CALIBRATION_COMPATIBLE_ACQUISITION_BLOCKED",
+      "scope": "eta1-structurewise-target-only-no-family-transfer"
+    },
+    {
+      "stage": "P3H.3",
+      "source_commit": "ef8ffcf94f55ecfc1f37877acc0e4916da2be1bc",
+      "result_status": "passed"
+    },
+    {
+      "stage": "P3H.4",
+      "source_commit": "c702d408fad9dc87c5ea5495958d9a63ce87d5df",
+      "result_status": "passed"
+    }
+  ],
+  "correctness_prerequisites": [
+    {
+      "stage": "P3H.1",
+      "config": "configs/p3h_1_semiparametric_residual_correctness.json",
+      "required_status": "passed"
+    },
+    {
+      "stage": "P3H.3",
+      "config": "configs/p3h_3_semiparametric_acquisition_correctness.json",
+      "required_status": "passed"
+    },
+    {
+      "stage": "P3H.4",
+      "config": "configs/p3h_4_likelihood_power_residual_family_correctness.json",
+      "required_status": "passed"
+    }
+  ],
+  "runtime_freeze": {
+    "schema": "pcpi-p3h5-runtime-freeze-v1",
+    "identity_source": "p3h2-user-executed-canonical-runtime",
+    "runtime_dependency_hash": "b7bf88a64dd375e25c7d679de129c654c3346462215ffa24c425c762fb8bc4a6",
+    "python": {
+      "implementation": "CPython",
+      "version": "3.11.9",
+      "compiler": "MSC v.1938 64 bit (AMD64)"
+    },
+    "platform": {
+      "system": "Windows",
+      "release": "10",
+      "machine": "AMD64"
+    },
+    "critical_distributions": {
+      "numpy": "2.4.6",
+      "scipy": "1.17.1",
+      "python-flint": "0.8.0",
+      "pytest": "9.1.1"
+    },
+    "binary_identity": {
+      "base_executable": {
+        "length": 103192,
+        "sha256": "5f7b89a612c9b8af1d6456cdfcd1dbe5ca630849e79aebced9bee9a6694952ec"
+      },
+      "python_dll": {
+        "length": 5800216,
+        "sha256": "0817a2a657a24c0d5fbb60df56960f42fc66b3039d522ec952dab83e2d869364"
+      },
+      "venv_launcher": {
+        "length": 274712,
+        "sha256": "21bb438c0d4a6f1f164b9a646f6ee000340185e5871180aec06db8d3f07c0082"
+      },
+      "pyvenv_config": {
+        "length": 321,
+        "sha256": "b75562dbf80f212122390c6163f96335d54ed588187ea693d021393bd8b70de4"
+      }
+    }
+  },
+  "datasets": [
+    "uci_ccpp",
+    "uci_gas_turbine_co",
+    "uci_gas_turbine_nox"
+  ],
+  "seeds": [
+    2026080701,
+    2026080702,
+    2026080703,
+    2026080704,
+    2026080705,
+    2026080706,
+    2026080707,
+    2026080708
+  ],
+  "likelihood_powers": [0.125, 0.25, 0.5, 1.0],
+  "split_seed": 20260807,
+  "initial_observation_budget": 32,
+  "initial_base_warmup_budget": 16,
+  "initial_residual_training_budget": 16,
+  "validation_budget": 256,
+  "candidate_pool_budget": 128,
+  "history_roles": {
+    "initial_order": "stable-budget-selected-stored-order",
+    "base_warmup": "first-16-initial-observations",
+    "target_standardization": "base-warmup-responses-only",
+    "basis_preconditioning": "base-warmup-covariates-only",
+    "residual_training": "last-16-initial-observations-strict-prefix-after-warmup",
+    "validation_order": "stable-row-id-sha256-v1-unchanged-from-p3h2",
+    "validation_use": "family-calibration-diagnostic-only-discard-state-after-run",
+    "candidate_covariates": "subset-commitment-only",
+    "candidate_responses": "curator-frame-only-never-exposed-to-inference-or-read-by-runner",
+    "heldout": "closed"
+  },
+  "posterior_family": {
+    "method": "power-likelihood-generalized-bayes",
+    "bank": "generic-real-bank-v1",
+    "power_set_role": "frozen-before-new-real-results-no-safebayes-selection",
+    "residual_state_method": "model-specific-likelihood-power-prequential-raw-pit-family-v1",
+    "residual_law": "prequential-kt-dyadic-polya-tree-residual-law-v1",
+    "corrected_pit": "v_eta,t=G_eta,t(F_eta,t(y_t|strict-opened-prefix))",
+    "update_after_issued_pit": true,
+    "cross_power_state_sharing": false
+  },
+  "predictive_calibration": {
+    "method": "prequential-pit-mixture-e-process-v1-unchanged",
+    "familywise_false_alarm_level": "1/100",
+    "registered_coordinate_count": 96,
+    "coordinate_factorization": "3-datasets-times-8-seeds-times-4-likelihood-powers",
+    "equal_per_coordinate_false_alarm_level": "1/9600",
+    "rejection_boundary": 9600,
+    "pit_clip": 1e-12,
+    "global_gate": "all-96-coordinates-complete-and-nonrejected"
+  },
+  "authorization": {
+    "initial_development_responses": "warmup-and-residual-training-only",
+    "validation_responses": "diagnostic-only-after-all-correctness-and-runtime-checks",
+    "candidate_responses": "sealed-through-entire-gate",
+    "candidate_selection": false,
+    "unconditional_acquisition_execution": false,
+    "conditional_acquisition_execution": false,
+    "heldout": false,
+    "formal_efficacy_experiment": false,
+    "downstream_acquisition_freeze_if_pass": true,
+    "failure_policy": "fail-closed-record-all-no-seed-or-power-replacement-no-retry"
+  },
+  "terminal_statuses": {
+    "all_96_nonrejected": "FAMILY_CALIBRATION_COMPATIBLE_ACQUISITION_BLOCKED",
+    "any_rejection": "FAMILY_CALIBRATION_NO_GO"
+  },
+  "claim_boundary": "All 96 nonrejections establish compatibility only with the registered corrected-PIT betting family over the frozen real development audit. They do not prove conditional calibration, validate the KL-projected acquisition joint, authorize candidate selection or acquisition, establish efficacy or heldout improvement, or support an AISTATS claim."
+}
