@@ -286,3 +286,28 @@ admissible work is a scalable particle approximation checked against this
 reference. No new real experiment is authorized. See
 `docs/pcpi_p3f2_open_target_method_contract_20260816.md` and
 `docs/pcpi_p3f2_open_target_correctness_result_20260816.md`.
+
+## P3H semiparametric residual-law reconstruction
+
+P3G.5 retained eight predictive-calibration rejections after adding the
+observed Gas year nuisance. The aggregate improvement with exchanged seed
+failures closes the finite-state response-family sequence. P3H keeps the
+scientific posterior unchanged and reconstructs only its probability residual
+law: at round `t`, the base forecast produces the raw PIT `F_t(Y_t)`, and a
+dyadic Pólya-tree trained only on earlier raw PITs transforms the next base CDF.
+
+P3H.1 freezes independent Beta(1/2,1/2) split prediction and the count-only
+depth `floor(log2(max(n,1))/2)`. Its correctness surface contains no real data,
+RNG, dataset/target/seed branch, response-selected bandwidth or fixed depth
+cap. The Gate verifies normalized positive leaf masses, continuous CDF and
+inverse composition, the transformed-density chain rule, count-order
+invariance, sublinear active leaves, an unchanged scientific posterior update
+and future-response isolation.
+
+P3H.2 preserves the P3G.5 real datasets, seeds, budgets, validation order, PIT
+betting family and familywise allocation, but is deliberately calibration-only.
+Candidate responses and held-out are sealed regardless of its result. A real
+non-rejection would be compatibility with the fixed PIT betting family, not a
+calibration theorem. Acquisition remains blocked until a later correctness
+Gate represents the transformed predictive density in the decision utility.
+See `docs/pcpi_p3h_semiparametric_residual_contract_20260825.md`.

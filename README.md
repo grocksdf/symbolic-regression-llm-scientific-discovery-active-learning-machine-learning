@@ -87,6 +87,17 @@ patching of the current response family. The frozen audit is in
 closed. The next mainline must be a semiparametric residual-law reconstruction,
 not P3G.6 hyperparameter tuning.
 
+P3H implements that reconstruction as a prequential dyadic Pólya-tree law on
+the raw PIT produced by the unchanged P3G.5 scientific engine. Independent
+Beta(1/2,1/2) split predictions give an exact positive density, while the
+count-only depth schedule keeps at most `sqrt(n)` active leaves and has no
+response-selected bandwidth, finite depth cap, RNG, dataset or result branch.
+The P3H.1 correctness Gate covers normalization, inverse-CDF composition,
+chain-rule density, split-count exchangeability, unchanged scientific updates
+and future-response isolation. P3H.2 is calibration-only: even a 24/24 pass
+cannot open candidate responses or run acquisition. See
+`docs/pcpi_p3h_semiparametric_residual_contract_20260825.md`.
+
 The P3D.2 audit also exposes an exact semantic mismatch: for `eta<1`, ordinary
 class mutual information is not the expected entropy reduction of the actual
 power-likelihood update. P3E.1 repairs this loss/update alignment only on an

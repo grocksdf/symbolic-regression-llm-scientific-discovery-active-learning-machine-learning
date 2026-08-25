@@ -1,0 +1,47 @@
+{
+  "schema": "pcpi-p3h1-semiparametric-residual-correctness-config-v1",
+  "stage": "P3H.1",
+  "role": "inference-correctness-diagnostic-fixture",
+  "predecessor": {
+    "stage": "P3G.5",
+    "source_commit": "86e37abb5ef5ff13c3cf4e151df60cee90c23df2",
+    "result_status": "CALIBRATION_NO_GO",
+    "calibration_rejections": 8,
+    "diagnosis": "finite-conditional-residual-family-remains-misspecified"
+  },
+  "residual_law": {
+    "method": "prequential-kt-dyadic-polya-tree-residual-law-v1",
+    "coordinate": "raw-base-pit-u_t=F_t(y_t|history-before-t)",
+    "partition": "fixed-dyadic-unit-interval",
+    "split_prior": "independent-beta-one-half-one-half",
+    "depth_schedule": "floor(log2(max(history-count,1))/2)",
+    "maximum_depth": null,
+    "response_dependent_bandwidth": false,
+    "dataset_seed_target_or_result_branching": false,
+    "randomization": false
+  },
+  "composition": {
+    "cdf": "H_t(y)=G_t(F_t(y))",
+    "density": "h_t(y)=g_t(F_t(y))*f_t(y)",
+    "scientific_posterior_update": "unchanged-registered-structurewise-base-update",
+    "residual_update": "append-raw-base-pit-only-after-forecast-is-issued",
+    "residual_layer_claim": "semiparametric-predictive-correction-not-scientific-posterior"
+  },
+  "thresholds": {
+    "probability_normalization_error_max": 2e-15,
+    "cdf_inverse_error_max": 4e-15,
+    "chain_rule_error_max": 3e-15,
+    "base_update_error_max": 0.0
+  },
+  "authorization": {
+    "correctness_fixture": true,
+    "simulated_experiment": false,
+    "real_data": false,
+    "validation_responses": false,
+    "candidate_responses": false,
+    "acquisition": false,
+    "heldout": false,
+    "formal_efficacy_evidence": false
+  },
+  "claim_boundary": "A pass establishes only finite-precision algebra, exact split-count composition, sublinear response-independent sieve growth, and source-level prequential response isolation. It does not establish residual stationarity, predictive calibration, real-data adequacy, acquisition validity, efficacy, heldout performance, discovery, or an AISTATS claim."
+}

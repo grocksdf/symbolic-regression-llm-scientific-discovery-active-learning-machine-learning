@@ -490,6 +490,19 @@ long-horizon context and remain binding even when a local task omits them.
   results. A P3H continuation must reconstruct the conditional residual law
   semiparametrically, retain response isolation and the unchanged real-data
   Gate, and pass correctness tests before another user-executed real run.
+- `P3H.1` is the response-free correctness Gate for that reconstruction. The
+  scientific posterior remains the frozen P3G.5 engine. A separate
+  prequential KT dyadic Pólya-tree models only raw base PIT innovations, with
+  independent Beta(1/2,1/2) splits and active depth
+  `floor(log2(max(history-count,1))/2)`. Current and future responses cannot
+  enter an issued forecast; the base scientific update is unchanged. Do not
+  call the residual layer a scientific posterior or infer finite-sample
+  calibration from its algebraic Gate.
+- `P3H.2` is calibration-only. It preserves the 24 runs, response order, PIT
+  e-process and `1/2400` per-run allocation. Candidate responses and held-out
+  remain sealed even if all 24 runs are nonrejected. A later acquisition Gate
+  must integrate the transformed predictive density into the utility; it may
+  not reuse the Student-t component EIG implementation unchanged.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out

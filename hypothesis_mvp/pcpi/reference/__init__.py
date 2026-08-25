@@ -72,6 +72,18 @@ from .structurewise_discrepancy import (
     uniform_r2_function_energy_states,
     structurewise_projected_rbf_basis,
 )
+from .semiparametric_residual import (
+    P3H_DEPTH_SCHEDULE,
+    P3H_RESIDUAL_METHOD,
+    P3H_SPLIT_PRIOR,
+    DyadicPolyaTreePredictiveLaw,
+    DyadicPolyaTreeResidualModel,
+    DyadicPolyaTreeState,
+    SemiparametricPredictiveLaw,
+    SequentialSemiparametricResidualEngine,
+    SequentialSemiparametricResidualState,
+    universal_dyadic_depth,
+)
 
 __all__ = [
     "ConditionalPosteriorParameters",
@@ -132,4 +144,14 @@ __all__ = [
     "response_independent_noise_variance_states",
     "uniform_r2_function_energy_states",
     "structurewise_projected_rbf_basis",
+    "P3H_DEPTH_SCHEDULE",
+    "P3H_RESIDUAL_METHOD",
+    "P3H_SPLIT_PRIOR",
+    "DyadicPolyaTreePredictiveLaw",
+    "DyadicPolyaTreeResidualModel",
+    "DyadicPolyaTreeState",
+    "SemiparametricPredictiveLaw",
+    "SequentialSemiparametricResidualEngine",
+    "SequentialSemiparametricResidualState",
+    "universal_dyadic_depth",
 ]

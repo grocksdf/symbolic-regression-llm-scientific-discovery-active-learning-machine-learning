@@ -46,6 +46,7 @@ from hypothesis_mvp.pcpi.reference import (
     DevelopmentStandardizer,
     DiscrepancyKernelState,
     RegisteredStructurewiseDiscrepancyEngine,
+    SequentialSemiparametricResidualEngine,
     SequentialReferencePosterior,
     StructurewiseDiscrepancyPrior,
     aggregate_operational_classes,
@@ -65,6 +66,7 @@ P3G2_CONFIG_SCHEMA = "pcpi-p3g2-heteroscedastic-structurewise-calibration-gate-v
 P3G3_CONFIG_SCHEMA = "pcpi-p3g3-dimension-stable-function-prior-gate-v1"
 P3G4_CONFIG_SCHEMA = "pcpi-p3g4-r2-function-energy-mixture-gate-v1"
 P3G5_CONFIG_SCHEMA = "pcpi-p3g5-observed-regime-energy-mixture-gate-v1"
+P3H2_CONFIG_SCHEMA = "pcpi-p3h2-semiparametric-residual-calibration-gate-v1"
 PCPI_POLICY = "pcpi_nuisance_aware_joint_eig"
 POLICIES = ("random", "uncertainty", "qbc", PCPI_POLICY)
 
@@ -126,10 +128,12 @@ def _git_identity(root: Path) -> dict[str, str]:
 
 def _load_config(path: Path) -> dict[str, Any]:
     config = json.loads(path.read_text(encoding="utf-8"))
+    schema = config.get("schema")
+    authorization = config.get("authorization", {})
     if (
-        config.get("schema") not in (
+        schema not in (
             CONFIG_SCHEMA, P3G2_CONFIG_SCHEMA, P3G3_CONFIG_SCHEMA,
-            P3G4_CONFIG_SCHEMA, P3G5_CONFIG_SCHEMA
+            P3G4_CONFIG_SCHEMA, P3G5_CONFIG_SCHEMA, P3H2_CONFIG_SCHEMA
         )
         or tuple(config.get("datasets", ()))
         != ("uci_ccpp", "uci_gas_turbine_co", "uci_gas_turbine_nox")
@@ -137,16 +141,83 @@ def _load_config(path: Path) -> dict[str, Any]:
         or tuple(config.get("policies", ())) != POLICIES
         or config.get("predictive_calibration", {}).get("familywise_false_alarm_level") != "1/100"
         or config.get("predictive_calibration", {}).get("equal_per_run_false_alarm_level") != "1/2400"
-        or config.get("authorization", {}).get("unconditional_acquisition_execution") is not False
-        or config.get("authorization", {}).get("conditional_acquisition_execution")
-        != "only-after-all-24-calibration-runs-pass"
-        or config.get("authorization", {}).get("candidate_responses")
-        != "sealed-until-global-calibration-pass-then-selected-one-at-a-time"
-        or config.get("authorization", {}).get("heldout") is not False
+        or authorization.get("unconditional_acquisition_execution") is not False
+        or authorization.get("heldout") is not False
     ):
         raise ValueError("P3G frozen protocol was modified")
-    if config["schema"] in (
-        P3G2_CONFIG_SCHEMA, P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA, P3G5_CONFIG_SCHEMA
+    if schema == P3H2_CONFIG_SCHEMA:
+        posterior = config.get("posterior", {})
+        residual = posterior.get("semiparametric_residual_law", {})
+        prerequisite = config.get("correctness_prerequisite", {})
+        if (
+            prerequisite
+            != {
+                "stage": "P3H.1",
+                "config": "configs/p3h_1_semiparametric_residual_correctness.json",
+                "required_status": "passed",
+                "real_response_access": False,
+            }
+            or config.get("split_seed") != 20260807
+            or config.get("initial_observation_budget") != 32
+            or config.get("validation_budget") != 256
+            or config.get("candidate_pool_budget") != 128
+            or config.get("acquisition_observation_budget") != 32
+            or config.get("target_transform")
+            != "initial-development-only-standardization-v1"
+            or config.get("posterior_bank") != "generic-real-bank-v1"
+            or posterior.get("method")
+            != "semiparametric-residual-over-observed-regime-r2-mixture-structurewise-posterior-v1"
+            or posterior.get("base_scientific_method")
+            != "observed-regime-r2-mixture-structurewise-heteroscedastic-posterior-v1-frozen-from-p3g5"
+            or posterior.get("likelihood_power") != 1.0
+            or posterior.get("discrepancy_probability") != 0.3
+            or posterior.get("discrepancy_precision") != 1.2
+            or posterior.get("maximum_discrepancy_rank") != 16
+            or posterior.get("kernel_states")
+            != [
+                {
+                    "state_id": "short",
+                    "prior_probability": 0.5,
+                    "length_scale": 0.6,
+                },
+                {
+                    "state_id": "long",
+                    "prior_probability": 0.5,
+                    "length_scale": 1.3,
+                },
+            ]
+            or config.get("predictive_calibration", {}).get("method")
+            != "prequential-pit-mixture-e-process-v1-unchanged"
+            or config.get("predictive_calibration", {}).get("pit_clip") != 1e-12
+            or authorization.get("conditional_acquisition_execution") is not False
+            or authorization.get("candidate_responses")
+            != "sealed-through-this-calibration-only-gate"
+            or residual.get("method")
+            != "prequential-kt-dyadic-polya-tree-residual-law-v1"
+            or residual.get("coordinate")
+            != "raw-base-pit-before-current-response-update"
+            or residual.get("split_prior")
+            != "independent-beta-one-half-one-half"
+            or residual.get("depth_schedule")
+            != "floor(log2(max(history-count,1))/2)"
+            or residual.get("maximum_depth") is not None
+            or residual.get("response_dependent_bandwidth") is not False
+            or residual.get("dataset_seed_target_or_result_branching") is not False
+            or residual.get("construction_future_response_access") is not False
+            or residual.get("scientific_posterior_update")
+            != "unchanged-p3g5-base-update"
+        ):
+            raise ValueError("P3H.2 frozen residual-law protocol was modified")
+    elif (
+        authorization.get("conditional_acquisition_execution")
+        != "only-after-all-24-calibration-runs-pass"
+        or authorization.get("candidate_responses")
+        != "sealed-until-global-calibration-pass-then-selected-one-at-a-time"
+    ):
+        raise ValueError("P3G conditional acquisition protocol was modified")
+    if schema in (
+        P3G2_CONFIG_SCHEMA, P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA,
+        P3G5_CONFIG_SCHEMA, P3H2_CONFIG_SCHEMA
     ):
         noise = config.get("posterior", {}).get("noise_variance_sieve", {})
         if (
@@ -158,7 +229,10 @@ def _load_config(path: Path) -> dict[str, Any]:
             or noise.get("construction_response_access") is not False
         ):
             raise ValueError("P3G.2 frozen noise-variance sieve was modified")
-    if config["schema"] in (P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA, P3G5_CONFIG_SCHEMA):
+    if schema in (
+        P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA, P3G5_CONFIG_SCHEMA,
+        P3H2_CONFIG_SCHEMA
+    ):
         function_prior = config.get("posterior", {}).get("coefficient_prior", {})
         if (
             function_prior.get("method")
@@ -169,18 +243,18 @@ def _load_config(path: Path) -> dict[str, Any]:
             or function_prior.get("construction_response_access") is not False
         ):
             raise ValueError("P3G.3 frozen function prior was modified")
-    if config["schema"] in (P3G4_CONFIG_SCHEMA, P3G5_CONFIG_SCHEMA):
+    if schema in (P3G4_CONFIG_SCHEMA, P3G5_CONFIG_SCHEMA, P3H2_CONFIG_SCHEMA):
         mixture = config.get("posterior", {}).get("function_energy_mixture", {})
         if (
             mixture.get("method")
             != "uniform-r2-gauss-legendre-function-energy-mixture-v1"
             or mixture.get("r_squared_prior") != "uniform(0,1)"
             or mixture.get("quadrature_order")
-            != (5 if config["schema"] == P3G5_CONFIG_SCHEMA else 3)
+            != (5 if schema in (P3G5_CONFIG_SCHEMA, P3H2_CONFIG_SCHEMA) else 3)
             or mixture.get("construction_response_access") is not False
         ):
             raise ValueError("P3G.4 frozen function-energy mixture was modified")
-    if config["schema"] == P3G5_CONFIG_SCHEMA:
+    if schema in (P3G5_CONFIG_SCHEMA, P3H2_CONFIG_SCHEMA):
         regime = config.get("posterior", {}).get("observed_regime_nuisance", {})
         if (
             regime.get("method") != "common-linear-observed-group-design-v1"
@@ -197,7 +271,10 @@ class RunContext:
     dataset_id: str
     seed: int
     standardizer: DevelopmentStandardizer
-    engine: RegisteredStructurewiseDiscrepancyEngine
+    engine: (
+        RegisteredStructurewiseDiscrepancyEngine
+        | SequentialSemiparametricResidualEngine
+    )
     initial_rows: tuple[int, ...]
     initial_y: np.ndarray
     validation_rows: tuple[int, ...]
@@ -306,7 +383,7 @@ def _make_context(frame, config: dict[str, Any], seed: int) -> RunContext:
         energy_states = uniform_r2_function_energy_states(
             int(energy_config["quadrature_order"])
         )
-    engine = RegisteredStructurewiseDiscrepancyEngine(
+    base_engine = RegisteredStructurewiseDiscrepancyEngine(
         bank,
         domain_X,
         kernels,
@@ -317,9 +394,17 @@ def _make_context(frame, config: dict[str, Any], seed: int) -> RunContext:
         maximum_discrepancy_rank=int(posterior_config["maximum_discrepancy_rank"]),
         noise_variance_states=noise_states,
         dimension_stable_coefficient_prior=(
-            config["schema"] in (P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA, P3G5_CONFIG_SCHEMA)
+            config["schema"] in (
+                P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA, P3G5_CONFIG_SCHEMA,
+                P3H2_CONFIG_SCHEMA
+            )
         ),
         function_energy_states=energy_states,
+    )
+    engine = (
+        SequentialSemiparametricResidualEngine(base_engine)
+        if config["schema"] == P3H2_CONFIG_SCHEMA
+        else base_engine
     )
     nominal = SequentialReferencePosterior(bank, 1.0, preconditioner)
     nominal_posterior = nominal.fit_batch(initial_X, initial_y)
@@ -646,6 +731,21 @@ def _publish(output: Path, payload: dict[str, Any], calibration, runs, queries) 
     )
 
 
+def _p3h_correctness_prerequisite(root: Path, config: dict[str, Any]):
+    if config["schema"] != P3H2_CONFIG_SCHEMA:
+        return None
+    from scripts.run_pcpi_p3h1_semiparametric_residual_correctness import (
+        _evaluate as evaluate_correctness,
+        _load_config as load_correctness_config,
+    )
+
+    correctness_path = root / config["correctness_prerequisite"]["config"]
+    result = evaluate_correctness(load_correctness_config(correctness_path))
+    if result["status"] != config["correctness_prerequisite"]["required_status"]:
+        raise RuntimeError("P3H.1 correctness prerequisite did not pass")
+    return result
+
+
 def main(
     default_config: Path = Path(
         "configs/p3g_1_structurewise_discrepancy_calibration_gate.json"
@@ -660,6 +760,7 @@ def main(
     config_path = (root / args.config).resolve() if not args.config.is_absolute() else args.config.resolve()
     config = _load_config(config_path)
     identity = _git_identity(root)
+    p3h_correctness = _p3h_correctness_prerequisite(root, config)
     dependency_snapshot = runtime_dependency_snapshot()
     started = time.perf_counter()
     contexts = []
@@ -681,28 +782,48 @@ def main(
             flush=True,
         )
     eligible = len(calibration) == 24 and not any(row["pit_rejected"] for row in calibration)
+    acquisition_authorized = (
+        config["authorization"]["conditional_acquisition_execution"]
+        == "only-after-all-24-calibration-runs-pass"
+    )
+    execute_acquisition = eligible and acquisition_authorized
     runs, queries = [], []
     if eligible:
-        oracles = {
-            dataset_id: _open_candidate_oracle(frame, config)
-            for dataset_id, frame in frames.items()
+        if acquisition_authorized:
+            oracles = {
+                dataset_id: _open_candidate_oracle(frame, config)
+                for dataset_id, frame in frames.items()
+            }
+            for context in contexts:
+                for policy in POLICIES:
+                    run, selected = _run_policy(
+                        context, policy, config, oracles[context.dataset_id]
+                    )
+                    runs.append(run)
+                    queries.extend(selected)
+                    print(
+                        f"[acquisition {len(runs):02d}/96] {context.dataset_id} "
+                        f"seed={context.seed} policy={policy} status={run['status']}",
+                        flush=True,
+                    )
+    assessment = (
+        _assessment(runs, config)
+        if execute_acquisition
+        else {
+            "status": (
+                "CALIBRATION_COMPATIBLE_ACQUISITION_BLOCKED"
+                if eligible and config["schema"] == P3H2_CONFIG_SCHEMA
+                else "CALIBRATION_NO_GO"
+            ),
+            "strong_evidence": False,
+            "paired_effects": [],
         }
-        for context in contexts:
-            for policy in POLICIES:
-                run, selected = _run_policy(
-                    context, policy, config, oracles[context.dataset_id]
-                )
-                runs.append(run)
-                queries.extend(selected)
-                print(
-                    f"[acquisition {len(runs):02d}/96] {context.dataset_id} "
-                    f"seed={context.seed} policy={policy} status={run['status']}",
-                    flush=True,
-                )
-    assessment = _assessment(runs, config) if eligible else {"status": "CALIBRATION_NO_GO", "strong_evidence": False, "paired_effects": []}
+    )
     payload = {
         "schema": (
-            "pcpi-p3g5-observed-regime-energy-mixture-gate-result-v1"
+            "pcpi-p3h2-semiparametric-residual-calibration-gate-result-v1"
+            if config["schema"] == P3H2_CONFIG_SCHEMA
+            else "pcpi-p3g5-observed-regime-energy-mixture-gate-result-v1"
             if config["schema"] == P3G5_CONFIG_SCHEMA
             else "pcpi-p3g4-r2-function-energy-mixture-gate-result-v1"
             if config["schema"] == P3G4_CONFIG_SCHEMA
@@ -733,6 +854,9 @@ def main(
         "wall_time_seconds": time.perf_counter() - started,
         "failure_policy": "fail-closed-record-all-no-seed-replacement-no-retry",
     }
+    if config["schema"] == P3H2_CONFIG_SCHEMA:
+        payload["acquisition_executed"] = False
+        payload["p3h1_correctness_prerequisite"] = p3h_correctness
     _publish(args.output_dir.resolve(), payload, calibration, runs, queries)
     print(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
     return 0
