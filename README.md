@@ -103,6 +103,13 @@ P3H.2 reuses the exact P3G.5 CPython 3.11.9 dependency identity and freezes the
 base executable, DLL, virtual-environment launcher and configuration hashes;
 see `docs/pcpi_p3h2_runtime_freeze_20260825.md`.
 
+The unique P3H.2 real calibration-only Gate completed all 24 audits with zero
+rejections and maximum e-value `31.856806` against the unchanged `2400`
+boundary. Its status is `CALIBRATION_COMPATIBLE_ACQUISITION_BLOCKED`:
+candidate responses, acquisition and held-out remained closed. This is
+development compatibility evidence, not a calibration theorem or efficacy
+claim. See `docs/pcpi_p3h2_real_calibration_result_20260825.md`.
+
 The P3D.2 audit also exposes an exact semantic mismatch: for `eta<1`, ordinary
 class mutual information is not the expected entropy reduction of the actual
 power-likelihood update. P3E.1 repairs this loss/update alignment only on an

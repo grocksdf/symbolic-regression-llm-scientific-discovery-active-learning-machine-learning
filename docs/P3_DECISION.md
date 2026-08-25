@@ -311,3 +311,13 @@ non-rejection would be compatibility with the fixed PIT betting family, not a
 calibration theorem. Acquisition remains blocked until a later correctness
 Gate represents the transformed predictive density in the decision utility.
 See `docs/pcpi_p3h_semiparametric_residual_contract_20260825.md`.
+
+The unique P3H.2 real calibration-only execution then completed all 24
+registered audits with zero rejection. Its largest maximum e-value was
+`31.856806` against the unchanged `2400` boundary; the overall geometric mean
+maximum e-value was about `0.0068` times the immutable P3G.5 value. Dataset and
+runtime hashes matched P3G.5, P3H.1 passed before data loading, and candidate
+responses, acquisition and held-out remained closed. The terminal status is
+`CALIBRATION_COMPATIBLE_ACQUISITION_BLOCKED`, not an efficacy or calibration
+proof. Only a response-free transformed-law acquisition correctness phase is
+authorized next. See `docs/pcpi_p3h2_real_calibration_result_20260825.md`.

@@ -513,6 +513,14 @@ long-horizon context and remain binding even when a local task omits them.
   environment was intact; the earlier launcher failure inside Codex was a
   sandbox read-boundary issue. Do not reinstall, upgrade, fall back to another
   interpreter or run data if any runtime identity check fails.
+- The unique user-executed P3H.2 real calibration-only Gate at source
+  `e647cb79` completed 24/24 audits with zero rejection and largest maximum
+  e-value `31.856806` against the unchanged `2400` boundary. The immutable
+  status is `CALIBRATION_COMPATIBLE_ACQUISITION_BLOCKED`; all candidate
+  responses, acquisition and held-out remained closed. Treat this only as
+  compatibility with the registered PIT betting family. The next admissible
+  work is a response-free P3H.3 transformed-law acquisition correctness Gate;
+  do not run a real acquisition comparison or reuse Student-t EIG unchanged.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out
