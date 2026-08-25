@@ -342,3 +342,20 @@ up to `0.08693`, both projected marginals met their frozen tolerances, and the
 overlapping fixture returned no selection. The status remains correctness-only
 and operational execution remains unauthorized. See
 `docs/pcpi_p3h3_correctness_result_20260825.md`.
+
+## P3H.4 likelihood-power-specific residual states
+
+P3H.4 freezes the missing mapping between the robust likelihood-power family
+and P3H.3. Every preregistered `SequentialReferencePosterior(eta)` now
+reconstructs its own raw PIT sequence from the same chronological already-opened
+history, using only its strict prefix at each step. The resulting posterior and
+residual law are bound by exact engine/posterior object identity; the scorer no
+longer accepts an unlabelled residual-law tuple. Raw X/y history is erased from
+the bundle after reconstruction, leaving an observation count and commitment.
+
+This also closes an overclaim: P3H.2's 24/24 compatibility result is for its
+eta=1 structurewise discrepancy target and is not transferred to the finite
+likelihood-power reference family. P3H.4 is correctness-only and keeps real
+acquisition blocked. The next admissible phase is a separately frozen
+family-wide calibration-only Gate with candidate and held-out responses closed.
+See `docs/pcpi_p3h4_likelihood_power_residual_family_contract_20260826.md`.

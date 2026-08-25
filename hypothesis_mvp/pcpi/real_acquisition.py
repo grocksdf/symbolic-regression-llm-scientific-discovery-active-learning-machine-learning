@@ -32,6 +32,7 @@ from .semiparametric_acquisition import (
     SemiparametricEIGEstimate,
     estimate_semiparametric_class_eig,
 )
+from .likelihood_power_residuals import LikelihoodPowerResidualFamily
 from .reference import (
     DyadicPolyaTreePredictiveLaw,
     ExactPosterior,
@@ -598,6 +599,28 @@ def _estimate_maximin_joint_until_ranked(
         samples = min(maximum_samples, samples * growth_factor)
 
 
+def _bound_semiparametric_residual_laws(
+    models: tuple[PosteriorModel, ...],
+    family: LikelihoodPowerResidualFamily | None,
+) -> tuple[DyadicPolyaTreePredictiveLaw, ...] | None:
+    if family is None:
+        return None
+    states = family.model_states
+    if (
+        len(states) != len(models)
+        or tuple(item.likelihood_power for item in states)
+        != tuple(item.likelihood_power for item in models)
+        or any(
+            model.engine is not state.engine or model.posterior is not state.posterior
+            for model, state in zip(models, states, strict=True)
+        )
+    ):
+        raise ValueError(
+            "P3H posterior models must be the exact objects bound to their residual family"
+        )
+    return family.residual_laws
+
+
 def _least_favorable_values(values: np.ndarray, indices: np.ndarray) -> np.ndarray:
     columns = np.arange(values.shape[1])
     return np.asarray(values[indices, columns], dtype=float)
@@ -705,9 +728,7 @@ def _score_pcpi_discriminative(
     predictive_target_actions: np.ndarray,
     representative_observed_actions: np.ndarray,
     posterior_models: tuple[PosteriorModel, ...] | None,
-    semiparametric_residual_laws: (
-        tuple[DyadicPolyaTreePredictiveLaw, ...] | None
-    ) = None,
+    semiparametric_residual_family: LikelihoodPowerResidualFamily | None = None,
     discrepancy: DiscrepancyPredictiveProfile | None = None,
     *,
     minimum_samples: int,
@@ -716,6 +737,13 @@ def _score_pcpi_discriminative(
     growth_factor: int,
 ) -> AcquisitionScores:
     zeros = np.zeros(components.locations.shape[1], dtype=float)
+    models = None
+    semiparametric_residual_laws = None
+    if semiparametric_residual_family is not None:
+        models = _validated_posterior_models(engine, posterior, posterior_models)
+        semiparametric_residual_laws = _bound_semiparametric_residual_laws(
+            models, semiparametric_residual_family
+        )
     representative = representative_mmd_safe_set(
         representative_observed_actions,
         actions,
@@ -723,7 +751,8 @@ def _score_pcpi_discriminative(
     )
     if not representative.safe_set_nonempty:
         return _representative_mmd_fallback(components, representative, discrepancy)
-    models = _validated_posterior_models(engine, posterior, posterior_models)
+    if models is None:
+        models = _validated_posterior_models(engine, posterior, posterior_models)
     family_components, conditional = _model_components_and_offsets(
         models, components.partition, actions, predictive_target_actions,
         discrepancy,
@@ -876,19 +905,17 @@ def score_acquisition_actions(
     representative_observed_actions: np.ndarray | None = None,
     target_partition: ClassPartition | None = None,
     posterior_models: tuple[PosteriorModel, ...] | None = None,
-    semiparametric_residual_laws: (
-        tuple[DyadicPolyaTreePredictiveLaw, ...] | None
-    ) = None,
+    semiparametric_residual_family: LikelihoodPowerResidualFamily | None = None,
 ) -> AcquisitionScores:
     """Score visible action covariates without receiving their target values."""
 
     if policy not in ACQUISITION_POLICIES:
         raise ValueError(f"unsupported acquisition policy: {policy}")
     if (
-        semiparametric_residual_laws is not None
+        semiparametric_residual_family is not None
         and policy != "pcpi_representative_safe_maximin_joint_eig"
     ):
-        raise ValueError("P3H residual laws require the PCPI information utility")
+        raise ValueError("P3H residual family requires the PCPI information utility")
     components = (
         predictive_components_for_partition(
             engine, posterior, target_partition, actions
@@ -912,7 +939,7 @@ def score_acquisition_actions(
             target_actions,
             representative_observed_actions,
             posterior_models,
-            semiparametric_residual_laws,
+            semiparametric_residual_family,
             minimum_samples=eig_min_samples,
             maximum_samples=eig_max_samples,
             error_safety_factor=eig_error_safety_factor,
@@ -939,9 +966,7 @@ def score_discrepancy_aware_actions(
     representative_observed_actions: np.ndarray,
     target_partition: ClassPartition | None = None,
     posterior_models: tuple[PosteriorModel, ...] | None = None,
-    semiparametric_residual_laws: (
-        tuple[DyadicPolyaTreePredictiveLaw, ...] | None
-    ) = None,
+    semiparametric_residual_family: LikelihoodPowerResidualFamily | None = None,
 ) -> AcquisitionScores:
     """Score candidates with a generic discrepancy-aware PCPI repair.
 
@@ -976,7 +1001,7 @@ def score_discrepancy_aware_actions(
         target_actions,
         representative_observed_actions,
         posterior_models,
-        semiparametric_residual_laws,
+        semiparametric_residual_family,
         profile,
         minimum_samples=eig_min_samples,
         maximum_samples=eig_max_samples,

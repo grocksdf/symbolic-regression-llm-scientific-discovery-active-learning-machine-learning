@@ -93,6 +93,14 @@ from .semiparametric_acquisition import (
     estimate_semiparametric_class_eig_until_ranked,
     semiparametric_class_coupling,
 )
+from .likelihood_power_residuals import (
+    P3H4_OBSERVATION_ORDER,
+    P3H4_RESIDUAL_FAMILY_METHOD,
+    P3H4_STATE_BINDING,
+    LikelihoodPowerResidualFamily,
+    LikelihoodPowerResidualModelState,
+    reconstruct_likelihood_power_residual_family,
+)
 from .decision import (
     REFERENCE_DOMINANCE_METHOD,
     REFERENCE_FALLBACK_MODE,
@@ -217,6 +225,12 @@ __all__ = [
     "estimate_semiparametric_class_eig",
     "estimate_semiparametric_class_eig_until_ranked",
     "semiparametric_class_coupling",
+    "P3H4_OBSERVATION_ORDER",
+    "P3H4_RESIDUAL_FAMILY_METHOD",
+    "P3H4_STATE_BINDING",
+    "LikelihoodPowerResidualFamily",
+    "LikelihoodPowerResidualModelState",
+    "reconstruct_likelihood_power_residual_family",
     "REFERENCE_DOMINANCE_METHOD",
     "REFERENCE_FALLBACK_MODE",
     "TARGETED_HANDOVER_MODE",

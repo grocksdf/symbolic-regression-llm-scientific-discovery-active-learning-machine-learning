@@ -5,7 +5,6 @@ from __future__ import annotations
 import inspect
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -19,6 +18,7 @@ from hypothesis_mvp.pcpi import (
     estimate_semiparametric_class_eig_until_ranked,
     exact_class_eig,
     semiparametric_class_coupling,
+    reconstruct_likelihood_power_residual_family,
 )
 from hypothesis_mvp.pcpi.reference import DyadicPolyaTreePredictiveLaw
 import hypothesis_mvp.pcpi.semiparametric_acquisition as implementation
@@ -215,10 +215,25 @@ def test_production_route_aborts_instead_of_using_legacy_fallback(
     monkeypatch.setattr(
         real_acquisition, "representative_mmd_safe_set", lambda *args: representative
     )
+    actions, targets = np.asarray([[0.0], [1.0], [2.0], [3.0]]), np.asarray(
+        [0.0, 0.4, 0.9, 1.1]
+    )
+    from hypothesis_mvp.pcpi.reference import SequentialReferencePosterior, generic_real_bank
+
+    engine = SequentialReferencePosterior(generic_real_bank(1), 0.5)
+    family = reconstruct_likelihood_power_residual_family(
+        (engine,), actions, targets
+    )
+    bound_models = tuple(
+        real_acquisition.PosteriorModel(
+            state.likelihood_power, state.engine, state.posterior
+        )
+        for state in family.model_states
+    )
     monkeypatch.setattr(
         real_acquisition,
         "_validated_posterior_models",
-        lambda *args: (SimpleNamespace(likelihood_power=0.5),),
+        lambda *args: bound_models,
     )
     monkeypatch.setattr(
         real_acquisition,
@@ -234,7 +249,7 @@ def test_production_route_aborts_instead_of_using_legacy_fallback(
             np.asarray([[0.0], [1.0]]),
             np.asarray([[0.0]]),
             None,
-            (_residual_law(),),
+            family,
             minimum_samples=8,
             maximum_samples=8,
             error_safety_factor=4.0,

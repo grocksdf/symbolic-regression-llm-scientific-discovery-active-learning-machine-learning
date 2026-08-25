@@ -127,14 +127,16 @@ def predictive_cdf(
     actions: np.ndarray,
     targets: np.ndarray,
     *,
-    clip: float = 1e-12,
+    clip: float | None = 1e-12,
 ) -> np.ndarray:
     """Evaluate the exact finite-bank posterior predictive CDF."""
 
     action_values, target_values = engine._validated_data(actions, targets)
-    clip_value = float(clip)
-    if not math.isfinite(clip_value) or not 0.0 < clip_value < 0.5:
-        raise ValueError("predictive CDF clip must lie in (0, 0.5)")
+    clip_value = None if clip is None else float(clip)
+    if clip_value is not None and (
+        not math.isfinite(clip_value) or not 0.0 < clip_value < 0.5
+    ):
+        raise ValueError("predictive CDF clip must be None or lie in (0, 0.5)")
     mixture = np.zeros(len(target_values), dtype=float)
     for member in posterior.members:
         rows = engine._design(action_values, member.structure)
@@ -151,7 +153,11 @@ def predictive_cdf(
         )
     if not np.all(np.isfinite(mixture)):
         raise FloatingPointError("posterior predictive CDF is non-finite")
-    return np.clip(mixture, clip_value, 1.0 - clip_value)
+    return (
+        mixture
+        if clip_value is None
+        else np.clip(mixture, clip_value, 1.0 - clip_value)
+    )
 
 
 def prequential_predictive_pit_e_process(
