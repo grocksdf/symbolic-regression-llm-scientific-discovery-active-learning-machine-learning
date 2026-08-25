@@ -27,6 +27,7 @@ P3F1_FIXTURE_ROLE = "hand_constructed_algebraic_correctness_fixture"
 P3F1_METHOD = "structure-wise-whitened-projected-generative-discrepancy-v1"
 P3G2_NOISE_METHOD = "response-independent-principal-log-variance-mixture-v1"
 P3G3_FUNCTION_PRIOR_METHOD = "dimension-stable-standardized-function-energy-prior-v1"
+P3G4_FUNCTION_MIXTURE_METHOD = "uniform-r2-gauss-legendre-function-energy-mixture-v1"
 
 
 def _readonly(values: np.ndarray) -> np.ndarray:
@@ -92,6 +93,58 @@ class RegisteredNoiseVarianceState:
         digest.update(np.float64(self.prior_probability).tobytes())
         digest.update(self.multipliers.tobytes())
         return digest.hexdigest()
+
+
+@dataclass(frozen=True)
+class RegisteredFunctionEnergyState:
+    """One response-independent total signal-to-noise prior state."""
+
+    state_id: str
+    prior_probability: float
+    signal_to_noise_ratio: float
+
+    def __post_init__(self) -> None:
+        if (
+            not self.state_id
+            or not math.isfinite(self.prior_probability)
+            or self.prior_probability <= 0.0
+            or not math.isfinite(self.signal_to_noise_ratio)
+            or self.signal_to_noise_ratio <= 0.0
+        ):
+            raise ValueError("registered function-energy state is invalid")
+
+    @property
+    def stable_hash(self) -> str:
+        return _stable_hash(
+            {
+                "state_id": self.state_id,
+                "prior_probability": self.prior_probability,
+                "signal_to_noise_ratio": self.signal_to_noise_ratio,
+                "method": P3G4_FUNCTION_MIXTURE_METHOD,
+            }
+        )
+
+
+def uniform_r2_function_energy_states(
+    quadrature_order: int = 3,
+) -> tuple[RegisteredFunctionEnergyState, ...]:
+    """Discretize ``R^2 ~ Uniform(0,1)`` before any response is observed."""
+
+    if isinstance(quadrature_order, bool) or int(quadrature_order) < 2:
+        raise ValueError("function-energy quadrature order must be at least two")
+    nodes, weights = np.polynomial.legendre.leggauss(int(quadrature_order))
+    r_squared = (nodes + 1.0) / 2.0
+    probabilities = weights / 2.0
+    return tuple(
+        RegisteredFunctionEnergyState(
+            f"r2-node-{index + 1}",
+            float(probability),
+            float(value / (1.0 - value)),
+        )
+        for index, (value, probability) in enumerate(
+            zip(r_squared, probabilities, strict=True)
+        )
+    )
 
 
 def response_independent_noise_variance_states(
@@ -215,6 +268,7 @@ class GenerativeDiscrepancyComponent:
     coefficient_dimension: int
     noise_state_id: str
     noise_variance_multipliers: np.ndarray
+    function_energy_state_id: str
 
     def __post_init__(self) -> None:
         design = _readonly(self.design)
@@ -241,7 +295,7 @@ class GenerativeDiscrepancyComponent:
     @property
     def state_id(self) -> str:
         activity = "slab" if self.discrepancy_active else "spike"
-        return f"{self.structure.structure_id}|{activity}|{self.kernel_state_id}|{self.noise_state_id}"
+        return f"{self.structure.structure_id}|{activity}|{self.kernel_state_id}|{self.noise_state_id}|{self.function_energy_state_id}"
 
     def predictive_cdf(self, row_index: int, target: float) -> float:
         row = self.design[row_index]
@@ -424,6 +478,66 @@ class SequentialStructurewiseDiscrepancyState:
             raise ValueError("sequential discrepancy state is invalid")
 
 
+def _registered_noise_states(states, row_count):
+    result = (
+        (RegisteredNoiseVarianceState("homoscedastic", 1.0, np.ones(row_count)),)
+        if states is None
+        else tuple(states)
+    )
+    if (
+        not result
+        or len({state.state_id for state in result}) != len(result)
+        or any(len(state.multipliers) != row_count for state in result)
+        or not math.isclose(sum(state.prior_probability for state in result), 1.0, abs_tol=1e-12)
+    ):
+        raise ValueError("registered noise-variance states are invalid")
+    return result
+
+
+def _registered_energy_states(states):
+    result = (
+        (RegisteredFunctionEnergyState("fixed", 1.0, 1.0),)
+        if states is None
+        else tuple(states)
+    )
+    if (
+        not result
+        or len({state.state_id for state in result}) != len(result)
+        or not math.isclose(sum(state.prior_probability for state in result), 1.0, abs_tol=1e-12)
+    ):
+        raise ValueError("registered function-energy states are invalid")
+    return result
+
+
+def _coefficient_precisions(record, base_precision, dimension_stable, energy):
+    dimension = int(record["coefficient_dimension"])
+    precisions = np.full(dimension, float(base_precision))
+    if dimension_stable and dimension > 1:
+        precisions[1:] *= (dimension - 1) / energy
+    return _readonly(precisions)
+
+
+def _expand_registered_records(base_records, noise_states, energy_states, bank, stable):
+    return tuple(
+        {
+            **record,
+            "joint_prior": float(record["joint_prior"])
+            * noise.prior_probability
+            * energy.prior_probability,
+            "noise_state": noise.state_id,
+            "noise_multipliers": noise.multipliers,
+            "function_energy_state": energy.state_id,
+            "signal_to_noise_ratio": energy.signal_to_noise_ratio,
+            "coefficient_precisions": _coefficient_precisions(
+                record, bank.prior.coefficient_precision, stable, energy.signal_to_noise_ratio
+            ),
+        }
+        for record in base_records
+        for noise in noise_states
+        for energy in energy_states
+    )
+
+
 class RegisteredStructurewiseDiscrepancyEngine:
     """Reusable finite-domain posterior with a response-free low-rank sieve.
 
@@ -445,6 +559,7 @@ class RegisteredStructurewiseDiscrepancyEngine:
         maximum_discrepancy_rank: int = 16,
         noise_variance_states: tuple[RegisteredNoiseVarianceState, ...] | None = None,
         dimension_stable_coefficient_prior: bool = False,
+        function_energy_states: tuple[RegisteredFunctionEnergyState, ...] | None = None,
     ) -> None:
         x = np.asarray(domain_actions, dtype=float)
         if x.ndim == 1:
@@ -462,40 +577,14 @@ class RegisteredStructurewiseDiscrepancyEngine:
             structure_designs,
             int(maximum_discrepancy_rank),
         )
-        if noise_variance_states is None:
-            variance_states = (
-                RegisteredNoiseVarianceState(
-                    "homoscedastic", 1.0, np.ones(len(x), dtype=float)
-                ),
-            )
-        else:
-            variance_states = tuple(noise_variance_states)
-        if (
-            not variance_states
-            or len({state.state_id for state in variance_states}) != len(variance_states)
-            or any(len(state.multipliers) != len(x) for state in variance_states)
-            or not math.isclose(
-                sum(state.prior_probability for state in variance_states),
-                1.0,
-                rel_tol=0.0,
-                abs_tol=1e-12,
-            )
-        ):
-            raise ValueError("registered noise-variance states are invalid")
-        records = tuple(
-            {
-                **record,
-                "joint_prior": float(record["joint_prior"]) * state.prior_probability,
-                "noise_state": state.state_id,
-                "noise_multipliers": state.multipliers,
-                "coefficient_precisions": self._coefficient_precisions(
-                    record,
-                    bank.prior.coefficient_precision,
-                    bool(dimension_stable_coefficient_prior),
-                ),
-            }
-            for record in base_records
-            for state in variance_states
+        variance_states = _registered_noise_states(noise_variance_states, len(x))
+        energy_states = _registered_energy_states(function_energy_states)
+        records = _expand_registered_records(
+            base_records,
+            variance_states,
+            energy_states,
+            bank,
+            bool(dimension_stable_coefficient_prior),
         )
         self.bank = bank
         self.domain_actions = _readonly(x)
@@ -503,11 +592,14 @@ class RegisteredStructurewiseDiscrepancyEngine:
         self.prior = prior
         self.maximum_discrepancy_rank = int(maximum_discrepancy_rank)
         self.noise_variance_states = variance_states
+        self.function_energy_states = energy_states
         self.dimension_stable_coefficient_prior = bool(
             dimension_stable_coefficient_prior
         )
         self.method = (
-            P3G3_FUNCTION_PRIOR_METHOD
+            P3G4_FUNCTION_MIXTURE_METHOD
+            if len(energy_states) > 1
+            else P3G3_FUNCTION_PRIOR_METHOD
             if self.dimension_stable_coefficient_prior
             else P3G2_NOISE_METHOD
             if len(variance_states) > 1
@@ -515,14 +607,6 @@ class RegisteredStructurewiseDiscrepancyEngine:
         )
         self.records = records
         self.bases = tuple(bases)
-
-    @staticmethod
-    def _coefficient_precisions(record, base_precision: float, dimension_stable: bool):
-        coefficient_dimension = int(record["coefficient_dimension"])
-        precisions = np.full(coefficient_dimension, float(base_precision))
-        if dimension_stable and coefficient_dimension > 1:
-            precisions[1:] *= coefficient_dimension - 1
-        return _readonly(precisions)
 
     def prior_state(self) -> SequentialStructurewiseDiscrepancyState:
         means, covariances = [], []
@@ -640,7 +724,7 @@ class RegisteredStructurewiseDiscrepancyEngine:
             scales=np.vstack(scales),
             structure_ids=tuple(str(record["structure"].structure_id) for record in self.records),
             component_state_ids=tuple(
-                f"{record['structure'].structure_id}|{'slab' if record['active'] else 'spike'}|{record['kernel']}|{record['noise_state']}"
+                f"{record['structure'].structure_id}|{'slab' if record['active'] else 'spike'}|{record['kernel']}|{record['noise_state']}|{record['function_energy_state']}"
                 for record in self.records
             ),
         )
@@ -657,6 +741,8 @@ class RegisteredStructurewiseDiscrepancyEngine:
         for basis in self.bases:
             digest.update(basis.stable_hash.encode("ascii"))
         for state in self.noise_variance_states:
+            digest.update(state.stable_hash.encode("ascii"))
+        for state in self.function_energy_states:
             digest.update(state.stable_hash.encode("ascii"))
         return digest.hexdigest()
 
@@ -1080,6 +1166,9 @@ def _normalize_fitted_records(
                 noise_state_id=str(record.get("noise_state", "homoscedastic")),
                 noise_variance_multipliers=np.asarray(
                     record.get("noise_multipliers", np.ones(len(record["design"])))
+                ),
+                function_energy_state_id=str(
+                    record.get("function_energy_state", "fixed")
                 ),
             )
         )

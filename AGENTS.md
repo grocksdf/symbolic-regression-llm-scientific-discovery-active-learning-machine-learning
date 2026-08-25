@@ -462,6 +462,15 @@ long-horizon context and remain binding even when a local task omits them.
   energy one instead of energy growing linearly with representation dimension.
   Batch/rank-one conjugacy, discrepancy/noise mixtures, joint nuisance EIG and
   every real-data Gate boundary remain unchanged.
+- `P3G.3` returned 12/24 calibration rejections and is immutable negative
+  evidence; fixed function energy is rejected because the posterior transfers
+  suppressed signal variation into the common noise scale. `P3G.4` integrates
+  function energy instead of selecting another precision. A response-free
+  three-point Gauss--Legendre rule discretizes `R^2 ~ Uniform(0,1)` and maps
+  nodes to `g=R^2/(1-R^2)`; conditional non-intercept precision is `p/g`.
+  Quadrature weights are proper state priors, and structure, discrepancy,
+  heteroscedastic noise and energy state form the acquisition nuisance target.
+  No dataset, seed, PIT result or response enters construction of this mixture.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out

@@ -62,6 +62,15 @@ energy equal to one. This response-free construction is implemented by
 `scripts.run_pcpi_p3g3_dimension_stable_function_prior_gate` and documented in
 `docs/pcpi_p3g3_dimension_stable_prior_contract_20260825.md`.
 
+P3G.3 returned a stronger `CALIBRATION_NO_GO` with 12/24 rejections: fixed
+unit function energy transferred suppressed signal variation into the global
+noise scale and worsened predictive overdispersion. P3G.4 therefore replaces
+the fixed energy with a frozen three-state quadrature mixture induced by
+`R^2 ~ Uniform(0,1)`. The posterior, rather than a fitted regularization
+constant, learns the total signal-to-noise state. Its one-shot entry point is
+`scripts.run_pcpi_p3g4_r2_function_energy_mixture_gate`; see
+`docs/pcpi_p3g4_r2_function_energy_mixture_contract_20260825.md`.
+
 The P3D.2 audit also exposes an exact semantic mismatch: for `eta<1`, ordinary
 class mutual information is not the expected entropy reduction of the actual
 power-likelihood update. P3E.1 repairs this loss/update alignment only on an

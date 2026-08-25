@@ -56,12 +56,14 @@ from hypothesis_mvp.pcpi.reference import (
     pit_e_process,
     response_independent_noise_variance_states,
     stable_budget_indices,
+    uniform_r2_function_energy_states,
 )
 
 
 CONFIG_SCHEMA = "pcpi-p3g1-structurewise-discrepancy-calibration-gate-v1"
 P3G2_CONFIG_SCHEMA = "pcpi-p3g2-heteroscedastic-structurewise-calibration-gate-v1"
 P3G3_CONFIG_SCHEMA = "pcpi-p3g3-dimension-stable-function-prior-gate-v1"
+P3G4_CONFIG_SCHEMA = "pcpi-p3g4-r2-function-energy-mixture-gate-v1"
 PCPI_POLICY = "pcpi_nuisance_aware_joint_eig"
 POLICIES = ("random", "uncertainty", "qbc", PCPI_POLICY)
 
@@ -124,7 +126,9 @@ def _git_identity(root: Path) -> dict[str, str]:
 def _load_config(path: Path) -> dict[str, Any]:
     config = json.loads(path.read_text(encoding="utf-8"))
     if (
-        config.get("schema") not in (CONFIG_SCHEMA, P3G2_CONFIG_SCHEMA, P3G3_CONFIG_SCHEMA)
+        config.get("schema") not in (
+            CONFIG_SCHEMA, P3G2_CONFIG_SCHEMA, P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA
+        )
         or tuple(config.get("datasets", ()))
         != ("uci_ccpp", "uci_gas_turbine_co", "uci_gas_turbine_nox")
         or tuple(config.get("seeds", ())) != tuple(range(2026080701, 2026080709))
@@ -139,7 +143,7 @@ def _load_config(path: Path) -> dict[str, Any]:
         or config.get("authorization", {}).get("heldout") is not False
     ):
         raise ValueError("P3G frozen protocol was modified")
-    if config["schema"] in (P3G2_CONFIG_SCHEMA, P3G3_CONFIG_SCHEMA):
+    if config["schema"] in (P3G2_CONFIG_SCHEMA, P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA):
         noise = config.get("posterior", {}).get("noise_variance_sieve", {})
         if (
             noise.get("method")
@@ -150,7 +154,7 @@ def _load_config(path: Path) -> dict[str, Any]:
             or noise.get("construction_response_access") is not False
         ):
             raise ValueError("P3G.2 frozen noise-variance sieve was modified")
-    if config["schema"] == P3G3_CONFIG_SCHEMA:
+    if config["schema"] in (P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA):
         function_prior = config.get("posterior", {}).get("coefficient_prior", {})
         if (
             function_prior.get("method")
@@ -161,6 +165,16 @@ def _load_config(path: Path) -> dict[str, Any]:
             or function_prior.get("construction_response_access") is not False
         ):
             raise ValueError("P3G.3 frozen function prior was modified")
+    if config["schema"] == P3G4_CONFIG_SCHEMA:
+        mixture = config.get("posterior", {}).get("function_energy_mixture", {})
+        if (
+            mixture.get("method")
+            != "uniform-r2-gauss-legendre-function-energy-mixture-v1"
+            or mixture.get("r_squared_prior") != "uniform(0,1)"
+            or mixture.get("quadrature_order") != 3
+            or mixture.get("construction_response_access") is not False
+        ):
+            raise ValueError("P3G.4 frozen function-energy mixture was modified")
     return config
 
 
@@ -237,6 +251,12 @@ def _make_context(frame, config: dict[str, Any], seed: int) -> RunContext:
                 noise_config["homoscedastic_prior_probability"]
             ),
         )
+    energy_config = posterior_config.get("function_energy_mixture")
+    energy_states = None
+    if energy_config is not None:
+        energy_states = uniform_r2_function_energy_states(
+            int(energy_config["quadrature_order"])
+        )
     engine = RegisteredStructurewiseDiscrepancyEngine(
         bank,
         domain_X,
@@ -245,7 +265,10 @@ def _make_context(frame, config: dict[str, Any], seed: int) -> RunContext:
         structure_designs=_structure_designs(bank, preconditioner, domain_X),
         maximum_discrepancy_rank=int(posterior_config["maximum_discrepancy_rank"]),
         noise_variance_states=noise_states,
-        dimension_stable_coefficient_prior=(config["schema"] == P3G3_CONFIG_SCHEMA),
+        dimension_stable_coefficient_prior=(
+            config["schema"] in (P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA)
+        ),
+        function_energy_states=energy_states,
     )
     nominal = SequentialReferencePosterior(bank, 1.0, preconditioner)
     nominal_posterior = nominal.fit_batch(initial_X, initial_y)
@@ -305,9 +328,14 @@ def _calibration_run(context: RunContext, config: dict[str, Any]) -> dict[str, A
     pit_array = np.asarray(pits)
     basis_means = np.mean(pit_basis(pit_array), axis=0)
     noise_probabilities: dict[str, float] = {}
+    energy_probabilities: dict[str, float] = {}
     for probability, record in zip(state.probabilities, context.engine.records, strict=True):
         noise_id = str(record.get("noise_state", "homoscedastic"))
         noise_probabilities[noise_id] = noise_probabilities.get(noise_id, 0.0) + float(
+            probability
+        )
+        energy_id = str(record.get("function_energy_state", "fixed"))
+        energy_probabilities[energy_id] = energy_probabilities.get(energy_id, 0.0) + float(
             probability
         )
     return {
@@ -328,6 +356,9 @@ def _calibration_run(context: RunContext, config: dict[str, Any]) -> dict[str, A
         "pit_cubic_basis_mean": float(basis_means[2]),
         "final_noise_state_probabilities": json.dumps(
             noise_probabilities, sort_keys=True, separators=(",", ":")
+        ),
+        "final_function_energy_state_probabilities": json.dumps(
+            energy_probabilities, sort_keys=True, separators=(",", ":")
         ),
         "heldout_opened": False,
         "candidate_responses_used": False,
@@ -360,6 +391,7 @@ def _joint_partition(context: RunContext, law) -> ClassPartition:
                 class_index,
                 str(record["kernel"]),
                 str(record.get("noise_state", "homoscedastic")),
+                str(record.get("function_energy_state", "fixed")),
             )
         )
     unique = tuple(sorted(set(labels)))
@@ -368,7 +400,7 @@ def _joint_partition(context: RunContext, law) -> ClassPartition:
     assignment = tuple(unique.index(label) for label in labels)
     return ClassPartition(
         tuple(
-            f"structural-class-{item[0]}|discrepancy-{item[1]}|noise-{item[2]}"
+            f"structural-class-{item[0]}|discrepancy-{item[1]}|noise-{item[2]}|energy-{item[3]}"
             for item in unique
         ),
         groups,
@@ -619,7 +651,9 @@ def main(
     assessment = _assessment(runs, config) if eligible else {"status": "CALIBRATION_NO_GO", "strong_evidence": False, "paired_effects": []}
     payload = {
         "schema": (
-            "pcpi-p3g3-dimension-stable-function-prior-gate-result-v1"
+            "pcpi-p3g4-r2-function-energy-mixture-gate-result-v1"
+            if config["schema"] == P3G4_CONFIG_SCHEMA
+            else "pcpi-p3g3-dimension-stable-function-prior-gate-result-v1"
             if config["schema"] == P3G3_CONFIG_SCHEMA
             else "pcpi-p3g2-heteroscedastic-structurewise-gate-result-v1"
             if config["schema"] == P3G2_CONFIG_SCHEMA
