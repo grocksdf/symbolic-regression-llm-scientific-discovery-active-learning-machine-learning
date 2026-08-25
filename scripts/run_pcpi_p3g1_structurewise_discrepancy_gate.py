@@ -18,6 +18,7 @@ import json
 import math
 from pathlib import Path
 import subprocess
+import sys
 import time
 from typing import Any
 
@@ -149,6 +150,7 @@ def _load_config(path: Path) -> dict[str, Any]:
         posterior = config.get("posterior", {})
         residual = posterior.get("semiparametric_residual_law", {})
         prerequisite = config.get("correctness_prerequisite", {})
+        runtime_freeze = config.get("runtime_freeze", {})
         if (
             prerequisite
             != {
@@ -156,6 +158,47 @@ def _load_config(path: Path) -> dict[str, Any]:
                 "config": "configs/p3h_1_semiparametric_residual_correctness.json",
                 "required_status": "passed",
                 "real_response_access": False,
+            }
+            or runtime_freeze
+            != {
+                "schema": "pcpi-p3h2-runtime-freeze-v1",
+                "identity_source": "p3g5-user-executed-runtime-dependency-snapshot",
+                "identity_source_commit": "86e37abb5ef5ff13c3cf4e151df60cee90c23df2",
+                "runtime_dependency_hash": "b7bf88a64dd375e25c7d679de129c654c3346462215ffa24c425c762fb8bc4a6",
+                "python": {
+                    "implementation": "CPython",
+                    "version": "3.11.9",
+                    "compiler": "MSC v.1938 64 bit (AMD64)",
+                },
+                "platform": {
+                    "system": "Windows",
+                    "release": "10",
+                    "machine": "AMD64",
+                },
+                "critical_distributions": {
+                    "numpy": "2.4.6",
+                    "scipy": "1.17.1",
+                    "python-flint": "0.8.0",
+                    "pytest": "9.1.1",
+                },
+                "binary_identity": {
+                    "base_executable": {
+                        "length": 103192,
+                        "sha256": "5f7b89a612c9b8af1d6456cdfcd1dbe5ca630849e79aebced9bee9a6694952ec",
+                    },
+                    "python_dll": {
+                        "length": 5800216,
+                        "sha256": "0817a2a657a24c0d5fbb60df56960f42fc66b3039d522ec952dab83e2d869364",
+                    },
+                    "venv_launcher": {
+                        "length": 274712,
+                        "sha256": "21bb438c0d4a6f1f164b9a646f6ee000340185e5871180aec06db8d3f07c0082",
+                    },
+                    "pyvenv_config": {
+                        "length": 321,
+                        "sha256": "b75562dbf80f212122390c6163f96335d54ed588187ea693d021393bd8b70de4",
+                    },
+                },
             }
             or config.get("split_seed") != 20260807
             or config.get("initial_observation_budget") != 32
@@ -746,6 +789,44 @@ def _p3h_correctness_prerequisite(root: Path, config: dict[str, Any]):
     return result
 
 
+def _runtime_binary_identity() -> dict[str, dict[str, Any]]:
+    paths = {
+        "base_executable": Path(sys._base_executable),
+        "python_dll": Path(sys.base_prefix) / "python311.dll",
+        "venv_launcher": Path(sys.executable),
+        "pyvenv_config": Path(sys.prefix) / "pyvenv.cfg",
+    }
+    return {
+        name: {"length": path.stat().st_size, "sha256": _file_hash(path)}
+        for name, path in paths.items()
+    }
+
+
+def _p3h_runtime_prerequisite(
+    config: dict[str, Any],
+    dependency_snapshot: dict[str, Any],
+    binary_identity: dict[str, dict[str, Any]] | None = None,
+) -> str:
+    dependency_hash = runtime_dependency_hash(dependency_snapshot)
+    if config["schema"] != P3H2_CONFIG_SCHEMA:
+        return dependency_hash
+    freeze = config["runtime_freeze"]
+    critical = {
+        name: dependency_snapshot["distributions"].get(name)
+        for name in freeze["critical_distributions"]
+    }
+    if (
+        dependency_hash != freeze["runtime_dependency_hash"]
+        or dependency_snapshot["python"] != freeze["python"]
+        or dependency_snapshot["platform"] != freeze["platform"]
+        or critical != freeze["critical_distributions"]
+        or (binary_identity or _runtime_binary_identity())
+        != freeze["binary_identity"]
+    ):
+        raise RuntimeError("P3H.2 runtime identity differs from the frozen P3G.5 environment")
+    return dependency_hash
+
+
 def main(
     default_config: Path = Path(
         "configs/p3g_1_structurewise_discrepancy_calibration_gate.json"
@@ -762,6 +843,7 @@ def main(
     identity = _git_identity(root)
     p3h_correctness = _p3h_correctness_prerequisite(root, config)
     dependency_snapshot = runtime_dependency_snapshot()
+    dependency_hash = _p3h_runtime_prerequisite(config, dependency_snapshot)
     started = time.perf_counter()
     contexts = []
     frames = {}
@@ -838,7 +920,7 @@ def main(
         "source_tree": identity["tree"],
         "config_sha256": _file_hash(config_path),
         "production_code_hash": production_code_hash(root),
-        "runtime_dependency_hash": runtime_dependency_hash(dependency_snapshot),
+        "runtime_dependency_hash": dependency_hash,
         "runtime_dependency_snapshot": dependency_snapshot,
         "dataset_source_hashes": dataset_hashes,
         "calibration_run_count": len(calibration),

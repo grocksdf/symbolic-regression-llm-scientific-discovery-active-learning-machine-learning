@@ -225,6 +225,15 @@ def test_p3h2_real_config_preserves_gate_and_blocks_candidate_responses() -> Non
     assert authorization["conditional_acquisition_execution"] is False
     assert authorization["candidate_responses"] == "sealed-through-this-calibration-only-gate"
     assert authorization["heldout"] is False
+    freeze = config["runtime_freeze"]
+    assert freeze["runtime_dependency_hash"] == (
+        "b7bf88a64dd375e25c7d679de129c654c3346462215ffa24c425c762fb8bc4a6"
+    )
+    assert freeze["python"]["version"] == "3.11.9"
+    assert freeze["critical_distributions"]["python-flint"] == "0.8.0"
+    assert freeze["binary_identity"]["base_executable"]["sha256"] == (
+        "5f7b89a612c9b8af1d6456cdfcd1dbe5ca630849e79aebced9bee9a6694952ec"
+    )
 
 
 def test_p3h2_runner_cannot_open_candidate_oracle_after_calibration_pass() -> None:
@@ -252,8 +261,9 @@ def test_p3h1_prerequisite_runs_before_dependency_or_real_dataset_access() -> No
     source = inspect.getsource(real_runner.main)
     prerequisite = source.index("p3h_correctness = _p3h_correctness_prerequisite")
     dependencies = source.index("dependency_snapshot =", prerequisite)
-    real_data = source.index("load_registered_real_dataset", dependencies)
-    assert prerequisite < dependencies < real_data
+    runtime = source.index("dependency_hash = _p3h_runtime_prerequisite", dependencies)
+    real_data = source.index("load_registered_real_dataset", runtime)
+    assert prerequisite < dependencies < runtime < real_data
 
 
 def test_p3h2_loader_rejects_a_changed_base_or_residual_rule(tmp_path: Path) -> None:
@@ -271,3 +281,30 @@ def test_p3h2_loader_rejects_a_changed_base_or_residual_rule(tmp_path: Path) -> 
     changed_residual.write_text(json.dumps(config), encoding="utf-8")
     with pytest.raises(ValueError):
         real_runner._load_config(changed_residual)
+
+
+def test_p3h2_runtime_freeze_fails_closed_before_data_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = real_runner._load_config(
+        Path("configs/p3h_2_semiparametric_residual_calibration_gate.json")
+    )
+    freeze = config["runtime_freeze"]
+    snapshot = {
+        "schema": "pcpi-runtime-dependency-environment-v1",
+        "python": dict(freeze["python"]),
+        "platform": dict(freeze["platform"]),
+        "distributions": dict(freeze["critical_distributions"]),
+    }
+    monkeypatch.setattr(
+        real_runner,
+        "runtime_dependency_hash",
+        lambda _: freeze["runtime_dependency_hash"],
+    )
+    binaries = {name: dict(value) for name, value in freeze["binary_identity"].items()}
+    assert real_runner._p3h_runtime_prerequisite(config, snapshot, binaries) == (
+        freeze["runtime_dependency_hash"]
+    )
+    snapshot["distributions"]["numpy"] = "changed"
+    with pytest.raises(RuntimeError):
+        real_runner._p3h_runtime_prerequisite(config, snapshot, binaries)

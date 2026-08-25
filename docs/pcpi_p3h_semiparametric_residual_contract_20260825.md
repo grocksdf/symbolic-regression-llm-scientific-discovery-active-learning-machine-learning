@@ -142,3 +142,8 @@ Even a 24/24 non-rejection would mean only non-rejection against the registered
 PIT betting family. Acquisition must remain blocked until that result is
 audited and the transformed predictive law is incorporated into the decision
 utility without pretending it is still a Student-t mixture.
+
+The P3H.2 real Gate additionally freezes the complete P3G.5 dependency hash
+and the canonical CPython executable/DLL/virtual-environment binary hashes.
+These identities and their pre-data fail-closed order are recorded in
+`docs/pcpi_p3h2_runtime_freeze_20260825.md`.

@@ -507,6 +507,12 @@ long-horizon context and remain binding even when a local task omits them.
   eight registered decisions with no real, validation, candidate or held-out
   access. P3H.2 must re-execute this prerequisite before dependency snapshot
   or data loading and must preserve the result in its terminal ledger.
+- P3H.2 is bound to the exact P3G.5 runtime dependency hash
+  `b7bf88a64dd375e25c7d679de129c654c3346462215ffa24c425c762fb8bc4a6`,
+  CPython 3.11.9 and the registered interpreter/DLL/venv binary hashes. The
+  environment was intact; the earlier launcher failure inside Codex was a
+  sandbox read-boundary issue. Do not reinstall, upgrade, fall back to another
+  interpreter or run data if any runtime identity check fails.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out

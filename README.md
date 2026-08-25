@@ -99,6 +99,9 @@ cannot open candidate responses or run acquisition. See
 `docs/pcpi_p3h_semiparametric_residual_contract_20260825.md`.
 The committed-source P3H.1 result passes all eight registered correctness
 decisions; see `docs/pcpi_p3h1_correctness_result_20260825.md`.
+P3H.2 reuses the exact P3G.5 CPython 3.11.9 dependency identity and freezes the
+base executable, DLL, virtual-environment launcher and configuration hashes;
+see `docs/pcpi_p3h2_runtime_freeze_20260825.md`.
 
 The P3D.2 audit also exposes an exact semantic mismatch: for `eta<1`, ordinary
 class mutual information is not the expected entropy reduction of the actual

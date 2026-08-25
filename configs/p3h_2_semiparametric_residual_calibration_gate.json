@@ -14,6 +14,46 @@
     "required_status": "passed",
     "real_response_access": false
   },
+  "runtime_freeze": {
+    "schema": "pcpi-p3h2-runtime-freeze-v1",
+    "identity_source": "p3g5-user-executed-runtime-dependency-snapshot",
+    "identity_source_commit": "86e37abb5ef5ff13c3cf4e151df60cee90c23df2",
+    "runtime_dependency_hash": "b7bf88a64dd375e25c7d679de129c654c3346462215ffa24c425c762fb8bc4a6",
+    "python": {
+      "implementation": "CPython",
+      "version": "3.11.9",
+      "compiler": "MSC v.1938 64 bit (AMD64)"
+    },
+    "platform": {
+      "system": "Windows",
+      "release": "10",
+      "machine": "AMD64"
+    },
+    "critical_distributions": {
+      "numpy": "2.4.6",
+      "scipy": "1.17.1",
+      "python-flint": "0.8.0",
+      "pytest": "9.1.1"
+    },
+    "binary_identity": {
+      "base_executable": {
+        "length": 103192,
+        "sha256": "5f7b89a612c9b8af1d6456cdfcd1dbe5ca630849e79aebced9bee9a6694952ec"
+      },
+      "python_dll": {
+        "length": 5800216,
+        "sha256": "0817a2a657a24c0d5fbb60df56960f42fc66b3039d522ec952dab83e2d869364"
+      },
+      "venv_launcher": {
+        "length": 274712,
+        "sha256": "21bb438c0d4a6f1f164b9a646f6ee000340185e5871180aec06db8d3f07c0082"
+      },
+      "pyvenv_config": {
+        "length": 321,
+        "sha256": "b75562dbf80f212122390c6163f96335d54ed588187ea693d021393bd8b70de4"
+      }
+    }
+  },
   "datasets": ["uci_ccpp", "uci_gas_turbine_co", "uci_gas_turbine_nox"],
   "seeds": [2026080701, 2026080702, 2026080703, 2026080704, 2026080705, 2026080706, 2026080707, 2026080708],
   "split_seed": 20260807,

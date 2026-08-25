@@ -20,10 +20,12 @@ commit `db00f91d16b6431df77c9e78300b9293e4572dab` and tree
 The `summary.json` hash exactly matches its no-overwrite manifest. The run used
 isolated CPython 3.12.13 on Windows AMD64, NumPy 2.5.2, SciPy 1.18.1 and
 python-flint 0.8.0; the complete installed-distribution snapshot is embedded
-in the summary. This isolated correctness runtime was used because the prior
-Python 3.11 virtual-environment launcher referred to a removed base
-interpreter. It does not silently redefine the runtime of a later real Gate,
-which must record its own exact environment.
+in the summary. This isolated correctness runtime was used because the
+restricted Codex sandbox could not read the user-local CPython base directory.
+Subsequent approved host verification established that the canonical Python
+3.11.9 environment was intact; the earlier message was a sandbox-visibility
+failure, not a deleted interpreter. The isolated fixture does not redefine the
+runtime of a later real Gate.
 
 ## Passed decisions
 
