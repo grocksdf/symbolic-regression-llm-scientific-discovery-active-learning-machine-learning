@@ -11,6 +11,11 @@ from typing import Any
 
 import numpy as np
 
+from hypothesis_mvp.hypotheses import (
+    production_code_hash,
+    runtime_dependency_hash,
+    runtime_dependency_snapshot,
+)
 from hypothesis_mvp.pcpi.reference import (
     DiscrepancyKernelState,
     DyadicPolyaTreeResidualModel,
@@ -237,10 +242,12 @@ def main() -> int:
     root = Path(__file__).resolve().parents[1]
     config = _load_config(args.config.resolve())
     result = _evaluate(config)
+    dependency_snapshot = runtime_dependency_snapshot()
     payload = {
         **result,
         **_git_identity(root),
         "config_sha256": _file_hash(args.config.resolve()),
+        "production_code_hash": production_code_hash(root),
         "production_source_sha256": _file_hash(
             root
             / "hypothesis_mvp"
@@ -249,6 +256,8 @@ def main() -> int:
             / "semiparametric_residual.py"
         ),
         "runner_source_sha256": _file_hash(Path(__file__).resolve()),
+        "runtime_dependency_hash": runtime_dependency_hash(dependency_snapshot),
+        "runtime_dependency_snapshot": dependency_snapshot,
     }
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=False)
