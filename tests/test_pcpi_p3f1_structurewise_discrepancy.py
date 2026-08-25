@@ -5,10 +5,12 @@ from __future__ import annotations
 import math
 
 import numpy as np
+import pytest
 from scipy.integrate import quad
 
 from hypothesis_mvp.pcpi.reference import (
     DiscrepancyKernelState,
+    RegisteredStructurewiseDiscrepancyEngine,
     StructurewiseDiscrepancyPrior,
     design_matrix,
     fit_structurewise_discrepancy_posterior,
@@ -167,6 +169,89 @@ def test_p3f1_frozen_contract_hash_is_outcome_independent() -> None:
     second = p3f1_contract_hash(bank, _kernels(), prior)
     assert first == second
     assert len(first) == 64
+
+
+def test_registered_low_rank_engine_reuses_one_response_free_sieve() -> None:
+    x, y = _fixture()
+    engine = RegisteredStructurewiseDiscrepancyEngine(
+        unit_bank(),
+        x,
+        _kernels(),
+        StructurewiseDiscrepancyPrior(0.3, 0.8),
+        maximum_discrepancy_rank=2,
+    )
+    first_hash = engine.stable_hash
+    assert all(basis.discrepancy_rank <= 2 for basis in engine.bases)
+    first = engine.fit(tuple(range(5)), y[:5])
+    second = engine.fit(tuple(range(6)), y[:6])
+    assert engine.stable_hash == first_hash
+    assert first.probability_sum == pytest.approx(1.0)
+    assert second.probability_sum == pytest.approx(1.0)
+
+
+def test_registered_low_rank_predictive_law_matches_component_mixture() -> None:
+    x, y = _fixture()
+    engine = RegisteredStructurewiseDiscrepancyEngine(
+        unit_bank(),
+        x,
+        _kernels(),
+        StructurewiseDiscrepancyPrior(0.3, 0.8),
+        maximum_discrepancy_rank=2,
+    )
+    posterior = engine.fit(tuple(range(5)), y[:5])
+    rows = (5, 7)
+    law = engine.predictive_law(posterior, rows)
+    targets = y[np.asarray(rows)]
+    expected = np.asarray(
+        [posterior.predictive_cdf(index, target) for index, target in zip(rows, targets)]
+    )
+    assert np.allclose(law.cdf(targets), expected, atol=2e-14, rtol=0.0)
+    assert np.all(np.isfinite(law.logpdf(targets)))
+
+
+def test_rank_one_registered_state_matches_batch_fit() -> None:
+    x, y = _fixture()
+    engine = RegisteredStructurewiseDiscrepancyEngine(
+        unit_bank(),
+        x,
+        _kernels(),
+        StructurewiseDiscrepancyPrior(0.3, 0.8),
+        maximum_discrepancy_rank=2,
+    )
+    state = engine.prior_state()
+    for index in range(5):
+        state = engine.update(state, index, float(y[index]))
+    batch = engine.fit(tuple(range(5)), y[:5])
+    batch_probabilities = np.asarray(
+        [member.posterior_probability for member in batch.members]
+    )
+    assert np.allclose(state.probabilities, batch_probabilities, atol=2e-13, rtol=0.0)
+    sequential_law = engine.sequential_predictive_law(state, (5, 7))
+    batch_law = engine.predictive_law(batch, (5, 7))
+    assert np.allclose(sequential_law.locations, batch_law.locations, atol=2e-13)
+    assert np.allclose(sequential_law.scales, batch_law.scales, atol=2e-13)
+
+
+def test_low_rank_truncation_is_deterministic_and_response_independent() -> None:
+    x, y = _fixture()
+    design = design_matrix(x, unit_bank().structures[0].basis_terms)
+    first = structurewise_projected_rbf_basis(
+        x,
+        design,
+        "constant",
+        _kernels()[0],
+        maximum_rank=2,
+    )
+    repeated = structurewise_projected_rbf_basis(
+        x,
+        design,
+        "constant",
+        _kernels()[0],
+        maximum_rank=2,
+    )
+    assert first.discrepancy_rank == 2
+    assert first.stable_hash == repeated.stable_hash
+    assert np.max(np.abs(design.T @ first.factor)) < 2e-12
 
 
 def test_p3f1_kernel_probabilities_must_be_proper() -> None:

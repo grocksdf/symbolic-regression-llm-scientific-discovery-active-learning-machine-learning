@@ -20,6 +20,22 @@ dependency, and export identities. CCPP PCPI-minus-random frozen-class gain is
 `-0.253805` with 95% interval `[-0.482951,-0.024660]`; grouped Gas does not
 exclude zero. No P4/P5, held-out, or superiority claim is authorized.
 
+P3G.1 is the consolidated C1--C3 mainline repair. It places a frozen,
+response-independent low-rank generative discrepancy inside every structure,
+then treats the operational structure class and discrepancy state as the joint
+acquisition target. One command performs all 24 preregistered predictive
+calibration runs; candidate responses remain sealed unless every run passes,
+after which the same process automatically performs all 96 matched-budget
+acquisition runs. Held-out remains closed throughout:
+
+```powershell
+& 'D:\01\666\.venv_hypothesis_canonical\Scripts\python.exe' -B -m scripts.run_pcpi_p3g1_structurewise_discrepancy_gate --data-root 'D:\01\666\hypothesis_mvp\data' --output-dir 'D:\01\666\hypothesis_mvp\outputs\p3g_1_structurewise_discrepancy_gate_<commit>_20260823' --config 'configs\p3g_1_structurewise_discrepancy_calibration_gate.json'
+```
+
+Replace `<commit>` with the committed source identity. The runner rejects a
+dirty tracked worktree and an existing output directory, records all failures,
+and never substitutes seeds or retries a failed run.
+
 The P3D.2 audit also exposes an exact semantic mismatch: for `eta<1`, ordinary
 class mutual information is not the expected entropy reduction of the actual
 power-likelihood update. P3E.1 repairs this loss/update alignment only on an

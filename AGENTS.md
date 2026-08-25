@@ -424,15 +424,28 @@ long-horizon context and remain binding even when a local task omits them.
   operational feasibility: actual H0 binding, the observed response-frozen
   cap audit and wall-clock/storage certification remain blocked, and every
   operational/real/heldout/formal-experiment flag remains false.
+- `P3G.1` is the consolidated C1--C3 root repair after the mainline scope
+  reassessment. It retains CERT.23 as open-target correctness evidence but does
+  not require an operational countably-open sampler for the finite-bank real
+  acquisition claim. The real posterior now contains a response-free low-rank
+  structure-wise discrepancy sieve with a common spike/kernel nuisance prior.
+  Rank-one conjugate updates are checked against batch fitting. One frozen
+  runner allocates a `1/100` PIT familywise budget equally across all 24
+  seed/target audits; candidate responses stay sealed unless every audit
+  passes. A pass automatically triggers the matched-budget comparison using
+  joint `(operational class, discrepancy state)` EIG, with random fallback for
+  unresolved numerical rankings. A failure emits a terminal calibration NO-GO
+  without acquisition. Held-out remains closed and development advantage can
+  never be labeled formal efficacy evidence.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out
   access, efficacy claims, and formal paper superiority claims remain blocked.
-  The next admissible action is the one-time response-free CERT.23 Gate. After
-  a pass, a new Gate must bind all registered dimensions and H0 identities,
-  evaluate only the frozen linear anchor family, and reject before entropy if
-  either proposal cap, wall-clock or storage ceilings are infeasible. A runtime
-  success subset or
+  CERT.23 has passed; its optional operational continuation would have to bind
+  all registered dimensions and H0 identities, evaluate only the frozen linear
+  anchor family, and reject before entropy if either proposal cap, wall-clock
+  or storage ceilings are infeasible. That continuation is not a prerequisite
+  for the finite-bank C1--C3 P3G.1 Gate. A runtime success subset or
   distinct Philox addresses cannot replace the accepted product-law premise.
   Ordinary SciPy CDF values,
   `nextafter`, rounded snapshot arrays, observed-class `other` buckets,

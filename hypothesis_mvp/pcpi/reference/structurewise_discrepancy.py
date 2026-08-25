@@ -238,6 +238,342 @@ class ExactStructurewiseDiscrepancyPosterior:
         )
 
 
+@dataclass(frozen=True)
+class StructurewisePredictiveLaw:
+    """Finite Student-t mixture on selected rows of one registered domain."""
+
+    probabilities: np.ndarray
+    degrees_freedom: np.ndarray
+    locations: np.ndarray
+    scales: np.ndarray
+    structure_ids: tuple[str, ...]
+    component_state_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        probabilities = _readonly(self.probabilities).reshape(-1)
+        degrees = _readonly(self.degrees_freedom).reshape(-1)
+        locations = _readonly(self.locations)
+        scales = _readonly(self.scales)
+        count = len(probabilities)
+        if (
+            count == 0
+            or len(degrees) != count
+            or locations.shape != scales.shape
+            or locations.shape[0] != count
+            or len(self.structure_ids) != count
+            or len(self.component_state_ids) != count
+            or not math.isclose(float(probabilities.sum()), 1.0, abs_tol=1e-12)
+            or np.any(probabilities <= 0.0)
+            or np.any(degrees <= 2.0)
+            or np.any(scales <= 0.0)
+        ):
+            raise ValueError("registered predictive mixture is invalid")
+        object.__setattr__(self, "probabilities", probabilities)
+        object.__setattr__(self, "degrees_freedom", degrees)
+        object.__setattr__(self, "locations", locations)
+        object.__setattr__(self, "scales", scales)
+
+    def cdf(self, targets: np.ndarray) -> np.ndarray:
+        values = np.asarray(targets, dtype=float).reshape(-1)
+        if len(values) != self.locations.shape[1] or not np.all(np.isfinite(values)):
+            raise ValueError("predictive CDF targets must align with registered rows")
+        component = student_t.cdf(
+            values[None, :],
+            df=self.degrees_freedom[:, None],
+            loc=self.locations,
+            scale=self.scales,
+        )
+        return np.sum(self.probabilities[:, None] * component, axis=0)
+
+    def logpdf(self, targets: np.ndarray) -> np.ndarray:
+        values = np.asarray(targets, dtype=float).reshape(-1)
+        if len(values) != self.locations.shape[1] or not np.all(np.isfinite(values)):
+            raise ValueError("predictive density targets must align with registered rows")
+        component = student_t.logpdf(
+            values[None, :],
+            df=self.degrees_freedom[:, None],
+            loc=self.locations,
+            scale=self.scales,
+        )
+        return logsumexp(np.log(self.probabilities)[:, None] + component, axis=0)
+
+
+@dataclass(frozen=True)
+class SequentialStructurewiseDiscrepancyState:
+    """Rank-one conjugate state for one registered component family."""
+
+    observation_indices: tuple[int, ...]
+    means: tuple[np.ndarray, ...]
+    covariance_factors: tuple[np.ndarray, ...]
+    noise_shapes: tuple[float, ...]
+    noise_scales: tuple[float, ...]
+    log_marginal_likelihoods: tuple[float, ...]
+    probabilities: tuple[float, ...]
+
+    def __post_init__(self) -> None:
+        count = len(self.means)
+        if (
+            count == 0
+            or any(
+                len(items) != count
+                for items in (
+                    self.covariance_factors,
+                    self.noise_shapes,
+                    self.noise_scales,
+                    self.log_marginal_likelihoods,
+                    self.probabilities,
+                )
+            )
+            or not math.isclose(sum(self.probabilities), 1.0, abs_tol=1e-12)
+        ):
+            raise ValueError("sequential discrepancy state is invalid")
+
+
+class RegisteredStructurewiseDiscrepancyEngine:
+    """Reusable finite-domain posterior with a response-free low-rank sieve.
+
+    The registered domain and every projected RBF basis are constructed once
+    before fitting.  Repeated sequential fits change only conjugate sufficient
+    statistics; the basis, rank cap, priors, and kernel family never inspect a
+    response.  This is the scalable finite-bank bridge recommended by the C1--C3
+    contract, not an open-grammar posterior approximation.
+    """
+
+    def __init__(
+        self,
+        bank: ReferenceBank,
+        domain_actions: np.ndarray,
+        kernel_states: tuple[DiscrepancyKernelState, ...],
+        prior: StructurewiseDiscrepancyPrior,
+        *,
+        structure_designs: dict[str, np.ndarray] | None = None,
+        maximum_discrepancy_rank: int = 16,
+    ) -> None:
+        x = np.asarray(domain_actions, dtype=float)
+        if x.ndim == 1:
+            x = x[:, None]
+        if x.ndim != 2 or len(x) < 3 or not np.all(np.isfinite(x)):
+            raise ValueError("registered discrepancy domain is invalid")
+        if isinstance(maximum_discrepancy_rank, bool) or maximum_discrepancy_rank < 1:
+            raise ValueError("maximum discrepancy rank must be a positive integer")
+        _validate_kernel_and_design_registry(bank, kernel_states, structure_designs)
+        records, bases = _component_records(
+            bank,
+            x,
+            kernel_states,
+            prior,
+            structure_designs,
+            int(maximum_discrepancy_rank),
+        )
+        self.bank = bank
+        self.domain_actions = _readonly(x)
+        self.kernel_states = tuple(kernel_states)
+        self.prior = prior
+        self.maximum_discrepancy_rank = int(maximum_discrepancy_rank)
+        self.records = tuple(records)
+        self.bases = tuple(bases)
+
+    def prior_state(self) -> SequentialStructurewiseDiscrepancyState:
+        means, covariances = [], []
+        for record in self.records:
+            dimension = np.asarray(record["design"]).shape[1]
+            coefficient_dimension = int(record["coefficient_dimension"])
+            mean = np.zeros(dimension, dtype=float)
+            mean[:coefficient_dimension] = self.bank.prior.coefficient_mean
+            precision = np.full(dimension, self.prior.discrepancy_precision)
+            precision[:coefficient_dimension] = self.bank.prior.coefficient_precision
+            means.append(mean)
+            covariances.append(np.diag(1.0 / precision))
+        prior_probabilities = np.asarray(
+            [float(record["joint_prior"]) for record in self.records]
+        )
+        return SequentialStructurewiseDiscrepancyState(
+            observation_indices=(),
+            means=tuple(means),
+            covariance_factors=tuple(covariances),
+            noise_shapes=tuple(self.bank.prior.noise_shape for _ in self.records),
+            noise_scales=tuple(self.bank.prior.noise_scale for _ in self.records),
+            log_marginal_likelihoods=tuple(0.0 for _ in self.records),
+            probabilities=tuple(float(value) for value in prior_probabilities),
+        )
+
+    def update(
+        self,
+        state: SequentialStructurewiseDiscrepancyState,
+        row_index: int,
+        target: float,
+    ) -> SequentialStructurewiseDiscrepancyState:
+        index = int(row_index)
+        value = float(target)
+        if (
+            index < 0
+            or index >= len(self.domain_actions)
+            or index in state.observation_indices
+            or not math.isfinite(value)
+            or len(state.means) != len(self.records)
+        ):
+            raise ValueError("sequential discrepancy update is invalid")
+        updates = tuple(
+            self._update_component(record, mean, covariance, shape, scale, log_marginal, index, value)
+            for record, mean, covariance, shape, scale, log_marginal in zip(
+                self.records,
+                state.means,
+                state.covariance_factors,
+                state.noise_shapes,
+                state.noise_scales,
+                state.log_marginal_likelihoods,
+                strict=True,
+            )
+        )
+        log_marginals = np.asarray([item[4] for item in updates])
+        log_joint = np.asarray(
+            [math.log(float(record["joint_prior"])) for record in self.records]
+        ) + log_marginals
+        probabilities = np.exp(log_joint - logsumexp(log_joint))
+        return SequentialStructurewiseDiscrepancyState(
+            observation_indices=state.observation_indices + (index,),
+            means=tuple(item[0] for item in updates),
+            covariance_factors=tuple(item[1] for item in updates),
+            noise_shapes=tuple(item[2] for item in updates),
+            noise_scales=tuple(item[3] for item in updates),
+            log_marginal_likelihoods=tuple(float(value) for value in log_marginals),
+            probabilities=tuple(float(value) for value in probabilities),
+        )
+
+    @staticmethod
+    def _update_component(record, mean, covariance, shape, scale, log_marginal, index, target):
+        row = np.asarray(record["design"], dtype=float)[index]
+        projected = covariance @ row
+        inflation = 1.0 + float(row @ projected)
+        residual = target - float(row @ mean)
+        predictive_scale = math.sqrt(scale / shape * inflation)
+        next_log_marginal = log_marginal + float(
+            student_t.logpdf(target, df=2.0 * shape, loc=float(row @ mean), scale=predictive_scale)
+        )
+        next_mean = mean + projected * (residual / inflation)
+        next_covariance = covariance - np.outer(projected, projected) / inflation
+        next_shape = shape + 0.5
+        next_scale = scale + 0.5 * residual * residual / inflation
+        return next_mean, next_covariance, next_shape, next_scale, next_log_marginal
+
+    def sequential_predictive_law(
+        self,
+        state: SequentialStructurewiseDiscrepancyState,
+        row_indices: tuple[int, ...],
+    ) -> StructurewisePredictiveLaw:
+        indices = np.asarray(tuple(int(index) for index in row_indices), dtype=int)
+        if len(indices) == 0 or np.any(indices < 0) or np.any(indices >= len(self.domain_actions)):
+            raise ValueError("predictive row indices leave the registered domain")
+        locations, scales = [], []
+        for record, mean, covariance, shape, scale in zip(
+            self.records,
+            state.means,
+            state.covariance_factors,
+            state.noise_shapes,
+            state.noise_scales,
+            strict=True,
+        ):
+            rows = np.asarray(record["design"], dtype=float)[indices]
+            locations.append(rows @ mean)
+            scales.append(np.sqrt(scale / shape * (
+                1.0 + np.einsum("ij,jk,ik->i", rows, covariance, rows)
+            )))
+        return StructurewisePredictiveLaw(
+            probabilities=np.asarray(state.probabilities),
+            degrees_freedom=np.asarray(state.noise_shapes) * 2.0,
+            locations=np.vstack(locations),
+            scales=np.vstack(scales),
+            structure_ids=tuple(str(record["structure"].structure_id) for record in self.records),
+            component_state_ids=tuple(
+                f"{record['structure'].structure_id}|{'slab' if record['active'] else 'spike'}|{record['kernel']}"
+                for record in self.records
+            ),
+        )
+
+    @property
+    def stable_hash(self) -> str:
+        digest = sha256()
+        digest.update(P3F1_METHOD.encode("ascii"))
+        digest.update(self.bank.stable_hash.encode("ascii"))
+        digest.update(str(self.maximum_discrepancy_rank).encode("ascii"))
+        digest.update(str(self.domain_actions.shape).encode("ascii"))
+        digest.update(self.domain_actions.tobytes())
+        for basis in self.bases:
+            digest.update(basis.stable_hash.encode("ascii"))
+        return digest.hexdigest()
+
+    def fit(
+        self,
+        observation_indices: tuple[int, ...],
+        targets: np.ndarray,
+        *,
+        sequential: bool = False,
+    ) -> ExactStructurewiseDiscrepancyPosterior:
+        y = np.asarray(targets, dtype=float).reshape(-1)
+        indices = tuple(int(index) for index in observation_indices)
+        if (
+            not indices
+            or len(indices) != len(set(indices))
+            or len(indices) != len(y)
+            or min(indices) < 0
+            or max(indices) >= len(self.domain_actions)
+            or not np.all(np.isfinite(y))
+        ):
+            raise ValueError("registered discrepancy observations are invalid")
+        members, log_evidence = _normalize_fitted_records(
+            self.bank,
+            list(self.records),
+            y,
+            indices,
+            self.prior,
+            sequential,
+        )
+        return ExactStructurewiseDiscrepancyPosterior(
+            members, self.bases, log_evidence
+        )
+
+    def predictive_law(
+        self,
+        posterior: ExactStructurewiseDiscrepancyPosterior,
+        row_indices: tuple[int, ...],
+    ) -> StructurewisePredictiveLaw:
+        indices = np.asarray(tuple(int(index) for index in row_indices), dtype=int)
+        if (
+            len(indices) == 0
+            or np.any(indices < 0)
+            or np.any(indices >= len(self.domain_actions))
+        ):
+            raise ValueError("predictive row indices leave the registered domain")
+        locations, scales, degrees = [], [], []
+        for member in posterior.members:
+            rows = member.design[indices]
+            location = rows @ member.posterior_mean
+            scale_squared = member.noise_scale / member.noise_shape * (
+                1.0
+                + np.einsum(
+                    "ij,jk,ik->i",
+                    rows,
+                    member.posterior_covariance_factor,
+                    rows,
+                )
+            )
+            locations.append(location)
+            scales.append(np.sqrt(scale_squared))
+            degrees.append(2.0 * member.noise_shape)
+        return StructurewisePredictiveLaw(
+            probabilities=np.asarray(
+                [member.posterior_probability for member in posterior.members]
+            ),
+            degrees_freedom=np.asarray(degrees),
+            locations=np.vstack(locations),
+            scales=np.vstack(scales),
+            structure_ids=tuple(
+                member.structure.structure_id for member in posterior.members
+            ),
+            component_state_ids=tuple(member.state_id for member in posterior.members),
+        )
+
+
 def _validated_actions(actions: np.ndarray) -> np.ndarray:
     values = np.asarray(actions, dtype=float)
     if values.ndim == 1:
@@ -270,6 +606,7 @@ def structurewise_projected_rbf_basis(
     kernel_state: DiscrepancyKernelState,
     *,
     eigenvalue_tolerance: float = 1e-12,
+    maximum_rank: int | None = None,
 ) -> StructurewiseProjectedBasis:
     """Return ``A`` with covariance ``A A^T`` and ``design.T @ A == 0``.
 
@@ -328,7 +665,12 @@ def structurewise_projected_rbf_basis(
     retained = singular > factor_tolerance
     if not np.any(retained):
         raise ValueError("projected discrepancy factor has zero numerical rank")
-    factor = left[:, retained] * singular[retained][None, :]
+    retained_indices = np.flatnonzero(retained)
+    if maximum_rank is not None:
+        if isinstance(maximum_rank, bool) or int(maximum_rank) < 1:
+            raise ValueError("maximum discrepancy rank must be a positive integer")
+        retained_indices = retained_indices[: int(maximum_rank)]
+    factor = left[:, retained_indices] * singular[retained_indices][None, :]
     for column in range(factor.shape[1]):
         pivot = int(np.argmax(np.abs(factor[:, column])))
         if factor[pivot, column] < 0.0:
@@ -453,6 +795,7 @@ def _component_records(
     kernel_states: tuple[DiscrepancyKernelState, ...],
     prior: StructurewiseDiscrepancyPrior,
     structure_designs: dict[str, np.ndarray] | None,
+    maximum_discrepancy_rank: int | None = None,
 ) -> tuple[list[dict[str, object]], list[StructurewiseProjectedBasis]]:
     records: list[dict[str, object]] = []
     bases: list[StructurewiseProjectedBasis] = []
@@ -483,7 +826,11 @@ def _component_records(
         )
         for kernel_state in kernel_states:
             basis = structurewise_projected_rbf_basis(
-                x, base_design, structure.structure_id, kernel_state
+                x,
+                base_design,
+                structure.structure_id,
+                kernel_state,
+                maximum_rank=maximum_discrepancy_rank,
             )
             bases.append(basis)
             records.append(
@@ -567,13 +914,19 @@ def fit_structurewise_discrepancy_posterior(
     sequential: bool = False,
     structure_designs: dict[str, np.ndarray] | None = None,
     observation_indices: tuple[int, ...] | None = None,
+    maximum_discrepancy_rank: int | None = None,
 ) -> ExactStructurewiseDiscrepancyPosterior:
     """Fit the proper finite joint posterior on a registered x-domain."""
 
     x, y, indices = _validated_fit_data(actions, targets, observation_indices)
     _validate_kernel_and_design_registry(bank, kernel_states, structure_designs)
     records, bases = _component_records(
-        bank, x, kernel_states, prior, structure_designs
+        bank,
+        x,
+        kernel_states,
+        prior,
+        structure_designs,
+        maximum_discrepancy_rank,
     )
     members, log_evidence = _normalize_fitted_records(
         bank, records, y, indices, prior, sequential
