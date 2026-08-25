@@ -471,6 +471,16 @@ long-horizon context and remain binding even when a local task omits them.
   Quadrature weights are proper state priors, and structure, discrepancy,
   heteroscedastic noise and energy state form the acquisition nuisance target.
   No dataset, seed, PIT result or response enters construction of this mixture.
+- `P3G.4` returned 8/24 rejections and is immutable negative evidence. Six
+  were Gas CO. The registered Gas split is an observed year extrapolation
+  (2011--12 development, 2013 validation, 2014 acquisition, 2015 held-out),
+  while earlier posteriors discarded the year group. `P3G.5` adds one linear
+  year nuisance column shared by every Gas structure and standardized only on
+  the selected initial-development groups. It is integrated as a common
+  coefficient and cannot alter the scientific structure partition. CCPP has
+  no group and receives no synthetic regime. The uniform-`R^2` quadrature is
+  independently refined from three to five nodes; every response-access and
+  calibration boundary remains unchanged.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out

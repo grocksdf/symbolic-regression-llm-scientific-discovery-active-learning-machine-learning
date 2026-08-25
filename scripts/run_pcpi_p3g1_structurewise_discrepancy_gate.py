@@ -64,6 +64,7 @@ CONFIG_SCHEMA = "pcpi-p3g1-structurewise-discrepancy-calibration-gate-v1"
 P3G2_CONFIG_SCHEMA = "pcpi-p3g2-heteroscedastic-structurewise-calibration-gate-v1"
 P3G3_CONFIG_SCHEMA = "pcpi-p3g3-dimension-stable-function-prior-gate-v1"
 P3G4_CONFIG_SCHEMA = "pcpi-p3g4-r2-function-energy-mixture-gate-v1"
+P3G5_CONFIG_SCHEMA = "pcpi-p3g5-observed-regime-energy-mixture-gate-v1"
 PCPI_POLICY = "pcpi_nuisance_aware_joint_eig"
 POLICIES = ("random", "uncertainty", "qbc", PCPI_POLICY)
 
@@ -127,7 +128,8 @@ def _load_config(path: Path) -> dict[str, Any]:
     config = json.loads(path.read_text(encoding="utf-8"))
     if (
         config.get("schema") not in (
-            CONFIG_SCHEMA, P3G2_CONFIG_SCHEMA, P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA
+            CONFIG_SCHEMA, P3G2_CONFIG_SCHEMA, P3G3_CONFIG_SCHEMA,
+            P3G4_CONFIG_SCHEMA, P3G5_CONFIG_SCHEMA
         )
         or tuple(config.get("datasets", ()))
         != ("uci_ccpp", "uci_gas_turbine_co", "uci_gas_turbine_nox")
@@ -143,7 +145,9 @@ def _load_config(path: Path) -> dict[str, Any]:
         or config.get("authorization", {}).get("heldout") is not False
     ):
         raise ValueError("P3G frozen protocol was modified")
-    if config["schema"] in (P3G2_CONFIG_SCHEMA, P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA):
+    if config["schema"] in (
+        P3G2_CONFIG_SCHEMA, P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA, P3G5_CONFIG_SCHEMA
+    ):
         noise = config.get("posterior", {}).get("noise_variance_sieve", {})
         if (
             noise.get("method")
@@ -154,7 +158,7 @@ def _load_config(path: Path) -> dict[str, Any]:
             or noise.get("construction_response_access") is not False
         ):
             raise ValueError("P3G.2 frozen noise-variance sieve was modified")
-    if config["schema"] in (P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA):
+    if config["schema"] in (P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA, P3G5_CONFIG_SCHEMA):
         function_prior = config.get("posterior", {}).get("coefficient_prior", {})
         if (
             function_prior.get("method")
@@ -165,16 +169,26 @@ def _load_config(path: Path) -> dict[str, Any]:
             or function_prior.get("construction_response_access") is not False
         ):
             raise ValueError("P3G.3 frozen function prior was modified")
-    if config["schema"] == P3G4_CONFIG_SCHEMA:
+    if config["schema"] in (P3G4_CONFIG_SCHEMA, P3G5_CONFIG_SCHEMA):
         mixture = config.get("posterior", {}).get("function_energy_mixture", {})
         if (
             mixture.get("method")
             != "uniform-r2-gauss-legendre-function-energy-mixture-v1"
             or mixture.get("r_squared_prior") != "uniform(0,1)"
-            or mixture.get("quadrature_order") != 3
+            or mixture.get("quadrature_order")
+            != (5 if config["schema"] == P3G5_CONFIG_SCHEMA else 3)
             or mixture.get("construction_response_access") is not False
         ):
             raise ValueError("P3G.4 frozen function-energy mixture was modified")
+    if config["schema"] == P3G5_CONFIG_SCHEMA:
+        regime = config.get("posterior", {}).get("observed_regime_nuisance", {})
+        if (
+            regime.get("method") != "common-linear-observed-group-design-v1"
+            or regime.get("datasets")
+            != ["uci_gas_turbine_co", "uci_gas_turbine_nox"]
+            or regime.get("construction_response_access") is not False
+        ):
+            raise ValueError("P3G.5 frozen observed-regime nuisance was modified")
     return config
 
 
@@ -196,13 +210,41 @@ class RunContext:
     engine_hash: str
 
 
-def _structure_designs(bank, preconditioner, domain_X) -> dict[str, np.ndarray]:
+def _structure_designs(
+    bank, preconditioner, domain_X, common_nuisance: np.ndarray | None = None
+) -> dict[str, np.ndarray]:
     return {
-        structure.structure_id: preconditioner.transform(
-            domain_X, structure.basis_terms
+        structure.structure_id: (
+            preconditioner.transform(domain_X, structure.basis_terms)
+            if common_nuisance is None
+            else np.column_stack(
+                (
+                    preconditioner.transform(domain_X, structure.basis_terms),
+                    common_nuisance,
+                )
+            )
         )
         for structure in bank.structures
     }
+
+
+def _observed_regime_column(frame, prepared, selected_indices) -> np.ndarray | None:
+    if frame.groups is None:
+        return None
+    lookup = {str(row): float(group) for row, group in zip(frame.row_ids, frame.groups, strict=True)}
+    role_ids = (
+        prepared.development_row_ids[selected_indices[0]],
+        prepared.validation_row_ids[selected_indices[1]],
+        prepared.acquisition_pool_row_ids[selected_indices[2]],
+    )
+    initial = np.asarray([lookup[str(row)] for row in role_ids[0]])
+    scale = float(np.std(initial, ddof=0))
+    if scale <= 0.0:
+        raise ValueError("observed regime nuisance requires varying initial groups")
+    mean = float(np.mean(initial))
+    return np.concatenate(
+        [np.asarray([(lookup[str(row)] - mean) / scale for row in ids]) for ids in role_ids]
+    )[:, None]
 
 
 def _make_context(frame, config: dict[str, Any], seed: int) -> RunContext:
@@ -240,6 +282,13 @@ def _make_context(frame, config: dict[str, Any], seed: int) -> RunContext:
         posterior_config["discrepancy_probability"],
         posterior_config["discrepancy_precision"],
     )
+    regime_column = None
+    if posterior_config.get("observed_regime_nuisance") is not None:
+        regime_column = _observed_regime_column(
+            frame,
+            prepared,
+            (initial_indices, validation_indices, candidate_indices),
+        )
     noise_config = posterior_config.get("noise_variance_sieve")
     noise_states = None
     if noise_config is not None:
@@ -262,11 +311,13 @@ def _make_context(frame, config: dict[str, Any], seed: int) -> RunContext:
         domain_X,
         kernels,
         prior,
-        structure_designs=_structure_designs(bank, preconditioner, domain_X),
+        structure_designs=_structure_designs(
+            bank, preconditioner, domain_X, regime_column
+        ),
         maximum_discrepancy_rank=int(posterior_config["maximum_discrepancy_rank"]),
         noise_variance_states=noise_states,
         dimension_stable_coefficient_prior=(
-            config["schema"] in (P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA)
+            config["schema"] in (P3G3_CONFIG_SCHEMA, P3G4_CONFIG_SCHEMA, P3G5_CONFIG_SCHEMA)
         ),
         function_energy_states=energy_states,
     )
@@ -651,7 +702,9 @@ def main(
     assessment = _assessment(runs, config) if eligible else {"status": "CALIBRATION_NO_GO", "strong_evidence": False, "paired_effects": []}
     payload = {
         "schema": (
-            "pcpi-p3g4-r2-function-energy-mixture-gate-result-v1"
+            "pcpi-p3g5-observed-regime-energy-mixture-gate-result-v1"
+            if config["schema"] == P3G5_CONFIG_SCHEMA
+            else "pcpi-p3g4-r2-function-energy-mixture-gate-result-v1"
             if config["schema"] == P3G4_CONFIG_SCHEMA
             else "pcpi-p3g3-dimension-stable-function-prior-gate-result-v1"
             if config["schema"] == P3G3_CONFIG_SCHEMA

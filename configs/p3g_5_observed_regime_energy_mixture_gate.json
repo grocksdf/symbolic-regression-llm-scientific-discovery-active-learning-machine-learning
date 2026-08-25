@@ -1,0 +1,99 @@
+{
+  "schema": "pcpi-p3g5-observed-regime-energy-mixture-gate-v1",
+  "stage": "P3G.5",
+  "predecessor": {
+    "stage": "P3G.4",
+    "source_commit": "e256f71e48f633477455a5ffd511908ca679203c",
+    "result_status": "CALIBRATION_NO_GO",
+    "calibration_rejections": 8,
+    "diagnosis": "gas-year-group-is-an-observed-but-omitted-extrapolation-nuisance"
+  },
+  "datasets": ["uci_ccpp", "uci_gas_turbine_co", "uci_gas_turbine_nox"],
+  "seeds": [2026080701, 2026080702, 2026080703, 2026080704, 2026080705, 2026080706, 2026080707, 2026080708],
+  "split_seed": 20260807,
+  "initial_observation_budget": 32,
+  "validation_budget": 256,
+  "candidate_pool_budget": 128,
+  "acquisition_observation_budget": 32,
+  "policies": ["random", "uncertainty", "qbc", "pcpi_nuisance_aware_joint_eig"],
+  "eig_quadrature_min_evaluations": 32,
+  "eig_quadrature_max_evaluations": 512,
+  "eig_quadrature_growth_factor": 2,
+  "eig_quadrature_error_safety_factor": 4.0,
+  "qbc_committee_size": 32,
+  "target_transform": "initial-development-only-standardization-v1",
+  "posterior_bank": "generic-real-bank-v1",
+  "basis_preconditioning": "initial-development-covariates-only-termwise-center-scale-v1",
+  "posterior": {
+    "method": "observed-regime-r2-mixture-structurewise-heteroscedastic-posterior-v1",
+    "likelihood_power": 1.0,
+    "discrepancy_probability": 0.3,
+    "discrepancy_precision": 1.2,
+    "maximum_discrepancy_rank": 16,
+    "rank_role": "response-free-computational-sieve-frozen-before-new-real-results",
+    "kernel_states": [
+      {"state_id": "short", "prior_probability": 0.5, "length_scale": 0.6},
+      {"state_id": "long", "prior_probability": 0.5, "length_scale": 1.3}
+    ],
+    "noise_variance_sieve": {
+      "method": "response-independent-principal-log-variance-mixture-v1",
+      "maximum_rank": 3,
+      "log_variance_amplitude": "log(2)",
+      "homoscedastic_prior_probability": 0.5,
+      "heteroscedastic_prior_allocation": "equal-over-positive-and-negative-leading-principal-score-laws",
+      "geometric_mean_multiplier": 1.0,
+      "principal_score_clip": 2.5,
+      "construction_response_access": false
+    },
+    "coefficient_prior": {
+      "method": "dimension-stable-standardized-function-energy-prior-v1",
+      "intercept_precision": 1.0,
+      "nonintercept_precision": "nonintercept-term-count-divided-by-function-energy-state",
+      "nonintercept_total_prior_function_variance": 1.0,
+      "energy_reference_domain": "initial-development-covariates-with-unit-variance-preconditioned-columns",
+      "construction_response_access": false
+    },
+    "function_energy_mixture": {
+      "method": "uniform-r2-gauss-legendre-function-energy-mixture-v1",
+      "r_squared_prior": "uniform(0,1)",
+      "quadrature_order": 5,
+      "signal_to_noise_transform": "g=r_squared/(1-r_squared)",
+      "allocation": "five-point-gauss-legendre-nodes-and-weights-on-unit-interval",
+      "construction_response_access": false
+    },
+    "observed_regime_nuisance": {
+      "method": "common-linear-observed-group-design-v1",
+      "datasets": ["uci_gas_turbine_co", "uci_gas_turbine_nox"],
+      "source": "registered-year-group",
+      "standardization": "initial-development-groups-only",
+      "scientific_structure_class_membership": false,
+      "heldout_group_access": false,
+      "construction_response_access": false
+    },
+    "registered_domain": "initial-plus-validation-plus-candidate-covariates-no-validation-or-candidate-responses"
+  },
+  "predictive_calibration": {
+    "method": "prequential-pit-mixture-e-process-v1-unchanged",
+    "familywise_false_alarm_level": "1/100",
+    "equal_per_run_false_alarm_level": "1/2400",
+    "pit_clip": 1e-12,
+    "validation_response_order": "stable-row-id-sha256-v1-unchanged",
+    "global_gate": "all-24-seed-target-runs-complete-and-nonrejected"
+  },
+  "assessment_rules": {
+    "paired_confidence_level": 0.95,
+    "negative_transfer_rate_max": 0.25,
+    "requires_positive_class_gain_lower_bound_vs_random_in_every_family": true,
+    "requires_nonpositive_mean_predictive_naulc_vs_every_baseline_in_every_family": true
+  },
+  "authorization": {
+    "validation_responses": "diagnostic-only",
+    "candidate_responses": "sealed-until-global-calibration-pass-then-selected-one-at-a-time",
+    "unconditional_acquisition_execution": false,
+    "conditional_acquisition_execution": "only-after-all-24-calibration-runs-pass",
+    "heldout": false,
+    "formal_efficacy_experiment": false,
+    "downstream_acquisition_freeze_if_pass": true,
+    "failure_policy": "fail-closed-record-all-no-seed-replacement-no-retry"
+  }
+}
