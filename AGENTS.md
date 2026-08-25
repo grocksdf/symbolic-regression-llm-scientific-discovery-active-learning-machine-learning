@@ -450,6 +450,18 @@ long-horizon context and remain binding even when a local task omits them.
   noise state. These states may learn through marginal likelihood but their
   construction cannot inspect any response. This is a heteroscedastic model
   repair, not a relaxed calibration rule or a seed-specific patch.
+- The returned `P3G.2` run is also immutable negative evidence: its
+  heteroscedastic states materially reduced several Gas CO e-values but the
+  same three tasks rejected. The recorded positive quadratic PIT-basis means,
+  sub-`1/12` PIT variances and depleted tail rates diagnose predictive
+  overdispersion. `P3G.3` repairs the response-independent source of that
+  overdispersion: under initial-development unit-variance design
+  preconditioning, a structure with `p` non-intercept terms receives
+  coefficient precision `p` for each such term and precision one for the
+  intercept. Thus every structure has total non-intercept prior function
+  energy one instead of energy growing linearly with representation dimension.
+  Batch/rank-one conjugacy, discrepancy/noise mixtures, joint nuisance EIG and
+  every real-data Gate boundary remain unchanged.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out

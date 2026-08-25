@@ -26,6 +26,7 @@ from .models import ReferenceBank, ReferenceStructure
 P3F1_FIXTURE_ROLE = "hand_constructed_algebraic_correctness_fixture"
 P3F1_METHOD = "structure-wise-whitened-projected-generative-discrepancy-v1"
 P3G2_NOISE_METHOD = "response-independent-principal-log-variance-mixture-v1"
+P3G3_FUNCTION_PRIOR_METHOD = "dimension-stable-standardized-function-energy-prior-v1"
 
 
 def _readonly(values: np.ndarray) -> np.ndarray:
@@ -443,6 +444,7 @@ class RegisteredStructurewiseDiscrepancyEngine:
         structure_designs: dict[str, np.ndarray] | None = None,
         maximum_discrepancy_rank: int = 16,
         noise_variance_states: tuple[RegisteredNoiseVarianceState, ...] | None = None,
+        dimension_stable_coefficient_prior: bool = False,
     ) -> None:
         x = np.asarray(domain_actions, dtype=float)
         if x.ndim == 1:
@@ -486,6 +488,11 @@ class RegisteredStructurewiseDiscrepancyEngine:
                 "joint_prior": float(record["joint_prior"]) * state.prior_probability,
                 "noise_state": state.state_id,
                 "noise_multipliers": state.multipliers,
+                "coefficient_precisions": self._coefficient_precisions(
+                    record,
+                    bank.prior.coefficient_precision,
+                    bool(dimension_stable_coefficient_prior),
+                ),
             }
             for record in base_records
             for state in variance_states
@@ -496,9 +503,26 @@ class RegisteredStructurewiseDiscrepancyEngine:
         self.prior = prior
         self.maximum_discrepancy_rank = int(maximum_discrepancy_rank)
         self.noise_variance_states = variance_states
-        self.method = P3G2_NOISE_METHOD if len(variance_states) > 1 else P3F1_METHOD
+        self.dimension_stable_coefficient_prior = bool(
+            dimension_stable_coefficient_prior
+        )
+        self.method = (
+            P3G3_FUNCTION_PRIOR_METHOD
+            if self.dimension_stable_coefficient_prior
+            else P3G2_NOISE_METHOD
+            if len(variance_states) > 1
+            else P3F1_METHOD
+        )
         self.records = records
         self.bases = tuple(bases)
+
+    @staticmethod
+    def _coefficient_precisions(record, base_precision: float, dimension_stable: bool):
+        coefficient_dimension = int(record["coefficient_dimension"])
+        precisions = np.full(coefficient_dimension, float(base_precision))
+        if dimension_stable and coefficient_dimension > 1:
+            precisions[1:] *= coefficient_dimension - 1
+        return _readonly(precisions)
 
     def prior_state(self) -> SequentialStructurewiseDiscrepancyState:
         means, covariances = [], []
@@ -508,7 +532,9 @@ class RegisteredStructurewiseDiscrepancyEngine:
             mean = np.zeros(dimension, dtype=float)
             mean[:coefficient_dimension] = self.bank.prior.coefficient_mean
             precision = np.full(dimension, self.prior.discrepancy_precision)
-            precision[:coefficient_dimension] = self.bank.prior.coefficient_precision
+            precision[:coefficient_dimension] = np.asarray(
+                record["coefficient_precisions"]
+            )
             means.append(mean)
             covariances.append(np.diag(1.0 / precision))
         prior_probabilities = np.asarray(
@@ -625,6 +651,7 @@ class RegisteredStructurewiseDiscrepancyEngine:
         digest.update(self.method.encode("ascii"))
         digest.update(self.bank.stable_hash.encode("ascii"))
         digest.update(str(self.maximum_discrepancy_rank).encode("ascii"))
+        digest.update(str(self.dimension_stable_coefficient_prior).encode("ascii"))
         digest.update(str(self.domain_actions.shape).encode("ascii"))
         digest.update(self.domain_actions.tobytes())
         for basis in self.bases:
@@ -1011,7 +1038,12 @@ def _normalize_fitted_records(
         prior_mean = np.zeros(dimension, dtype=float)
         prior_mean[:coefficient_dimension] = bank.prior.coefficient_mean
         prior_precision = np.full(dimension, prior.discrepancy_precision)
-        prior_precision[:coefficient_dimension] = bank.prior.coefficient_precision
+        prior_precision[:coefficient_dimension] = np.asarray(
+            record.get(
+                "coefficient_precisions",
+                np.full(coefficient_dimension, bank.prior.coefficient_precision),
+            )
+        )
         fit = _fit_component(
             observed_design,
             y,

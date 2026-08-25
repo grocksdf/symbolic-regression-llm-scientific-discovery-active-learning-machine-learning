@@ -51,6 +51,17 @@ target. Its one-shot entry point is
 & 'D:\01\666\.venv_hypothesis_canonical\Scripts\python.exe' -B -m scripts.run_pcpi_p3g2_heteroscedastic_structurewise_gate --data-root 'D:\01\666\hypothesis_mvp\data' --output-dir 'D:\01\666\hypothesis_mvp\outputs\p3g_2_heteroscedastic_structurewise_gate_<commit>_20260825'
 ```
 
+P3G.2 also returned `CALIBRATION_NO_GO` with the same three rejected tasks.
+Its new PIT diagnostics show overdispersion rather than heavy tails, while the
+Gas CO posterior actively selected opposite input-dependent noise directions
+in the two rejected seeds. P3G.3 therefore preserves the heteroscedastic model
+and replaces the dimension-unstable independent coefficient prior. For each
+structure, standardized non-intercept coefficient variance is divided by its
+non-intercept term count, keeping average initial-development prior function
+energy equal to one. This response-free construction is implemented by
+`scripts.run_pcpi_p3g3_dimension_stable_function_prior_gate` and documented in
+`docs/pcpi_p3g3_dimension_stable_prior_contract_20260825.md`.
+
 The P3D.2 audit also exposes an exact semantic mismatch: for `eta<1`, ordinary
 class mutual information is not the expected entropy reduction of the actual
 power-likelihood update. P3E.1 repairs this loss/update alignment only on an

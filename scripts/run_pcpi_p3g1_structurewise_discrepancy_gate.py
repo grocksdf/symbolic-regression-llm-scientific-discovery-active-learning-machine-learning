@@ -61,6 +61,7 @@ from hypothesis_mvp.pcpi.reference import (
 
 CONFIG_SCHEMA = "pcpi-p3g1-structurewise-discrepancy-calibration-gate-v1"
 P3G2_CONFIG_SCHEMA = "pcpi-p3g2-heteroscedastic-structurewise-calibration-gate-v1"
+P3G3_CONFIG_SCHEMA = "pcpi-p3g3-dimension-stable-function-prior-gate-v1"
 PCPI_POLICY = "pcpi_nuisance_aware_joint_eig"
 POLICIES = ("random", "uncertainty", "qbc", PCPI_POLICY)
 
@@ -123,7 +124,7 @@ def _git_identity(root: Path) -> dict[str, str]:
 def _load_config(path: Path) -> dict[str, Any]:
     config = json.loads(path.read_text(encoding="utf-8"))
     if (
-        config.get("schema") not in (CONFIG_SCHEMA, P3G2_CONFIG_SCHEMA)
+        config.get("schema") not in (CONFIG_SCHEMA, P3G2_CONFIG_SCHEMA, P3G3_CONFIG_SCHEMA)
         or tuple(config.get("datasets", ()))
         != ("uci_ccpp", "uci_gas_turbine_co", "uci_gas_turbine_nox")
         or tuple(config.get("seeds", ())) != tuple(range(2026080701, 2026080709))
@@ -138,7 +139,7 @@ def _load_config(path: Path) -> dict[str, Any]:
         or config.get("authorization", {}).get("heldout") is not False
     ):
         raise ValueError("P3G frozen protocol was modified")
-    if config["schema"] == P3G2_CONFIG_SCHEMA:
+    if config["schema"] in (P3G2_CONFIG_SCHEMA, P3G3_CONFIG_SCHEMA):
         noise = config.get("posterior", {}).get("noise_variance_sieve", {})
         if (
             noise.get("method")
@@ -149,6 +150,17 @@ def _load_config(path: Path) -> dict[str, Any]:
             or noise.get("construction_response_access") is not False
         ):
             raise ValueError("P3G.2 frozen noise-variance sieve was modified")
+    if config["schema"] == P3G3_CONFIG_SCHEMA:
+        function_prior = config.get("posterior", {}).get("coefficient_prior", {})
+        if (
+            function_prior.get("method")
+            != "dimension-stable-standardized-function-energy-prior-v1"
+            or function_prior.get("intercept_precision") != 1.0
+            or function_prior.get("nonintercept_total_prior_function_variance")
+            != 1.0
+            or function_prior.get("construction_response_access") is not False
+        ):
+            raise ValueError("P3G.3 frozen function prior was modified")
     return config
 
 
@@ -233,6 +245,7 @@ def _make_context(frame, config: dict[str, Any], seed: int) -> RunContext:
         structure_designs=_structure_designs(bank, preconditioner, domain_X),
         maximum_discrepancy_rank=int(posterior_config["maximum_discrepancy_rank"]),
         noise_variance_states=noise_states,
+        dimension_stable_coefficient_prior=(config["schema"] == P3G3_CONFIG_SCHEMA),
     )
     nominal = SequentialReferencePosterior(bank, 1.0, preconditioner)
     nominal_posterior = nominal.fit_batch(initial_X, initial_y)
@@ -606,7 +619,9 @@ def main(
     assessment = _assessment(runs, config) if eligible else {"status": "CALIBRATION_NO_GO", "strong_evidence": False, "paired_effects": []}
     payload = {
         "schema": (
-            "pcpi-p3g2-heteroscedastic-structurewise-gate-result-v1"
+            "pcpi-p3g3-dimension-stable-function-prior-gate-result-v1"
+            if config["schema"] == P3G3_CONFIG_SCHEMA
+            else "pcpi-p3g2-heteroscedastic-structurewise-gate-result-v1"
             if config["schema"] == P3G2_CONFIG_SCHEMA
             else "pcpi-p3g1-structurewise-discrepancy-gate-result-v1"
         ),
