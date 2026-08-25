@@ -27,7 +27,13 @@ from .acquisition import (
     qbc_disagreement,
     representative_mmd_safe_set,
 )
+from .semiparametric_acquisition import (
+    P3H_CLASS_EIG_METHOD,
+    SemiparametricEIGEstimate,
+    estimate_semiparametric_class_eig,
+)
 from .reference import (
+    DyadicPolyaTreePredictiveLaw,
     ExactPosterior,
     OperationalClassPosterior,
     SequentialReferencePosterior,
@@ -111,7 +117,7 @@ class MaximinJointEstimate:
     joint_scores_by_model: np.ndarray
     least_favorable_indices: np.ndarray
     likelihood_powers: tuple[float, ...]
-    estimates: tuple[EIGEstimate, ...]
+    estimates: tuple[EIGEstimate | SemiparametricEIGEstimate, ...]
     ranking_certified: bool
     ranking_margin: float
     conservative_error_bound: float
@@ -531,16 +537,35 @@ def _estimate_maximin_joint_until_ranked(
     maximum_samples: int,
     error_safety_factor: float,
     growth_factor: int,
+    residual_laws: tuple[DyadicPolyaTreePredictiveLaw, ...] | None = None,
 ) -> MaximinJointEstimate:
+    if residual_laws is not None and len(residual_laws) != len(components):
+        raise ValueError(
+            "P3H residual laws must align one-to-one with posterior models"
+        )
     samples, looks = minimum_samples, 0
     planned = _planned_look_count(minimum_samples, maximum_samples, growth_factor)
     while True:
         looks += 1
-        estimates = tuple(
-            estimate_class_eig(
-                item, samples, error_safety_factor=error_safety_factor
+        estimates = (
+            tuple(
+                estimate_class_eig(
+                    item, samples, error_safety_factor=error_safety_factor
+                )
+                for item in components
             )
-            for item in components
+            if residual_laws is None
+            else tuple(
+                estimate_semiparametric_class_eig(
+                    item,
+                    residual_law,
+                    samples,
+                    error_safety_factor=error_safety_factor,
+                )
+                for item, residual_law in zip(
+                    components, residual_laws, strict=True
+                )
+            )
         )
         class_scores = np.asarray([item.scores for item in estimates])
         class_errors = np.asarray([item.error_bounds for item in estimates])
@@ -633,7 +658,11 @@ def _build_discriminative_scores(
         ranking_error_safety_factor=robust.estimates[0].error_safety_factor,
         ranking_planned_looks=robust.planned_looks,
         ranking_looks_used=robust.looks_used,
-        ranking_certificate_method=MAXIMIN_RANK_CERTIFICATE,
+        ranking_certificate_method=(
+            "finite-model-lower-envelope-p3h-nested-quadrature-interval-dominance"
+            if robust.estimates[0].integration_method == P3H_CLASS_EIG_METHOD
+            else MAXIMIN_RANK_CERTIFICATE
+        ),
         estimator_coarse_samples=max(
             item.coarse_sample_count for item in robust.estimates
         ),
@@ -676,6 +705,9 @@ def _score_pcpi_discriminative(
     predictive_target_actions: np.ndarray,
     representative_observed_actions: np.ndarray,
     posterior_models: tuple[PosteriorModel, ...] | None,
+    semiparametric_residual_laws: (
+        tuple[DyadicPolyaTreePredictiveLaw, ...] | None
+    ) = None,
     discrepancy: DiscrepancyPredictiveProfile | None = None,
     *,
     minimum_samples: int,
@@ -706,6 +738,7 @@ def _score_pcpi_discriminative(
         maximum_samples,
         error_safety_factor,
         growth_factor,
+        semiparametric_residual_laws,
     )
     least = robust.least_favorable_indices
     class_scores = _least_favorable_values(robust.class_scores_by_model, least)
@@ -717,11 +750,24 @@ def _score_pcpi_discriminative(
         raw_scores = robust.scores
         errors = _robust_error_radii(robust)
         utility_mode = (
-            "representative-safe-discrepancy-robust-maximin-joint-eig-surrogate"
-            if discrepancy is not None
-            else "representative-safe-maximin-joint-eig-surrogate"
+            (
+                "representative-safe-discrepancy-robust-p3h-semiparametric-"
+                "maximin-joint-eig-surrogate"
+                if discrepancy is not None
+                else "representative-safe-p3h-semiparametric-maximin-joint-eig-surrogate"
+            )
+            if semiparametric_residual_laws is not None
+            else (
+                "representative-safe-discrepancy-robust-maximin-joint-eig-surrogate"
+                if discrepancy is not None
+                else "representative-safe-maximin-joint-eig-surrogate"
+            )
         )
     else:
+        if semiparametric_residual_laws is not None:
+            raise FloatingPointError(
+                "P3H utility intervals overlap; operational selection is forbidden"
+            )
         raw_scores = posterior_epistemic_variance(engine, posterior, actions)
         errors = zeros
         utility_mode = (
@@ -830,11 +876,19 @@ def score_acquisition_actions(
     representative_observed_actions: np.ndarray | None = None,
     target_partition: ClassPartition | None = None,
     posterior_models: tuple[PosteriorModel, ...] | None = None,
+    semiparametric_residual_laws: (
+        tuple[DyadicPolyaTreePredictiveLaw, ...] | None
+    ) = None,
 ) -> AcquisitionScores:
     """Score visible action covariates without receiving their target values."""
 
     if policy not in ACQUISITION_POLICIES:
         raise ValueError(f"unsupported acquisition policy: {policy}")
+    if (
+        semiparametric_residual_laws is not None
+        and policy != "pcpi_representative_safe_maximin_joint_eig"
+    ):
+        raise ValueError("P3H residual laws require the PCPI information utility")
     components = (
         predictive_components_for_partition(
             engine, posterior, target_partition, actions
@@ -858,6 +912,7 @@ def score_acquisition_actions(
             target_actions,
             representative_observed_actions,
             posterior_models,
+            semiparametric_residual_laws,
             minimum_samples=eig_min_samples,
             maximum_samples=eig_max_samples,
             error_safety_factor=eig_error_safety_factor,
@@ -884,6 +939,9 @@ def score_discrepancy_aware_actions(
     representative_observed_actions: np.ndarray,
     target_partition: ClassPartition | None = None,
     posterior_models: tuple[PosteriorModel, ...] | None = None,
+    semiparametric_residual_laws: (
+        tuple[DyadicPolyaTreePredictiveLaw, ...] | None
+    ) = None,
 ) -> AcquisitionScores:
     """Score candidates with a generic discrepancy-aware PCPI repair.
 
@@ -918,6 +976,7 @@ def score_discrepancy_aware_actions(
         target_actions,
         representative_observed_actions,
         posterior_models,
+        semiparametric_residual_laws,
         profile,
         minimum_samples=eig_min_samples,
         maximum_samples=eig_max_samples,

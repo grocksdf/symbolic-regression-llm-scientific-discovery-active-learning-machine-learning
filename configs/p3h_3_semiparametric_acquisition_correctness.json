@@ -1,0 +1,50 @@
+{
+  "schema": "pcpi-p3h3-semiparametric-acquisition-correctness-config-v1",
+  "stage": "P3H.3",
+  "role": "acquisition-utility-correctness-diagnostic-fixture",
+  "predecessor": {
+    "stage": "P3H.2",
+    "source_commit": "6446c20eb52176f0080da958fa07e026b30f4a27",
+    "result_status": "CALIBRATION_COMPATIBLE_ACQUISITION_BLOCKED",
+    "completed_coordinates": 24,
+    "rejected_coordinates": 0
+  },
+  "transformed_utility": {
+    "predictive_density": "h(y)=g(F(y))*f(y)",
+    "outcome_coordinate": "u=F(y)",
+    "outcome_grid_mass": "registered-dyadic-residual-leaf-mass-times-gauss-legendre-weight",
+    "base_class_responsibility": "r_c(y)=sum_{s-in-c}pi_s*f_s(y)/f(y)",
+    "joint_completion": "fixed-marginal-i-projection-of-base-class-responsibilities",
+    "class_marginal": "frozen-current-operational-class-posterior",
+    "utility": "mutual-information-of-projected-semiparametric-joint",
+    "method": "p3h-marginal-preserving-kl-projection-gauss-legendre-class-eig-v1",
+    "old_student_t_eig_reuse": false,
+    "randomization": false,
+    "response_dependent_stopping": false
+  },
+  "quadrature": {
+    "nodes_per_leaf": 32,
+    "identity_reference_nodes_per_leaf": 128,
+    "error_safety_factor": 4.0,
+    "projection_tolerance": 2e-13,
+    "maximum_projection_iterations": 10000
+  },
+  "thresholds": {
+    "maximum_marginal_error": 2e-13,
+    "affine_invariance_error": 3e-14,
+    "minimum_nonidentity_change_from_student_t_eig": 1e-3
+  },
+  "authorization": {
+    "correctness_fixture": true,
+    "transformed_utility_evaluation": true,
+    "candidate_selection": false,
+    "operational_execution": false,
+    "simulated_experiment": false,
+    "real_data": false,
+    "validation_responses": false,
+    "candidate_responses": false,
+    "heldout": false,
+    "formal_efficacy_evidence": false
+  },
+  "claim_boundary": "A pass establishes only that the deterministic finite-grid P3H acquisition utility preserves the registered transformed response marginal and frozen class posterior, computes mutual information from their KL-projected joint, is affine invariant, reduces numerically to the base EIG under the identity residual law, changes under a nonidentity residual law, and refuses unresolved rankings. Fine/coarse differences are asymptotic numerical diagnostics, not rigorous finite-order error bounds. The Gate uses no real or simulated experiment and does not authorize candidate selection, operational execution, efficacy, heldout access, discovery, or an AISTATS claim."
+}

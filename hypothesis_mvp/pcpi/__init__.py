@@ -83,6 +83,16 @@ from .real_acquisition import (
     select_stable_argmax,
     stable_derived_seed,
 )
+from .semiparametric_acquisition import (
+    AdaptiveSemiparametricEIGEstimate,
+    P3H_CLASS_COUPLING,
+    P3H_CLASS_EIG_METHOD,
+    SemiparametricClassCoupling,
+    SemiparametricEIGEstimate,
+    estimate_semiparametric_class_eig,
+    estimate_semiparametric_class_eig_until_ranked,
+    semiparametric_class_coupling,
+)
 from .decision import (
     REFERENCE_DOMINANCE_METHOD,
     REFERENCE_FALLBACK_MODE,
@@ -199,6 +209,14 @@ __all__ = [
     "score_discrepancy_aware_actions",
     "select_stable_argmax",
     "stable_derived_seed",
+    "P3H_CLASS_COUPLING",
+    "P3H_CLASS_EIG_METHOD",
+    "SemiparametricClassCoupling",
+    "AdaptiveSemiparametricEIGEstimate",
+    "SemiparametricEIGEstimate",
+    "estimate_semiparametric_class_eig",
+    "estimate_semiparametric_class_eig_until_ranked",
+    "semiparametric_class_coupling",
     "REFERENCE_DOMINANCE_METHOD",
     "REFERENCE_FALLBACK_MODE",
     "TARGETED_HANDOVER_MODE",

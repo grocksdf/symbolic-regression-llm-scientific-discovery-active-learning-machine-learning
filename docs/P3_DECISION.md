@@ -321,3 +321,15 @@ responses, acquisition and held-out remained closed. The terminal status is
 `CALIBRATION_COMPATIBLE_ACQUISITION_BLOCKED`, not an efficacy or calibration
 proof. Only a response-free transformed-law acquisition correctness phase is
 authorized next. See `docs/pcpi_p3h2_real_calibration_result_20260825.md`.
+
+P3H.3 replaces the old Student-t class-EIG object with the mutual information
+of a marginal-preserving KL-projected joint. Directly combining the P3H
+response density with the old Student-t class responsibilities would generally
+change the frozen class posterior and is forbidden. The deterministic Gate
+preserves the exact P3H grid marginal and frozen class marginal, reduces
+numerically to the base EIG under the identity residual law, changes under a
+nonidentity residual law, and returns no selection when nested quadrature
+intervals overlap. Fine/coarse radii remain asymptotic numerical diagnostics,
+not finite-order theorems. P3H.3 accesses no real data or response and does not
+authorize operational acquisition. See
+`docs/pcpi_p3h3_semiparametric_acquisition_contract_20260825.md`.
