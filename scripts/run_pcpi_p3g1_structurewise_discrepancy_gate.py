@@ -52,12 +52,15 @@ from hypothesis_mvp.pcpi.reference import (
     budget_resolved_distance_threshold,
     fit_bank_preconditioner,
     generic_real_bank,
+    pit_basis,
     pit_e_process,
+    response_independent_noise_variance_states,
     stable_budget_indices,
 )
 
 
 CONFIG_SCHEMA = "pcpi-p3g1-structurewise-discrepancy-calibration-gate-v1"
+P3G2_CONFIG_SCHEMA = "pcpi-p3g2-heteroscedastic-structurewise-calibration-gate-v1"
 PCPI_POLICY = "pcpi_nuisance_aware_joint_eig"
 POLICIES = ("random", "uncertainty", "qbc", PCPI_POLICY)
 
@@ -102,7 +105,7 @@ def _git_identity(root: Path) -> dict[str, str]:
         text=True,
     ).stdout
     if status.strip():
-        raise RuntimeError("P3G.1 requires a clean tracked worktree")
+        raise RuntimeError("P3G requires a clean tracked worktree")
     values = {}
     for name, arguments in {
         "commit": ("rev-parse", "HEAD"),
@@ -120,7 +123,7 @@ def _git_identity(root: Path) -> dict[str, str]:
 def _load_config(path: Path) -> dict[str, Any]:
     config = json.loads(path.read_text(encoding="utf-8"))
     if (
-        config.get("schema") != CONFIG_SCHEMA
+        config.get("schema") not in (CONFIG_SCHEMA, P3G2_CONFIG_SCHEMA)
         or tuple(config.get("datasets", ()))
         != ("uci_ccpp", "uci_gas_turbine_co", "uci_gas_turbine_nox")
         or tuple(config.get("seeds", ())) != tuple(range(2026080701, 2026080709))
@@ -134,7 +137,18 @@ def _load_config(path: Path) -> dict[str, Any]:
         != "sealed-until-global-calibration-pass-then-selected-one-at-a-time"
         or config.get("authorization", {}).get("heldout") is not False
     ):
-        raise ValueError("P3G.1 frozen protocol was modified")
+        raise ValueError("P3G frozen protocol was modified")
+    if config["schema"] == P3G2_CONFIG_SCHEMA:
+        noise = config.get("posterior", {}).get("noise_variance_sieve", {})
+        if (
+            noise.get("method")
+            != "response-independent-principal-log-variance-mixture-v1"
+            or noise.get("maximum_rank") != 3
+            or noise.get("log_variance_amplitude") != "log(2)"
+            or noise.get("homoscedastic_prior_probability") != 0.5
+            or noise.get("construction_response_access") is not False
+        ):
+            raise ValueError("P3G.2 frozen noise-variance sieve was modified")
     return config
 
 
@@ -200,6 +214,17 @@ def _make_context(frame, config: dict[str, Any], seed: int) -> RunContext:
         posterior_config["discrepancy_probability"],
         posterior_config["discrepancy_precision"],
     )
+    noise_config = posterior_config.get("noise_variance_sieve")
+    noise_states = None
+    if noise_config is not None:
+        noise_states = response_independent_noise_variance_states(
+            domain_X,
+            maximum_rank=int(noise_config["maximum_rank"]),
+            log_variance_amplitude=math.log(2.0),
+            homoscedastic_prior_probability=float(
+                noise_config["homoscedastic_prior_probability"]
+            ),
+        )
     engine = RegisteredStructurewiseDiscrepancyEngine(
         bank,
         domain_X,
@@ -207,6 +232,7 @@ def _make_context(frame, config: dict[str, Any], seed: int) -> RunContext:
         prior,
         structure_designs=_structure_designs(bank, preconditioner, domain_X),
         maximum_discrepancy_rank=int(posterior_config["maximum_discrepancy_rank"]),
+        noise_variance_states=noise_states,
     )
     nominal = SequentialReferencePosterior(bank, 1.0, preconditioner)
     nominal_posterior = nominal.fit_batch(initial_X, initial_y)
@@ -263,6 +289,14 @@ def _calibration_run(context: RunContext, config: dict[str, Any]) -> dict[str, A
             )
         ),
     )
+    pit_array = np.asarray(pits)
+    basis_means = np.mean(pit_basis(pit_array), axis=0)
+    noise_probabilities: dict[str, float] = {}
+    for probability, record in zip(state.probabilities, context.engine.records, strict=True):
+        noise_id = str(record.get("noise_state", "homoscedastic"))
+        noise_probabilities[noise_id] = noise_probabilities.get(noise_id, 0.0) + float(
+            probability
+        )
     return {
         "dataset_id": context.dataset_id,
         "seed": context.seed,
@@ -272,6 +306,16 @@ def _calibration_run(context: RunContext, config: dict[str, Any]) -> dict[str, A
         "pit_maximum_e_value": process.maximum_e_value,
         "pit_first_rejection_round": process.first_rejection_round,
         "pit_rejected": process.rejected,
+        "pit_mean": float(np.mean(pit_array)),
+        "pit_variance": float(np.var(pit_array, ddof=0)),
+        "pit_lower_decile_rate": float(np.mean(pit_array <= 0.1)),
+        "pit_upper_decile_rate": float(np.mean(pit_array >= 0.9)),
+        "pit_linear_basis_mean": float(basis_means[0]),
+        "pit_quadratic_basis_mean": float(basis_means[1]),
+        "pit_cubic_basis_mean": float(basis_means[2]),
+        "final_noise_state_probabilities": json.dumps(
+            noise_probabilities, sort_keys=True, separators=(",", ":")
+        ),
         "heldout_opened": False,
         "candidate_responses_used": False,
     }
@@ -298,13 +342,22 @@ def _joint_partition(context: RunContext, law) -> ClassPartition:
     labels = []
     for structure_id, record in zip(law.structure_ids, context.engine.records, strict=True):
         class_index = context.structural_assignment[structure_lookup[structure_id]]
-        labels.append((class_index, str(record["kernel"])))
+        labels.append(
+            (
+                class_index,
+                str(record["kernel"]),
+                str(record.get("noise_state", "homoscedastic")),
+            )
+        )
     unique = tuple(sorted(set(labels)))
     groups = tuple(tuple(i for i, label in enumerate(labels) if label == item) for item in unique)
     probabilities = tuple(float(np.sum(law.probabilities[np.asarray(group)])) for group in groups)
     assignment = tuple(unique.index(label) for label in labels)
     return ClassPartition(
-        tuple(f"structural-class-{item[0]}|nuisance-{item[1]}" for item in unique),
+        tuple(
+            f"structural-class-{item[0]}|discrepancy-{item[1]}|noise-{item[2]}"
+            for item in unique
+        ),
         groups,
         probabilities,
         assignment,
@@ -497,11 +550,15 @@ def _publish(output: Path, payload: dict[str, Any], calibration, runs, queries) 
     )
 
 
-def main() -> int:
+def main(
+    default_config: Path = Path(
+        "configs/p3g_1_structurewise_discrepancy_calibration_gate.json"
+    ),
+) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--config", type=Path, default=Path("configs/p3g_1_structurewise_discrepancy_calibration_gate.json"))
+    parser.add_argument("--config", type=Path, default=default_config)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     config_path = (root / args.config).resolve() if not args.config.is_absolute() else args.config.resolve()
@@ -548,7 +605,11 @@ def main() -> int:
                 )
     assessment = _assessment(runs, config) if eligible else {"status": "CALIBRATION_NO_GO", "strong_evidence": False, "paired_effects": []}
     payload = {
-        "schema": "pcpi-p3g1-structurewise-discrepancy-gate-result-v1",
+        "schema": (
+            "pcpi-p3g2-heteroscedastic-structurewise-gate-result-v1"
+            if config["schema"] == P3G2_CONFIG_SCHEMA
+            else "pcpi-p3g1-structurewise-discrepancy-gate-result-v1"
+        ),
         "status": assessment["status"],
         "source_commit": identity["commit"],
         "source_tree": identity["tree"],

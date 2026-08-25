@@ -25,6 +25,7 @@ from .models import ReferenceBank, ReferenceStructure
 
 P3F1_FIXTURE_ROLE = "hand_constructed_algebraic_correctness_fixture"
 P3F1_METHOD = "structure-wise-whitened-projected-generative-discrepancy-v1"
+P3G2_NOISE_METHOD = "response-independent-principal-log-variance-mixture-v1"
 
 
 def _readonly(values: np.ndarray) -> np.ndarray:
@@ -61,6 +62,91 @@ class DiscrepancyKernelState:
             raise ValueError("kernel-state probability must be positive and finite")
         if not math.isfinite(self.length_scale) or self.length_scale <= 0.0:
             raise ValueError("kernel length scale must be positive and finite")
+
+
+@dataclass(frozen=True)
+class RegisteredNoiseVarianceState:
+    """One response-independent input-dependent observation-variance law."""
+
+    state_id: str
+    prior_probability: float
+    multipliers: np.ndarray
+
+    def __post_init__(self) -> None:
+        multipliers = _readonly(self.multipliers).reshape(-1)
+        if (
+            not self.state_id
+            or not math.isfinite(self.prior_probability)
+            or self.prior_probability <= 0.0
+            or len(multipliers) < 3
+            or np.any(multipliers <= 0.0)
+        ):
+            raise ValueError("registered noise-variance state is invalid")
+        object.__setattr__(self, "multipliers", multipliers)
+
+    @property
+    def stable_hash(self) -> str:
+        digest = sha256()
+        digest.update(self.state_id.encode("utf-8"))
+        digest.update(np.float64(self.prior_probability).tobytes())
+        digest.update(self.multipliers.tobytes())
+        return digest.hexdigest()
+
+
+def response_independent_noise_variance_states(
+    actions: np.ndarray,
+    *,
+    maximum_rank: int = 3,
+    log_variance_amplitude: float = math.log(2.0),
+    homoscedastic_prior_probability: float = 0.5,
+) -> tuple[RegisteredNoiseVarianceState, ...]:
+    """Register a finite heteroscedastic sieve without inspecting responses.
+
+    The nonconstant log-variance laws are positive and negative excursions
+    along leading covariate-only principal scores.  Every law has unit
+    geometric-mean multiplier, so a state cannot win merely by changing the
+    global variance scale already represented by the inverse-gamma prior.
+    """
+
+    x = _validated_actions(actions)
+    if isinstance(maximum_rank, bool) or int(maximum_rank) < 1:
+        raise ValueError("noise-variance rank must be a positive integer")
+    amplitude = float(log_variance_amplitude)
+    homoscedastic_probability = float(homoscedastic_prior_probability)
+    if (
+        not math.isfinite(amplitude)
+        or amplitude <= 0.0
+        or not 0.0 < homoscedastic_probability < 1.0
+    ):
+        raise ValueError("noise-variance sieve prior is invalid")
+    left, singular_values, _ = np.linalg.svd(x, full_matrices=False)
+    tolerance = np.finfo(float).eps * max(x.shape) * singular_values[0]
+    rank = min(int(maximum_rank), int(np.sum(singular_values > tolerance)))
+    if rank < 1:
+        raise ValueError("noise-variance sieve has zero covariate rank")
+    heterogeneous_probability = (1.0 - homoscedastic_probability) / (2 * rank)
+    states = [
+        RegisteredNoiseVarianceState(
+            "homoscedastic",
+            homoscedastic_probability,
+            np.ones(len(x), dtype=float),
+        )
+    ]
+    for column in range(rank):
+        score = left[:, column] * math.sqrt(len(x))
+        score = np.clip(score, -2.5, 2.5)
+        score = score - float(np.mean(score))
+        for sign, label in ((1.0, "positive"), (-1.0, "negative")):
+            log_multiplier = sign * amplitude * score
+            log_multiplier = log_multiplier - float(np.mean(log_multiplier))
+            states.append(
+                RegisteredNoiseVarianceState(
+                    f"pc{column + 1}-{label}",
+                    heterogeneous_probability,
+                    np.exp(log_multiplier),
+                )
+            )
+    return tuple(states)
 
 
 @dataclass(frozen=True)
@@ -126,11 +212,14 @@ class GenerativeDiscrepancyComponent:
     noise_shape: float
     noise_scale: float
     coefficient_dimension: int
+    noise_state_id: str
+    noise_variance_multipliers: np.ndarray
 
     def __post_init__(self) -> None:
         design = _readonly(self.design)
         mean = _readonly(self.posterior_mean).reshape(-1)
         covariance = _readonly(self.posterior_covariance_factor)
+        noise_multipliers = _readonly(self.noise_variance_multipliers).reshape(-1)
         if design.ndim != 2 or design.shape[1] != len(mean):
             raise ValueError("component design and posterior mean are inconsistent")
         if covariance.shape != (len(mean), len(mean)):
@@ -141,20 +230,24 @@ class GenerativeDiscrepancyComponent:
             raise ValueError("component posterior probability is invalid")
         if self.coefficient_dimension < 1 or self.coefficient_dimension > design.shape[1]:
             raise ValueError("component coefficient dimension is invalid")
+        if len(noise_multipliers) != len(design) or np.any(noise_multipliers <= 0.0):
+            raise ValueError("component noise-variance law is invalid")
         object.__setattr__(self, "design", design)
         object.__setattr__(self, "posterior_mean", mean)
         object.__setattr__(self, "posterior_covariance_factor", covariance)
+        object.__setattr__(self, "noise_variance_multipliers", noise_multipliers)
 
     @property
     def state_id(self) -> str:
         activity = "slab" if self.discrepancy_active else "spike"
-        return f"{self.structure.structure_id}|{activity}|{self.kernel_state_id}"
+        return f"{self.structure.structure_id}|{activity}|{self.kernel_state_id}|{self.noise_state_id}"
 
     def predictive_cdf(self, row_index: int, target: float) -> float:
         row = self.design[row_index]
         location = float(row @ self.posterior_mean)
         scale_squared = self.noise_scale / self.noise_shape * (
-            1.0 + float(row @ self.posterior_covariance_factor @ row)
+            float(self.noise_variance_multipliers[row_index])
+            + float(row @ self.posterior_covariance_factor @ row)
         )
         return float(
             student_t.cdf(
@@ -169,7 +262,8 @@ class GenerativeDiscrepancyComponent:
         row = self.design[row_index]
         location = float(row @ self.posterior_mean)
         scale_squared = self.noise_scale / self.noise_shape * (
-            1.0 + float(row @ self.posterior_covariance_factor @ row)
+            float(self.noise_variance_multipliers[row_index])
+            + float(row @ self.posterior_covariance_factor @ row)
         )
         return float(
             student_t.pdf(
@@ -348,6 +442,7 @@ class RegisteredStructurewiseDiscrepancyEngine:
         *,
         structure_designs: dict[str, np.ndarray] | None = None,
         maximum_discrepancy_rank: int = 16,
+        noise_variance_states: tuple[RegisteredNoiseVarianceState, ...] | None = None,
     ) -> None:
         x = np.asarray(domain_actions, dtype=float)
         if x.ndim == 1:
@@ -357,7 +452,7 @@ class RegisteredStructurewiseDiscrepancyEngine:
         if isinstance(maximum_discrepancy_rank, bool) or maximum_discrepancy_rank < 1:
             raise ValueError("maximum discrepancy rank must be a positive integer")
         _validate_kernel_and_design_registry(bank, kernel_states, structure_designs)
-        records, bases = _component_records(
+        base_records, bases = _component_records(
             bank,
             x,
             kernel_states,
@@ -365,12 +460,44 @@ class RegisteredStructurewiseDiscrepancyEngine:
             structure_designs,
             int(maximum_discrepancy_rank),
         )
+        if noise_variance_states is None:
+            variance_states = (
+                RegisteredNoiseVarianceState(
+                    "homoscedastic", 1.0, np.ones(len(x), dtype=float)
+                ),
+            )
+        else:
+            variance_states = tuple(noise_variance_states)
+        if (
+            not variance_states
+            or len({state.state_id for state in variance_states}) != len(variance_states)
+            or any(len(state.multipliers) != len(x) for state in variance_states)
+            or not math.isclose(
+                sum(state.prior_probability for state in variance_states),
+                1.0,
+                rel_tol=0.0,
+                abs_tol=1e-12,
+            )
+        ):
+            raise ValueError("registered noise-variance states are invalid")
+        records = tuple(
+            {
+                **record,
+                "joint_prior": float(record["joint_prior"]) * state.prior_probability,
+                "noise_state": state.state_id,
+                "noise_multipliers": state.multipliers,
+            }
+            for record in base_records
+            for state in variance_states
+        )
         self.bank = bank
         self.domain_actions = _readonly(x)
         self.kernel_states = tuple(kernel_states)
         self.prior = prior
         self.maximum_discrepancy_rank = int(maximum_discrepancy_rank)
-        self.records = tuple(records)
+        self.noise_variance_states = variance_states
+        self.method = P3G2_NOISE_METHOD if len(variance_states) > 1 else P3F1_METHOD
+        self.records = records
         self.bases = tuple(bases)
 
     def prior_state(self) -> SequentialStructurewiseDiscrepancyState:
@@ -444,7 +571,8 @@ class RegisteredStructurewiseDiscrepancyEngine:
     def _update_component(record, mean, covariance, shape, scale, log_marginal, index, target):
         row = np.asarray(record["design"], dtype=float)[index]
         projected = covariance @ row
-        inflation = 1.0 + float(row @ projected)
+        observation_variance = float(np.asarray(record["noise_multipliers"])[index])
+        inflation = observation_variance + float(row @ projected)
         residual = target - float(row @ mean)
         predictive_scale = math.sqrt(scale / shape * inflation)
         next_log_marginal = log_marginal + float(
@@ -476,7 +604,8 @@ class RegisteredStructurewiseDiscrepancyEngine:
             rows = np.asarray(record["design"], dtype=float)[indices]
             locations.append(rows @ mean)
             scales.append(np.sqrt(scale / shape * (
-                1.0 + np.einsum("ij,jk,ik->i", rows, covariance, rows)
+                np.asarray(record["noise_multipliers"])[indices]
+                + np.einsum("ij,jk,ik->i", rows, covariance, rows)
             )))
         return StructurewisePredictiveLaw(
             probabilities=np.asarray(state.probabilities),
@@ -485,7 +614,7 @@ class RegisteredStructurewiseDiscrepancyEngine:
             scales=np.vstack(scales),
             structure_ids=tuple(str(record["structure"].structure_id) for record in self.records),
             component_state_ids=tuple(
-                f"{record['structure'].structure_id}|{'slab' if record['active'] else 'spike'}|{record['kernel']}"
+                f"{record['structure'].structure_id}|{'slab' if record['active'] else 'spike'}|{record['kernel']}|{record['noise_state']}"
                 for record in self.records
             ),
         )
@@ -493,13 +622,15 @@ class RegisteredStructurewiseDiscrepancyEngine:
     @property
     def stable_hash(self) -> str:
         digest = sha256()
-        digest.update(P3F1_METHOD.encode("ascii"))
+        digest.update(self.method.encode("ascii"))
         digest.update(self.bank.stable_hash.encode("ascii"))
         digest.update(str(self.maximum_discrepancy_rank).encode("ascii"))
         digest.update(str(self.domain_actions.shape).encode("ascii"))
         digest.update(self.domain_actions.tobytes())
         for basis in self.bases:
             digest.update(basis.stable_hash.encode("ascii"))
+        for state in self.noise_variance_states:
+            digest.update(state.stable_hash.encode("ascii"))
         return digest.hexdigest()
 
     def fit(
@@ -549,7 +680,7 @@ class RegisteredStructurewiseDiscrepancyEngine:
             rows = member.design[indices]
             location = rows @ member.posterior_mean
             scale_squared = member.noise_scale / member.noise_shape * (
-                1.0
+                member.noise_variance_multipliers[indices]
                 + np.einsum(
                     "ij,jk,ik->i",
                     rows,
@@ -700,22 +831,33 @@ def _fit_component(
     noise_scale: float,
     *,
     sequential: bool,
+    variance_multipliers: np.ndarray | None = None,
 ) -> tuple[float, np.ndarray, np.ndarray, float, float]:
+    multipliers = (
+        np.ones(len(targets), dtype=float)
+        if variance_multipliers is None
+        else np.asarray(variance_multipliers, dtype=float).reshape(-1)
+    )
+    if len(multipliers) != len(targets) or np.any(multipliers <= 0.0):
+        raise ValueError("observation variance multipliers are invalid")
+    roots = np.sqrt(multipliers)
+    weighted_design = design / roots[:, None]
+    weighted_targets = targets / roots
     dimension = design.shape[1]
     precision = np.diag(prior_precision)
     information = prior_precision * prior_mean
     y_square_sum = 0.0
     observations = 0
     if sequential:
-        for row, target in zip(design, targets, strict=True):
+        for row, target in zip(weighted_design, weighted_targets, strict=True):
             precision = precision + np.outer(row, row)
             information = information + row * float(target)
             y_square_sum += float(target * target)
             observations += 1
     else:
-        precision = precision + design.T @ design
-        information = information + design.T @ targets
-        y_square_sum = float(targets @ targets)
+        precision = precision + weighted_design.T @ weighted_design
+        information = information + weighted_design.T @ weighted_targets
+        y_square_sum = float(weighted_targets @ weighted_targets)
         observations = len(targets)
     mean = np.linalg.solve(precision, information)
     covariance = np.linalg.inv(precision)
@@ -733,6 +875,7 @@ def _fit_component(
         raise FloatingPointError("posterior precision must be positive definite")
     log_marginal = float(
         -0.5 * observations * math.log(2.0 * math.pi)
+        - 0.5 * float(np.sum(np.log(multipliers)))
         + 0.5 * (prior_logdet - posterior_logdet)
         + noise_shape * math.log(noise_scale)
         - posterior_shape * math.log(posterior_scale)
@@ -877,6 +1020,9 @@ def _normalize_fitted_records(
             bank.prior.noise_shape,
             bank.prior.noise_scale,
             sequential=sequential,
+            variance_multipliers=np.asarray(record.get("noise_multipliers", np.ones(len(design))))[
+                np.asarray(indices, dtype=int)
+            ],
         )
         fitted.append({**record, "fit": fit})
         log_joint.append(math.log(float(record["joint_prior"])) + fit[0])
@@ -899,6 +1045,10 @@ def _normalize_fitted_records(
                 noise_shape=float(shape),
                 noise_scale=float(scale),
                 coefficient_dimension=int(record["coefficient_dimension"]),
+                noise_state_id=str(record.get("noise_state", "homoscedastic")),
+                noise_variance_multipliers=np.asarray(
+                    record.get("noise_multipliers", np.ones(len(record["design"])))
+                ),
             )
         )
     return tuple(members), log_evidence

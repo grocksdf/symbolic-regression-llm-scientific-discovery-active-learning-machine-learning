@@ -437,6 +437,19 @@ long-horizon context and remain binding even when a local task omits them.
   unresolved numerical rankings. A failure emits a terminal calibration NO-GO
   without acquisition. Held-out remains closed and development advantage can
   never be labeled formal efficacy evidence.
+- The returned `P3G.1` real run is immutable protocol-valid negative evidence:
+  24/24 audits completed, three crossed the `1/2400` per-run boundary, no
+  candidate or held-out response was opened, and acquisition count was zero.
+  `P3G.2` keeps its splits, seeds, response order, alpha allocation, gate and
+  failure policy unchanged. It expands the ordinary generative posterior with
+  a response-independent principal-log-variance mixture: one homoscedastic
+  state and fixed positive/negative laws on the first three covariate-only
+  principal scores, each normalized to unit geometric-mean variance. The
+  rank-one update uses `v_i + d_i^T V d_i`; batch and sequential posteriors are
+  required to agree. The joint EIG nuisance target now includes the registered
+  noise state. These states may learn through marginal likelihood but their
+  construction cannot inspect any response. This is a heteroscedastic model
+  repair, not a relaxed calibration rule or a seed-specific patch.
 - Resident-SMC integration, independent-island execution, entropy capture,
   product-stream materialization, projector result access, new confirmatory
   materialization, predictive calibration, real data, acquisition, held-out

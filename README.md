@@ -1,7 +1,7 @@
 # Hypothesis MVP — PCPI
 
-Current stage: **P3F.2a--c open-target mathematical and implementation
-correctness passed; real-data and acquisition execution remain blocked**.
+Current stage: **P3G.1 returned a protocol-valid predictive-calibration NO-GO;
+P3G.2 heteroscedastic generative repair is frozen for user execution**.
 P3F.1 places a structure-wise projected discrepancy inside one proper
 generative posterior. P3F.2 defines a response-independent countably-open typed
 AST prior, exact prior-mass-aware equivalence aggregation, and deterministic
@@ -35,6 +35,21 @@ acquisition runs. Held-out remains closed throughout:
 Replace `<commit>` with the committed source identity. The runner rejects a
 dirty tracked worktree and an existing output directory, records all failures,
 and never substitutes seeds or retries a failed run.
+
+P3G.1 completed all 24 real calibration runs at commit `9b57a4ee`; CCPP
+seed `2026080706` and Gas CO seeds `2026080703` and `2026080707` crossed the
+unchanged boundary. It therefore returned `CALIBRATION_NO_GO` and correctly
+performed zero acquisition queries. P3G.2 preserves that negative result and
+the complete gate, but repairs the remaining homoscedastic assumption with a
+response-independent finite mixture of input-dependent variance laws. The
+noise state joins structure class and discrepancy state in the acquisition
+target. Its one-shot entry point is
+`scripts.run_pcpi_p3g2_heteroscedastic_structurewise_gate`; see
+`docs/pcpi_p3g2_heteroscedastic_mainline_contract_20260825.md`.
+
+```powershell
+& 'D:\01\666\.venv_hypothesis_canonical\Scripts\python.exe' -B -m scripts.run_pcpi_p3g2_heteroscedastic_structurewise_gate --data-root 'D:\01\666\hypothesis_mvp\data' --output-dir 'D:\01\666\hypothesis_mvp\outputs\p3g_2_heteroscedastic_structurewise_gate_<commit>_20260825'
+```
 
 The P3D.2 audit also exposes an exact semantic mismatch: for `eta<1`, ordinary
 class mutual information is not the expected entropy reduction of the actual

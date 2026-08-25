@@ -53,9 +53,11 @@ from .predictive_calibration import (
 from .structurewise_discrepancy import (
     P3F1_FIXTURE_ROLE,
     P3F1_METHOD,
+    P3G2_NOISE_METHOD,
     DiscrepancyKernelState,
     ExactStructurewiseDiscrepancyPosterior,
     GenerativeDiscrepancyComponent,
+    RegisteredNoiseVarianceState,
     RegisteredStructurewiseDiscrepancyEngine,
     SequentialStructurewiseDiscrepancyState,
     StructurewisePredictiveLaw,
@@ -63,6 +65,7 @@ from .structurewise_discrepancy import (
     StructurewiseProjectedBasis,
     fit_structurewise_discrepancy_posterior,
     p3f1_contract_hash,
+    response_independent_noise_variance_states,
     structurewise_projected_rbf_basis,
 )
 
@@ -107,9 +110,11 @@ __all__ = [
     "prequential_predictive_pit_e_process",
     "P3F1_FIXTURE_ROLE",
     "P3F1_METHOD",
+    "P3G2_NOISE_METHOD",
     "DiscrepancyKernelState",
     "ExactStructurewiseDiscrepancyPosterior",
     "GenerativeDiscrepancyComponent",
+    "RegisteredNoiseVarianceState",
     "RegisteredStructurewiseDiscrepancyEngine",
     "SequentialStructurewiseDiscrepancyState",
     "StructurewisePredictiveLaw",
@@ -117,5 +122,6 @@ __all__ = [
     "StructurewiseProjectedBasis",
     "fit_structurewise_discrepancy_posterior",
     "p3f1_contract_hash",
+    "response_independent_noise_variance_states",
     "structurewise_projected_rbf_basis",
 ]
