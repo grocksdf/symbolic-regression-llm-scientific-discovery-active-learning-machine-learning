@@ -417,3 +417,22 @@ correctness/source-composition repair, not real efficacy evidence. A separate
 formal configuration must still freeze the P3H.5 16/16 roles, fixed four-power
 family and matched comparison before user execution. See
 `docs/pcpi_p3h6_operational_semiparametric_lifecycle_20260826.md`.
+
+## P3H.7 formal semiparametric real acquisition freeze
+
+P3H.7 freezes the first matched-budget real runner that enables the P3H.6
+lifecycle. The three registered targets, eight seeds, 32 initial observations,
+32 queries, 128 candidates, 256 validation rows and four policies remain
+matched. The response/design transforms use only the first 16 initial rows;
+the remaining 16 initialize each power-specific residual law. Every policy
+reports with eta one, while PCPI alone retains the complete four-power maximin
+family. SafeBayes selection and all uncertified/fallback PCPI actions are
+forbidden.
+
+The canonical runtime is checked before output creation or data access. Every
+PCPI query must bind a response-free decision and form an uninterrupted family
+hash chain after its single oracle reveal. All 96 policy runs must complete;
+failures are recorded without replacement or retry. This freeze authorizes only
+the user's unique held-out-closed real-development execution, not Codex
+execution or any confirmation claim. See
+`docs/pcpi_p3h7_semiparametric_real_acquisition_protocol_20260826.md`.

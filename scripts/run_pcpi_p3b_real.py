@@ -48,6 +48,8 @@ from hypothesis_mvp.pcpi import (
     OperationalSemiparametricDecision,
     OperationalSemiparametricState,
     P3D_ACQUISITION_POLICIES,
+    P3H_OPERATIONAL_LIFECYCLE,
+    P3H_OPERATIONAL_POWERS,
     PosteriorModel,
     REFERENCE_DOMINANCE_METHOD,
     REFERENCE_DOMINANCE_POLICY,
@@ -63,6 +65,7 @@ from hypothesis_mvp.pcpi import (
     budget_resolved_distance_threshold,
     class_partition,
     fixed_class_entropy,
+    initialize_operational_semiparametric_state,
     normalized_area_under_learning_curve,
     posterior_metrics,
     score_acquisition_actions,
@@ -110,6 +113,7 @@ class RealAcquisitionProtocol:
     discrepancy_profile_method: str | None = None
     reference_dominance_method: str | None = None
     semiparametric_lifecycle: bool = False
+    required_runtime_dependency_hash: str | None = None
 
 
 CLAIM_BOUNDARY = (
@@ -320,6 +324,17 @@ def _load_config(
             "pcpi_discrepancy_scale",
             "pcpi_discrepancy_support_rule",
         }
+    if protocol.semiparametric_lifecycle:
+        required |= {
+            "initial_base_warmup_budget",
+            "initial_residual_training_budget",
+            "p3h_operational_lifecycle",
+            "p3h_residual_state_method",
+            "p3h_residual_law",
+            "p3h_validation_state_policy",
+            "p3h5_terminal_status",
+            "runtime_dependency_hash",
+        }
     if set(config) != required:
         raise ValueError(f"P3B config fields differ from schema: {sorted(set(config) ^ required)}")
     if config["schema"] != protocol.schema or config["stage"] != protocol.stage:
@@ -364,7 +379,12 @@ def _load_config(
         raise ValueError("P3B.10 evaluation must use the initial-frozen class partition")
     if config["pcpi_class_target_partition"] != "initial-frozen":
         raise ValueError("P3B.10 acquisition must target the initial-frozen class partition")
-    if config["pcpi_uncertified_eig_action"] != "posterior-epistemic-variance":
+    expected_uncertified = (
+        "terminal-abstention-no-fallback"
+        if protocol.semiparametric_lifecycle
+        else "posterior-epistemic-variance"
+    )
+    if config["pcpi_uncertified_eig_action"] != expected_uncertified:
         raise ValueError("P3B.10 requires the frozen epistemic fallback utility")
     joint_target_contract = {
         "pcpi_joint_target": "initial-frozen-class-and-target-prediction",
@@ -399,7 +419,9 @@ def _load_config(
     robust_contract = {
         "pcpi_ambiguity_set": "frozen-likelihood-power-candidates",
         "pcpi_robust_utility": (
-            "discrepancy-aware-maximin-joint-class-predictive-information"
+            "p3h-semiparametric-discrepancy-aware-maximin-joint-class-predictive-information"
+            if protocol.semiparametric_lifecycle
+            else "discrepancy-aware-maximin-joint-class-predictive-information"
             if protocol.discrepancy_profile_method is not None
             else "maximin-joint-class-predictive-information"
         ),
@@ -422,21 +444,55 @@ def _load_config(
             config[key] != value for key, value in discrepancy_contract.items()
         ):
             raise ValueError("P3C discrepancy contract was modified")
-    calibration_contract = {
-        "likelihood_power_calibration_method": CALIBRATION_METHOD,
-        "likelihood_power_calibration_role": CALIBRATION_ROLE,
-        "likelihood_power_tie_break": CALIBRATION_TIE_BREAK,
-    }
+    calibration_contract = (
+        {
+            "likelihood_power_calibration_method": "none-fixed-complete-family",
+            "likelihood_power_calibration_role": "forbidden-no-eta-selection",
+            "likelihood_power_tie_break": "not-applicable-complete-family",
+        }
+        if protocol.semiparametric_lifecycle
+        else {
+            "likelihood_power_calibration_method": CALIBRATION_METHOD,
+            "likelihood_power_calibration_role": CALIBRATION_ROLE,
+            "likelihood_power_tie_break": CALIBRATION_TIE_BREAK,
+        }
+    )
     if any(config[key] != value for key, value in calibration_contract.items()):
         raise ValueError("P3B.10 likelihood-power calibration contract was modified")
     preconditioning_contract = {
         "basis_preconditioning_method": DESIGN_PRECONDITIONING_METHOD,
-        "basis_preconditioning_role": DESIGN_PRECONDITIONING_ROLE,
+        "basis_preconditioning_role": (
+            "base-warmup-covariates-only"
+            if protocol.semiparametric_lifecycle else DESIGN_PRECONDITIONING_ROLE
+        ),
     }
     if any(config[key] != value for key, value in preconditioning_contract.items()):
         raise ValueError("P3B.10 basis-preconditioning contract was modified")
     if config["predictive_design_transform"] != "posterior-target-frozen":
         raise ValueError("P3B.10 prediction must use the posterior-target design transform")
+    if protocol.semiparametric_lifecycle:
+        p3h_contract = {
+            "initial_base_warmup_budget": 16,
+            "initial_residual_training_budget": 16,
+            "p3h_operational_lifecycle": P3H_OPERATIONAL_LIFECYCLE,
+            "p3h_residual_state_method": (
+                "model-specific-likelihood-power-prequential-raw-pit-family-v1"
+            ),
+            "p3h_residual_law": "prequential-kt-dyadic-polya-tree-residual-law-v1",
+            "p3h_validation_state_policy": "discard-never-enter-operational-state",
+            "p3h5_terminal_status": (
+                "FAMILY_CALIBRATION_COMPATIBLE_ACQUISITION_BLOCKED"
+            ),
+            "runtime_dependency_hash": protocol.required_runtime_dependency_hash,
+        }
+        if any(config[key] != value for key, value in p3h_contract.items()):
+            raise ValueError("P3H operational lifecycle contract was modified")
+        if (
+            config["initial_base_warmup_budget"]
+            + config["initial_residual_training_budget"]
+            != config["initial_observation_budget"]
+        ):
+            raise ValueError("P3H initial role budgets do not close")
     rules = config["assessment_rules"]
     expected_rules = {
         "paired_confidence_level", "negative_transfer_rate_max",
@@ -1586,7 +1642,7 @@ def _manifest_method_contract(
         "representative_empty_safe_set_action", "pcpi_ambiguity_set",
         "pcpi_robust_utility", "pcpi_least_favorable_tie_break",
     )
-    return {key: config[key] for key in keys} | {
+    contract = {key: config[key] for key in keys} | {
         "pcpi_discrepancy_profile": config.get(
             "pcpi_discrepancy_profile", "not-applied"
         ),
@@ -1598,6 +1654,21 @@ def _manifest_method_contract(
         ),
         "robust_likelihood_powers": config["likelihood_power_candidates"],
     }
+    if protocol.semiparametric_lifecycle:
+        contract |= {
+            key: config[key]
+            for key in (
+                "initial_base_warmup_budget",
+                "initial_residual_training_budget",
+                "p3h_operational_lifecycle",
+                "p3h_residual_state_method",
+                "p3h_residual_law",
+                "p3h_validation_state_policy",
+                "p3h5_terminal_status",
+                "runtime_dependency_hash",
+            )
+        }
+    return contract
 
 
 def _record_evidence(
@@ -1818,10 +1889,17 @@ def run(
         raise FileNotFoundError(f"data root does not exist: {data_root}")
     config = _load_config(config_path, root, protocol)
     source_identity = resolve_formal_source_identity(root, source)
-    _prepare_output(output)
-    reporter = ProgressReporter(output / "logs" / "run.jsonl")
     dependency_environment = runtime_dependency_snapshot()
     dependency_environment_hash = runtime_dependency_hash(dependency_environment)
+    if (
+        protocol.required_runtime_dependency_hash is not None
+        and dependency_environment_hash != protocol.required_runtime_dependency_hash
+    ):
+        raise RuntimeError(
+            "formal P3H runtime differs from the frozen canonical environment"
+        )
+    _prepare_output(output)
+    reporter = ProgressReporter(output / "logs" / "run.jsonl")
     identity = {
         **source_identity,
         "production_code_hash": production_code_hash(root),
@@ -1924,31 +2002,56 @@ def run(
                 dataset_records[dataset_id]["subset_commitments"][str(seed)] = (
                     subset_commitments
                 )
+                warmup_count = (
+                    int(config["initial_base_warmup_budget"])
+                    if protocol.semiparametric_lifecycle
+                    else len(initial_indices)
+                )
+                warmup_indices = initial_indices[:warmup_count]
                 standardizer = DevelopmentStandardizer.fit(
-                    selection.development.X[initial_indices],
-                    selection.development.y[initial_indices],
+                    selection.development.X[warmup_indices],
+                    selection.development.y[warmup_indices],
                 )
                 dataset_records[dataset_id]["standardizer_hashes"][str(seed)] = standardizer.stable_hash
                 initial_X = standardizer.transform_X(selection.development.X[initial_indices])
                 initial_y = standardizer.transform_y(selection.development.y[initial_indices])
                 bank = generic_real_bank(initial_X.shape[1])
-                design_preconditioner = fit_bank_preconditioner(bank, initial_X)
+                design_preconditioner = fit_bank_preconditioner(
+                    bank, initial_X[:warmup_count]
+                )
                 dataset_records[dataset_id]["design_preconditioners"][str(seed)] = (
                     design_preconditioner.to_dict()
                     | {"preconditioner_hash": design_preconditioner.stable_hash}
                 )
-                calibration_started = time.perf_counter()
-                calibration = calibrate_likelihood_power(
-                    bank,
-                    initial_X,
-                    initial_y,
-                    tuple(float(value) for value in config["likelihood_power_candidates"]),
-                    design_preconditioner,
-                )
-                calibration_wall_time = time.perf_counter() - calibration_started
-                dataset_records[dataset_id]["likelihood_power_calibrations"][str(seed)] = (
-                    calibration.to_dict() | {"calibration_hash": calibration.stable_hash}
-                )
+                if protocol.semiparametric_lifecycle:
+                    calibration = None
+                    calibration_wall_time = 0.0
+                    calibration_hash = _hash_json({
+                        "method": "none-fixed-complete-family",
+                        "powers": list(P3H_OPERATIONAL_POWERS),
+                    })
+                    selected_likelihood_power = 1.0
+                    dataset_records[dataset_id]["likelihood_power_calibrations"][str(seed)] = {
+                        "method": "none-fixed-complete-family",
+                        "powers": list(P3H_OPERATIONAL_POWERS),
+                        "nominal_reporting_power": selected_likelihood_power,
+                        "calibration_hash": calibration_hash,
+                    }
+                else:
+                    calibration_started = time.perf_counter()
+                    calibration = calibrate_likelihood_power(
+                        bank,
+                        initial_X,
+                        initial_y,
+                        tuple(float(value) for value in config["likelihood_power_candidates"]),
+                        design_preconditioner,
+                    )
+                    calibration_wall_time = time.perf_counter() - calibration_started
+                    calibration_hash = calibration.stable_hash
+                    selected_likelihood_power = calibration.selected_likelihood_power
+                    dataset_records[dataset_id]["likelihood_power_calibrations"][str(seed)] = (
+                        calibration.to_dict() | {"calibration_hash": calibration_hash}
+                    )
                 validation_X = standardizer.transform_X(selection.validation.X[validation_indices])
                 validation_y = standardizer.transform_y(selection.validation.y[validation_indices])
                 fixed_domain_X = standardizer.transform_X(selection.acquisition_pool.X[candidates])
@@ -1961,6 +2064,23 @@ def run(
                         policy=policy,
                     )
                     try:
+                        semiparametric_state = None
+                        if protocol.semiparametric_lifecycle and policy == protocol.pcpi_policy:
+                            family_engines = tuple(
+                                SequentialReferencePosterior(
+                                    bank, power, design_preconditioner
+                                )
+                                for power in P3H_OPERATIONAL_POWERS
+                            )
+                            semiparametric_state = (
+                                initialize_operational_semiparametric_state(
+                                    family_engines,
+                                    initial_X[:warmup_count],
+                                    initial_y[:warmup_count],
+                                    initial_X[warmup_count:],
+                                    initial_y[warmup_count:],
+                                )
+                            )
                         summary, curves, queries = _run_policy(
                             dataset_id=dataset_id,
                             seed=int(seed),
@@ -1979,10 +2099,11 @@ def run(
                             config=config,
                             reporter=reporter,
                             design_preconditioner=design_preconditioner,
-                            likelihood_power=calibration.selected_likelihood_power,
-                            calibration_hash=calibration.stable_hash,
+                            likelihood_power=selected_likelihood_power,
+                            calibration_hash=calibration_hash,
                             calibration_wall_time_seconds=calibration_wall_time,
                             protocol=protocol,
+                            semiparametric_state=semiparametric_state,
                         )
                         run_rows.append(summary)
                         curve_rows.extend(curves)
@@ -2136,6 +2257,36 @@ def run(
         else row["discrepancy_method"] == "not-applied"
         for row in pcpi_query_rows
     )
+    p3h_query_groups: dict[tuple[str, int], list[dict[str, Any]]] = {}
+    for row in pcpi_query_rows:
+        p3h_query_groups.setdefault(
+            (str(row["dataset_id"]), int(row["seed"])), []
+        ).append(row)
+    p3h_hash_chains_valid = bool(p3h_query_groups) and all(
+        all(
+            ordered[index]["p3h_family_hash_after_query"]
+            == ordered[index + 1]["p3h_family_hash_before_query"]
+            for index in range(len(ordered) - 1)
+        )
+        and all(
+            row["p3h_family_hash_before_query"] != "not-applied"
+            and row["p3h_family_hash_after_query"] != "not-applied"
+            and row["p3h_family_hash_before_query"]
+            != row["p3h_family_hash_after_query"]
+            for row in ordered
+        )
+        for ordered in (
+            sorted(rows, key=lambda item: int(item["acquisition_round"]))
+            for rows in p3h_query_groups.values()
+        )
+    )
+    expected_robust_utility = (
+        "p3h-semiparametric-discrepancy-aware-maximin-joint-class-predictive-information"
+        if protocol.semiparametric_lifecycle
+        else "discrepancy-aware-maximin-joint-class-predictive-information"
+        if discrepancy_expected
+        else "maximin-joint-class-predictive-information"
+    )
     protocol_decisions = {
         "all_runs_completed": len(run_rows) == expected_runs,
         "no_failed_runs": not failures,
@@ -2203,11 +2354,7 @@ def run(
             ambiguity_powers == (0.125, 0.25, 0.5, 1.0)
             and config.get("pcpi_ambiguity_set")
             == "frozen-likelihood-power-candidates"
-            and config.get("pcpi_robust_utility") == (
-                "discrepancy-aware-maximin-joint-class-predictive-information"
-                if discrepancy_expected
-                else "maximin-joint-class-predictive-information"
-            )
+            and config.get("pcpi_robust_utility") == expected_robust_utility
             and config.get("pcpi_least_favorable_tie_break")
             == "smallest-likelihood-power"
         ),
@@ -2239,6 +2386,45 @@ def run(
         ],
         "basis_preconditioning_method": config["basis_preconditioning_method"],
     }
+    if protocol.semiparametric_lifecycle:
+        protocol_decisions.pop("nominal_calibrated_posterior_retained_for_reporting")
+        protocol_decisions.pop(
+            "likelihood_power_calibration_used_initial_development_only"
+        )
+        protocol_decisions.update({
+            "p3h_complete_family_used_for_every_pcpi_query": bool(pcpi_query_rows)
+            and all(
+                row["p3h_operational_lifecycle_applied"]
+                and tuple(row["robust_likelihood_powers"])
+                == P3H_OPERATIONAL_POWERS
+                for row in pcpi_query_rows
+            ),
+            "p3h_family_hash_chain_valid_for_every_pcpi_run": (
+                p3h_hash_chains_valid
+            ),
+            "p3h_lifecycle_not_applied_to_matched_baselines": bool(
+                baseline_query_rows
+            ) and all(
+                not row["p3h_operational_lifecycle_applied"]
+                and row["p3h_family_hash_before_query"] == "not-applied"
+                and row["p3h_family_hash_after_query"] == "not-applied"
+                for row in baseline_query_rows
+            ),
+            "likelihood_power_selection_forbidden": (
+                config["likelihood_power_calibration_method"]
+                == "none-fixed-complete-family"
+            ),
+            "nominal_eta_one_reporting_posterior_shared_across_policies": bool(
+                run_rows
+            ) and all(float(row["likelihood_power"]) == 1.0 for row in run_rows),
+            "p3h_initial_roles_close_without_validation": (
+                config["initial_base_warmup_budget"]
+                + config["initial_residual_training_budget"]
+                == config["initial_observation_budget"]
+                and config["p3h_validation_state_policy"]
+                == "discard-never-enter-operational-state"
+            ),
+        })
     if protocol.reference_dominance_method is not None:
         for key in (
             "predictive_target_distribution_shared_across_policies",
