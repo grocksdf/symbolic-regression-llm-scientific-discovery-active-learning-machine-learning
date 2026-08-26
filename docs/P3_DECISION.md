@@ -399,3 +399,21 @@ decision or selecting eta post hoc. P3H.5 validation-updated states remain
 discarded and real acquisition is blocked pending a P3H.6 operational-lifecycle
 correctness Gate. See
 `docs/pcpi_p3h5_likelihood_power_family_calibration_result_20260826.md`.
+
+## P3H.6 operational semiparametric lifecycle
+
+P3H.6 repairs the production-source gap left after family calibration. A typed
+four-model lifecycle now reconstructs only the base-warmup and strict-prefix
+residual-training history, binds candidate scoring to those exact posterior and
+residual-law objects, freezes a response-free selected ID/action/state hash,
+and admits exactly one matching revealed response before advancing every target
+once. Changed histories, wrong candidates, stale decisions, incomplete powers,
+uncertified transformed rankings and legacy fallbacks fail closed.
+
+The historical real runner can consume this lifecycle only under an explicit
+new protocol flag and only for PCPI. It records before/after family hashes per
+query while historical protocols retain their old paths. This is a
+correctness/source-composition repair, not real efficacy evidence. A separate
+formal configuration must still freeze the P3H.5 16/16 roles, fixed four-power
+family and matched comparison before user execution. See
+`docs/pcpi_p3h6_operational_semiparametric_lifecycle_20260826.md`.

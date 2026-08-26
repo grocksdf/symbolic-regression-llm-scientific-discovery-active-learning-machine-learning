@@ -45,6 +45,8 @@ from hypothesis_mvp.pcpi import (
     DISCREPANCY_PROFILE_METHOD,
     GAUSSIAN_CLASS_CONDITIONAL_EPIG,
     MAXIMIN_RANK_CERTIFICATE,
+    OperationalSemiparametricDecision,
+    OperationalSemiparametricState,
     P3D_ACQUISITION_POLICIES,
     PosteriorModel,
     REFERENCE_DOMINANCE_METHOD,
@@ -56,6 +58,7 @@ from hypothesis_mvp.pcpi import (
     REPRESENTATIVE_MMD_METHOD,
     TARGETED_HANDOVER_MODE,
     SequentialReferencePosterior,
+    admit_operational_semiparametric_response,
     aggregate_operational_classes,
     budget_resolved_distance_threshold,
     class_partition,
@@ -106,6 +109,7 @@ class RealAcquisitionProtocol:
     parent_lineage: tuple[str, ...]
     discrepancy_profile_method: str | None = None
     reference_dominance_method: str | None = None
+    semiparametric_lifecycle: bool = False
 
 
 CLAIM_BOUNDARY = (
@@ -607,12 +611,37 @@ def _run_policy(
     calibration_hash: str = "ordinary-bayes-default",
     calibration_wall_time_seconds: float = 0.0,
     protocol: RealAcquisitionProtocol = P3B10_PROTOCOL,
+    semiparametric_state: OperationalSemiparametricState | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     train_X, train_y = initial_X.copy(), initial_y.copy()
     available = np.asarray(candidate_indices, dtype=int).copy()
+    is_pcpi = policy == protocol.pcpi_policy
+    if semiparametric_state is not None and (
+        not protocol.semiparametric_lifecycle or not is_pcpi
+    ):
+        raise ValueError("P3H lifecycle state is restricted to the P3H PCPI policy")
+    if semiparametric_state is not None and (
+        not np.array_equal(
+            train_X,
+            np.vstack((
+                semiparametric_state.conditioning_actions,
+                semiparametric_state.residual_actions,
+            )),
+        )
+        or not np.array_equal(
+            train_y,
+            np.concatenate((
+                semiparametric_state.conditioning_targets,
+                semiparametric_state.residual_targets,
+            )),
+        )
+    ):
+        raise ValueError("P3H lifecycle initial history differs from the runner history")
     bank = generic_real_bank(train_X.shape[1])
-    engine = SequentialReferencePosterior(
-        bank, likelihood_power, design_preconditioner
+    engine = (
+        semiparametric_state.nominal_model.engine
+        if semiparametric_state is not None
+        else SequentialReferencePosterior(bank, likelihood_power, design_preconditioner)
     )
     is_reference_protocol = protocol.reference_dominance_method is not None
     ambiguity_powers = (
@@ -623,16 +652,24 @@ def _run_policy(
             for value in config.get("likelihood_power_candidates", [likelihood_power])
         )
     )
-    ambiguity_engines = tuple(
-        SequentialReferencePosterior(bank, power, design_preconditioner)
-        for power in ambiguity_powers
+    ambiguity_engines = (
+        tuple(item.engine for item in semiparametric_state.family.model_states)
+        if semiparametric_state is not None
+        else tuple(
+            SequentialReferencePosterior(bank, power, design_preconditioner)
+            for power in ambiguity_powers
+        )
     )
     curve_rows: list[dict[str, Any]] = []
     query_rows: list[dict[str, Any]] = []
     acquired_scores: list[float] = []
     query_local_gains: list[float] = []
     class_distance_threshold = _operational_class_threshold(config)
-    initial_posterior = engine.fit_batch(train_X, train_y)
+    initial_posterior = (
+        semiparametric_state.nominal_model.posterior
+        if semiparametric_state is not None
+        else engine.fit_batch(train_X, train_y)
+    )
     initial_classes = aggregate_operational_classes(
         engine,
         initial_posterior,
@@ -644,11 +681,14 @@ def _run_policy(
     initial_frozen_entropy = frozen_partition.entropy
     initial_partition_hash = frozen_partition.stable_hash
     partition_hashes: set[str] = set()
-    is_pcpi = policy == protocol.pcpi_policy
     is_reference_pcpi = is_pcpi and is_reference_protocol
     run_started = time.perf_counter()
     for round_index in range(int(config["acquisition_observation_budget"]) + 1):
-        posterior = engine.fit_batch(train_X, train_y)
+        posterior = (
+            semiparametric_state.nominal_model.posterior
+            if semiparametric_state is not None
+            else engine.fit_batch(train_X, train_y)
+        )
         classes = aggregate_operational_classes(
             engine,
             posterior,
@@ -699,10 +739,16 @@ def _run_policy(
             ),
             "target_partition": frozen_partition if is_pcpi else None,
             "posterior_models": (
-                _fit_posterior_models(ambiguity_engines, train_X, train_y)
+                semiparametric_state.posterior_models
+                if semiparametric_state is not None
+                else _fit_posterior_models(ambiguity_engines, train_X, train_y)
                 if is_pcpi and not is_reference_pcpi else None
             ),
         }
+        if semiparametric_state is not None:
+            score_kwargs["semiparametric_residual_family"] = (
+                semiparametric_state.family
+            )
         reference_result: ReferenceDominanceScores | None = None
         if is_reference_pcpi:
             reference_result = score_reference_dominance_actions(
@@ -742,6 +788,20 @@ def _run_policy(
             else select_stable_argmax(scores.scores, available)
         )
         local_index = int(np.flatnonzero(available == selected)[0])
+        lifecycle_decision = (
+            OperationalSemiparametricDecision(
+                prior_state_hash=semiparametric_state.stable_hash,
+                selected_candidate_id=selected,
+                selected_action=visible_actions[local_index],
+                local_index=local_index,
+                scores=scores,
+            )
+            if semiparametric_state is not None else None
+        )
+        family_hash_before = (
+            semiparametric_state.stable_hash
+            if semiparametric_state is not None else "not-applied"
+        )
         selected_score = float(scores.scores[local_index])
         selected_error = float(scores.integration_error_bounds[local_index])
         selected_class_eig = float(scores.class_eig_scores[local_index])
@@ -842,7 +902,21 @@ def _run_policy(
             raise AssertionError("pool oracle returned a different acquisition index")
         train_X = np.vstack((train_X, standardizer.transform_X(revealed_X)))
         train_y = np.concatenate((train_y, standardizer.transform_y(revealed_y)))
-        updated = engine.fit_batch(train_X, train_y)
+        if semiparametric_state is not None:
+            semiparametric_state = admit_operational_semiparametric_response(
+                semiparametric_state,
+                lifecycle_decision,
+                int(revealed_indices[0]),
+                standardizer.transform_X(revealed_X)[0],
+                float(standardizer.transform_y(revealed_y)[0]),
+            )
+            updated = semiparametric_state.nominal_model.posterior
+        else:
+            updated = engine.fit_batch(train_X, train_y)
+        family_hash_after = (
+            semiparametric_state.stable_hash
+            if semiparametric_state is not None else "not-applied"
+        )
         realized_gain = (
             frozen_entropy - fixed_class_entropy(frozen_partition, updated)
         )
@@ -865,6 +939,9 @@ def _run_policy(
             "initial_frozen_class_partition_hash": initial_partition_hash,
             "operational_class_distance_threshold": class_distance_threshold,
             "utility_mode": scores.utility_mode,
+            "p3h_operational_lifecycle_applied": lifecycle_decision is not None,
+            "p3h_family_hash_before_query": family_hash_before,
+            "p3h_family_hash_after_query": family_hash_after,
             "selected_class_eig": selected_class_eig,
             "selected_class_eig_error_bound": selected_class_eig_error,
             "selected_conditional_predictive_eig": (
@@ -984,16 +1061,25 @@ def _run_policy(
         if is_reference_protocol
         else {
             (
+                "representative-safe-discrepancy-robust-p3h-semiparametric-"
+                "maximin-joint-eig-surrogate"
+                if protocol.discrepancy_profile_method is not None
+                else "representative-safe-p3h-semiparametric-maximin-joint-eig-surrogate"
+            )
+        }
+        if protocol.semiparametric_lifecycle
+        else {
+            (
                 "representative-safe-discrepancy-robust-maximin-joint-eig-surrogate"
                 if protocol.discrepancy_profile_method is not None
                 else "representative-safe-maximin-joint-eig-surrogate"
             )
         }
     )
-    epistemic_modes = {
+    epistemic_modes = set() if protocol.semiparametric_lifecycle else {
         "representative-safe-posterior-epistemic-variance-uncertified-maximin-joint-eig",
     }
-    representative_fallback_modes = {
+    representative_fallback_modes = set() if protocol.semiparametric_lifecycle else {
         "representative-minimum-mmd-no-nonincreasing-action",
     }
     valid_modes = eig_modes | epistemic_modes | representative_fallback_modes
