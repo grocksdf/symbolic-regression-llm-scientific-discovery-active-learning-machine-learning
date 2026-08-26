@@ -387,3 +387,15 @@ Validation states are used only for the family calibration audit and discarded
 afterward. Candidate rows contribute only a subset commitment; candidate
 responses, acquisition and held-out remain closed for both terminal outcomes.
 See `docs/pcpi_p3h5_likelihood_power_family_calibration_contract_20260826.md`.
+
+The unique P3H.5 real run on commit `53c081f6` completed all 96 registered
+coordinates with zero rejections at the fixed boundary 9600. Its terminal state
+was `FAMILY_CALIBRATION_COMPATIBLE_ACQUISITION_BLOCKED`; manifest, source,
+config, runtime and data hashes all verified. The largest maximum e-value was
+`164.9035`. One Gas CO coordinate (seed `2026080707`, eta `1.0`) retained a
+terminal e-value `137.5947` with PIT variance `0.06410`, so this descriptive
+local concentration signal remains visible without changing the registered
+decision or selecting eta post hoc. P3H.5 validation-updated states remain
+discarded and real acquisition is blocked pending a P3H.6 operational-lifecycle
+correctness Gate. See
+`docs/pcpi_p3h5_likelihood_power_family_calibration_result_20260826.md`.
