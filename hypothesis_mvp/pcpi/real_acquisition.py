@@ -31,6 +31,7 @@ from .semiparametric_acquisition import (
     P3H_CLASS_EIG_METHOD,
     SemiparametricEIGEstimate,
     estimate_semiparametric_class_eig,
+    refine_semiparametric_class_eig,
 )
 from .likelihood_power_residuals import LikelihoodPowerResidualFamily
 from .reference import (
@@ -54,6 +55,10 @@ DISCREPANCY_AWARE_POLICY = (
 
 MAXIMIN_RANK_CERTIFICATE = (
     "finite-model-lower-envelope-nested-gauss-jacobi-interval-dominance"
+)
+P3H_TERMINAL_ABSTENTION = "terminal-abstention-no-fallback"
+P3H_INTERVAL_FRONTIER_RESOLUTION = (
+    "interval-possible-maximizer-representative-mmd-then-candidate-id-v1"
 )
 DISCREPANCY_PROFILE_METHOD = (
     "posterior-residual-excess-variance-covariate-support-moment-envelope-v1"
@@ -125,6 +130,8 @@ class MaximinJointEstimate:
     certificate_gap: float
     planned_looks: int
     looks_used: int
+    possible_maximizer_mask: np.ndarray
+    possible_maximizer_count: int
 
 
 @dataclass(frozen=True)
@@ -171,6 +178,12 @@ class AcquisitionScores:
     discrepancy_support_bandwidth_squared: float = 0.0
     discrepancy_candidate_variance: np.ndarray | None = None
     discrepancy_target_variance: np.ndarray | None = None
+    primary_ranking_certified: bool = True
+    possible_maximizer_mask: np.ndarray | None = None
+    possible_maximizer_count: int = 1
+    secondary_resolution_used: bool = False
+    secondary_resolution_method: str = "not-applied"
+    selection_admissible_mask: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -521,6 +534,39 @@ def _lower_envelope_certificate(
     return gap > 0.0, margin, margin - gap, gap
 
 
+def _lower_envelope_possible_maximizers(
+    lower: np.ndarray,
+    upper: np.ndarray,
+    eligible_mask: np.ndarray,
+) -> np.ndarray:
+    """Retain every action not interval-dominated by another eligible action."""
+
+    lower_values = np.asarray(lower, dtype=float).reshape(-1)
+    upper_values = np.asarray(upper, dtype=float).reshape(-1)
+    eligible = np.asarray(eligible_mask, dtype=bool).reshape(-1)
+    if (
+        len(lower_values) != len(upper_values)
+        or len(lower_values) != len(eligible)
+        or not np.any(eligible)
+        or not np.all(np.isfinite(lower_values))
+        or not np.all(np.isfinite(upper_values))
+        or np.any(lower_values > upper_values)
+    ):
+        raise ValueError("lower-envelope intervals must be finite, aligned, and ordered")
+    best_lower = float(np.max(lower_values[eligible]))
+    scale = max(
+        1.0,
+        abs(best_lower),
+        float(np.max(np.abs(upper_values[eligible]))),
+    )
+    roundoff = 512.0 * np.finfo(float).eps * scale
+    possible = eligible & (upper_values >= best_lower - roundoff)
+    if not np.any(possible):
+        raise FloatingPointError("lower-envelope possible-maximizer set is empty")
+    possible.setflags(write=False)
+    return possible
+
+
 def _planned_look_count(minimum: int, maximum: int, growth: int) -> int:
     count, samples = 1, minimum
     while samples < maximum:
@@ -545,6 +591,7 @@ def _estimate_maximin_joint_until_ranked(
             "P3H residual laws must align one-to-one with posterior models"
         )
     samples, looks = minimum_samples, 0
+    preceding_semiparametric: tuple[SemiparametricEIGEstimate, ...] | None = None
     planned = _planned_look_count(minimum_samples, maximum_samples, growth_factor)
     while True:
         looks += 1
@@ -557,17 +604,36 @@ def _estimate_maximin_joint_until_ranked(
             )
             if residual_laws is None
             else tuple(
-                estimate_semiparametric_class_eig(
-                    item,
-                    residual_law,
-                    samples,
-                    error_safety_factor=error_safety_factor,
+                (
+                    refine_semiparametric_class_eig(
+                        item,
+                        residual_law,
+                        preceding,
+                        samples,
+                        error_safety_factor=error_safety_factor,
+                    )
+                    if preceding_semiparametric is not None
+                    else estimate_semiparametric_class_eig(
+                        item,
+                        residual_law,
+                        samples,
+                        error_safety_factor=error_safety_factor,
+                    )
                 )
-                for item, residual_law in zip(
-                    components, residual_laws, strict=True
+                for item, residual_law, preceding in zip(
+                    components,
+                    residual_laws,
+                    (
+                        preceding_semiparametric
+                        if preceding_semiparametric is not None
+                        else (None,) * len(components)
+                    ),
+                    strict=True,
                 )
             )
         )
+        if residual_laws is not None:
+            preceding_semiparametric = estimates
         class_scores = np.asarray([item.scores for item in estimates])
         class_errors = np.asarray([item.error_bounds for item in estimates])
         joint = class_scores + conditional
@@ -576,6 +642,9 @@ def _estimate_maximin_joint_until_ranked(
         upper = np.min(joint + class_errors, axis=0)
         certified, margin, bound, gap = _lower_envelope_certificate(
             scores, lower, upper, eligible_mask
+        )
+        possible = _lower_envelope_possible_maximizers(
+            lower, upper, eligible_mask
         )
         if certified or samples >= maximum_samples:
             return MaximinJointEstimate(
@@ -595,6 +664,8 @@ def _estimate_maximin_joint_until_ranked(
                 certificate_gap=gap,
                 planned_looks=planned,
                 looks_used=looks,
+                possible_maximizer_mask=possible,
+                possible_maximizer_count=int(np.count_nonzero(possible)),
             )
         samples = min(maximum_samples, samples * growth_factor)
 
@@ -720,6 +791,76 @@ def _build_discriminative_scores(
     )
 
 
+def _certified_robust_utility_mode(
+    semiparametric: bool,
+    discrepancy: DiscrepancyPredictiveProfile | None,
+) -> str:
+    prefix = "representative-safe-discrepancy-robust" if discrepancy else "representative-safe"
+    family = "p3h-semiparametric-maximin" if semiparametric else "maximin"
+    return f"{prefix}-{family}-joint-eig-surrogate"
+
+
+def _interval_frontier_mmd_mask(
+    robust: MaximinJointEstimate,
+    representative: RepresentativeSafeSet,
+) -> np.ndarray:
+    possible = robust.possible_maximizer_mask
+    mmd = np.asarray(representative.augmented_mmd_squared, dtype=float)
+    minimum = float(np.min(mmd[possible]))
+    scale = max(1.0, abs(minimum), float(np.max(np.abs(mmd[possible]))))
+    tolerance = max(
+        float(representative.tolerance),
+        512.0 * np.finfo(float).eps * scale,
+    )
+    selected = possible & (mmd <= minimum + tolerance)
+    if not np.any(selected):
+        raise FloatingPointError(
+            "P3H interval-frontier representative resolution is empty"
+        )
+    selected.setflags(write=False)
+    return selected
+
+
+def _resolve_discriminative_utility(
+    engine: SequentialReferencePosterior,
+    posterior: ExactPosterior,
+    actions: np.ndarray,
+    robust: MaximinJointEstimate,
+    representative: RepresentativeSafeSet,
+    semiparametric: bool,
+    discrepancy: DiscrepancyPredictiveProfile | None,
+    unresolved_action: str,
+) -> tuple[np.ndarray, np.ndarray, str, np.ndarray | None]:
+    if robust.ranking_certified:
+        return (
+            robust.scores,
+            _robust_error_radii(robust),
+            _certified_robust_utility_mode(semiparametric, discrepancy),
+            None,
+        )
+    if not semiparametric:
+        return (
+            posterior_epistemic_variance(engine, posterior, actions),
+            np.zeros(len(actions), dtype=float),
+            "representative-safe-posterior-epistemic-variance-uncertified-"
+            "maximin-joint-eig",
+            None,
+        )
+    if unresolved_action == P3H_TERMINAL_ABSTENTION:
+        raise FloatingPointError(
+            "P3H utility intervals overlap; operational selection is forbidden"
+        )
+    if unresolved_action != P3H_INTERVAL_FRONTIER_RESOLUTION:
+        raise ValueError("unsupported P3H unresolved-ranking action")
+    prefix = "representative-safe-discrepancy-robust" if discrepancy else "representative-safe"
+    return (
+        robust.scores,
+        _robust_error_radii(robust),
+        f"{prefix}-p3h-semiparametric-maximin-joint-eig-interval-frontier-resolution",
+        _interval_frontier_mmd_mask(robust, representative),
+    )
+
+
 def _score_pcpi_discriminative(
     engine: SequentialReferencePosterior,
     posterior: ExactPosterior,
@@ -730,13 +871,13 @@ def _score_pcpi_discriminative(
     posterior_models: tuple[PosteriorModel, ...] | None,
     semiparametric_residual_family: LikelihoodPowerResidualFamily | None = None,
     discrepancy: DiscrepancyPredictiveProfile | None = None,
+    semiparametric_unresolved_action: str = P3H_TERMINAL_ABSTENTION,
     *,
     minimum_samples: int,
     maximum_samples: int,
     error_safety_factor: float,
     growth_factor: int,
 ) -> AcquisitionScores:
-    zeros = np.zeros(components.locations.shape[1], dtype=float)
     models = None
     semiparametric_residual_laws = None
     if semiparametric_residual_family is not None:
@@ -775,34 +916,20 @@ def _score_pcpi_discriminative(
     conditional_scores = _least_favorable_values(
         robust.conditional_scores_by_model, least
     )
-    if robust.ranking_certified:
-        raw_scores = robust.scores
-        errors = _robust_error_radii(robust)
-        utility_mode = (
-            (
-                "representative-safe-discrepancy-robust-p3h-semiparametric-"
-                "maximin-joint-eig-surrogate"
-                if discrepancy is not None
-                else "representative-safe-p3h-semiparametric-maximin-joint-eig-surrogate"
-            )
-            if semiparametric_residual_laws is not None
-            else (
-                "representative-safe-discrepancy-robust-maximin-joint-eig-surrogate"
-                if discrepancy is not None
-                else "representative-safe-maximin-joint-eig-surrogate"
-            )
+    raw_scores, errors, utility_mode, secondary_mask = (
+        _resolve_discriminative_utility(
+            engine,
+            posterior,
+            actions,
+            robust,
+            representative,
+            semiparametric_residual_laws is not None,
+            discrepancy,
+            semiparametric_unresolved_action,
         )
-    else:
-        if semiparametric_residual_laws is not None:
-            raise FloatingPointError(
-                "P3H utility intervals overlap; operational selection is forbidden"
-            )
-        raw_scores = posterior_epistemic_variance(engine, posterior, actions)
-        errors = zeros
-        utility_mode = (
-            "representative-safe-posterior-epistemic-variance-uncertified-maximin-joint-eig"
-        )
-    return _build_discriminative_scores(
+    )
+    secondary_used = secondary_mask is not None
+    result = _build_discriminative_scores(
         components,
         representative,
         robust,
@@ -813,6 +940,22 @@ def _score_pcpi_discriminative(
         errors,
         utility_mode,
         discrepancy,
+    )
+    return replace(
+        result,
+        ranking_certified=bool(robust.ranking_certified or secondary_used),
+        ranking_certificate_method=(
+            P3H_INTERVAL_FRONTIER_RESOLUTION
+            if secondary_used else result.ranking_certificate_method
+        ),
+        primary_ranking_certified=robust.ranking_certified,
+        possible_maximizer_mask=robust.possible_maximizer_mask,
+        possible_maximizer_count=robust.possible_maximizer_count,
+        secondary_resolution_used=secondary_used,
+        secondary_resolution_method=(
+            P3H_INTERVAL_FRONTIER_RESOLUTION if secondary_used else "not-applied"
+        ),
+        selection_admissible_mask=secondary_mask,
     )
 
 
@@ -906,6 +1049,7 @@ def score_acquisition_actions(
     target_partition: ClassPartition | None = None,
     posterior_models: tuple[PosteriorModel, ...] | None = None,
     semiparametric_residual_family: LikelihoodPowerResidualFamily | None = None,
+    semiparametric_unresolved_action: str = P3H_TERMINAL_ABSTENTION,
 ) -> AcquisitionScores:
     """Score visible action covariates without receiving their target values."""
 
@@ -940,6 +1084,7 @@ def score_acquisition_actions(
             representative_observed_actions,
             posterior_models,
             semiparametric_residual_family,
+            semiparametric_unresolved_action=semiparametric_unresolved_action,
             minimum_samples=eig_min_samples,
             maximum_samples=eig_max_samples,
             error_safety_factor=eig_error_safety_factor,
@@ -967,6 +1112,7 @@ def score_discrepancy_aware_actions(
     target_partition: ClassPartition | None = None,
     posterior_models: tuple[PosteriorModel, ...] | None = None,
     semiparametric_residual_family: LikelihoodPowerResidualFamily | None = None,
+    semiparametric_unresolved_action: str = P3H_TERMINAL_ABSTENTION,
 ) -> AcquisitionScores:
     """Score candidates with a generic discrepancy-aware PCPI repair.
 
@@ -1003,6 +1149,7 @@ def score_discrepancy_aware_actions(
         posterior_models,
         semiparametric_residual_family,
         profile,
+        semiparametric_unresolved_action=semiparametric_unresolved_action,
         minimum_samples=eig_min_samples,
         maximum_samples=eig_max_samples,
         error_safety_factor=eig_error_safety_factor,
@@ -1086,6 +1233,26 @@ def select_stable_argmax(scores: np.ndarray, candidate_indices: np.ndarray) -> i
     return int(np.min(tied))
 
 
+def select_acquisition_candidate(
+    scores: AcquisitionScores,
+    candidate_indices: np.ndarray,
+) -> int:
+    """Apply a score's explicit admissible set before the global-ID tie break."""
+
+    identifiers = np.asarray(candidate_indices, dtype=int).reshape(-1)
+    mask = scores.selection_admissible_mask
+    if mask is None:
+        return select_stable_argmax(scores.scores, identifiers)
+    admissible = np.asarray(mask, dtype=bool).reshape(-1)
+    if (
+        len(admissible) != len(identifiers)
+        or not np.any(admissible)
+        or len(set(int(value) for value in identifiers)) != len(identifiers)
+    ):
+        raise ValueError("acquisition admissible set must align with unique IDs")
+    return int(np.min(identifiers[admissible]))
+
+
 def posterior_metrics(
     engine: SequentialReferencePosterior,
     posterior: ExactPosterior,
@@ -1143,6 +1310,8 @@ __all__ = [
     "DISCREPANCY_PROFILE_METHOD",
     "AcquisitionScores",
     "MAXIMIN_RANK_CERTIFICATE",
+    "P3H_INTERVAL_FRONTIER_RESOLUTION",
+    "P3H_TERMINAL_ABSTENTION",
     "MaximinJointEstimate",
     "PosteriorModel",
     "discrepancy_predictive_profile",
@@ -1154,6 +1323,7 @@ __all__ = [
     "realized_fixed_class_entropy_gain",
     "score_acquisition_actions",
     "score_discrepancy_aware_actions",
+    "select_acquisition_candidate",
     "select_stable_argmax",
     "stable_derived_seed",
 ]

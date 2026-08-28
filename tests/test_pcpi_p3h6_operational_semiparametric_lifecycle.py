@@ -11,6 +11,7 @@ import pytest
 from hypothesis_mvp.data import PoolOracle
 from hypothesis_mvp.pcpi import (
     P3H_OPERATIONAL_POWERS,
+    P3H_INTERVAL_FRONTIER_RESOLUTION,
     admit_operational_semiparametric_response,
     initialize_operational_semiparametric_state,
     score_operational_semiparametric_candidates,
@@ -211,6 +212,41 @@ def test_uncertified_or_incomplete_family_score_cannot_authorize_reveal(
             state.residual_actions, eig_min_samples=8, eig_max_samples=16,
             eig_error_safety_factor=4.0, eig_growth_factor=2,
         )
+
+
+def test_interval_frontier_decision_authorizes_only_secondary_admissible_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _state()
+    frontier = replace(
+        _scores(),
+        scores=np.asarray([0.90, 0.91, 0.89]),
+        primary_ranking_certified=False,
+        possible_maximizer_mask=np.ones(3, dtype=bool),
+        possible_maximizer_count=3,
+        secondary_resolution_used=True,
+        secondary_resolution_method=P3H_INTERVAL_FRONTIER_RESOLUTION,
+        selection_admissible_mask=np.asarray([True, False, True]),
+    )
+    seen = {}
+
+    def scorer(*args, **kwargs):
+        seen.update(kwargs)
+        return frontier
+
+    monkeypatch.setattr(operational, "score_discrepancy_aware_actions", scorer)
+    candidates = np.asarray([[0.0, 0.0], [0.2, 0.04], [0.4, 0.16]])
+    decision = score_operational_semiparametric_candidates(
+        state, object(), object(), candidates, np.asarray([9, 4, 7]), candidates,
+        state.residual_actions, eig_min_samples=8, eig_max_samples=16,
+        eig_error_safety_factor=4.0, eig_growth_factor=2,
+        unresolved_ranking_action=P3H_INTERVAL_FRONTIER_RESOLUTION,
+    )
+    assert decision.selected_candidate_id == 7
+    assert decision.local_index == 2
+    assert seen["semiparametric_unresolved_action"] == (
+        P3H_INTERVAL_FRONTIER_RESOLUTION
+    )
 
 
 def test_same_length_changed_history_cannot_forge_an_operational_state() -> None:

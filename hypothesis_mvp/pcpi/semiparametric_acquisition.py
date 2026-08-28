@@ -436,6 +436,60 @@ def estimate_semiparametric_class_eig(
     )
 
 
+def refine_semiparametric_class_eig(
+    components: PredictiveComponents,
+    residual_law: DyadicPolyaTreePredictiveLaw,
+    coarse_estimate: SemiparametricEIGEstimate,
+    nodes_per_leaf: int,
+    *,
+    error_safety_factor: float = 4.0,
+    projection_tolerance: float = 2e-13,
+    maximum_projection_iterations: int = 10_000,
+) -> SemiparametricEIGEstimate:
+    """Refine one nested look while reusing its exact preceding fine scores."""
+
+    order = int(nodes_per_leaf)
+    if (
+        not isinstance(coarse_estimate, SemiparametricEIGEstimate)
+        or order != 2 * coarse_estimate.nodes_per_leaf
+        or coarse_estimate.leaf_count != len(residual_law.leaf_probabilities)
+        or coarse_estimate.integration_method != P3H_CLASS_EIG_METHOD
+        or coarse_estimate.coupling_method != P3H_CLASS_COUPLING
+        or not np.isclose(
+            coarse_estimate.error_safety_factor,
+            error_safety_factor,
+            rtol=0.0,
+            atol=0.0,
+        )
+    ):
+        raise ValueError("P3H nested refinement requires the exact preceding look")
+    scores, marginal_error, iterations = _semiparametric_scores(
+        components,
+        residual_law,
+        order,
+        projection_tolerance,
+        maximum_projection_iterations,
+    )
+    roundoff = 1024.0 * np.finfo(float).eps * np.maximum(1.0, np.abs(scores))
+    error_bounds = (
+        float(error_safety_factor) * np.abs(scores - coarse_estimate.scores)
+        + 2.0 * marginal_error
+        + roundoff
+    )
+    return SemiparametricEIGEstimate(
+        scores=scores,
+        error_bounds=error_bounds,
+        nodes_per_leaf=order,
+        coarse_nodes_per_leaf=coarse_estimate.nodes_per_leaf,
+        leaf_count=len(residual_law.leaf_probabilities),
+        maximum_marginal_error=marginal_error,
+        maximum_projection_iterations=iterations,
+        integration_method=P3H_CLASS_EIG_METHOD,
+        coupling_method=P3H_CLASS_COUPLING,
+        error_safety_factor=float(error_safety_factor),
+    )
+
+
 def estimate_semiparametric_class_eig_until_ranked(
     components: PredictiveComponents,
     residual_law: DyadicPolyaTreePredictiveLaw,
@@ -536,5 +590,6 @@ __all__ = [
     "SemiparametricEIGEstimate",
     "estimate_semiparametric_class_eig",
     "estimate_semiparametric_class_eig_until_ranked",
+    "refine_semiparametric_class_eig",
     "semiparametric_class_coupling",
 ]

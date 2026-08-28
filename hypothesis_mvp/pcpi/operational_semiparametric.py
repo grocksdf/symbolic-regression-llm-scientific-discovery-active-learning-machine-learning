@@ -17,9 +17,10 @@ from .likelihood_power_residuals import (
 )
 from .real_acquisition import (
     AcquisitionScores,
+    P3H_TERMINAL_ABSTENTION,
     PosteriorModel,
     score_discrepancy_aware_actions,
-    select_stable_argmax,
+    select_acquisition_candidate,
 )
 from .reference import OperationalClassPosterior, SequentialReferencePosterior
 
@@ -168,6 +169,7 @@ def score_operational_semiparametric_candidates(
     eig_max_samples: int,
     eig_error_safety_factor: float,
     eig_growth_factor: int,
+    unresolved_ranking_action: str = P3H_TERMINAL_ABSTENTION,
 ) -> OperationalSemiparametricDecision:
     """Score covariates with all four transformed laws, then freeze one choice."""
 
@@ -201,6 +203,7 @@ def score_operational_semiparametric_candidates(
         target_partition=target_partition,
         posterior_models=state.posterior_models,
         semiparametric_residual_family=state.family,
+        semiparametric_unresolved_action=unresolved_ranking_action,
     )
     if (
         not scores.ranking_certified
@@ -212,7 +215,7 @@ def score_operational_semiparametric_candidates(
         raise FloatingPointError(
             "P3H operational ranking is not certified under the complete family"
         )
-    selected = select_stable_argmax(scores.scores, identifiers)
+    selected = select_acquisition_candidate(scores, identifiers)
     local = int(np.flatnonzero(identifiers == selected)[0])
     return OperationalSemiparametricDecision(
         prior_state_hash=state.stable_hash,

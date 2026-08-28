@@ -436,3 +436,23 @@ failures are recorded without replacement or retry. This freeze authorizes only
 the user's unique held-out-closed real-development execution, not Codex
 execution or any confirmation claim. See
 `docs/pcpi_p3h7_semiparametric_real_acquisition_protocol_20260826.md`.
+
+## P3H.7 failure and P3H.8/P3H.9 repair
+
+The user stopped P3H.7 in run 92/96 after four PCPI runs had already failed
+closed because final transformed-utility intervals overlapped. The incomplete
+archive is protocol-invalid and supplies no efficacy claim. Its audit is frozen
+in `docs/pcpi_p3h7_failure_audit_20260828.md`.
+
+P3H.8 replaces no utility and changes no data coordinate. It makes the
+numerical decision total: interval-dominated candidates are removed; an
+unresolved possible-maximizer set is resolved by the existing covariate-only
+representative MMD and then global candidate ID. Primary separation and
+secondary resolution are logged separately. Nested quadrature also reuses the
+preceding fine look as the next coarse look without changing numerical results.
+The theory and leakage boundary are in
+`docs/pcpi_p3h8_interval_frontier_resolution_20260828.md`.
+
+P3H.9 freezes the corresponding failure-informed real-development rerun. It is
+not independent confirmation; its protocol is documented in
+`docs/pcpi_p3h9_interval_resolved_real_protocol_20260828.md`.

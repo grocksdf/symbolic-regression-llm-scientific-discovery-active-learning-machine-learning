@@ -12,6 +12,7 @@ import pytest
 from hypothesis_mvp.pcpi import (
     P3H_CLASS_COUPLING,
     P3H_CLASS_EIG_METHOD,
+    P3H_INTERVAL_FRONTIER_RESOLUTION,
     ClassPartition,
     PredictiveComponents,
     estimate_semiparametric_class_eig,
@@ -19,6 +20,8 @@ from hypothesis_mvp.pcpi import (
     exact_class_eig,
     semiparametric_class_coupling,
     reconstruct_likelihood_power_residual_family,
+    refine_semiparametric_class_eig,
+    select_acquisition_candidate,
 )
 from hypothesis_mvp.pcpi.reference import DyadicPolyaTreePredictiveLaw
 import hypothesis_mvp.pcpi.semiparametric_acquisition as implementation
@@ -122,6 +125,19 @@ def test_nested_quadrature_is_deterministic_and_refines() -> None:
     )
     assert first.sample_count == 32 * 4
     assert first.coarse_sample_count == 16 * 4
+
+
+def test_nested_refinement_reuses_the_preceding_fine_look_exactly() -> None:
+    components = _components()
+    residual = _residual_law()
+    preceding = estimate_semiparametric_class_eig(components, residual, 16)
+    reused = refine_semiparametric_class_eig(
+        components, residual, preceding, 32
+    )
+    independent = estimate_semiparametric_class_eig(components, residual, 32)
+    np.testing.assert_array_equal(reused.scores, independent.scores)
+    np.testing.assert_array_equal(reused.error_bounds, independent.error_bounds)
+    assert reused.coarse_nodes_per_leaf == preceding.nodes_per_leaf
 
 
 def test_transformed_utility_is_positive_affine_response_invariant() -> None:
@@ -255,6 +271,77 @@ def test_production_route_aborts_instead_of_using_legacy_fallback(
             error_safety_factor=4.0,
             growth_factor=2,
         )
+
+
+def test_interval_frontier_resolution_is_total_leakage_safe_and_not_a_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    components = _components()
+    tied = PredictiveComponents(
+        components.structure_probabilities,
+        components.degrees_freedom,
+        np.repeat(components.locations[:, :1], 3, axis=1),
+        np.repeat(components.scales[:, :1], 3, axis=1),
+        components.partition,
+    )
+    representative = real_acquisition.RepresentativeSafeSet(
+        current_mmd_squared=0.4,
+        augmented_mmd_squared=np.asarray([0.30, 0.10, 0.20]),
+        safe_mask=np.ones(3, dtype=bool),
+        tolerance=1e-12,
+        kernel_bandwidth_squared=1.0,
+        method="correctness-fixture",
+    )
+    monkeypatch.setattr(
+        real_acquisition, "representative_mmd_safe_set", lambda *args: representative
+    )
+    actions = np.asarray([[0.0], [1.0], [2.0], [3.0]])
+    targets = np.asarray([0.0, 0.4, 0.9, 1.1])
+    from hypothesis_mvp.pcpi.reference import SequentialReferencePosterior, generic_real_bank
+
+    engine = SequentialReferencePosterior(generic_real_bank(1), 0.5)
+    family = reconstruct_likelihood_power_residual_family((engine,), actions, targets)
+    bound_models = tuple(
+        real_acquisition.PosteriorModel(
+            state.likelihood_power, state.engine, state.posterior
+        )
+        for state in family.model_states
+    )
+    monkeypatch.setattr(
+        real_acquisition, "_validated_posterior_models", lambda *args: bound_models
+    )
+    monkeypatch.setattr(
+        real_acquisition,
+        "_model_components_and_offsets",
+        lambda *args: ((tied,), np.zeros((1, 3))),
+    )
+    scores = real_acquisition._score_pcpi_discriminative(
+        object(), object(), np.asarray([[0.0], [1.0], [2.0]]), tied,
+        np.asarray([[0.0], [1.0], [2.0]]), np.asarray([[0.0]]), None, family,
+        semiparametric_unresolved_action=P3H_INTERVAL_FRONTIER_RESOLUTION,
+        minimum_samples=8, maximum_samples=8,
+        error_safety_factor=4.0, growth_factor=2,
+    )
+    assert scores.ranking_certified
+    assert not scores.primary_ranking_certified
+    assert scores.secondary_resolution_used
+    assert scores.secondary_resolution_method == P3H_INTERVAL_FRONTIER_RESOLUTION
+    assert scores.possible_maximizer_count == 3
+    np.testing.assert_array_equal(
+        scores.selection_admissible_mask, np.asarray([False, True, False])
+    )
+    assert select_acquisition_candidate(scores, np.asarray([2, 9, 4])) == 9
+    assert "interval-frontier-resolution" in scores.utility_mode
+    assert "posterior-epistemic-variance" not in scores.utility_mode
+
+
+def test_interval_frontier_excludes_certifiably_dominated_actions() -> None:
+    possible = real_acquisition._lower_envelope_possible_maximizers(
+        np.asarray([0.70, 0.68, 0.10]),
+        np.asarray([0.80, 0.75, 0.60]),
+        np.ones(3, dtype=bool),
+    )
+    np.testing.assert_array_equal(possible, np.asarray([True, True, False]))
 
 
 def test_one_class_has_zero_transformed_information() -> None:

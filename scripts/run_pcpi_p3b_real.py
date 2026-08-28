@@ -45,6 +45,8 @@ from hypothesis_mvp.pcpi import (
     DISCREPANCY_PROFILE_METHOD,
     GAUSSIAN_CLASS_CONDITIONAL_EPIG,
     MAXIMIN_RANK_CERTIFICATE,
+    P3H_INTERVAL_FRONTIER_RESOLUTION,
+    P3H_TERMINAL_ABSTENTION,
     OperationalSemiparametricDecision,
     OperationalSemiparametricState,
     P3D_ACQUISITION_POLICIES,
@@ -71,7 +73,7 @@ from hypothesis_mvp.pcpi import (
     score_acquisition_actions,
     score_discrepancy_aware_actions,
     score_reference_dominance_actions,
-    select_stable_argmax,
+    select_acquisition_candidate,
     stable_derived_seed,
     stable_reference_policy_seed,
 )
@@ -113,6 +115,7 @@ class RealAcquisitionProtocol:
     discrepancy_profile_method: str | None = None
     reference_dominance_method: str | None = None
     semiparametric_lifecycle: bool = False
+    semiparametric_unresolved_action: str = P3H_TERMINAL_ABSTENTION
     required_runtime_dependency_hash: str | None = None
 
 
@@ -380,7 +383,7 @@ def _load_config(
     if config["pcpi_class_target_partition"] != "initial-frozen":
         raise ValueError("P3B.10 acquisition must target the initial-frozen class partition")
     expected_uncertified = (
-        "terminal-abstention-no-fallback"
+        protocol.semiparametric_unresolved_action
         if protocol.semiparametric_lifecycle
         else "posterior-epistemic-variance"
     )
@@ -805,6 +808,9 @@ def _run_policy(
             score_kwargs["semiparametric_residual_family"] = (
                 semiparametric_state.family
             )
+            score_kwargs["semiparametric_unresolved_action"] = (
+                protocol.semiparametric_unresolved_action
+            )
         reference_result: ReferenceDominanceScores | None = None
         if is_reference_pcpi:
             reference_result = score_reference_dominance_actions(
@@ -841,9 +847,19 @@ def _run_policy(
         selected = (
             reference_result.decision.selected_candidate_id
             if reference_result is not None
-            else select_stable_argmax(scores.scores, available)
+            else select_acquisition_candidate(scores, available)
         )
         local_index = int(np.flatnonzero(available == selected)[0])
+        possible_mask = (
+            np.asarray(scores.possible_maximizer_mask, dtype=bool)
+            if scores.possible_maximizer_mask is not None
+            else np.zeros(len(available), dtype=bool)
+        )
+        admissible_mask = (
+            np.asarray(scores.selection_admissible_mask, dtype=bool)
+            if scores.selection_admissible_mask is not None
+            else np.zeros(len(available), dtype=bool)
+        )
         lifecycle_decision = (
             OperationalSemiparametricDecision(
                 prior_state_hash=semiparametric_state.stable_hash,
@@ -1074,6 +1090,22 @@ def _run_policy(
             "representative_selected_is_minimum_mmd": selected_is_minimum_mmd,
             "score_sample_count": scores.estimator_samples,
             "eig_ranking_certified": scores.ranking_certified,
+            "eig_primary_ranking_certified": scores.primary_ranking_certified,
+            "eig_possible_maximizer_count": scores.possible_maximizer_count,
+            "eig_possible_maximizer_candidate_ids": (
+                available[possible_mask].tolist()
+            ),
+            "eig_secondary_resolution_used": scores.secondary_resolution_used,
+            "eig_secondary_resolution_method": (
+                scores.secondary_resolution_method
+            ),
+            "eig_selected_from_admissible_set": (
+                scores.selection_admissible_mask is None
+                or bool(scores.selection_admissible_mask[local_index])
+            ),
+            "eig_selection_admissible_candidate_ids": (
+                available[admissible_mask].tolist()
+            ),
             "eig_ranking_margin": scores.ranking_margin,
             "eig_ranking_error_bound": scores.ranking_error_bound,
             "eig_ranking_certificate_gap": scores.ranking_certificate_gap,
@@ -1115,6 +1147,24 @@ def _run_policy(
     eig_modes = (
         {TARGETED_HANDOVER_MODE, REFERENCE_FALLBACK_MODE}
         if is_reference_protocol
+        else {
+            (
+                "representative-safe-discrepancy-robust-p3h-semiparametric-"
+                "maximin-joint-eig-surrogate"
+                if protocol.discrepancy_profile_method is not None
+                else "representative-safe-p3h-semiparametric-maximin-joint-eig-surrogate"
+            ),
+            (
+                "representative-safe-discrepancy-robust-p3h-semiparametric-"
+                "maximin-joint-eig-interval-frontier-resolution"
+                if protocol.discrepancy_profile_method is not None
+                else "representative-safe-p3h-semiparametric-maximin-joint-eig-"
+                "interval-frontier-resolution"
+            ),
+        }
+        if protocol.semiparametric_lifecycle
+        and protocol.semiparametric_unresolved_action
+        == P3H_INTERVAL_FRONTIER_RESOLUTION
         else {
             (
                 "representative-safe-discrepancy-robust-p3h-semiparametric-"
@@ -1181,6 +1231,7 @@ def _run_policy(
                     and not row["representative_fallback_used"]
                     and row["representative_selected_in_safe_set"]
                     and row["representative_selected_mmd_nonincrease"]
+                    and row["eig_selected_from_admissible_set"]
                     and (
                         row["eig_ranking_certified"]
                         if row["utility_mode"] in eig_modes
@@ -1272,6 +1323,15 @@ def _run_policy(
         "sum_query_local_class_entropy_gain": float(sum(query_local_gains)),
         "dynamic_partition_count": len(partition_hashes),
         "eig_ranking_certified_rate": certified_rate,
+        "pcpi_primary_ranking_certified_rate": float(np.mean([
+            row["eig_primary_ranking_certified"] for row in pcpi_queries
+        ])) if pcpi_queries else 0.0,
+        "pcpi_secondary_resolution_rate": float(np.mean([
+            row["eig_secondary_resolution_used"] for row in pcpi_queries
+        ])) if pcpi_queries else 0.0,
+        "pcpi_mean_possible_maximizer_count": float(np.mean([
+            row["eig_possible_maximizer_count"] for row in pcpi_queries
+        ])) if pcpi_queries else 0.0,
         "pcpi_class_eig_used_rate": float(np.mean([
             row["utility_mode"] in eig_modes for row in pcpi_queries
         ])) if pcpi_queries else 0.0,
@@ -1350,6 +1410,9 @@ def _aggregates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         "dynamic_partition_count",
         "eig_ranking_certified_rate", "maximum_eig_samples_used",
         "pcpi_class_eig_used_rate", "pcpi_maximin_joint_eig_used_rate",
+        "pcpi_primary_ranking_certified_rate",
+        "pcpi_secondary_resolution_rate",
+        "pcpi_mean_possible_maximizer_count",
         "pcpi_epistemic_fallback_rate",
         "pcpi_representative_guard_applied_rate",
         "pcpi_representative_safe_set_nonempty_rate",
@@ -2244,6 +2307,36 @@ def run(
         else row["robust_model_count"] == 0
         for row in pcpi_query_rows
     )
+    p3h_interval_resolution_auditable = (
+        protocol.semiparametric_lifecycle
+        and bool(pcpi_query_rows)
+        and all(
+            (
+                row["eig_ranking_certified"]
+                and row["eig_selected_from_admissible_set"]
+                and (
+                    (
+                        not row["eig_primary_ranking_certified"]
+                        and row["eig_secondary_resolution_used"]
+                        and row["eig_secondary_resolution_method"]
+                        == P3H_INTERVAL_FRONTIER_RESOLUTION
+                        and row["eig_possible_maximizer_count"] >= 2
+                        and bool(row["eig_selection_admissible_candidate_ids"])
+                        and set(row["eig_selection_admissible_candidate_ids"])
+                        <= set(row["eig_possible_maximizer_candidate_ids"])
+                        and row["selected_pool_index"]
+                        == min(row["eig_selection_admissible_candidate_ids"])
+                    )
+                    or (
+                        row["eig_primary_ranking_certified"]
+                        and not row["eig_secondary_resolution_used"]
+                        and row["eig_secondary_resolution_method"] == "not-applied"
+                    )
+                )
+            )
+            for row in pcpi_query_rows
+        )
+    )
     discrepancy_expected = protocol.discrepancy_profile_method is not None
     discrepancy_values_auditable = bool(pcpi_query_rows) and all(
         (
@@ -2423,6 +2516,16 @@ def run(
                 == config["initial_observation_budget"]
                 and config["p3h_validation_state_policy"]
                 == "discard-never-enter-operational-state"
+            ),
+            "p3h_interval_frontier_resolution_matches_frozen_contract": (
+                p3h_interval_resolution_auditable
+                if protocol.semiparametric_unresolved_action
+                == P3H_INTERVAL_FRONTIER_RESOLUTION
+                else all(
+                    row["eig_primary_ranking_certified"]
+                    and not row["eig_secondary_resolution_used"]
+                    for row in pcpi_query_rows
+                )
             ),
         })
     if protocol.reference_dominance_method is not None:
