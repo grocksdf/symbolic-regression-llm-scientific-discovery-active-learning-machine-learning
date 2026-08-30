@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 import platform
 import sys
@@ -39,6 +40,8 @@ from hypothesis_mvp.pcpi import (
     ANALYTIC_CLASS_EIG_BOUNDS_METHOD,
     AcquisitionScores,
     BUDGET_RESOLUTION_METHOD,
+    DECISION_REGRET_DISTANCE_METRIC,
+    DECISION_TARGETED_POLICY,
     DEFAULT_CLASS_EIG_OUTWARD_TOLERANCE,
     DEFAULT_CLASS_EIG_QUANTIZATION_LEVELS,
     DISCREPANCY_AWARE_POLICY,
@@ -47,6 +50,8 @@ from hypothesis_mvp.pcpi import (
     MAXIMIN_RANK_CERTIFICATE,
     P3H_INTERVAL_FRONTIER_RESOLUTION,
     P3H_TERMINAL_ABSTENTION,
+    P3I_COPULA_TRANSPORT_METHOD,
+    P3I_INFORMATION_INVARIANCE,
     OperationalSemiparametricDecision,
     OperationalSemiparametricState,
     P3D_ACQUISITION_POLICIES,
@@ -64,6 +69,7 @@ from hypothesis_mvp.pcpi import (
     SequentialReferencePosterior,
     admit_operational_semiparametric_response,
     aggregate_operational_classes,
+    aggregate_decision_equivalent_classes,
     budget_resolved_distance_threshold,
     class_partition,
     fixed_class_entropy,
@@ -72,6 +78,7 @@ from hypothesis_mvp.pcpi import (
     posterior_metrics,
     score_acquisition_actions,
     score_discrepancy_aware_actions,
+    score_decision_targeted_actions,
     score_reference_dominance_actions,
     select_acquisition_candidate,
     stable_derived_seed,
@@ -85,6 +92,8 @@ from hypothesis_mvp.pcpi.reference import (
     DESIGN_PRECONDITIONING_ROLE,
     DesignPreconditioner,
     DevelopmentStandardizer,
+    ExactPosterior,
+    OperationalClassPosterior,
     calibrate_likelihood_power,
     fit_bank_preconditioner,
     generic_real_bank,
@@ -117,6 +126,9 @@ class RealAcquisitionProtocol:
     semiparametric_lifecycle: bool = False
     semiparametric_unresolved_action: str = P3H_TERMINAL_ABSTENTION
     required_runtime_dependency_hash: str | None = None
+    decision_target_alignment: bool = False
+    fail_fast: bool = False
+    operational_execution_authorized: bool = True
 
 
 CLAIM_BOUNDARY = (
@@ -338,6 +350,13 @@ def _load_config(
             "p3h5_terminal_status",
             "runtime_dependency_hash",
         }
+    if protocol.decision_target_alignment:
+        required |= {
+            "p3i_decision_target",
+            "p3i_information_invariance",
+            "p3i_semiparametric_transport",
+            "operational_execution_authorized",
+        }
     if set(config) != required:
         raise ValueError(f"P3B config fields differ from schema: {sorted(set(config) ^ required)}")
     if config["schema"] != protocol.schema or config["stage"] != protocol.stage:
@@ -363,12 +382,21 @@ def _load_config(
         "eig_quadrature_error_safety_factor": 4.0,
         "eig_rank_certificate_method": RANK_CERTIFICATE_METHOD,
         "qbc_committee_size": 32,
-        "failure_policy": "fail_closed_record_all_no_seed_replacement",
+        "failure_policy": (
+            "fail_fast_record_terminal_no_seed_replacement"
+            if protocol.fail_fast
+            else "fail_closed_record_all_no_seed_replacement"
+        ),
     }
     if any(config[key] != value for key, value in frozen_values.items()):
         raise ValueError(f"{protocol.stage} frozen budgets or failure policy were modified")
-    if config["operational_class_metric"] != "pooled-predictive-sd-quantile-rms":
-        raise ValueError("P3B.10 requires the frozen standardized predictive metric")
+    expected_class_metric = (
+        DECISION_REGRET_DISTANCE_METRIC
+        if protocol.decision_target_alignment
+        else "pooled-predictive-sd-quantile-rms"
+    )
+    if config["operational_class_metric"] != expected_class_metric:
+        raise ValueError("real protocol changed its frozen operational-class metric")
     if config["operational_class_linkage"] != "complete":
         raise ValueError("P3B.10 requires deterministic complete linkage")
     if config["operational_class_resolution_method"] != BUDGET_RESOLUTION_METHOD:
@@ -376,8 +404,9 @@ def _load_config(
     if float(config["operational_class_aggregate_separation"]) != 1.0:
         raise ValueError("P3B.10 aggregate predictive resolution must remain one")
     levels = tuple(float(value) for value in config["operational_class_quantile_levels"])
-    if levels != (0.1, 0.5, 0.9):
-        raise ValueError("P3B.10 predictive quantile levels differ from the frozen schema")
+    expected_levels = () if protocol.decision_target_alignment else (0.1, 0.5, 0.9)
+    if levels != expected_levels:
+        raise ValueError("real protocol changed its frozen class-profile coordinates")
     if config["class_evaluation_partition"] != "initial-frozen":
         raise ValueError("P3B.10 evaluation must use the initial-frozen class partition")
     if config["pcpi_class_target_partition"] != "initial-frozen":
@@ -390,10 +419,16 @@ def _load_config(
     if config["pcpi_uncertified_eig_action"] != expected_uncertified:
         raise ValueError("P3B.10 requires the frozen epistemic fallback utility")
     joint_target_contract = {
-        "pcpi_joint_target": "initial-frozen-class-and-target-prediction",
+        "pcpi_joint_target": (
+            "initial-frozen-operational-class-log-risk"
+            if protocol.decision_target_alignment
+            else "initial-frozen-class-and-target-prediction"
+        ),
         "predictive_target_distribution": "registered-action-domain-uniform",
         "conditional_predictive_information_method": (
-            GAUSSIAN_CLASS_CONDITIONAL_EPIG
+            "excluded-zero-by-decision-target"
+            if protocol.decision_target_alignment
+            else GAUSSIAN_CLASS_CONDITIONAL_EPIG
         ),
     }
     if any(config[key] != value for key, value in joint_target_contract.items()):
@@ -410,7 +445,11 @@ def _load_config(
         "representative_safe_set_rule": (
             "augmented-mmd-nonincreasing-with-roundoff-tolerance"
         ),
-        "representative_empty_safe_set_action": "minimum-augmented-mmd",
+        "representative_empty_safe_set_action": (
+            "terminal-failure-no-utility-switch"
+            if protocol.decision_target_alignment
+            else "minimum-augmented-mmd"
+        ),
     }
     if any(config[key] != value for key, value in representative_contract.items()):
         raise ValueError("P3B.10 representative safe-set contract was modified")
@@ -422,7 +461,9 @@ def _load_config(
     robust_contract = {
         "pcpi_ambiguity_set": "frozen-likelihood-power-candidates",
         "pcpi_robust_utility": (
-            "p3h-semiparametric-discrepancy-aware-maximin-joint-class-predictive-information"
+            "p3i-copula-transport-invariant-maximin-operational-class-information"
+            if protocol.decision_target_alignment
+            else "p3h-semiparametric-discrepancy-aware-maximin-joint-class-predictive-information"
             if protocol.semiparametric_lifecycle
             else "discrepancy-aware-maximin-joint-class-predictive-information"
             if protocol.discrepancy_profile_method is not None
@@ -496,12 +537,27 @@ def _load_config(
             != config["initial_observation_budget"]
         ):
             raise ValueError("P3H initial role budgets do not close")
+    if protocol.decision_target_alignment:
+        p3i_contract = {
+            "p3i_decision_target": "frozen-operational-class-log-risk",
+            "p3i_information_invariance": P3I_INFORMATION_INVARIANCE,
+            "p3i_semiparametric_transport": P3I_COPULA_TRANSPORT_METHOD,
+            "operational_execution_authorized": (
+                protocol.operational_execution_authorized
+            ),
+        }
+        if any(config[key] != value for key, value in p3i_contract.items()):
+            raise ValueError("P3I decision-alignment or authorization contract changed")
     rules = config["assessment_rules"]
     expected_rules = {
         "paired_confidence_level", "negative_transfer_rate_max",
         "pcpi_decision_rule_valid_rate_min",
         "strong_requires_positive_frozen_class_gain_vs_random_in_every_dataset_family",
-        "strong_requires_nonpositive_mean_vs_each_baseline_in_every_dataset_family",
+        (
+            "secondary_predictive_noninferiority_report_only"
+            if protocol.decision_target_alignment
+            else "strong_requires_nonpositive_mean_vs_each_baseline_in_every_dataset_family"
+        ),
     }
     if set(rules) != expected_rules or float(rules["paired_confidence_level"]) != 0.95:
         raise ValueError("P3B assessment rules differ from the frozen schema")
@@ -510,7 +566,11 @@ def _load_config(
         "negative_transfer_rate_max": 0.25,
         "pcpi_decision_rule_valid_rate_min": 1.0,
         "strong_requires_positive_frozen_class_gain_vs_random_in_every_dataset_family": True,
-        "strong_requires_nonpositive_mean_vs_each_baseline_in_every_dataset_family": True,
+        (
+            "secondary_predictive_noninferiority_report_only"
+            if protocol.decision_target_alignment
+            else "strong_requires_nonpositive_mean_vs_each_baseline_in_every_dataset_family"
+        ): True,
     }
     if any(rules[key] != value for key, value in expected_rule_values.items()):
         raise ValueError("P3B.10 assessment rules were modified")
@@ -524,12 +584,64 @@ def _prepare_output(path: Path) -> None:
         (path / name).mkdir(parents=True, exist_ok=True)
 
 
+class _FailFastProtocolError(RuntimeError):
+    """Terminal formal-run failure already persisted to the output ledger."""
+
+
+def _write_terminal_failure(
+    output: Path,
+    protocol: RealAcquisitionProtocol,
+    failure: dict[str, Any],
+) -> Path:
+    path = output / "TERMINAL_FAILURE.json"
+    payload = {
+        "schema": "pcpi-fail-fast-terminal-record-v1",
+        "stage": protocol.stage,
+        "terminal": True,
+        "retry_in_same_output_forbidden": True,
+        "seed_replacement_forbidden": True,
+        "heldout_opened": False,
+        "selection_used_heldout": False,
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "failure": {
+            key: value for key, value in failure.items()
+            if key != "fallback_context"
+        },
+    }
+    with path.open("x", encoding="utf-8") as handle:
+        handle.write(_canonical_json(payload))
+        handle.flush()
+        os.fsync(handle.fileno())
+    return path
+
+
 def _operational_class_threshold(config: dict[str, Any]) -> float:
     return budget_resolved_distance_threshold(
         int(config["acquisition_observation_budget"]),
         aggregate_separation=float(
             config["operational_class_aggregate_separation"]
         ),
+    )
+
+
+def _aggregate_protocol_classes(
+    protocol: RealAcquisitionProtocol,
+    engine: SequentialReferencePosterior,
+    posterior: ExactPosterior,
+    actions: np.ndarray,
+    config: dict[str, Any],
+) -> OperationalClassPosterior:
+    threshold = _operational_class_threshold(config)
+    if protocol.decision_target_alignment:
+        return aggregate_decision_equivalent_classes(
+            engine, posterior, actions, distance_threshold=threshold
+        )
+    return aggregate_operational_classes(
+        engine,
+        posterior,
+        actions,
+        distance_threshold=threshold,
+        quantile_levels=tuple(config["operational_class_quantile_levels"]),
     )
 
 
@@ -729,12 +841,8 @@ def _run_policy(
         if semiparametric_state is not None
         else engine.fit_batch(train_X, train_y)
     )
-    initial_classes = aggregate_operational_classes(
-        engine,
-        initial_posterior,
-        fixed_domain_X,
-        distance_threshold=class_distance_threshold,
-        quantile_levels=tuple(config["operational_class_quantile_levels"]),
+    initial_classes = _aggregate_protocol_classes(
+        protocol, engine, initial_posterior, fixed_domain_X, config
     )
     frozen_partition = class_partition(initial_posterior, initial_classes)
     initial_frozen_entropy = frozen_partition.entropy
@@ -748,12 +856,8 @@ def _run_policy(
             if semiparametric_state is not None
             else engine.fit_batch(train_X, train_y)
         )
-        classes = aggregate_operational_classes(
-            engine,
-            posterior,
-            fixed_domain_X,
-            distance_threshold=class_distance_threshold,
-            quantile_levels=tuple(config["operational_class_quantile_levels"]),
+        classes = _aggregate_protocol_classes(
+            protocol, engine, posterior, fixed_domain_X, config
         )
         current_partition = class_partition(posterior, classes)
         partition_hashes.add(current_partition.stable_hash)
@@ -769,6 +873,8 @@ def _run_policy(
             "acquired_observations": round_index,
             "operational_class_count": len(classes.classes),
             "operational_class_partition_hash": current_partition.stable_hash,
+            "operational_class_metric": classes.metric,
+            "operational_class_scale_hash": classes.scale_hash,
             "initial_frozen_class_partition_hash": initial_partition_hash,
             "operational_class_distance_threshold": class_distance_threshold,
             "frozen_class_entropy": frozen_entropy,
@@ -831,6 +937,26 @@ def _run_policy(
                 ),
             )
             scores = _reference_score_audit_adapter(reference_result)
+        elif is_pcpi and protocol.decision_target_alignment:
+            if semiparametric_state is None:
+                raise ValueError("P3I decision-targeted scoring requires P3H state")
+            scores = score_decision_targeted_actions(
+                engine,
+                posterior,
+                visible_actions,
+                target_partition=frozen_partition,
+                predictive_target_actions=fixed_domain_X,
+                representative_observed_actions=train_X,
+                posterior_models=semiparametric_state.posterior_models,
+                semiparametric_residual_family=semiparametric_state.family,
+                minimum_samples=int(config["eig_quadrature_min_evaluations"]),
+                maximum_samples=int(config["eig_quadrature_max_evaluations"]),
+                error_safety_factor=float(
+                    config["eig_quadrature_error_safety_factor"]
+                ),
+                growth_factor=int(config["eig_quadrature_growth_factor"]),
+                unresolved_action=protocol.semiparametric_unresolved_action,
+            )
         elif is_pcpi and protocol.discrepancy_profile_method is not None:
             scores = score_discrepancy_aware_actions(
                 engine, posterior, classes, visible_actions, **score_kwargs
@@ -1011,6 +1137,15 @@ def _run_policy(
             "initial_frozen_class_partition_hash": initial_partition_hash,
             "operational_class_distance_threshold": class_distance_threshold,
             "utility_mode": scores.utility_mode,
+            "operational_class_metric": classes.metric,
+            "operational_class_scale_hash": classes.scale_hash,
+            "semiparametric_transport_method": (
+                scores.semiparametric_transport_method
+            ),
+            "semiparametric_information_invariance_applied": (
+                scores.semiparametric_information_invariance_applied
+            ),
+            "decision_target": scores.decision_target,
             "p3h_operational_lifecycle_applied": lifecycle_decision is not None,
             "p3h_family_hash_before_query": family_hash_before,
             "p3h_family_hash_after_query": family_hash_after,
@@ -1145,7 +1280,12 @@ def _run_policy(
         if row["policy"] == protocol.pcpi_policy
     ]
     eig_modes = (
-        {TARGETED_HANDOVER_MODE, REFERENCE_FALLBACK_MODE}
+        {
+            "representative-safe-robust-operational-class-eig-"
+            "copula-transport-invariant"
+        }
+        if protocol.decision_target_alignment
+        else {TARGETED_HANDOVER_MODE, REFERENCE_FALLBACK_MODE}
         if is_reference_protocol
         else {
             (
@@ -1220,6 +1360,32 @@ def _run_policy(
             )
             for row in pcpi_queries
         ]
+    elif protocol.decision_target_alignment:
+        decision_valid = [
+            row["utility_mode"] in eig_modes
+            and row["acquisition_target_partition_hash"] == initial_partition_hash
+            and row["operational_class_metric"] == DECISION_REGRET_DISTANCE_METRIC
+            and row["representative_guard_applied"]
+            and row["representative_safe_set_nonempty"]
+            and not row["representative_fallback_used"]
+            and row["representative_selected_in_safe_set"]
+            and row["representative_selected_mmd_nonincrease"]
+            and row["eig_selected_from_admissible_set"]
+            and row["eig_ranking_certified"]
+            and row["semiparametric_transport_method"]
+            == P3I_COPULA_TRANSPORT_METHOD
+            and row["semiparametric_information_invariance_applied"]
+            and row["decision_target"]
+            == config["p3i_decision_target"] + "|" + P3I_INFORMATION_INVARIANCE
+            and row["selected_conditional_predictive_eig"] == 0.0
+            and np.isclose(
+                row["selected_joint_class_predictive_score"],
+                row["selected_class_eig"],
+                rtol=0.0,
+                atol=2e-14,
+            )
+            for row in pcpi_queries
+        ]
     else:
         decision_valid = [
             row["utility_mode"] in valid_modes
@@ -1290,6 +1456,8 @@ def _run_policy(
         "final_maximum_class_probability": policy_curve[-1]["maximum_class_probability"],
         "initial_operational_class_count": initial_class_count,
         "final_operational_class_count": int(policy_curve[-1]["operational_class_count"]),
+        "operational_class_metric": initial_classes.metric,
+        "initial_operational_class_scale_hash": initial_classes.scale_hash,
         "initial_class_aggregation_fraction": 1.0 - initial_class_count / len(bank.structures),
         "initial_frozen_class_partition_hash": initial_partition_hash,
         "predictive_target_distribution": config.get(
@@ -1307,6 +1475,12 @@ def _run_policy(
                 "not-applied-class-only"
                 if is_reference_protocol else GAUSSIAN_CLASS_CONDITIONAL_EPIG
             ),
+        ),
+        "decision_target": config.get(
+            "p3i_decision_target", "legacy-joint-class-predictive-information"
+        ),
+        "semiparametric_transport_method": config.get(
+            "p3i_semiparametric_transport", "not-applied"
         ),
         "representative_mmd_method": config.get(
             "representative_discrepancy",
@@ -1338,6 +1512,17 @@ def _run_policy(
         "pcpi_maximin_joint_eig_used_rate": float(np.mean([
             row["utility_mode"] in eig_modes for row in pcpi_queries
         ])) if pcpi_queries and not is_reference_protocol else 0.0,
+        "pcpi_target_only_class_eig_used_rate": float(np.mean([
+            row["utility_mode"] in eig_modes
+            and row["selected_conditional_predictive_eig"] == 0.0
+            and np.isclose(
+                row["selected_joint_class_predictive_score"],
+                row["selected_class_eig"],
+                rtol=0.0,
+                atol=2e-14,
+            )
+            for row in pcpi_queries
+        ])) if pcpi_queries and protocol.decision_target_alignment else 0.0,
         "pcpi_epistemic_fallback_rate": float(np.mean([
             row["utility_mode"] in epistemic_modes for row in pcpi_queries
         ])) if pcpi_queries else 0.0,
@@ -1410,6 +1595,7 @@ def _aggregates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         "dynamic_partition_count",
         "eig_ranking_certified_rate", "maximum_eig_samples_used",
         "pcpi_class_eig_used_rate", "pcpi_maximin_joint_eig_used_rate",
+        "pcpi_target_only_class_eig_used_rate",
         "pcpi_primary_ranking_certified_rate",
         "pcpi_secondary_resolution_rate",
         "pcpi_mean_possible_maximizer_count",
@@ -1529,6 +1715,10 @@ def _assessment(
     config: dict[str, Any],
     pcpi_policy: str = PCPI_POLICY,
 ) -> dict[str, Any]:
+    decision_targeted = (
+        config.get("p3i_decision_target")
+        == "frozen-operational-class-log-risk"
+    )
     family = [row for row in paired if row["scope_type"] == "dataset_family"]
     random = [row for row in family if row["baseline"] == "random"]
     rules = config["assessment_rules"]
@@ -1572,8 +1762,12 @@ def _assessment(
             for row in selected
         ]
         ranking_by_family[family_id] = float(np.mean(values)) if values else 0.0
+        use_metric = (
+            "pcpi_target_only_class_eig_used_rate"
+            if decision_targeted else "pcpi_maximin_joint_eig_used_rate"
+        )
         joint_eig_use_by_family[family_id] = float(np.mean([
-            float(row["pcpi_maximin_joint_eig_used_rate"]) for row in selected
+            float(row[use_metric]) for row in selected
         ])) if selected else 0.0
         decision_rule_by_family[family_id] = float(np.mean([
             float(row["pcpi_decision_rule_valid_rate"]) for row in selected
@@ -1594,6 +1788,8 @@ def _assessment(
         status = "OPERATIONAL_CLASSES_DEGENERATE_NO_CLASS_CLAIM"
     elif not decision_rule_valid:
         status = "INVALID_PCPI_DECISION_RULE"
+    elif decision_targeted and strong_structural:
+        status = "STRONG_DECISION_TARGETED_REAL_ACQUISITION_EVIDENCE"
     elif strong_joint:
         status = "STRONG_JOINT_REAL_ACQUISITION_EVIDENCE"
     elif strong_structural:
@@ -1604,8 +1800,18 @@ def _assessment(
         status = "REAL_ADVANTAGE_NOT_DEMONSTRATED"
     return {
         "status": status,
-        "strong_evidence": strong_joint,
+        "strong_evidence": (
+            strong_structural if decision_targeted else strong_joint
+        ),
         "strong_structural_evidence": strong_structural,
+        "primary_decision_target": (
+            "frozen-operational-class-log-risk"
+            if decision_targeted else "legacy-joint-class-predictive-information"
+        ),
+        "predictive_performance_role": (
+            "secondary-reported-not-in-primary-efficacy-decision"
+            if decision_targeted else "joint-strong-evidence-requirement"
+        ),
         "pcpi_frozen_class_gain_vs_random_significant_in_every_dataset_family": random_class_gain_significant,
         "pcpi_frozen_class_gain_vs_random_mean_better_in_every_dataset_family": random_class_gain_mean_better,
         "pcpi_predictive_naulc_vs_random_mean_better_in_every_dataset_family": random_predictive_mean_better,
@@ -1616,6 +1822,9 @@ def _assessment(
         "pcpi_decision_rule_valid": decision_rule_valid,
         "pcpi_decision_rule_valid_rate_by_dataset_family": decision_rule_by_family,
         "pcpi_maximin_joint_eig_used_rate_by_dataset_family": joint_eig_use_by_family,
+        "pcpi_target_only_class_eig_used_rate_by_dataset_family": (
+            joint_eig_use_by_family if decision_targeted else {}
+        ),
         "eig_ranking_certified_rate_by_dataset_family": ranking_by_family,
         "dataset_family_count": 2,
         "gas_targets_counted_as_one_family": True,
@@ -1729,6 +1938,16 @@ def _manifest_method_contract(
                 "p3h_validation_state_policy",
                 "p3h5_terminal_status",
                 "runtime_dependency_hash",
+            )
+        }
+    if protocol.decision_target_alignment:
+        contract |= {
+            key: config[key]
+            for key in (
+                "p3i_decision_target",
+                "p3i_information_invariance",
+                "p3i_semiparametric_transport",
+                "operational_execution_authorized",
             )
         }
     return contract
@@ -1948,9 +2167,13 @@ def run(
         raise ValueError(
             f"real runner requires phase {protocol.stage} and heldout closed"
         )
+    config = _load_config(config_path, root, protocol)
+    if not protocol.operational_execution_authorized:
+        raise PermissionError(
+            f"{protocol.stage} is source-composition-only; real access is blocked"
+        )
     if not data_root.is_dir():
         raise FileNotFoundError(f"data root does not exist: {data_root}")
-    config = _load_config(config_path, root, protocol)
     source_identity = resolve_formal_source_identity(root, source)
     dependency_environment = runtime_dependency_snapshot()
     dependency_environment_hash = runtime_dependency_hash(dependency_environment)
@@ -2194,7 +2417,16 @@ def run(
                             f"{protocol.stage} run {completed}/{total} FAILED | {failure['failure_status']}",
                             **{key: value for key, value in failure.items() if key != "fallback_context"},
                         )
+                        if protocol.fail_fast:
+                            terminal_path = _write_terminal_failure(
+                                output, protocol, failure
+                            )
+                            raise _FailFastProtocolError(
+                                f"formal run stopped at first failure; record={terminal_path}"
+                            ) from error
         except Exception as error:
+            if isinstance(error, _FailFastProtocolError):
+                raise
             failure = {
                 "dataset_id": dataset_id,
                 "dataset_family": _family(dataset_id),
@@ -2225,6 +2457,11 @@ def run(
                 f"{protocol.stage} dataset={dataset_id} FAILED | {failure['failure_status']}",
                 dataset_id=dataset_id,
             )
+            if protocol.fail_fast:
+                terminal_path = _write_terminal_failure(output, protocol, failure)
+                raise _FailFastProtocolError(
+                    f"formal run stopped at first failure; record={terminal_path}"
+                ) from error
     expected_runs = total
     initial_partition_groups: dict[tuple[str, int], set[str]] = {}
     subset_groups: dict[tuple[str, int], set[tuple[str, str, str]]] = {}
@@ -2374,7 +2611,9 @@ def run(
         )
     )
     expected_robust_utility = (
-        "p3h-semiparametric-discrepancy-aware-maximin-joint-class-predictive-information"
+        "p3i-copula-transport-invariant-maximin-operational-class-information"
+        if protocol.decision_target_alignment
+        else "p3h-semiparametric-discrepancy-aware-maximin-joint-class-predictive-information"
         if protocol.semiparametric_lifecycle
         else "discrepancy-aware-maximin-joint-class-predictive-information"
         if discrepancy_expected
@@ -2526,6 +2765,56 @@ def run(
                     and not row["eig_secondary_resolution_used"]
                     for row in pcpi_query_rows
                 )
+            ),
+        })
+    if protocol.decision_target_alignment:
+        protocol_decisions.update({
+            "p3i_decision_class_metric_used_for_every_run": bool(run_rows)
+            and all(
+                row["operational_class_metric"]
+                == DECISION_REGRET_DISTANCE_METRIC
+                and row["initial_operational_class_scale_hash"]
+                != "pairwise-pooled-predictive-scale"
+                for row in run_rows
+            ),
+            "p3i_transport_invariance_used_for_every_pcpi_query": bool(
+                pcpi_query_rows
+            )
+            and all(
+                row["semiparametric_transport_method"]
+                == P3I_COPULA_TRANSPORT_METHOD
+                and row["semiparametric_information_invariance_applied"]
+                for row in pcpi_query_rows
+            ),
+            "p3i_primary_score_excludes_conditional_epig": bool(pcpi_query_rows)
+            and all(
+                row["selected_conditional_predictive_eig"] == 0.0
+                and np.isclose(
+                    row["selected_joint_class_predictive_score"],
+                    row["selected_class_eig"],
+                    rtol=0.0,
+                    atol=2e-14,
+                )
+                for row in pcpi_query_rows
+            ),
+            "p3i_decision_target_matches_frozen_contract": (
+                config["p3i_decision_target"]
+                == "frozen-operational-class-log-risk"
+                and config["conditional_predictive_information_method"]
+                == "excluded-zero-by-decision-target"
+            ),
+            "p3i_no_representative_fallback_or_utility_switch": bool(
+                pcpi_query_rows
+            )
+            and all(
+                row["representative_safe_set_nonempty"]
+                and not row["representative_fallback_used"]
+                for row in pcpi_query_rows
+            ),
+            "p3i_fail_fast_policy_frozen": (
+                protocol.fail_fast
+                and config["failure_policy"]
+                == "fail_fast_record_terminal_no_seed_replacement"
             ),
         })
     if protocol.reference_dominance_method is not None:

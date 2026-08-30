@@ -547,3 +547,14 @@ long-horizon context and remain binding even when a local task omits them.
   copula and conditional Gaussian-moment EPIG are excluded from the P3I route.
   P3I.1 is response-free correctness only; real, validation, candidate-response,
   held-out, operational and efficacy authorization remain false.
+- P3I.2 composes the decision-regret class constructor and target-only robust
+  class-EIG into the shared measured-pool runner without changing P3H.9. Under
+  its explicit protocol flag, all policies use the same initial-frozen common-
+  scale mean-regret partition, while PCPI alone receives the exact P3H
+  likelihood-power posterior/residual family. The P3I branch precedes and
+  excludes both historical joint scorers; conditional EPIG remains exactly
+  zero. Empty representative-safe sets and all execution errors are terminal.
+  The first error is fsync-recorded and aborts immediately, with no retry or
+  seed replacement. P3I.2 remains source-composition only and is blocked before
+  real-data or output access; operational, efficacy and held-out authorization
+  remain false.

@@ -485,3 +485,23 @@ The P3I.1 correctness suite passes 7/7 and its six source/algebra decisions
 pass. It accesses no real, validation, candidate-response or held-out data and
 does not authorize an operational run. See
 `docs/pcpi_p3i1_decision_alignment_contract_20260830.md`.
+
+## P3I.2 decision-targeted source composition
+
+P3I.2 composes the P3I.1 class constructor and target-only robust class-EIG
+into the historical measured-pool runner under an explicit protocol flag.
+Every policy shares the new initial-frozen decision-regret partition; PCPI
+alone receives the exact likelihood-power posterior/residual family and is
+dispatched to the P3I scorer before either legacy joint scorer. Query, run,
+manifest and assessment records expose the class metric and scale hash,
+transport-invariance identity, zero conditional EPIG and target-only usage.
+
+The primary assessment is now frozen-class log-risk reduction. Predictive
+RMSE/NLL remain secondary reported outcomes and cannot be folded back into the
+primary decision. The first execution failure is fsync-recorded in a unique
+terminal file and immediately aborts instead of allowing later runs to hide it.
+The P3I.2 candidate config is nevertheless hard-blocked before data-path or
+output access. Its eight source decisions and focused 50-test regression pass,
+and the complete repository regression passes 749/749, but it authorizes no
+real execution. See
+`docs/pcpi_p3i2_source_composition_contract_20260831.md`.
