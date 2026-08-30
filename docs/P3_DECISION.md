@@ -456,3 +456,32 @@ The theory and leakage boundary are in
 P3H.9 freezes the corresponding failure-informed real-development rerun. It is
 not independent confirmation; its protocol is documented in
 `docs/pcpi_p3h9_interval_resolved_real_protocol_20260828.md`.
+
+The returned P3H.9 run completed all 96 policy runs and 3072 queries with zero
+execution failures, a valid evidence chain, verified official data hashes and
+held-out closed. The protocol Gate passed, but the terminal assessment was
+`OPERATIONAL_CLASSES_DEGENERATE_NO_CLASS_CLAIM`; strong predictive and
+structural evidence were both false. This is a permanent development negative,
+not a runtime failure, and it must not be rerun. Its frozen audit is
+`docs/pcpi_p3h9_result_failure_audit_20260830.md`.
+
+## P3I.1 decision-target alignment
+
+P3I.1 repairs the C1/C3 mismatch diagnosed from P3H.9 without fitting a new
+threshold or inspecting held-out data. Operational classes now use the frozen
+posterior mean profile under squared prediction loss, standardized by one
+common `H0` posterior-mixture scale. Observation-noise and residual quantiles
+remain nuisance and cannot create a scientific-law class by themselves.
+
+The P3H corrected marginal is composed with the base class/response joint by a
+common strictly monotone PIT transport. Mutual information is invariant under
+that transport, so P3I does not reuse P3H.3's optional KL-projected copula to
+make marginal calibration change class-EIG. The primary utility is the robust
+lower envelope of frozen-class EIG only; the old conditional Gaussian-moment
+EPIG nuisance term is exactly zero. Representative safety and registered
+interval-frontier resolution remain response-free constraints.
+
+The P3I.1 correctness suite passes 7/7 and its six source/algebra decisions
+pass. It accesses no real, validation, candidate-response or held-out data and
+does not authorize an operational run. See
+`docs/pcpi_p3i1_decision_alignment_contract_20260830.md`.

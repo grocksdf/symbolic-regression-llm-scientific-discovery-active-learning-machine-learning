@@ -8,7 +8,9 @@ from .basis import (
 )
 from .classes import (
     BUDGET_RESOLUTION_METHOD,
+    DECISION_REGRET_DISTANCE_METRIC,
     OperationalClassPosterior,
+    aggregate_decision_equivalent_classes,
     aggregate_operational_classes,
     budget_resolved_distance_threshold,
 )
@@ -112,6 +114,8 @@ __all__ = [
     "correctness_fixture_hash",
     "stable_budget_indices",
     "StructurePosterior",
+    "DECISION_REGRET_DISTANCE_METRIC",
+    "aggregate_decision_equivalent_classes",
     "aggregate_operational_classes",
     "budget_resolved_distance_threshold",
     "calibrate_likelihood_power",

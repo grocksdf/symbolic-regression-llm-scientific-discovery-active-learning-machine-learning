@@ -13,6 +13,9 @@ from .posterior import ExactPosterior, SequentialReferencePosterior
 
 
 PREDICTIVE_DISTANCE_METRIC = "pooled-predictive-sd-quantile-rms"
+DECISION_REGRET_DISTANCE_METRIC = (
+    "frozen-common-scale-posterior-mean-regret-rms"
+)
 COMPLETE_LINKAGE = "complete"
 BUDGET_RESOLUTION_METHOD = "one-unit-aggregate-predictive-separation"
 
@@ -60,6 +63,7 @@ class OperationalClassPosterior:
     quantile_levels: tuple[float, ...]
     metric: str = PREDICTIVE_DISTANCE_METRIC
     linkage: str = COMPLETE_LINKAGE
+    scale_hash: str = "pairwise-pooled-predictive-scale"
 
     @property
     def probability_sum(self) -> float:
@@ -162,6 +166,116 @@ def _class_id(
     }
     material = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return sha256(material).hexdigest()
+
+
+def _decision_class_id(
+    structure_ids: tuple[str, ...],
+    action_hash: str,
+    scale_hash: str,
+    threshold: float,
+) -> str:
+    payload = {
+        "action_hash": action_hash,
+        "distance_threshold": threshold,
+        "linkage": COMPLETE_LINKAGE,
+        "metric": DECISION_REGRET_DISTANCE_METRIC,
+        "scale_hash": scale_hash,
+        "structure_ids": structure_ids,
+    }
+    material = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return sha256(material).hexdigest()
+
+
+def _decision_profiles_and_scale(
+    engine: SequentialReferencePosterior,
+    posterior: ExactPosterior,
+    actions: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    means, variances = [], []
+    for member in posterior.members:
+        mean, variance = engine.predictive_moments(member, actions)
+        means.append(mean)
+        variances.append(variance)
+    mean_array = np.asarray(means, dtype=float)
+    variance_array = np.asarray(variances, dtype=float)
+    probabilities = np.asarray(
+        [member.probability for member in posterior.members], dtype=float
+    )[:, None]
+    mixture_mean = np.sum(probabilities * mean_array, axis=0)
+    mixture_second = np.sum(
+        probabilities * (variance_array + np.square(mean_array)), axis=0
+    )
+    scale = np.sqrt(np.maximum(0.0, mixture_second - np.square(mixture_mean)))
+    if np.any(scale <= 0.0) or not np.all(np.isfinite(scale)):
+        raise FloatingPointError("decision-regret scale must be finite and positive")
+    return mean_array, scale
+
+
+def _decision_regret_distances(
+    mean_profiles: np.ndarray,
+    common_scale: np.ndarray,
+) -> np.ndarray:
+    standardized = mean_profiles / common_scale[None, :]
+    differences = standardized[:, None, :] - standardized[None, :, :]
+    distances = np.sqrt(np.mean(np.square(differences), axis=2))
+    if not np.all(np.isfinite(distances)):
+        raise FloatingPointError("decision-regret distances must be finite")
+    return distances
+
+
+def aggregate_decision_equivalent_classes(
+    engine: SequentialReferencePosterior,
+    posterior: ExactPosterior,
+    actions: np.ndarray,
+    *,
+    distance_threshold: float,
+) -> OperationalClassPosterior:
+    """Freeze classes by excess squared-prediction regret at ``H0``.
+
+    Each structure is represented by its posterior Bayes action under squared
+    loss: its latent predictive-mean profile on the registered action domain.
+    A single actionwise scale from the complete ``H0`` posterior mixture is
+    shared by every pair.  The resulting RMS distance is therefore the square
+    root of standardized excess prediction risk, rather than a comparison of
+    pair-specific observation-noise quantiles.  Residual/noise states remain
+    nuisance variables and cannot create a scientific-law class by themselves.
+    """
+
+    threshold = float(distance_threshold)
+    if threshold <= 0.0 or not np.isfinite(threshold):
+        raise ValueError("decision-class distance threshold must be positive")
+    action_values = _validated_actions(actions)
+    action_hash = _array_hash(action_values)
+    means, scale = _decision_profiles_and_scale(engine, posterior, action_values)
+    scale_hash = _array_hash(scale)
+    distances = _decision_regret_distances(means, scale)
+    structure_ids = tuple(member.structure.structure_id for member in posterior.members)
+    groups = _complete_link_clusters(distances, structure_ids, threshold)
+    probabilities = np.asarray(
+        [member.probability for member in posterior.members], dtype=float
+    )
+    classes = [
+        OperationalClass(
+            class_id=_decision_class_id(
+                tuple(sorted(structure_ids[index] for index in group)),
+                action_hash,
+                scale_hash,
+                threshold,
+            ),
+            structure_ids=tuple(sorted(structure_ids[index] for index in group)),
+            probability=float(np.sum(probabilities[np.asarray(group, dtype=int)])),
+        )
+        for group in groups
+    ]
+    classes.sort(key=lambda item: item.class_id)
+    return OperationalClassPosterior(
+        classes=tuple(classes),
+        action_hash=action_hash,
+        distance_threshold=threshold,
+        quantile_levels=(),
+        metric=DECISION_REGRET_DISTANCE_METRIC,
+        scale_hash=scale_hash,
+    )
 
 
 def aggregate_operational_classes(

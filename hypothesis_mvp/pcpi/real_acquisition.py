@@ -28,6 +28,8 @@ from .acquisition import (
     representative_mmd_safe_set,
 )
 from .semiparametric_acquisition import (
+    P3I_COPULA_TRANSPORT_METHOD,
+    P3I_INFORMATION_INVARIANCE,
     P3H_CLASS_EIG_METHOD,
     SemiparametricEIGEstimate,
     estimate_semiparametric_class_eig,
@@ -52,6 +54,7 @@ ACQUISITION_POLICIES = (
 DISCREPANCY_AWARE_POLICY = (
     "pcpi_representative_safe_discrepancy_robust_joint_eig"
 )
+DECISION_TARGETED_POLICY = "pcpi_representative_safe_robust_class_eig"
 
 MAXIMIN_RANK_CERTIFICATE = (
     "finite-model-lower-envelope-nested-gauss-jacobi-interval-dominance"
@@ -184,6 +187,9 @@ class AcquisitionScores:
     secondary_resolution_used: bool = False
     secondary_resolution_method: str = "not-applied"
     selection_admissible_mask: np.ndarray | None = None
+    semiparametric_transport_method: str = "not-applied"
+    semiparametric_information_invariance_applied: bool = False
+    decision_target: str = "legacy-joint-class-predictive-information"
 
 
 @dataclass(frozen=True)
@@ -198,7 +204,10 @@ class PosteriorMetrics:
 def stable_derived_seed(seed: int, policy: str, round_index: int) -> int:
     """Derive a reproducible RNG seed without Python's process-local hash."""
 
-    supported = ACQUISITION_POLICIES + (DISCREPANCY_AWARE_POLICY,)
+    supported = ACQUISITION_POLICIES + (
+        DISCREPANCY_AWARE_POLICY,
+        DECISION_TARGETED_POLICY,
+    )
     if seed < 0 or round_index < 0 or policy not in supported:
         raise ValueError("acquisition seed inputs are invalid")
     material = f"pcpi-p3b:{seed}:{policy}:{round_index}".encode("utf-8")
@@ -956,6 +965,128 @@ def _score_pcpi_discriminative(
             P3H_INTERVAL_FRONTIER_RESOLUTION if secondary_used else "not-applied"
         ),
         selection_admissible_mask=secondary_mask,
+    )
+
+
+def _resolve_decision_targeted_utility(
+    robust: MaximinJointEstimate,
+    representative: RepresentativeSafeSet,
+    unresolved_action: str,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+    if robust.ranking_certified:
+        return robust.scores, _robust_error_radii(robust), None
+    if unresolved_action == P3H_TERMINAL_ABSTENTION:
+        raise FloatingPointError(
+            "P3I class-risk intervals overlap; operational selection is forbidden"
+        )
+    if unresolved_action != P3H_INTERVAL_FRONTIER_RESOLUTION:
+        raise ValueError("unsupported P3I unresolved-ranking action")
+    return (
+        robust.scores,
+        _robust_error_radii(robust),
+        _interval_frontier_mmd_mask(robust, representative),
+    )
+
+
+def score_decision_targeted_actions(
+    engine: SequentialReferencePosterior,
+    posterior: ExactPosterior,
+    actions: np.ndarray,
+    *,
+    target_partition: ClassPartition,
+    predictive_target_actions: np.ndarray,
+    representative_observed_actions: np.ndarray,
+    posterior_models: tuple[PosteriorModel, ...],
+    semiparametric_residual_family: LikelihoodPowerResidualFamily,
+    minimum_samples: int,
+    maximum_samples: int,
+    error_safety_factor: float,
+    growth_factor: int,
+    unresolved_action: str = P3H_INTERVAL_FRONTIER_RESOLUTION,
+) -> AcquisitionScores:
+    """Score only the frozen scientific class under P3I decision alignment.
+
+    The P3H residual map is included through its coherent, invertible PIT
+    transport.  Such a coordinate transform preserves mutual information, so
+    it is forbidden to change class-EIG through an arbitrary class/response
+    recoupling.  Conditional predictive EPIG is a nuisance target here and is
+    identically excluded rather than added with an outcome-chosen weight.
+    """
+    models = _validated_posterior_models(engine, posterior, posterior_models)
+    residual_laws = _bound_semiparametric_residual_laws(
+        models, semiparametric_residual_family
+    )
+    if residual_laws is None:
+        raise ValueError("P3I requires a model-bound semiparametric residual family")
+    representative = representative_mmd_safe_set(
+        representative_observed_actions, actions, predictive_target_actions
+    )
+    if not representative.safe_set_nonempty:
+        raise FloatingPointError(
+            "P3I has no representative-safe candidate and cannot switch utility"
+        )
+    family_components = tuple(
+        predictive_components_for_partition(
+            model.engine, model.posterior, target_partition, actions
+        )
+        for model in models
+    )
+    action_count = len(np.asarray(actions))
+    zero_conditional = np.zeros((len(models), action_count), dtype=float)
+    robust = _estimate_maximin_joint_until_ranked(
+        family_components,
+        zero_conditional,
+        tuple(model.likelihood_power for model in models),
+        representative.safe_mask,
+        minimum_samples,
+        maximum_samples,
+        error_safety_factor,
+        growth_factor,
+    )
+    least = robust.least_favorable_indices
+    class_scores = _least_favorable_values(robust.class_scores_by_model, least)
+    class_errors = _least_favorable_values(robust.class_errors_by_model, least)
+    raw_scores, errors, secondary_mask = _resolve_decision_targeted_utility(
+        robust, representative, unresolved_action
+    )
+    secondary_used = secondary_mask is not None
+    nominal_components = predictive_components_for_partition(
+        engine, posterior, target_partition, actions
+    )
+    result = _build_discriminative_scores(
+        nominal_components,
+        representative,
+        robust,
+        class_scores,
+        class_errors,
+        np.zeros(action_count, dtype=float),
+        raw_scores,
+        errors,
+        "representative-safe-robust-operational-class-eig-"
+        "copula-transport-invariant",
+        None,
+    )
+    return replace(
+        result,
+        policy=DECISION_TARGETED_POLICY,
+        ranking_certified=bool(robust.ranking_certified or secondary_used),
+        ranking_certificate_method=(
+            P3H_INTERVAL_FRONTIER_RESOLUTION
+            if secondary_used else MAXIMIN_RANK_CERTIFICATE
+        ),
+        primary_ranking_certified=robust.ranking_certified,
+        possible_maximizer_mask=robust.possible_maximizer_mask,
+        possible_maximizer_count=robust.possible_maximizer_count,
+        secondary_resolution_used=secondary_used,
+        secondary_resolution_method=(
+            P3H_INTERVAL_FRONTIER_RESOLUTION if secondary_used else "not-applied"
+        ),
+        selection_admissible_mask=secondary_mask,
+        semiparametric_transport_method=P3I_COPULA_TRANSPORT_METHOD,
+        semiparametric_information_invariance_applied=True,
+        decision_target=(
+            "frozen-operational-class-log-risk|" + P3I_INFORMATION_INVARIANCE
+        ),
     )
 
 

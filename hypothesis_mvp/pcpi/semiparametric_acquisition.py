@@ -31,6 +31,12 @@ P3H_CLASS_EIG_METHOD = (
     "p3h-marginal-preserving-kl-projection-gauss-legendre-class-eig-v1"
 )
 P3H_CLASS_COUPLING = "fixed-marginal-i-projection-of-base-class-responsibilities"
+P3I_COPULA_TRANSPORT_METHOD = (
+    "mixture-pit-copula-preserving-monotone-transport-v1"
+)
+P3I_INFORMATION_INVARIANCE = (
+    "invertible-coordinate-transport-preserves-mutual-information"
+)
 
 
 def _readonly(values: np.ndarray) -> np.ndarray:
@@ -66,6 +72,37 @@ class SemiparametricClassCoupling:
         object.__setattr__(
             self, "joint_probabilities", _readonly(self.joint_probabilities)
         )
+
+
+@dataclass(frozen=True)
+class CopulaTransportClassCoupling:
+    """Class/response joint induced by the base copula and P3H marginal."""
+
+    output_raw_pit_nodes: np.ndarray
+    base_raw_pit_nodes: np.ndarray
+    output_response_nodes: np.ndarray
+    base_response_nodes: np.ndarray
+    outcome_probabilities: np.ndarray
+    class_probabilities: np.ndarray
+    joint_probabilities: np.ndarray
+    mutual_information: float
+    base_pullback_mutual_information: float
+    maximum_marginal_error: float
+    invariance_error: float
+    method: str = P3I_COPULA_TRANSPORT_METHOD
+    invariance_method: str = P3I_INFORMATION_INVARIANCE
+
+    def __post_init__(self) -> None:
+        for name in (
+            "output_raw_pit_nodes",
+            "base_raw_pit_nodes",
+            "output_response_nodes",
+            "base_response_nodes",
+            "outcome_probabilities",
+            "class_probabilities",
+            "joint_probabilities",
+        ):
+            object.__setattr__(self, name, _readonly(getattr(self, name)))
 
 
 @dataclass(frozen=True)
@@ -351,6 +388,81 @@ def semiparametric_class_coupling(
     )
 
 
+def copula_transport_class_coupling(
+    components: PredictiveComponents,
+    residual_law: DyadicPolyaTreePredictiveLaw,
+    action_index: int,
+    nodes_per_leaf: int,
+) -> CopulaTransportClassCoupling:
+    """Push the base class/response law through the P3H marginal transport.
+
+    If ``F`` is the base mixture CDF and ``G`` the P3H residual CDF, the
+    output response is ``F^-1(G^-1(F(Y_base)))``.  The map is common to every
+    structure and strictly monotone.  Class responsibilities must therefore
+    be evaluated at the pullback base quantile ``G(u)``, not at the output
+    quantile ``u``.  This preserves the class marginal without an I-projection
+    and makes class mutual information invariant to the marginal transport.
+    """
+
+    if action_index < 0 or action_index >= components.locations.shape[1]:
+        raise IndexError("P3I transport action index is outside the candidate bank")
+    class_probabilities = _validated_class_probabilities(components)
+    output_pits, outcome_probabilities = _residual_quadrature(
+        residual_law, nodes_per_leaf
+    )
+    base_pits = residual_law.cdf(output_pits)
+    locations = components.locations[:, action_index]
+    scales = components.scales[:, action_index]
+    degrees = components.degrees_freedom
+    weights = components.structure_probabilities
+    output_responses = _mixture_inverse_cdf(
+        output_pits, locations, scales, degrees, weights
+    )
+    base_responses = _mixture_inverse_cdf(
+        base_pits, locations, scales, degrees, weights
+    )
+    log_responsibilities = _base_class_log_responsibilities(
+        components, action_index, base_responses
+    )
+    responsibilities = np.exp(log_responsibilities)
+    joint = outcome_probabilities[:, None] * responsibilities
+    row_error = float(np.max(np.abs(np.sum(joint, axis=1) - outcome_probabilities)))
+    column_error = float(np.max(
+        np.abs(np.sum(joint, axis=0) - class_probabilities)
+    ))
+    information_terms = joint * (
+        log_responsibilities - np.log(class_probabilities)[None, :]
+    )
+    information = float(np.sum(information_terms))
+    pullback_information = float(np.sum(
+        outcome_probabilities[:, None]
+        * responsibilities
+        * (log_responsibilities - np.log(class_probabilities)[None, :])
+    ))
+    marginal_error = max(row_error, column_error)
+    invariance_error = abs(information - pullback_information)
+    allowance = 4096.0 * np.finfo(float).eps + 4.0 * marginal_error
+    if (
+        information < -allowance
+        or information > categorical_entropy(class_probabilities) + allowance
+        or not np.isfinite(information)
+    ):
+        raise FloatingPointError("P3I transport information is numerically invalid")
+    return CopulaTransportClassCoupling(
+        output_raw_pit_nodes=output_pits,
+        base_raw_pit_nodes=base_pits,
+        output_response_nodes=output_responses,
+        base_response_nodes=base_responses,
+        outcome_probabilities=outcome_probabilities,
+        class_probabilities=class_probabilities,
+        joint_probabilities=joint,
+        mutual_information=max(0.0, information),
+        base_pullback_mutual_information=max(0.0, pullback_information),
+        maximum_marginal_error=marginal_error,
+        invariance_error=invariance_error,
+    )
+
+
 def _semiparametric_scores(
     components: PredictiveComponents,
     residual_law: DyadicPolyaTreePredictiveLaw,
@@ -583,13 +695,17 @@ def estimate_semiparametric_class_eig_until_ranked(
 
 
 __all__ = [
+    "P3I_COPULA_TRANSPORT_METHOD",
+    "P3I_INFORMATION_INVARIANCE",
     "P3H_CLASS_COUPLING",
     "P3H_CLASS_EIG_METHOD",
     "AdaptiveSemiparametricEIGEstimate",
+    "CopulaTransportClassCoupling",
     "SemiparametricClassCoupling",
     "SemiparametricEIGEstimate",
     "estimate_semiparametric_class_eig",
     "estimate_semiparametric_class_eig_until_ranked",
+    "copula_transport_class_coupling",
     "refine_semiparametric_class_eig",
     "semiparametric_class_coupling",
 ]

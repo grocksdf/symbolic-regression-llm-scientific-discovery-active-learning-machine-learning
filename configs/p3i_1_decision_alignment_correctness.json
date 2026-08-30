@@ -1,0 +1,23 @@
+{
+  "schema": "pcpi-p3i1-decision-alignment-correctness-config-v1",
+  "stage": "P3I.1",
+  "role": "inference correctness diagnostic fixture",
+  "measurement_budget": 32,
+  "likelihood_power_candidates": [0.5, 1.0],
+  "quadrature_minimum_evaluations": 32,
+  "quadrature_maximum_evaluations": 64,
+  "quadrature_error_safety_factor": 4.0,
+  "quadrature_growth_factor": 2,
+  "transport_nodes_per_leaf": 64,
+  "operational_class_metric": "frozen-common-scale-posterior-mean-regret-rms",
+  "semiparametric_transport": "mixture-pit-copula-preserving-monotone-transport-v1",
+  "decision_target": "frozen-operational-class-log-risk",
+  "conditional_predictive_information_in_primary_score": false,
+  "simulated_experiment": false,
+  "real_data_access": false,
+  "validation_response_access": false,
+  "candidate_response_access": false,
+  "heldout_access": false,
+  "operational_execution_authorized": false,
+  "formal_efficacy_evidence": false
+}

@@ -535,3 +535,15 @@ long-horizon context and remain binding even when a local task omits them.
   `nextafter`, rounded snapshot arrays, observed-class `other` buckets,
   post-hoc normalization, jitter, regularization and tolerance relaxation are
   not admissible substitutes.
+- The user-executed P3H.9 real-development run is an immutable protocol-valid
+  negative: 96/96 policy runs and 3072/3072 queries completed with no failures,
+  but the terminal assessment was
+  `OPERATIONAL_CLASSES_DEGENERATE_NO_CLASS_CLAIM` and both strong-evidence
+  flags were false. It must not be rerun. P3I.1 replaces neither evidence nor
+  thresholds. It defines operational classes by frozen common-scale posterior
+  mean regret, treats the P3H marginal correction as a common invertible PIT
+  transport whose class mutual information is invariant, and makes robust
+  frozen-class EIG the sole primary utility. The historical P3H.3 KL-projected
+  copula and conditional Gaussian-moment EPIG are excluded from the P3I route.
+  P3I.1 is response-free correctness only; real, validation, candidate-response,
+  held-out, operational and efficacy authorization remain false.
