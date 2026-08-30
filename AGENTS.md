@@ -558,3 +558,14 @@ long-horizon context and remain binding even when a local task omits them.
   seed replacement. P3I.2 remains source-composition only and is blocked before
   real-data or output access; operational, efficacy and held-out authorization
   remain false.
+- P3I.3 changes only the P3I.2 schema, stage and explicit execution
+  authorization; its scientific, numerical and assessment configuration is
+  otherwise identical. It authorizes exactly one user-executed, supervised,
+  held-out-closed real-development run and does not authorize Codex execution.
+  The launch must freeze branch/commit/tree/config hash, isolate only historical
+  untracked evidence, reject existing output, surface fsync progress and the
+  first terminal failure, preserve stderr, stop the child on interruption, and
+  restore evidence. A successful process is not sufficient: 96/96 runs, zero
+  failures, protocol Gate pass, valid evidence registry, exact manifest identity
+  and held-out closure are mandatory. Any protocol-valid negative result is
+  immutable and cannot be rerun; this is not independent confirmation.

@@ -505,3 +505,22 @@ output access. Its eight source decisions and focused 50-test regression pass,
 and the complete repository regression passes 749/749, but it authorizes no
 real execution. See
 `docs/pcpi_p3i2_source_composition_contract_20260831.md`.
+
+## P3I.3 supervised real-development freeze
+
+P3I.3 promotes the blocked P3I.2 candidate to one user-only formal execution.
+After removing schema, stage and the authorization boolean, the two configs are
+identical. Thus no scientific method, budget, seed, numerical schedule, class
+threshold, utility or assessment rule changes at authorization time. The run is
+failure-informed development, not independent confirmation.
+
+The supervised launcher checks the exact final branch, commit, tree and config
+hash; isolates only the user's historical untracked evidence; refuses existing
+outputs; streams fsync-backed progress; preserves stdout/stderr; exposes the
+first terminal failure; stops its child on interruption; and restores evidence.
+Success additionally requires 96/96 runs, no failures, a passed protocol Gate,
+valid evidence registry, exact manifest identity and held-out closure. The
+response-free Gate passes eleven decisions, the focused regression passes 55
+tests, PowerShell parsing passes and the complete repository regression passes
+764/764. Codex execution remains forbidden. See
+`docs/pcpi_p3i3_real_execution_protocol_20260831.md`.
