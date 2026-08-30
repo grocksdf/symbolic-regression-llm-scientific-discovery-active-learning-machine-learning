@@ -98,6 +98,7 @@ def test_p3i3_gate_uses_no_data_and_authorizes_only_user_execution() -> None:
 
 def test_supervisor_freezes_identity_monitors_and_verifies_terminal_state() -> None:
     source = SUPERVISOR.read_text(encoding="utf-8")
+    assert source.isascii()
     for required in (
         "status --porcelain=v1 --untracked-files=all",
         "rev-parse HEAD",
@@ -131,7 +132,7 @@ def test_supervisor_has_no_resume_overwrite_or_destructive_git_surface() -> None
         "seed replacement",
     ):
         assert forbidden not in source
-    assert "唯一运行路径已经存在，禁止重跑或覆盖" in SUPERVISOR.read_text(
+    assert "Unique run path already exists; rerun/overwrite forbidden" in SUPERVISOR.read_text(
         encoding="utf-8"
     )
 
@@ -141,7 +142,7 @@ def test_supervisor_restores_evidence_and_stops_child_on_interruption() -> None:
     assert "finally" in source
     assert "Stop-Process -Id $process.Id -Force" in source
     assert "Move-Item -LiteralPath $stashPath -Destination $evidencePath" in source
-    assert "安全副本保留在" in source
+    assert "safe copy retained at" in source
 
 
 def test_authorization_check_remains_before_any_data_path_check() -> None:

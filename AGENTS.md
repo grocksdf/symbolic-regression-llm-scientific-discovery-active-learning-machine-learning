@@ -569,3 +569,6 @@ long-horizon context and remain binding even when a local task omits them.
   failures, protocol Gate pass, valid evidence registry, exact manifest identity
   and held-out closure are mandatory. Any protocol-valid negative result is
   immutable and cannot be rerun; this is not independent confirmation.
+  The supervised `.ps1` source must remain ASCII-only and pass the actual
+  Windows PowerShell 5.1 parser; UTF-8 without BOM plus non-ASCII diagnostics is
+  not an admissible launcher format on the user's host.

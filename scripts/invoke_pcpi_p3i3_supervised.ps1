@@ -33,51 +33,51 @@ $process = $null
 $hadEvidence = $false
 
 if (-not (Test-Path -LiteralPath $projectPath -PathType Container)) {
-    throw "项目目录不存在：$projectPath"
+    throw "Project directory does not exist: $projectPath"
 }
 if (-not (Test-Path -LiteralPath $pythonPath -PathType Leaf)) {
-    throw "冻结 Python 不存在：$pythonPath"
+    throw "Frozen Python does not exist: $pythonPath"
 }
 if (-not (Test-Path -LiteralPath $dataRootPath -PathType Container)) {
-    throw "真实数据目录不存在：$dataRootPath"
+    throw "Real-data directory does not exist: $dataRootPath"
 }
 if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
-    throw "P3I.3 配置不存在：$configPath"
+    throw "P3I.3 config does not exist: $configPath"
 }
 if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) {
-    throw "P3I.3 runner 不存在：$runner"
+    throw "P3I.3 runner does not exist: $runner"
 }
 if (
     $outputPath -ne $outputsRoot -and
     -not $outputPath.StartsWith($outputsRoot + '\', [System.StringComparison]::OrdinalIgnoreCase)
 ) {
-    throw "正式输出必须位于项目 outputs/ 内：$outputPath"
+    throw "Formal output must be inside project outputs/: $outputPath"
 }
 if ($outputPath -eq $outputsRoot) {
-    throw '正式输出不能直接使用整个 outputs/ 根目录'
+    throw 'Formal output cannot be the outputs/ root itself'
 }
 if (
     [System.IO.Directory]::GetParent($stashPath).FullName.TrimEnd('\') -ne
     $projectParent
 ) {
-    throw "证据暂存目录必须是项目同级的显式目录：$stashPath"
+    throw "Evidence stash must be an explicit project sibling: $stashPath"
 }
 if ($stashPath.StartsWith($projectPath + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "证据暂存目录不能位于项目内部：$stashPath"
+    throw "Evidence stash cannot be inside the project: $stashPath"
 }
 foreach ($freshPath in @($outputPath, $stdoutLog, $stderrLog, $stashPath)) {
     if (Test-Path -LiteralPath $freshPath) {
-        throw "唯一运行路径已经存在，禁止重跑或覆盖：$freshPath"
+        throw "Unique run path already exists; rerun/overwrite forbidden: $freshPath"
     }
 }
 
 $status = @(& git -C $projectPath status --porcelain=v1 --untracked-files=all)
 if ($LASTEXITCODE -ne 0) {
-    throw '无法检查 Git 工作树状态'
+    throw 'Cannot inspect Git worktree status'
 }
 $unexpected = @($status | Where-Object { $_ -notmatch '^\?\? evidence/' })
 if ($unexpected.Count -ne 0) {
-    throw "存在 evidence/ 之外的工作树变化：`n$($unexpected -join "`n")"
+    throw "Worktree changes exist outside evidence/:`n$($unexpected -join "`n")"
 }
 $hadEvidence = Test-Path -LiteralPath $evidencePath -PathType Container
 
@@ -87,7 +87,7 @@ try {
     }
     $remaining = @(& git -C $projectPath status --porcelain=v1 --untracked-files=all)
     if ($LASTEXITCODE -ne 0 -or $remaining.Count -ne 0) {
-        throw "证据隔离后工作树仍不洁：`n$($remaining -join "`n")"
+        throw "Worktree remains dirty after evidence isolation:`n$($remaining -join "`n")"
     }
 
     $actualBranch = (& git -C $projectPath branch --show-current).Trim()
@@ -97,19 +97,19 @@ try {
         Get-FileHash -Algorithm SHA256 -LiteralPath $configPath
     ).Hash.ToLowerInvariant()
     if ($actualBranch -ne $ExpectedBranch) {
-        throw "分支不匹配：$actualBranch"
+        throw "Branch mismatch: $actualBranch"
     }
     if ($actualCommit -ne $ExpectedCommit.ToLowerInvariant()) {
-        throw "提交不匹配：$actualCommit"
+        throw "Commit mismatch: $actualCommit"
     }
     if ($actualTree -ne $ExpectedTree.ToLowerInvariant()) {
-        throw "源码树不匹配：$actualTree"
+        throw "Source tree mismatch: $actualTree"
     }
     if ($actualConfigHash -ne $ExpectedConfigHash.ToLowerInvariant()) {
-        throw "配置哈希不匹配：$actualConfigHash"
+        throw "Config hash mismatch: $actualConfigHash"
     }
     if ($PreflightOnly) {
-        Write-Host 'P3I.3 监督启动预检通过；未创建输出，未启动真实进程。'
+        Write-Host 'P3I.3 supervised preflight passed; no output or real process created.'
         return
     }
 
@@ -130,7 +130,7 @@ try {
         -RedirectStandardError $stderrLog `
         -WindowStyle Hidden `
         -PassThru
-    Write-Host "P3I.3 已启动，PID=$($process.Id)，输出=$outputPath"
+    Write-Host "P3I.3 started: PID=$($process.Id) output=$outputPath"
 
     $lastProgress = ''
     $terminalShown = $false
@@ -149,7 +149,7 @@ try {
         ) {
             $terminal = Get-Content -LiteralPath $terminalFailurePath -Raw |
                 ConvertFrom-Json
-            Write-Error ("P3I.3 首错终止：{0}" -f $terminal.failure.failure_status)
+            Write-Error ("P3I.3 stopped at first failure: {0}" -f $terminal.failure.failure_status)
             $terminalShown = $true
         }
         Start-Sleep -Seconds $HeartbeatSeconds
@@ -160,17 +160,17 @@ try {
         if (Test-Path -LiteralPath $stderrLog -PathType Leaf) {
             Get-Content -LiteralPath $stderrLog -Tail 40 | Write-Host
         }
-        throw "P3I.3 正式进程失败，退出码：$($process.ExitCode)"
+        throw "P3I.3 formal process failed with exit code $($process.ExitCode)"
     }
     if (Test-Path -LiteralPath $terminalFailurePath) {
-        throw "进程返回成功但存在终止记录：$terminalFailurePath"
+        throw "Process returned success but terminal failure exists: $terminalFailurePath"
     }
 
     $summaryPath = Join-Path $outputPath 'summary.json'
     $manifestPath = Join-Path $outputPath 'RUN_MANIFEST.json'
     foreach ($terminalPath in @($summaryPath, $manifestPath)) {
         if (-not (Test-Path -LiteralPath $terminalPath -PathType Leaf)) {
-            throw "正式终态文件缺失：$terminalPath"
+            throw "Formal terminal artifact is missing: $terminalPath"
         }
     }
     $summary = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json
@@ -182,7 +182,7 @@ try {
         $summary.heldout_opened -or
         $summary.selection_used_heldout
     ) {
-        throw 'P3I.3 summary 未通过完整性、失败或 held-out 终态检查'
+        throw 'P3I.3 summary failed completeness, failure, or held-out checks'
     }
     if (
         $manifest.stage -ne 'P3I.3' -or
@@ -194,10 +194,10 @@ try {
         $manifest.heldout_opened -or
         $manifest.selection_used_heldout
     ) {
-        throw 'P3I.3 manifest 的源码、配置、证据或 held-out 身份不匹配'
+        throw 'P3I.3 manifest source/config/evidence/held-out identity mismatch'
     }
     Write-Host (
-        "P3I.3 完成：protocol=PASS assessment={0} runs={1}/{2}" -f
+        "P3I.3 complete: protocol=PASS assessment={0} runs={1}/{2}" -f
         $summary.effectiveness_assessment.status,
         $summary.successful_runs,
         $summary.expected_runs
@@ -213,7 +213,7 @@ finally {
     }
     if ($hadEvidence -and (Test-Path -LiteralPath $stashPath)) {
         if (Test-Path -LiteralPath $evidencePath) {
-            throw "无法恢复历史 evidence/；安全副本保留在：$stashPath"
+            throw "Cannot restore historical evidence/; safe copy retained at: $stashPath"
         }
         Move-Item -LiteralPath $stashPath -Destination $evidencePath
     }

@@ -54,6 +54,12 @@ clean-tree and evidence-isolation/restoration path, then returns before output
 creation or child-process launch. Codex may execute only this no-data mode; the
 real mode remains user-only.
 
+The executable PowerShell source is deliberately ASCII-only. This is required
+because Windows PowerShell 5.1 decodes UTF-8 files without a BOM through the
+legacy system code page; non-ASCII diagnostic text can otherwise corrupt quote
+parsing before any preflight executes. The script is validated with the actual
+Windows PowerShell 5.1 parser, not only PowerShell 7.
+
 The supervisor starts the frozen runner in a hidden child process and displays
 the latest fsync-backed progress event every time it changes. Stdout and stderr
 are preserved beside the unique output. The first runner failure creates
