@@ -192,6 +192,11 @@ from .p3j_run_identity import (
     publish_p3j_terminal_failure,
     score_identity_bound_p3j_query,
 )
+from .p3j_query_runner import (
+    P3J_QUERY_DECISION_SCHEMA,
+    p3j_query_progress_snapshot,
+    run_p3j_formal_query,
+)
 from .decision import (
     REFERENCE_DOMINANCE_METHOD,
     REFERENCE_FALLBACK_MODE,
@@ -399,6 +404,9 @@ __all__ = [
     "publish_p3j_query_progress",
     "publish_p3j_terminal_failure",
     "score_identity_bound_p3j_query",
+    "P3J_QUERY_DECISION_SCHEMA",
+    "p3j_query_progress_snapshot",
+    "run_p3j_formal_query",
     "REFERENCE_DOMINANCE_METHOD",
     "REFERENCE_FALLBACK_MODE",
     "TARGETED_HANDOVER_MODE",

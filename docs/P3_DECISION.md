@@ -648,3 +648,13 @@ identity fails before scoring; terminal failure is fsync-published once without
 overwrite. The Windows supervisor is preflight-only and launches no process.
 Formal execution remains blocked pending P3J.9 runner composition. See
 `docs/pcpi_p3j8_supervised_identity_audit_20260831.md`.
+
+## P3J.9 indivisible response-free query transaction
+
+P3J.9 resumes verified model checkpoints or a previously published complete
+decision without rescoring. A new decision is identity-bound, contains the
+complete score audit, is published once, and explicitly records that no
+response has been opened. The first error publishes a no-overwrite terminal
+failure and forbids query retry. Response admission and the full dataset runner
+remain blocked pending P3J.10. See
+`docs/pcpi_p3j9_query_transaction_audit_20260901.md`.

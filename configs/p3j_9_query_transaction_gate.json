@@ -1,0 +1,21 @@
+{
+  "schema": "pcpi-p3j9-query-transaction-gate-config-v1",
+  "stage": "P3J.9",
+  "predecessor": "P3J.8/supervised-formal-query-identity",
+  "decision_schema": "pcpi-p3j9-indivisible-query-decision-v1",
+  "transaction_order": [
+    "reject-prior-terminal-failure",
+    "resume-complete-decision-without-rescoring",
+    "score-identity-bound-complete-family",
+    "publish-one-response-free-decision",
+    "on-first-error-publish-terminal-no-retry"
+  ],
+  "real_data_access": false,
+  "candidate_response_access": false,
+  "validation_access": false,
+  "heldout_access": false,
+  "simulated_experiment": false,
+  "response_admission_authorized": false,
+  "operational_execution_authorized": false,
+  "formal_dataset_runner_authorized": false
+}

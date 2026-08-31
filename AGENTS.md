@@ -644,3 +644,7 @@ root to dataset, seed, query, candidate domain, source tree, and frozen config.
 P3J.8 provides that identity and a preflight-only supervisor. It still cannot
 launch a process; P3J.9 must compose progress callbacks, fail-fast termination,
 and terminal manifest verification before any real execution authorization.
+P3J.9 publishes an indivisible response-free query decision and terminally
+closes its first failure. Response admission and the whole dataset runner stay
+blocked until P3J.10 proves matching reveal, exactly-once advance, and terminal
+run-ledger composition.
