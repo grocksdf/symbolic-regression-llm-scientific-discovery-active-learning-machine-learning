@@ -1,0 +1,27 @@
+{
+  "schema": "pcpi-p3j8-supervised-identity-gate-config-v1",
+  "stage": "P3J.8",
+  "predecessor": "P3J.7/checkpointed-complete-family",
+  "query_identity_schema": "pcpi-p3j8-formal-query-identity-v1",
+  "publication": "fsync-staging-then-no-overwrite-hardlink",
+  "identity_fields": [
+    "source_git_tree",
+    "config_sha256",
+    "dataset_id",
+    "seed",
+    "query_index",
+    "candidate_ids_hash",
+    "candidate_actions_hash",
+    "predictive_target_actions_hash",
+    "representative_observed_actions_hash",
+    "operational_state_hash"
+  ],
+  "real_data_access": false,
+  "candidate_response_access": false,
+  "validation_access": false,
+  "heldout_access": false,
+  "simulated_experiment": false,
+  "operational_execution_authorized": false,
+  "formal_runner_authorized": false,
+  "supervisor_mode": "preflight-only"
+}

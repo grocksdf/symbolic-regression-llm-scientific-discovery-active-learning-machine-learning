@@ -638,3 +638,13 @@ and an interrupted model family cannot reach candidate selection. The real
 runner remains blocked pending dataset/seed/query/candidate-domain identity
 binding and supervised terminal reporting in P3J.8. See
 `docs/pcpi_p3j7_checkpointed_family_audit_20260831.md`.
+
+## P3J.8 supervised formal-query identity
+
+P3J.8 binds every resumable query workspace to source tree, frozen config,
+dataset, seed, query, ordered candidate domain, predictive target domain,
+representative observed domain, and the complete operational state. Crossed
+identity fails before scoring; terminal failure is fsync-published once without
+overwrite. The Windows supervisor is preflight-only and launches no process.
+Formal execution remains blocked pending P3J.9 runner composition. See
+`docs/pcpi_p3j8_supervised_identity_audit_20260831.md`.

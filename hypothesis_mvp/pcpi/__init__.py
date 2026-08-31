@@ -181,6 +181,17 @@ from .p3j_checkpointed import (
     checkpointed_class_conditional_semiparametric_eig,
     complete_p3j_quadrature_grid,
 )
+from .p3j_run_identity import (
+    P3J_RUN_IDENTITY_SCHEMA,
+    P3J_RUN_PUBLICATION,
+    P3JFormalQueryIdentity,
+    P3JQueryWorkspace,
+    build_p3j_formal_query_identity,
+    open_p3j_query_workspace,
+    publish_p3j_query_progress,
+    publish_p3j_terminal_failure,
+    score_identity_bound_p3j_query,
+)
 from .decision import (
     REFERENCE_DOMINANCE_METHOD,
     REFERENCE_FALLBACK_MODE,
@@ -379,6 +390,15 @@ __all__ = [
     "P3J_CHECKPOINTED_ESTIMATOR",
     "checkpointed_class_conditional_semiparametric_eig",
     "complete_p3j_quadrature_grid",
+    "P3J_RUN_IDENTITY_SCHEMA",
+    "P3J_RUN_PUBLICATION",
+    "P3JFormalQueryIdentity",
+    "P3JQueryWorkspace",
+    "build_p3j_formal_query_identity",
+    "open_p3j_query_workspace",
+    "publish_p3j_query_progress",
+    "publish_p3j_terminal_failure",
+    "score_identity_bound_p3j_query",
     "REFERENCE_DOMINANCE_METHOD",
     "REFERENCE_FALLBACK_MODE",
     "TARGETED_HANDOVER_MODE",

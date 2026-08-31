@@ -641,3 +641,6 @@ four-model adaptive-look composition has its own Gate.
 P3J.7 completes that four-model adaptive-look composition but remains no-data.
 Do not authorize execution until a supervised runner binds every checkpoint
 root to dataset, seed, query, candidate domain, source tree, and frozen config.
+P3J.8 provides that identity and a preflight-only supervisor. It still cannot
+launch a process; P3J.9 must compose progress callbacks, fail-fast termination,
+and terminal manifest verification before any real execution authorization.
