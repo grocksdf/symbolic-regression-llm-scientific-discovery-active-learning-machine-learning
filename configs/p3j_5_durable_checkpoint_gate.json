@@ -1,0 +1,17 @@
+{
+  "schema": "pcpi-p3j5-durable-checkpoint-gate-config-v1",
+  "stage": "P3J.5",
+  "checkpoint_schema": "pcpi-p3j5-deterministic-chunk-checkpoint-v1",
+  "publication": "fsync-staging-then-atomic-replace",
+  "prefix_policy": "contiguous-no-gap-no-duplicate",
+  "resume_identity": ["predictive-components", "residual-state", "target-partition", "nodes-per-leaf", "action-count", "chunk-size"],
+  "partial_output_policy": "no-ranking-no-selection-no-score-release",
+  "stale_staging_policy": "fail-closed-no-overwrite",
+  "runner_composition_authorized": false,
+  "operational_execution_authorized": false,
+  "real_data_access": false,
+  "candidate_response_access": false,
+  "validation_response_access": false,
+  "heldout_access": false,
+  "simulated_experiment": false
+}

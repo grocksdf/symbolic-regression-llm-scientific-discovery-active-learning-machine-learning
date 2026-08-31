@@ -141,6 +141,36 @@ class ClassConditionalCoupling:
 
 
 @dataclass(frozen=True)
+class ClassConditionalChunkResult:
+    """One contiguous, identity-bound action chunk before global selection."""
+
+    start: int
+    stop: int
+    mutual_information: np.ndarray
+    maximum_conditional_normalization_error: float
+    nodes_per_leaf: int
+    residual_state_hash: str
+    target_partition_hash: str
+
+    def __post_init__(self) -> None:
+        scores = _readonly(self.mutual_information).reshape(-1)
+        if (
+            isinstance(self.start, bool)
+            or isinstance(self.stop, bool)
+            or self.start < 0
+            or self.stop <= self.start
+            or len(scores) != self.stop - self.start
+            or np.any(scores < 0.0)
+            or self.nodes_per_leaf < 2
+            or self.maximum_conditional_normalization_error < 0.0
+            or not self.residual_state_hash
+            or not self.target_partition_hash
+        ):
+            raise ValueError("P3J action chunk result is invalid")
+        object.__setattr__(self, "mutual_information", scores)
+
+
+@dataclass(frozen=True)
 class ClassConditionalEIGEstimate:
     """Nested deterministic estimate under the class-conditional joint law."""
 
@@ -529,6 +559,91 @@ def _class_base_logpdf_and_cdf_action_batch(
     return logpdf, cdf
 
 
+def _class_conditional_semiparametric_chunk(
+    components: PredictiveComponents,
+    state: ClassConditionalResidualState,
+    nodes_per_leaf: int,
+    start: int,
+    stop: int,
+) -> ClassConditionalChunkResult:
+    """Evaluate one already-validated contiguous action slice."""
+
+    class_probabilities = _validate_state_for_components(components, state)
+    laws = state.residual_laws
+    action_slice = slice(start, stop)
+    information = np.zeros(stop - start, dtype=float)
+    maximum_normalization_error = 0.0
+    for source_index, law in enumerate(laws):
+        raw_pits, weights = _residual_quadrature(law, nodes_per_leaf)
+        members = np.asarray(
+            components.partition.member_indices[source_index], dtype=int
+        )
+        source_probability = class_probabilities[source_index]
+        source_weights = components.structure_probabilities[members] / source_probability
+        responses = _mixture_inverse_cdf_action_batch(
+            raw_pits,
+            components.locations[members, action_slice],
+            components.scales[members, action_slice],
+            components.degrees_freedom[members],
+            source_weights,
+        )
+        base_logpdf, base_cdf = _class_base_logpdf_and_cdf_action_batch(
+            components, action_slice, responses
+        )
+        calibrated = np.stack([
+            base_logpdf[index]
+            + laws[index].log_density(base_cdf[index].reshape(-1)).reshape(
+                stop - start, -1
+            )
+            for index in range(len(laws))
+        ])
+        mixture = logsumexp(
+            np.log(class_probabilities)[:, None, None] + calibrated, axis=0
+        )
+        information += source_probability * np.sum(
+            weights[None, :] * (calibrated[source_index] - mixture), axis=1
+        )
+        maximum_normalization_error = max(
+            maximum_normalization_error, abs(float(np.sum(weights)) - 1.0)
+        )
+    roundoff = 4096.0 * np.finfo(float).eps
+    if np.any(information < -roundoff):
+        raise FloatingPointError("P3J batched quadrature produced negative information")
+    return ClassConditionalChunkResult(
+        start=start,
+        stop=stop,
+        mutual_information=np.maximum(0.0, information),
+        maximum_conditional_normalization_error=maximum_normalization_error,
+        nodes_per_leaf=int(nodes_per_leaf),
+        residual_state_hash=state.stable_hash,
+        target_partition_hash=components.partition.stable_hash,
+    )
+
+
+def iter_class_conditional_semiparametric_chunks(
+    components: PredictiveComponents,
+    state: ClassConditionalResidualState,
+    nodes_per_leaf: int,
+    *,
+    action_chunk_size: int = 16,
+):
+    """Yield every action chunk in one deterministic contiguous prefix order."""
+
+    chunk_size = int(action_chunk_size)
+    if (
+        isinstance(action_chunk_size, bool)
+        or chunk_size != action_chunk_size
+        or chunk_size < 1
+    ):
+        raise ValueError("P3J action chunk size must be a positive integer")
+    action_count = components.locations.shape[1]
+    for start in range(0, action_count, chunk_size):
+        stop = min(action_count, start + chunk_size)
+        yield _class_conditional_semiparametric_chunk(
+            components, state, nodes_per_leaf, start, stop
+        )
+
+
 def class_conditional_semiparametric_couplings(
     components: PredictiveComponents,
     state: ClassConditionalResidualState,
@@ -539,68 +654,19 @@ def class_conditional_semiparametric_couplings(
     """Evaluate every action in bounded batches without changing its joint law."""
 
     class_probabilities = _validate_state_for_components(components, state)
-    chunk_size = int(action_chunk_size)
-    if (
-        isinstance(action_chunk_size, bool)
-        or chunk_size != action_chunk_size
-        or chunk_size < 1
-    ):
-        raise ValueError("P3J action chunk size must be a positive integer")
-    laws = state.residual_laws
-    action_count = components.locations.shape[1]
-    information = np.zeros(action_count, dtype=float)
-    maximum_normalization_error = 0.0
-    for start in range(0, action_count, chunk_size):
-        stop = min(action_count, start + chunk_size)
-        action_slice = slice(start, stop)
-        chunk_information = np.zeros(stop - start, dtype=float)
-        for source_index, law in enumerate(laws):
-            raw_pits, weights = _residual_quadrature(law, nodes_per_leaf)
-            members = np.asarray(
-                components.partition.member_indices[source_index], dtype=int
-            )
-            source_probability = class_probabilities[source_index]
-            source_weights = (
-                components.structure_probabilities[members] / source_probability
-            )
-            responses = _mixture_inverse_cdf_action_batch(
-                raw_pits,
-                components.locations[members, action_slice],
-                components.scales[members, action_slice],
-                components.degrees_freedom[members],
-                source_weights,
-            )
-            base_logpdf, base_cdf = _class_base_logpdf_and_cdf_action_batch(
-                components, action_slice, responses
-            )
-            calibrated = np.stack([
-                base_logpdf[index]
-                + laws[index].log_density(base_cdf[index].reshape(-1)).reshape(
-                    stop - start, -1
-                )
-                for index in range(len(laws))
-            ])
-            mixture = logsumexp(
-                np.log(class_probabilities)[:, None, None] + calibrated, axis=0
-            )
-            chunk_information += source_probability * np.sum(
-                weights[None, :] * (calibrated[source_index] - mixture), axis=1
-            )
-            maximum_normalization_error = max(
-                maximum_normalization_error, abs(float(np.sum(weights)) - 1.0)
-            )
-        information[action_slice] = chunk_information
-    roundoff = 4096.0 * np.finfo(float).eps
-    if np.any(information < -roundoff):
-        raise FloatingPointError("P3J batched quadrature produced negative information")
+    chunks = tuple(iter_class_conditional_semiparametric_chunks(
+        components, state, nodes_per_leaf, action_chunk_size=action_chunk_size
+    ))
     return tuple(
         ClassConditionalCoupling(
             class_probabilities=class_probabilities,
             mutual_information=max(0.0, float(value)),
             nodes_per_leaf=int(nodes_per_leaf),
-            maximum_conditional_normalization_error=maximum_normalization_error,
+            maximum_conditional_normalization_error=max(
+                item.maximum_conditional_normalization_error for item in chunks
+            ),
         )
-        for value in information
+        for item in chunks for value in item.mutual_information
     )
 
 
@@ -954,12 +1020,14 @@ __all__ = [
     "CalibratedClassPosteriorState",
     "CalibratedClassUpdate",
     "ClassConditionalCoupling",
+    "ClassConditionalChunkResult",
     "ClassConditionalEIGEstimate",
     "ClassConditionalResidualState",
     "advance_calibrated_class_posterior",
     "advance_class_conditional_residual_state",
     "class_conditional_semiparametric_coupling",
     "class_conditional_semiparametric_couplings",
+    "iter_class_conditional_semiparametric_chunks",
     "estimate_class_conditional_semiparametric_eig",
     "initialize_calibrated_class_posterior",
     "initialize_class_conditional_residual_state",

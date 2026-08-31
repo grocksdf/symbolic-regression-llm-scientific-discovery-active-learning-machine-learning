@@ -608,3 +608,13 @@ SciPy distribution dispatches fall from `1,720,320` to `107,520` (`93.75%`).
 The scalar cross-class work remains fully charged. Runner composition stays
 blocked pending durable deterministic checkpointing. See
 `docs/pcpi_p3j4_batched_density_audit_20260831.md`.
+
+## P3J.5 durable chunk checkpoint
+
+P3J.5 hash-binds predictive components, residual state, frozen partition,
+precision and chunk geometry, then publishes only a contiguous action prefix
+through fsync-staging and atomic replacement. Recovery verifies every chained
+chunk; gaps, duplicates, crossed state and tampering fail closed. A proper
+prefix cannot release scores to ranking or selection. The source Gate passes,
+but runner composition and real execution remain blocked. See
+`docs/pcpi_p3j5_durable_checkpoint_audit_20260831.md`.

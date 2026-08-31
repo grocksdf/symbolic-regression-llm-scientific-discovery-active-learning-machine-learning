@@ -263,6 +263,12 @@ long-horizon context and remain binding even when a local task omits them.
   remains charged. The static maximum dispatch ledger falls by `93.75%`, but
   runner and real execution remain blocked until chunk progress is durably
   fsync-published and deterministically resumable without partial selection.
+- P3J.5 provides that standalone durable checkpoint: complete predictive,
+  residual, partition, precision and chunk identities are hash-bound; only the
+  next contiguous chunk can be fsync-staged and atomically published; crossed,
+  duplicate, missing or tampered chunks fail closed. Proper prefixes cannot
+  release ranking scores. This is still standalone source composition, not
+  measured-runner or operational execution authorization.
 - `P3F.4-CERT.14` replaces authority for the resident floating factor-basis
   collapsed target with the same 512-bit Arb function-space covariance builder
   used by CERT.13. For an exact rational bridge weight matrix `W`, it evaluates
