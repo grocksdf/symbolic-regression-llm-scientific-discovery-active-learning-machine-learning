@@ -1,0 +1,19 @@
+{
+  "schema": "pcpi-p3j1-class-conditional-correctness-config-v1",
+  "stage": "P3J.1",
+  "failed_predecessor": "P3I.4/REAL_ADVANTAGE_NOT_DEMONSTRATED",
+  "scientific_target": "initial-frozen-operational-decision-regret-class",
+  "joint_law": "normalized-class-conditional-pit-density-composition-v1",
+  "residual_state_method": "frozen-class-conditional-prequential-kt-dyadic-polya-tree-v1",
+  "posterior_update": "calibrated-class-factor-times-conjugate-structure-update-v1",
+  "counterfactual_class_update": "every-frozen-class-scores-then-admits-each-opened-response",
+  "initial_state_policy": "shared-h0-base-posterior-zero-retroactive-calibration-weight",
+  "residual_depth_schedule": "floor(log2(max(history-count,1))/2)",
+  "residual_split_prior": "independent-beta-one-half-one-half",
+  "operational_execution_authorized": false,
+  "real_data_access": false,
+  "candidate_response_access": false,
+  "validation_response_access": false,
+  "heldout_access": false,
+  "simulated_experiment": false
+}

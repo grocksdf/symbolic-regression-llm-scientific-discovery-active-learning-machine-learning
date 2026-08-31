@@ -1,0 +1,17 @@
+{
+  "schema": "pcpi-p3j2-operational-class-conditional-correctness-config-v1",
+  "stage": "P3J.2",
+  "predecessor": "P3J.1/class-conditional-joint-law-correctness",
+  "lifecycle": "class-conditional-family-score-select-reveal-advance-exactly-once-v1",
+  "likelihood_power_family": [0.125, 0.25, 0.5, 1.0],
+  "initial_response_roles": ["base-conditioning", "strict-prefix-residual-training"],
+  "initial_calibration_evidence_policy": "train-density-without-retroactive-class-reweighting",
+  "revealed_response_policy": "one-frozen-candidate-then-all-models-once",
+  "unresolved_ranking_action": "interval-frontier-representative-mmd-then-candidate-id",
+  "operational_execution_authorized": false,
+  "real_data_access": false,
+  "candidate_response_access": false,
+  "validation_response_access": false,
+  "heldout_access": false,
+  "simulated_experiment": false
+}

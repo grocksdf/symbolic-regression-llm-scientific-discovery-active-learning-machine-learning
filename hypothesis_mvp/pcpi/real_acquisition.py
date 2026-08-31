@@ -35,6 +35,12 @@ from .semiparametric_acquisition import (
     estimate_semiparametric_class_eig,
     refine_semiparametric_class_eig,
 )
+from .class_conditional_semiparametric import (
+    P3J_CLASS_CONDITIONAL_JOINT_METHOD,
+    CalibratedClassPosteriorState,
+    ClassConditionalEIGEstimate,
+    estimate_class_conditional_semiparametric_eig,
+)
 from .likelihood_power_residuals import LikelihoodPowerResidualFamily
 from .reference import (
     DyadicPolyaTreePredictiveLaw,
@@ -62,6 +68,9 @@ MAXIMIN_RANK_CERTIFICATE = (
 P3H_TERMINAL_ABSTENTION = "terminal-abstention-no-fallback"
 P3H_INTERVAL_FRONTIER_RESOLUTION = (
     "interval-possible-maximizer-representative-mmd-then-candidate-id-v1"
+)
+P3J_MAXIMIN_RANK_CERTIFICATE = (
+    "finite-model-lower-envelope-class-conditional-pit-quadrature-interval-dominance"
 )
 DISCREPANCY_PROFILE_METHOD = (
     "posterior-residual-excess-variance-covariate-support-moment-envelope-v1"
@@ -126,7 +135,9 @@ class MaximinJointEstimate:
     joint_scores_by_model: np.ndarray
     least_favorable_indices: np.ndarray
     likelihood_powers: tuple[float, ...]
-    estimates: tuple[EIGEstimate | SemiparametricEIGEstimate, ...]
+    estimates: tuple[
+        EIGEstimate | SemiparametricEIGEstimate | ClassConditionalEIGEstimate, ...
+    ]
     ranking_certified: bool
     ranking_margin: float
     conservative_error_bound: float
@@ -679,6 +690,75 @@ def _estimate_maximin_joint_until_ranked(
         samples = min(maximum_samples, samples * growth_factor)
 
 
+def _estimate_class_conditional_maximin_until_ranked(
+    components: tuple[PredictiveComponents, ...],
+    states: tuple[CalibratedClassPosteriorState, ...],
+    powers: tuple[float, ...],
+    eligible_mask: np.ndarray,
+    minimum_samples: int,
+    maximum_samples: int,
+    error_safety_factor: float,
+    growth_factor: int,
+) -> MaximinJointEstimate:
+    """Certify a finite lower envelope of coherent class-conditional EIG."""
+
+    if (
+        len(components) != len(states)
+        or len(states) != len(powers)
+        or tuple(item.engine.likelihood_power for item in states) != powers
+    ):
+        raise ValueError("P3J posterior and residual families are not aligned")
+    samples, looks = minimum_samples, 0
+    planned = _planned_look_count(minimum_samples, maximum_samples, growth_factor)
+    while True:
+        looks += 1
+        estimates = tuple(
+            estimate_class_conditional_semiparametric_eig(
+                item,
+                state.residual_state,
+                samples,
+                error_safety_factor=error_safety_factor,
+            )
+            for item, state in zip(components, states, strict=True)
+        )
+        class_scores = np.asarray([item.scores for item in estimates])
+        class_errors = np.asarray([item.error_bounds for item in estimates])
+        scores = np.min(class_scores, axis=0)
+        lower = np.min(class_scores - class_errors, axis=0)
+        upper = np.min(class_scores + class_errors, axis=0)
+        certified, margin, bound, gap = _lower_envelope_certificate(
+            scores, lower, upper, eligible_mask
+        )
+        possible = _lower_envelope_possible_maximizers(
+            lower, upper, eligible_mask
+        )
+        if certified or samples >= maximum_samples:
+            zeros = np.zeros_like(class_scores)
+            return MaximinJointEstimate(
+                scores=scores,
+                lower_bounds=lower,
+                upper_bounds=upper,
+                class_scores_by_model=class_scores,
+                class_errors_by_model=class_errors,
+                conditional_scores_by_model=zeros,
+                joint_scores_by_model=class_scores,
+                least_favorable_indices=least_favorable_model_indices(
+                    class_scores, powers
+                ),
+                likelihood_powers=powers,
+                estimates=estimates,
+                ranking_certified=certified,
+                ranking_margin=margin,
+                conservative_error_bound=bound,
+                certificate_gap=gap,
+                planned_looks=planned,
+                looks_used=looks,
+                possible_maximizer_mask=possible,
+                possible_maximizer_count=int(np.count_nonzero(possible)),
+            )
+        samples = min(maximum_samples, samples * growth_factor)
+
+
 def _bound_semiparametric_residual_laws(
     models: tuple[PosteriorModel, ...],
     family: LikelihoodPowerResidualFamily | None,
@@ -1087,6 +1167,183 @@ def score_decision_targeted_actions(
         decision_target=(
             "frozen-operational-class-log-risk|" + P3I_INFORMATION_INVARIANCE
         ),
+    )
+
+
+def _validate_p3j_ranking_controls(
+    minimum_samples: int,
+    maximum_samples: int,
+    error_safety_factor: float,
+    growth_factor: int,
+) -> None:
+    if (
+        isinstance(minimum_samples, bool)
+        or isinstance(maximum_samples, bool)
+        or isinstance(growth_factor, bool)
+        or int(minimum_samples) != minimum_samples
+        or int(maximum_samples) != maximum_samples
+        or int(growth_factor) != growth_factor
+        or minimum_samples < 4
+        or minimum_samples % 2
+        or maximum_samples < minimum_samples
+        or maximum_samples % 2
+        or growth_factor < 2
+        or not np.isfinite(error_safety_factor)
+        or error_safety_factor < 1.0
+    ):
+        raise ValueError("P3J nested ranking controls are invalid")
+
+
+def _validated_class_conditional_family(
+    engine: SequentialReferencePosterior,
+    posterior: ExactPosterior,
+    target_partition: ClassPartition,
+    states: tuple[CalibratedClassPosteriorState, ...],
+) -> tuple[tuple[CalibratedClassPosteriorState, ...], tuple[float, ...]]:
+    ordered = tuple(sorted(states, key=lambda item: item.engine.likelihood_power))
+    models = tuple(
+        PosteriorModel(item.engine.likelihood_power, item.engine, item.posterior)
+        for item in ordered
+    )
+    powers = tuple(
+        item.likelihood_power
+        for item in _validated_posterior_models(engine, posterior, models)
+    )
+    nominal = tuple(
+        item for item in ordered
+        if np.isclose(
+            item.engine.likelihood_power,
+            engine.likelihood_power,
+            rtol=0.0,
+            atol=1e-15,
+        )
+    )
+    if (
+        len(nominal) != 1
+        or nominal[0].posterior is not posterior
+        or any(
+            item.target_partition.stable_hash != target_partition.stable_hash
+            or item.residual_state.target_partition_hash
+            != target_partition.stable_hash
+            for item in ordered
+        )
+    ):
+        raise ValueError("P3J scorer requires one exact partition-bound model family")
+    return ordered, powers
+
+
+def _finalize_class_conditional_scores(
+    engine: SequentialReferencePosterior,
+    posterior: ExactPosterior,
+    target_partition: ClassPartition,
+    actions: np.ndarray,
+    representative: RepresentativeSafeSet,
+    robust: MaximinJointEstimate,
+    unresolved_action: str,
+) -> AcquisitionScores:
+    least = robust.least_favorable_indices
+    class_scores = _least_favorable_values(robust.class_scores_by_model, least)
+    class_errors = _least_favorable_values(robust.class_errors_by_model, least)
+    raw_scores, errors, secondary_mask = _resolve_decision_targeted_utility(
+        robust, representative, unresolved_action
+    )
+    secondary_used = secondary_mask is not None
+    nominal_components = predictive_components_for_partition(
+        engine, posterior, target_partition, actions
+    )
+    result = _build_discriminative_scores(
+        nominal_components,
+        representative,
+        robust,
+        class_scores,
+        class_errors,
+        np.zeros(len(actions), dtype=float),
+        raw_scores,
+        errors,
+        "representative-safe-robust-class-conditional-semiparametric-"
+        "operational-class-eig",
+        None,
+    )
+    return replace(
+        result,
+        policy=DECISION_TARGETED_POLICY,
+        ranking_certified=bool(robust.ranking_certified or secondary_used),
+        ranking_certificate_method=(
+            P3H_INTERVAL_FRONTIER_RESOLUTION
+            if secondary_used else P3J_MAXIMIN_RANK_CERTIFICATE
+        ),
+        primary_ranking_certified=robust.ranking_certified,
+        possible_maximizer_mask=robust.possible_maximizer_mask,
+        possible_maximizer_count=robust.possible_maximizer_count,
+        secondary_resolution_used=secondary_used,
+        secondary_resolution_method=(
+            P3H_INTERVAL_FRONTIER_RESOLUTION if secondary_used else "not-applied"
+        ),
+        selection_admissible_mask=secondary_mask,
+        semiparametric_transport_method=P3J_CLASS_CONDITIONAL_JOINT_METHOD,
+        semiparametric_information_invariance_applied=False,
+        decision_target=(
+            "frozen-operational-class-log-risk|"
+            + P3J_CLASS_CONDITIONAL_JOINT_METHOD
+        ),
+    )
+
+
+def score_class_conditional_decision_actions(
+    engine: SequentialReferencePosterior,
+    posterior: ExactPosterior,
+    actions: np.ndarray,
+    *,
+    target_partition: ClassPartition,
+    predictive_target_actions: np.ndarray,
+    representative_observed_actions: np.ndarray,
+    calibrated_posterior_states: tuple[CalibratedClassPosteriorState, ...],
+    minimum_samples: int,
+    maximum_samples: int,
+    error_safety_factor: float,
+    growth_factor: int,
+    unresolved_action: str = P3H_INTERVAL_FRONTIER_RESOLUTION,
+) -> AcquisitionScores:
+    """Score the coherent P3J class-conditional joint and no nuisance target."""
+
+    _validate_p3j_ranking_controls(
+        minimum_samples, maximum_samples, error_safety_factor, growth_factor
+    )
+    ordered_states, powers = _validated_class_conditional_family(
+        engine, posterior, target_partition, calibrated_posterior_states
+    )
+
+    representative = representative_mmd_safe_set(
+        representative_observed_actions, actions, predictive_target_actions
+    )
+    if not representative.safe_set_nonempty:
+        raise FloatingPointError(
+            "P3J has no representative-safe candidate and cannot switch utility"
+        )
+    family_components = tuple(
+        predictive_components_for_partition(
+            item.engine, item.posterior, target_partition, actions
+        )
+        for item in ordered_states
+    )
+    robust = _estimate_class_conditional_maximin_until_ranked(
+        family_components,
+        ordered_states,
+        powers,
+        representative.safe_mask,
+        minimum_samples,
+        maximum_samples,
+        error_safety_factor,
+        growth_factor,
+    )
+    return _finalize_class_conditional_scores(
+        engine,
+        posterior,
+        target_partition,
+        actions,
+        representative,
+        robust,
+        unresolved_action,
     )
 
 

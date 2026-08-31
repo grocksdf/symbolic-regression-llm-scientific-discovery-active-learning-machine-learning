@@ -238,6 +238,18 @@ long-horizon context and remain binding even when a local task omits them.
   compatible mass remains only in the upper bound. Only the standalone
   algebraic constructor is authorized. Operational `H0`, CDF/projector result,
   island and SMC access remain blocked.
+- The unique P3I.4 real-development run is frozen as
+  `REAL_ADVANTAGE_NOT_DEMONSTRATED`: its shared-H0 protocol and evidence chain
+  passed, but no registered efficacy claim passed. P3J addresses the diagnosed
+  marginal-transport invariance boundary with normalized class-conditional
+  raw-PIT laws. P3J.1 and P3J.2 are correctness/source-composition only: every
+  frozen class and likelihood-power target has a strict-prefix state, the same
+  pre-reveal calibration factor composes with each target's update, and a
+  typed decision authorizes one matching reveal before all four targets advance
+  exactly once. Only the nominal `eta=1` target asserts the ordinary joint-law
+  Bayes identity; lower powers remain generalized-Bayes sensitivity targets.
+  No P3J real execution is authorized until runner composition, cost audit and
+  a separately frozen user-only protocol pass.
 - `P3F.4-CERT.14` replaces authority for the resident floating factor-basis
   collapsed target with the same 512-bit Arb function-space covariance builder
   used by CERT.13. For an exact rational bridge weight matrix `W`, it evaluates

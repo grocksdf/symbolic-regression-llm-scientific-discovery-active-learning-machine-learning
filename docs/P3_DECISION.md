@@ -552,3 +552,33 @@ code with an encoded child whose nonzero exit code is preserved. The original
 canonical CPython 3.11.9 environment and all historical binary identities are
 retained.
 See `docs/pcpi_p3i4_shared_h0_real_protocol_20260831.md`.
+
+## P3I.4 negative result and P3J class-conditional repair
+
+The unique returned P3I.4 run completed 96/96 policy runs and 3072/3072
+queries with zero execution failures, a valid 97-event evidence chain and
+held-out closed. The shared-H0 protocol repair passed, but the frozen terminal
+assessment was `REAL_ADVANTAGE_NOT_DEMONSTRATED`. In particular, CCPP
+frozen-class gain versus random was `-0.2617454` with 95% interval
+`[-0.5217038, -0.0017869]` and negative-transfer rate `0.75`. This is permanent
+negative real-development evidence and must not be rerun. See
+`docs/pcpi_p3i4_result_failure_audit_20260831.md`.
+
+The root cause is structural: P3I's common invertible marginal transport
+preserves class mutual information, so it cannot repair a misspecified
+class/response dependence or change acquisition rankings. P3J replaces that
+boundary with normalized class-conditional densities
+`q_c(y)=g_c(F_c(y))f_c(y)`. Each frozen class has its own strict-prefix
+counterfactual raw-PIT state, each conditional integrates to one, and the same
+calibration factor used by acquisition updates the class posterior after a
+reveal.
+
+P3J.1 provides the class-conditional joint, deterministic nested EIG estimator,
+complete likelihood-power lower envelope, normalization/ranking fixtures and
+the nominal `eta=1` acquisition--posterior identity check. Lower powers remain
+explicit generalized-Bayes sensitivity targets. P3J.2 composes the four powers
+into a typed response-free score--select--reveal--advance-once lifecycle and
+erases raw initial response history after reconstruction. These are
+correctness/source-composition stages only. They do not authorize operational
+runner integration or a new real experiment. See
+`docs/pcpi_p3j_class_conditional_joint_contract_20260831.md`.
