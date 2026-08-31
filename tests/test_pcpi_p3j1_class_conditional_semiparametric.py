@@ -20,6 +20,7 @@ from hypothesis_mvp.pcpi import (
     initialize_calibrated_class_posterior,
     initialize_class_conditional_residual_state,
     reconstruct_class_conditional_residual_state,
+    refine_class_conditional_semiparametric_eig,
     score_class_conditional_decision_actions,
 )
 from hypothesis_mvp.pcpi.reference import DyadicPolyaTreeState
@@ -126,6 +127,28 @@ def test_class_conditional_joint_preserves_the_registered_class_marginal() -> No
     )
     assert 0.0 < coupling.mutual_information < np.log(2.0)
     assert coupling.maximum_conditional_normalization_error < 2e-15
+
+
+def test_refinement_reuses_the_exact_preceding_fine_grid() -> None:
+    components = _components()
+    state = _opposing_residual_state()
+    preceding = estimate_class_conditional_semiparametric_eig(
+        components, state, nodes_per_leaf=16
+    )
+    refined = refine_class_conditional_semiparametric_eig(
+        components, state, preceding, nodes_per_leaf=32
+    )
+    fresh = estimate_class_conditional_semiparametric_eig(
+        components, state, nodes_per_leaf=32
+    )
+    np.testing.assert_array_equal(refined.scores, fresh.scores)
+    np.testing.assert_array_equal(refined.error_bounds, fresh.error_bounds)
+    assert refined.coarse_nodes_per_leaf == preceding.nodes_per_leaf
+    wrong = initialize_class_conditional_residual_state(components.partition)
+    with pytest.raises(ValueError, match="does not match"):
+        refine_class_conditional_semiparametric_eig(
+            components, wrong, preceding, nodes_per_leaf=32
+        )
 
 
 def test_each_reveal_updates_every_counterfactual_class_only_after_scoring() -> None:

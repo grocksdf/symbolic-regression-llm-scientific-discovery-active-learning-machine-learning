@@ -40,6 +40,7 @@ from .class_conditional_semiparametric import (
     CalibratedClassPosteriorState,
     ClassConditionalEIGEstimate,
     estimate_class_conditional_semiparametric_eig,
+    refine_class_conditional_semiparametric_eig,
 )
 from .likelihood_power_residuals import LikelihoodPowerResidualFamily
 from .reference import (
@@ -709,18 +710,35 @@ def _estimate_class_conditional_maximin_until_ranked(
     ):
         raise ValueError("P3J posterior and residual families are not aligned")
     samples, looks = minimum_samples, 0
+    preceding: tuple[ClassConditionalEIGEstimate, ...] | None = None
     planned = _planned_look_count(minimum_samples, maximum_samples, growth_factor)
     while True:
         looks += 1
         estimates = tuple(
-            estimate_class_conditional_semiparametric_eig(
-                item,
-                state.residual_state,
-                samples,
-                error_safety_factor=error_safety_factor,
+            (
+                refine_class_conditional_semiparametric_eig(
+                    item,
+                    state.residual_state,
+                    previous,
+                    samples,
+                    error_safety_factor=error_safety_factor,
+                )
+                if preceding is not None
+                else estimate_class_conditional_semiparametric_eig(
+                    item,
+                    state.residual_state,
+                    samples,
+                    error_safety_factor=error_safety_factor,
+                )
             )
-            for item, state in zip(components, states, strict=True)
+            for item, state, previous in zip(
+                components,
+                states,
+                preceding if preceding is not None else (None,) * len(states),
+                strict=True,
+            )
         )
+        preceding = estimates
         class_scores = np.asarray([item.scores for item in estimates])
         class_errors = np.asarray([item.error_bounds for item in estimates])
         scores = np.min(class_scores, axis=0)

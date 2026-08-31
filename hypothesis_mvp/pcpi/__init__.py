@@ -143,6 +143,7 @@ from .class_conditional_semiparametric import (
     initialize_calibrated_class_posterior,
     initialize_class_conditional_residual_state,
     reconstruct_class_conditional_residual_state,
+    refine_class_conditional_semiparametric_eig,
 )
 from .operational_class_conditional import (
     P3J_OPERATIONAL_LIFECYCLE,
@@ -151,6 +152,12 @@ from .operational_class_conditional import (
     admit_operational_class_conditional_response,
     initialize_operational_class_conditional_state,
     score_operational_class_conditional_candidates,
+)
+from .p3j_cost import (
+    P3J_COST_METHOD,
+    P3JCostLedger,
+    p3j_worst_case_cost_ledger,
+    quadrature_orders,
 )
 from .decision import (
     REFERENCE_DOMINANCE_METHOD,
@@ -321,12 +328,17 @@ __all__ = [
     "initialize_calibrated_class_posterior",
     "initialize_class_conditional_residual_state",
     "reconstruct_class_conditional_residual_state",
+    "refine_class_conditional_semiparametric_eig",
     "P3J_OPERATIONAL_LIFECYCLE",
     "OperationalClassConditionalDecision",
     "OperationalClassConditionalState",
     "admit_operational_class_conditional_response",
     "initialize_operational_class_conditional_state",
     "score_operational_class_conditional_candidates",
+    "P3J_COST_METHOD",
+    "P3JCostLedger",
+    "p3j_worst_case_cost_ledger",
+    "quadrature_orders",
     "REFERENCE_DOMINANCE_METHOD",
     "REFERENCE_FALLBACK_MODE",
     "TARGETED_HANDOVER_MODE",

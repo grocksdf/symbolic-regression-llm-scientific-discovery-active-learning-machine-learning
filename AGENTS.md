@@ -250,6 +250,13 @@ long-horizon context and remain binding even when a local task omits them.
   Bayes identity; lower powers remain generalized-Bayes sensitivity targets.
   No P3J real execution is authorized until runner composition, cost audit and
   a separately frozen user-only protocol pass.
+- P3J.3 reuses each preceding fine quadrature result as the next doubled
+  look's exact coarse result under full state/partition identity. The no-data
+  ledger reduces worst-case first-query source-class nodes by `32.2581%`, but
+  still exposes `101,154,816` cross-class density evaluations at the frozen
+  maximum schedule. P3J.3 is therefore a passed correctness/cost audit with
+  runner composition explicitly blocked; do not authorize a real run before
+  batched, chunked and recoverable scoring passes a separate source Gate.
 - `P3F.4-CERT.14` replaces authority for the resident floating factor-basis
   collapsed target with the same 512-bit Arb function-space covariance builder
   used by CERT.13. For an exact rational bridge weight matrix `W`, it evaluates

@@ -152,6 +152,8 @@ class ClassConditionalEIGEstimate:
     error_safety_factor: float
     class_count: int
     maximum_leaf_count: int
+    residual_state_hash: str
+    target_partition_hash: str
     method: str = P3J_CLASS_CONDITIONAL_JOINT_METHOD
 
     def __post_init__(self) -> None:
@@ -168,6 +170,8 @@ class ClassConditionalEIGEstimate:
             or self.maximum_conditional_normalization_error < 0.0
             or self.class_count < 1
             or self.maximum_leaf_count < 1
+            or not self.residual_state_hash
+            or not self.target_partition_hash
             or self.method != P3J_CLASS_CONDITIONAL_JOINT_METHOD
         ):
             raise ValueError("P3J class-conditional EIG estimate is invalid")
@@ -520,6 +524,65 @@ def estimate_class_conditional_semiparametric_eig(
         maximum_leaf_count=max(
             len(law.leaf_probabilities) for law in state.residual_laws
         ),
+        residual_state_hash=state.stable_hash,
+        target_partition_hash=components.partition.stable_hash,
+    )
+
+
+def refine_class_conditional_semiparametric_eig(
+    components: PredictiveComponents,
+    state: ClassConditionalResidualState,
+    preceding: ClassConditionalEIGEstimate,
+    nodes_per_leaf: int,
+    *,
+    error_safety_factor: float = 4.0,
+) -> ClassConditionalEIGEstimate:
+    """Reuse the preceding fine look as the doubled look's exact coarse grid."""
+
+    order = int(nodes_per_leaf)
+    if (
+        not isinstance(preceding, ClassConditionalEIGEstimate)
+        or order != 2 * preceding.nodes_per_leaf
+        or preceding.residual_state_hash != state.stable_hash
+        or preceding.target_partition_hash != components.partition.stable_hash
+        or preceding.class_count != len(state.class_ids)
+        or len(preceding.scores) != components.locations.shape[1]
+        or not math.isclose(
+            preceding.error_safety_factor,
+            float(error_safety_factor),
+            rel_tol=0.0,
+            abs_tol=0.0,
+        )
+    ):
+        raise ValueError("P3J refinement does not match its preceding estimate")
+    fine = tuple(
+        class_conditional_semiparametric_coupling(
+            components, state, action_index, order
+        )
+        for action_index in range(components.locations.shape[1])
+    )
+    scores = np.asarray([item.mutual_information for item in fine])
+    normalization_error = max(
+        preceding.maximum_conditional_normalization_error,
+        *(item.maximum_conditional_normalization_error for item in fine),
+    )
+    roundoff = 2048.0 * np.finfo(float).eps * np.maximum(1.0, np.abs(scores))
+    errors = (
+        float(error_safety_factor) * np.abs(scores - preceding.scores)
+        + 2.0 * normalization_error
+        + roundoff
+    )
+    return ClassConditionalEIGEstimate(
+        scores=scores,
+        error_bounds=errors,
+        nodes_per_leaf=order,
+        coarse_nodes_per_leaf=preceding.nodes_per_leaf,
+        maximum_conditional_normalization_error=normalization_error,
+        error_safety_factor=float(error_safety_factor),
+        class_count=preceding.class_count,
+        maximum_leaf_count=preceding.maximum_leaf_count,
+        residual_state_hash=state.stable_hash,
+        target_partition_hash=components.partition.stable_hash,
     )
 
 
@@ -735,4 +798,5 @@ __all__ = [
     "initialize_calibrated_class_posterior",
     "initialize_class_conditional_residual_state",
     "reconstruct_class_conditional_residual_state",
+    "refine_class_conditional_semiparametric_eig",
 ]

@@ -582,3 +582,18 @@ erases raw initial response history after reconstruction. These are
 correctness/source-composition stages only. They do not authorize operational
 runner integration or a new real experiment. See
 `docs/pcpi_p3j_class_conditional_joint_contract_20260831.md`.
+
+## P3J.3 refinement and cost Gate
+
+P3J.3 adds exact cross-look reuse: a preceding fine quadrature grid becomes
+the doubled look's coarse grid only under matching residual-state, partition,
+class, action and safety-factor identities. Its correctness fixture is
+bit-identical to a fresh fine/coarse computation.
+
+The response-free worst-case ledger nevertheless records `14,450,688`
+source-class nodes and `101,154,816` cross-class density evaluations at the
+first-query maximum schedule, even after a `32.2581%` node reduction. P3J.3
+therefore passes as a refinement/cost audit but keeps runner composition and
+operational execution blocked. The next Gate must reduce and chunk this work
+without changing the joint law or registered score intervals. See
+`docs/pcpi_p3j3_refinement_cost_audit_20260831.md`.

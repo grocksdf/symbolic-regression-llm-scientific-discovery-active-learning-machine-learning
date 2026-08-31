@@ -1,0 +1,20 @@
+{
+  "schema": "pcpi-p3j3-refinement-cost-gate-config-v1",
+  "stage": "P3J.3",
+  "candidate_count_upper": 128,
+  "ambiguity_model_count": 4,
+  "maximum_class_count": 7,
+  "maximum_residual_leaf_count": 4,
+  "minimum_nodes_per_leaf": 32,
+  "maximum_nodes_per_leaf": 512,
+  "growth_factor": 2,
+  "refinement_policy": "preceding-fine-is-next-coarse-exact-reuse",
+  "cost_scope": "worst-case-first-query-all-precision-looks",
+  "runner_composition_authorized": false,
+  "operational_execution_authorized": false,
+  "real_data_access": false,
+  "candidate_response_access": false,
+  "validation_response_access": false,
+  "heldout_access": false,
+  "simulated_experiment": false
+}
