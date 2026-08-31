@@ -572,3 +572,35 @@ long-horizon context and remain binding even when a local task omits them.
   The supervised `.ps1` source must remain ASCII-only and pass the actual
   Windows PowerShell 5.1 parser; UTF-8 without BOM plus non-ASCII diagnostics is
   not an admissible launcher format on the user's host.
+- The unique P3I.3 run is immutable protocol-invalid evidence. It completed
+  96/96 policy runs and 3072/3072 queries with zero execution failures, valid
+  evidence and held-out closed, but
+  `initial_class_partition_shared_across_policies` was false in all 24
+  dataset/seed groups. The three baselines shared one H0 hash and PCPI used a
+  second hash because complete-history batch and 16-plus-16 prequential
+  conjugate updates accumulated floating sufficient statistics in different
+  orders. Do not rerun, overwrite, call it efficacy evidence, round hashes,
+  relax the Gate or copy an identity between policies.
+- P3I.4 is the only admissible continuation. Under its explicit protocol flag,
+  construct exactly one eta-one complete-initial-history posterior and frozen
+  decision-regret class target per dataset/seed before the policy loop and
+  inject that same typed object into every policy. PCPI must retain all four
+  likelihood-power strict-prefix residual states and fail closed unless its
+  eta-one sufficient statistics are numerically equivalent under the frozen
+  observation-count floating accumulation bound. No data coordinate, budget,
+  seed, utility, threshold, numerical schedule, assessment rule or tie break
+  changes from P3I.3, and held-out remains closed.
+- P3I.4 retains the original canonical CPython 3.11.9 virtual environment used
+  for P3H.2 through P3I.3 at
+  `D:/01/666/.venv_hypothesis_canonical/Scripts/python.exe`; its imported
+  dependency snapshot must equal the frozen
+  `b7bf88a64dd375e25c7d679de129c654c3346462215ffa24c425c762fb8bc4a6`.
+  Its virtual-environment launcher SHA-256 must equal
+  `21bb438c0d4a6f1f164b9a646f6ee000340185e5871180aec06db8d3f07c0082`
+  before the runner checks the data directory, and the manifest must retain it.
+  The historical base executable, DLL and `pyvenv.cfg` identities remain
+  enforced. A Codex sandbox denial is not a runtime change; do not replace the
+  formal environment with an alternate runtime or a Python 3.12 runtime.
+  The P3I.4 supervisor must remain ASCII-only, use the encoded-child exit-code
+  path, reject null/nonzero exit codes, and preserve the unique-output and
+  historical-evidence guards.

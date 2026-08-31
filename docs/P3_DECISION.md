@@ -524,3 +524,31 @@ response-free Gate passes eleven decisions, the focused regression passes 55
 tests, PowerShell parsing passes and the complete repository regression passes
 764/764. Codex execution remains forbidden. See
 `docs/pcpi_p3i3_real_execution_protocol_20260831.md`.
+
+## P3I.3 protocol failure and P3I.4 shared-H0 repair
+
+The unique P3I.3 run completed all 96 policy runs and 3072 queries with zero
+execution failures, valid evidence and held-out closed, but its protocol Gate
+failed exactly one decision: the initial frozen class-partition hash was not
+shared across policies. In every one of 24 dataset/seed groups, the three
+baselines shared one hash and PCPI had another, even though class counts agreed
+in all groups and initial entropy differed by at most `3.02e-14`. P3I.3 is
+therefore immutable `INVALID_PROTOCOL_FAILURE`, not efficacy evidence. See
+`docs/pcpi_p3i3_protocol_failure_audit_20260831.md`.
+
+P3I.4 fixes the actual state boundary rather than weakening identity. It
+constructs one complete-initial-history eta-one posterior and decision-regret
+class target per dataset/seed before the policy loop, then injects the same
+typed immutable target into all policies. PCPI retains its four strict-prefix
+prequential residual states; its eta-one sufficient statistics must be
+numerically equivalent to the shared target under a response-independent
+floating accumulation bound. Material mismatch fails closed, and class hashes
+are neither rounded nor copied.
+
+P3I.4 changes no data coordinate, seed, budget, utility, quadrature schedule,
+threshold, assessment boundary or tie break. Its PowerShell 5.1 supervisor also
+replaces the redirected `Start-Process` composition that produced a null exit
+code with an encoded child whose nonzero exit code is preserved. The original
+canonical CPython 3.11.9 environment and all historical binary identities are
+retained.
+See `docs/pcpi_p3i4_shared_h0_real_protocol_20260831.md`.

@@ -40,6 +40,7 @@ from hypothesis_mvp.pcpi import (
     ANALYTIC_CLASS_EIG_BOUNDS_METHOD,
     AcquisitionScores,
     BUDGET_RESOLUTION_METHOD,
+    ClassPartition,
     DECISION_REGRET_DISTANCE_METRIC,
     DECISION_TARGETED_POLICY,
     DEFAULT_CLASS_EIG_OUTWARD_TOLERANCE,
@@ -109,6 +110,9 @@ STAGE = "P3B.10"
 FROZEN_SEEDS = tuple(range(2026080701, 2026080709))
 RANK_CERTIFICATE_METHOD = MAXIMIN_RANK_CERTIFICATE
 PCPI_POLICY = "pcpi_representative_safe_maximin_joint_eig"
+P3I_SHARED_INITIAL_TARGET_SOURCE = (
+    "complete-initial-history-batch-sufficient-statistics-once-per-dataset-seed-v1"
+)
 
 
 @dataclass(frozen=True)
@@ -126,9 +130,30 @@ class RealAcquisitionProtocol:
     semiparametric_lifecycle: bool = False
     semiparametric_unresolved_action: str = P3H_TERMINAL_ABSTENTION
     required_runtime_dependency_hash: str | None = None
+    required_python_executable_hash: str | None = None
     decision_target_alignment: bool = False
+    shared_initial_frozen_target: bool = False
     fail_fast: bool = False
     operational_execution_authorized: bool = True
+
+
+@dataclass(frozen=True)
+class FrozenInitialClassTarget:
+    """One canonical H0 decision target shared by every matched policy."""
+
+    posterior: ExactPosterior
+    classes: OperationalClassPosterior
+    partition: ClassPartition
+    engine_target_hash: str
+    source: str = P3I_SHARED_INITIAL_TARGET_SOURCE
+
+    def __post_init__(self) -> None:
+        if (
+            self.source != P3I_SHARED_INITIAL_TARGET_SOURCE
+            or not self.engine_target_hash
+            or self.partition != class_partition(self.posterior, self.classes)
+        ):
+            raise ValueError("shared initial class target is internally inconsistent")
 
 
 CLAIM_BOUNDARY = (
@@ -357,6 +382,8 @@ def _load_config(
             "p3i_semiparametric_transport",
             "operational_execution_authorized",
         }
+    if protocol.shared_initial_frozen_target:
+        required.add("p3i_initial_frozen_target_source")
     if set(config) != required:
         raise ValueError(f"P3B config fields differ from schema: {sorted(set(config) ^ required)}")
     if config["schema"] != protocol.schema or config["stage"] != protocol.stage:
@@ -548,6 +575,10 @@ def _load_config(
         }
         if any(config[key] != value for key, value in p3i_contract.items()):
             raise ValueError("P3I decision-alignment or authorization contract changed")
+    if protocol.shared_initial_frozen_target and config[
+        "p3i_initial_frozen_target_source"
+    ] != P3I_SHARED_INITIAL_TARGET_SOURCE:
+        raise ValueError("P3I shared initial frozen target contract changed")
     rules = config["assessment_rules"]
     expected_rules = {
         "paired_confidence_level", "negative_transfer_rate_max",
@@ -643,6 +674,74 @@ def _aggregate_protocol_classes(
         distance_threshold=threshold,
         quantile_levels=tuple(config["operational_class_quantile_levels"]),
     )
+
+
+def _freeze_initial_class_target(
+    protocol: RealAcquisitionProtocol,
+    engine: SequentialReferencePosterior,
+    initial_X: np.ndarray,
+    initial_y: np.ndarray,
+    fixed_domain_X: np.ndarray,
+    config: dict[str, Any],
+) -> FrozenInitialClassTarget:
+    """Canonicalize H0 once from the complete opened initial history."""
+
+    posterior = engine.fit_batch(initial_X, initial_y)
+    classes = _aggregate_protocol_classes(
+        protocol, engine, posterior, fixed_domain_X, config
+    )
+    return FrozenInitialClassTarget(
+        posterior=posterior,
+        classes=classes,
+        partition=class_partition(posterior, classes),
+        engine_target_hash=engine.target_hash,
+    )
+
+
+def _assert_initial_posterior_numerically_equivalent(
+    canonical: ExactPosterior,
+    candidate: ExactPosterior,
+) -> None:
+    """Fail closed unless batch and prequential H0 sufficient statistics agree.
+
+    The two conjugate paths differ only in floating-point summation order.  The
+    tolerance is an a-priori accumulation bound proportional to the number of
+    opened observations; it does not depend on an experimental effect or Gate
+    outcome.
+    """
+
+    if (
+        canonical.bank_hash != candidate.bank_hash
+        or canonical.likelihood_power != candidate.likelihood_power
+        or len(canonical.members) != len(candidate.members)
+    ):
+        raise ValueError("shared initial posterior target identity differs")
+    epsilon = np.finfo(float).eps
+    for expected, actual in zip(canonical.members, candidate.members, strict=True):
+        if (
+            expected.structure != actual.structure
+            or expected.state.prior != actual.state.prior
+            or expected.state.observations != actual.state.observations
+        ):
+            raise ValueError("shared initial posterior structure or prior differs")
+        update_count = max(
+            1,
+            int(round(expected.state.observations / canonical.likelihood_power)),
+        )
+        relative_bound = 128.0 * update_count * epsilon
+        for field in ("precision", "information", "y_square_sum"):
+            left = np.asarray(getattr(expected.state, field), dtype=float)
+            right = np.asarray(getattr(actual.state, field), dtype=float)
+            scale = max(
+                1.0,
+                float(np.max(np.abs(left))),
+                float(np.max(np.abs(right))),
+            )
+            if not np.all(np.abs(left - right) <= relative_bound * scale):
+                raise FloatingPointError(
+                    "prequential initial posterior is not numerically equivalent "
+                    "to the shared complete-history target"
+                )
 
 
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -783,6 +882,7 @@ def _run_policy(
     calibration_wall_time_seconds: float = 0.0,
     protocol: RealAcquisitionProtocol = P3B10_PROTOCOL,
     semiparametric_state: OperationalSemiparametricState | None = None,
+    frozen_initial_target: FrozenInitialClassTarget | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     train_X, train_y = initial_X.copy(), initial_y.copy()
     available = np.asarray(candidate_indices, dtype=int).copy()
@@ -841,10 +941,21 @@ def _run_policy(
         if semiparametric_state is not None
         else engine.fit_batch(train_X, train_y)
     )
-    initial_classes = _aggregate_protocol_classes(
-        protocol, engine, initial_posterior, fixed_domain_X, config
-    )
-    frozen_partition = class_partition(initial_posterior, initial_classes)
+    if protocol.shared_initial_frozen_target and frozen_initial_target is None:
+        raise ValueError("P3I shared initial frozen target was not injected")
+    if frozen_initial_target is not None:
+        if frozen_initial_target.engine_target_hash != engine.target_hash:
+            raise ValueError("shared initial frozen target belongs to another posterior")
+        _assert_initial_posterior_numerically_equivalent(
+            frozen_initial_target.posterior, initial_posterior
+        )
+        initial_classes = frozen_initial_target.classes
+        frozen_partition = frozen_initial_target.partition
+    else:
+        initial_classes = _aggregate_protocol_classes(
+            protocol, engine, initial_posterior, fixed_domain_X, config
+        )
+        frozen_partition = class_partition(initial_posterior, initial_classes)
     initial_frozen_entropy = frozen_partition.entropy
     initial_partition_hash = frozen_partition.stable_hash
     partition_hashes: set[str] = set()
@@ -1271,7 +1382,7 @@ def _run_policy(
     policy_curve = [row for row in curve_rows if row["policy"] == policy]
     correlation, valid_correlation = _safe_spearman(acquired_scores, query_local_gains)
     final_frozen_entropy = float(policy_curve[-1]["frozen_class_entropy"])
-    initial_class_count = int(policy_curve[0]["operational_class_count"])
+    initial_class_count = len(frozen_partition.class_ids)
     certified_rate = float(np.mean([
         bool(row["eig_ranking_certified"]) for row in query_rows
     ])) if query_rows else 1.0
@@ -1460,6 +1571,10 @@ def _run_policy(
         "initial_operational_class_scale_hash": initial_classes.scale_hash,
         "initial_class_aggregation_fraction": 1.0 - initial_class_count / len(bank.structures),
         "initial_frozen_class_partition_hash": initial_partition_hash,
+        "initial_frozen_target_source": (
+            frozen_initial_target.source
+            if frozen_initial_target is not None else "policy-local-legacy"
+        ),
         "predictive_target_distribution": config.get(
             "predictive_target_distribution",
             (
@@ -2172,6 +2287,14 @@ def run(
         raise PermissionError(
             f"{protocol.stage} is source-composition-only; real access is blocked"
         )
+    python_executable_hash = file_sha256(Path(sys.executable))
+    if (
+        protocol.required_python_executable_hash is not None
+        and python_executable_hash != protocol.required_python_executable_hash
+    ):
+        raise RuntimeError(
+            "formal runtime executable differs from the frozen Python binary"
+        )
     if not data_root.is_dir():
         raise FileNotFoundError(f"data root does not exist: {data_root}")
     source_identity = resolve_formal_source_identity(root, source)
@@ -2195,6 +2318,7 @@ def run(
         "dependency_environment_hash": dependency_environment_hash,
         "dependency_lock_hash": dependency_environment_hash,
         "dependency_environment": dependency_environment,
+        "python_executable_hash": python_executable_hash,
     }
     run_rows: list[dict[str, Any]] = []
     curve_rows: list[dict[str, Any]] = []
@@ -2341,6 +2465,19 @@ def run(
                 validation_X = standardizer.transform_X(selection.validation.X[validation_indices])
                 validation_y = standardizer.transform_y(selection.validation.y[validation_indices])
                 fixed_domain_X = standardizer.transform_X(selection.acquisition_pool.X[candidates])
+                frozen_initial_target = (
+                    _freeze_initial_class_target(
+                        protocol,
+                        SequentialReferencePosterior(
+                            bank, selected_likelihood_power, design_preconditioner
+                        ),
+                        initial_X,
+                        initial_y,
+                        fixed_domain_X,
+                        config,
+                    )
+                    if protocol.shared_initial_frozen_target else None
+                )
                 for policy in config["policies"]:
                     reporter.emit(
                         "policy_run_started",
@@ -2390,6 +2527,7 @@ def run(
                             calibration_wall_time_seconds=calibration_wall_time,
                             protocol=protocol,
                             semiparametric_state=semiparametric_state,
+                            frozen_initial_target=frozen_initial_target,
                         )
                         run_rows.append(summary)
                         curve_rows.extend(curves)
@@ -2637,6 +2775,19 @@ def run(
         ),
         "initial_class_partition_shared_across_policies": bool(initial_partition_groups) and all(
             len(hashes) == 1 for hashes in initial_partition_groups.values()
+        ),
+        "initial_frozen_target_source_matches_frozen_contract": (
+            not protocol.shared_initial_frozen_target
+            or (
+                config.get("p3i_initial_frozen_target_source")
+                == P3I_SHARED_INITIAL_TARGET_SOURCE
+                and bool(run_rows)
+                and all(
+                    row["initial_frozen_target_source"]
+                    == P3I_SHARED_INITIAL_TARGET_SOURCE
+                    for row in run_rows
+                )
+            )
         ),
         "likelihood_power_calibration_shared_across_policies": bool(calibration_groups) and all(
             len(values) == 1 for values in calibration_groups.values()
