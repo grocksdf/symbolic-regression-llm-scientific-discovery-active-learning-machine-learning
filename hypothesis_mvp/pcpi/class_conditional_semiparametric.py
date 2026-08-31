@@ -626,21 +626,28 @@ def iter_class_conditional_semiparametric_chunks(
     nodes_per_leaf: int,
     *,
     action_chunk_size: int = 16,
+    start_action: int = 0,
 ):
     """Yield every action chunk in one deterministic contiguous prefix order."""
 
     chunk_size = int(action_chunk_size)
+    start = int(start_action)
     if (
         isinstance(action_chunk_size, bool)
         or chunk_size != action_chunk_size
         or chunk_size < 1
+        or isinstance(start_action, bool)
+        or start != start_action
+        or start < 0
+        or start > components.locations.shape[1]
+        or start % chunk_size
     ):
-        raise ValueError("P3J action chunk size must be a positive integer")
+        raise ValueError("P3J action chunk traversal is invalid")
     action_count = components.locations.shape[1]
-    for start in range(0, action_count, chunk_size):
-        stop = min(action_count, start + chunk_size)
+    for chunk_start in range(start, action_count, chunk_size):
+        stop = min(action_count, chunk_start + chunk_size)
         yield _class_conditional_semiparametric_chunk(
-            components, state, nodes_per_leaf, start, stop
+            components, state, nodes_per_leaf, chunk_start, stop
         )
 
 

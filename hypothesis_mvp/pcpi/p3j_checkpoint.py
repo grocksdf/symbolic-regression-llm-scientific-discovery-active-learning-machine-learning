@@ -96,6 +96,7 @@ class P3JCheckpoint:
     completed_chunk_count: int
     completed_action_count: int
     scores: np.ndarray
+    maximum_conditional_normalization_error: float
     head_hash: str
 
     def __post_init__(self) -> None:
@@ -104,6 +105,8 @@ class P3JCheckpoint:
             not np.all(np.isfinite(values))
             or np.any(values < 0.0)
             or len(values) != self.completed_action_count
+            or not math.isfinite(self.maximum_conditional_normalization_error)
+            or self.maximum_conditional_normalization_error < 0.0
             or self.completed_chunk_count < 0
             or self.completed_chunk_count > self.plan.chunk_count
             or self.completed_action_count < 0
@@ -222,7 +225,7 @@ def _validated_payload(path: Path, plan: P3JChunkPlan) -> dict[str, object]:
 
 def load_p3j_checkpoint(path: Path, plan: P3JChunkPlan) -> P3JCheckpoint:
     payload = _validated_payload(path, plan)
-    previous, completed, scores = _root_hash(plan), 0, []
+    previous, completed, scores, normalization_error = _root_hash(plan), 0, [], 0.0
     for chunk_index, item in enumerate(payload["chunks"]):
         expected_stop = min(plan.action_count, completed + plan.action_chunk_size)
         if (
@@ -249,6 +252,10 @@ def load_p3j_checkpoint(path: Path, plan: P3JChunkPlan) -> P3JCheckpoint:
         if not np.all(np.isfinite(values)) or np.any(values < 0.0):
             raise ValueError("P3J checkpoint contains invalid scores")
         scores.extend(float(value) for value in values)
+        normalization_error = max(
+            normalization_error,
+            float(item["maximum_conditional_normalization_error"]),
+        )
         completed, previous = expected_stop, observed
     complete = completed == plan.action_count
     if payload["head_hash"] != previous or payload["complete"] is not complete:
@@ -258,6 +265,7 @@ def load_p3j_checkpoint(path: Path, plan: P3JChunkPlan) -> P3JCheckpoint:
         completed_chunk_count=len(payload["chunks"]),
         completed_action_count=completed,
         scores=np.asarray(scores),
+        maximum_conditional_normalization_error=normalization_error,
         head_hash=previous,
     )
 

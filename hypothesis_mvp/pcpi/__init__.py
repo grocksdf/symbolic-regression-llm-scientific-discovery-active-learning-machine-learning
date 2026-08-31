@@ -175,6 +175,11 @@ from .p3j_checkpoint import (
     load_p3j_checkpoint,
     require_complete_p3j_scores,
 )
+from .p3j_checkpointed import (
+    P3J_CHECKPOINTED_ESTIMATOR,
+    checkpointed_class_conditional_semiparametric_eig,
+    complete_p3j_quadrature_grid,
+)
 from .decision import (
     REFERENCE_DOMINANCE_METHOD,
     REFERENCE_FALLBACK_MODE,
@@ -369,6 +374,9 @@ __all__ = [
     "initialize_p3j_checkpoint",
     "load_p3j_checkpoint",
     "require_complete_p3j_scores",
+    "P3J_CHECKPOINTED_ESTIMATOR",
+    "checkpointed_class_conditional_semiparametric_eig",
+    "complete_p3j_quadrature_grid",
     "REFERENCE_DOMINANCE_METHOD",
     "REFERENCE_FALLBACK_MODE",
     "TARGETED_HANDOVER_MODE",

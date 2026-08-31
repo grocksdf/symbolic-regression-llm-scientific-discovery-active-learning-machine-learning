@@ -635,3 +635,6 @@ long-horizon context and remain binding even when a local task omits them.
   The P3I.4 supervisor must remain ASCII-only, use the encoded-child exit-code
   path, reject null/nonzero exit codes, and preserve the unique-output and
   historical-evidence guards.
+P3J.6 checkpointed quadrature is a no-data correctness stage. Do not release
+scores from partial action grids or authorize a formal runner until the full
+four-model adaptive-look composition has its own Gate.

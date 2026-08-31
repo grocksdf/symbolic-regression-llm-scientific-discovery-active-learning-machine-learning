@@ -1,0 +1,14 @@
+{
+  "schema": "pcpi-p3j6-checkpointed-estimator-gate-config-v1",
+  "stage": "P3J.6",
+  "predecessor": "P3J.5/durable-action-chunk-checkpoint",
+  "estimator": "complete-identity-bound-action-chunks-before-ranking-v1",
+  "action_chunk_size": 16,
+  "real_data_access": false,
+  "candidate_response_access": false,
+  "validation_access": false,
+  "heldout_access": false,
+  "simulated_experiment": false,
+  "operational_execution_authorized": false,
+  "runner_execution_authorized": false
+}

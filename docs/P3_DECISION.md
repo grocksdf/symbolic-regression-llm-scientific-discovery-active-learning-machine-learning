@@ -618,3 +618,13 @@ chunk; gaps, duplicates, crossed state and tampering fail closed. A proper
 prefix cannot release scores to ranking or selection. The source Gate passes,
 but runner composition and real execution remain blocked. See
 `docs/pcpi_p3j5_durable_checkpoint_audit_20260831.md`.
+
+## P3J.6 checkpointed quadrature estimator
+
+P3J.6 resumes each identity-bound quadrature grid from its first missing
+action chunk and refuses to construct an EIG estimate until every required
+fine/coarse score is present in a verified complete checkpoint. Refinement
+reuses a preceding complete grid only under the same residual state,
+partition, action domain, quadrature schedule, and error rule. The formal
+four-model adaptive-ranking runner remains blocked pending P3J.7. See
+`docs/pcpi_p3j6_checkpointed_estimator_audit_20260831.md`.
