@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 import math
+from pathlib import Path
 
 import numpy as np
 
@@ -186,6 +187,8 @@ def score_operational_class_conditional_candidates(
     eig_error_safety_factor: float,
     eig_growth_factor: int,
     unresolved_ranking_action: str = P3H_INTERVAL_FRONTIER_RESOLUTION,
+    checkpoint_root: Path | None = None,
+    action_chunk_size: int = 16,
 ) -> OperationalClassConditionalDecision:
     """Score only visible covariates, certify, and freeze one candidate."""
 
@@ -216,6 +219,8 @@ def score_operational_class_conditional_candidates(
         error_safety_factor=eig_error_safety_factor,
         growth_factor=eig_growth_factor,
         unresolved_action=unresolved_ranking_action,
+        checkpoint_root=checkpoint_root,
+        action_chunk_size=action_chunk_size,
     )
     if (
         not scores.ranking_certified
@@ -236,6 +241,42 @@ def score_operational_class_conditional_candidates(
         selected_action=actions[local],
         local_index=local,
         scores=scores,
+    )
+
+
+def score_checkpointed_operational_class_conditional_candidates(
+    state: OperationalClassConditionalState,
+    candidate_actions: np.ndarray,
+    candidate_ids: np.ndarray,
+    predictive_target_actions: np.ndarray,
+    representative_observed_actions: np.ndarray,
+    checkpoint_root: Path,
+    *,
+    eig_min_samples: int,
+    eig_max_samples: int,
+    eig_error_safety_factor: float,
+    eig_growth_factor: int,
+    action_chunk_size: int = 16,
+    unresolved_ranking_action: str = P3H_INTERVAL_FRONTIER_RESOLUTION,
+) -> OperationalClassConditionalDecision:
+    """Require the complete checkpointed ambiguity family before selection."""
+
+    root = Path(checkpoint_root)
+    if not root.is_dir():
+        raise FileNotFoundError("P3J operational checkpoint root must already exist")
+    return score_operational_class_conditional_candidates(
+        state,
+        candidate_actions,
+        candidate_ids,
+        predictive_target_actions,
+        representative_observed_actions,
+        eig_min_samples=eig_min_samples,
+        eig_max_samples=eig_max_samples,
+        eig_error_safety_factor=eig_error_safety_factor,
+        eig_growth_factor=eig_growth_factor,
+        unresolved_ranking_action=unresolved_ranking_action,
+        checkpoint_root=root,
+        action_chunk_size=action_chunk_size,
     )
 
 
@@ -279,4 +320,5 @@ __all__ = [
     "admit_operational_class_conditional_response",
     "initialize_operational_class_conditional_state",
     "score_operational_class_conditional_candidates",
+    "score_checkpointed_operational_class_conditional_candidates",
 ]

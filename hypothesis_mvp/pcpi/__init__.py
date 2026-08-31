@@ -155,6 +155,7 @@ from .operational_class_conditional import (
     admit_operational_class_conditional_response,
     initialize_operational_class_conditional_state,
     score_operational_class_conditional_candidates,
+    score_checkpointed_operational_class_conditional_candidates,
 )
 from .p3j_cost import (
     P3J_COST_METHOD,
@@ -359,6 +360,7 @@ __all__ = [
     "admit_operational_class_conditional_response",
     "initialize_operational_class_conditional_state",
     "score_operational_class_conditional_candidates",
+    "score_checkpointed_operational_class_conditional_candidates",
     "P3J_COST_METHOD",
     "P3JCostLedger",
     "P3JBatchCallLedger",

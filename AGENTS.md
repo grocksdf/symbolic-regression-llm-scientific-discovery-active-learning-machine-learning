@@ -638,3 +638,6 @@ long-horizon context and remain binding even when a local task omits them.
 P3J.6 checkpointed quadrature is a no-data correctness stage. Do not release
 scores from partial action grids or authorize a formal runner until the full
 four-model adaptive-look composition has its own Gate.
+P3J.7 completes that four-model adaptive-look composition but remains no-data.
+Do not authorize execution until a supervised runner binds every checkpoint
+root to dataset, seed, query, candidate domain, source tree, and frozen config.

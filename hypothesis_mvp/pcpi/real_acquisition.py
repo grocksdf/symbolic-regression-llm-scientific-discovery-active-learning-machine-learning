@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from hashlib import sha256
+from pathlib import Path
 
 import numpy as np
 
@@ -43,6 +44,7 @@ from .class_conditional_semiparametric import (
     refine_class_conditional_semiparametric_eig,
 )
 from .likelihood_power_residuals import LikelihoodPowerResidualFamily
+from .p3j_checkpointed import checkpointed_class_conditional_semiparametric_eig
 from .reference import (
     DyadicPolyaTreePredictiveLaw,
     ExactPosterior,
@@ -691,6 +693,33 @@ def _estimate_maximin_joint_until_ranked(
         samples = min(maximum_samples, samples * growth_factor)
 
 
+def _checkpointed_p3j_model_look(
+    components: PredictiveComponents,
+    state: CalibratedClassPosteriorState,
+    preceding: ClassConditionalEIGEstimate | None,
+    samples: int,
+    error_safety_factor: float,
+    checkpoint_root: Path | None,
+    model_index: int,
+    action_chunk_size: int,
+) -> ClassConditionalEIGEstimate:
+    if checkpoint_root is None:
+        raise ValueError("P3J checkpointed model look requires a checkpoint root")
+    model_root = checkpoint_root / (
+        f"model-{model_index:02d}-power-{state.engine.likelihood_power.hex()}"
+    )
+    model_root.mkdir(exist_ok=True)
+    return checkpointed_class_conditional_semiparametric_eig(
+        model_root,
+        components,
+        state.residual_state,
+        samples,
+        error_safety_factor=error_safety_factor,
+        action_chunk_size=action_chunk_size,
+        preceding=preceding,
+    )
+
+
 def _estimate_class_conditional_maximin_until_ranked(
     components: tuple[PredictiveComponents, ...],
     states: tuple[CalibratedClassPosteriorState, ...],
@@ -700,22 +729,32 @@ def _estimate_class_conditional_maximin_until_ranked(
     maximum_samples: int,
     error_safety_factor: float,
     growth_factor: int,
+    checkpoint_root: Path | None = None,
+    action_chunk_size: int = 16,
 ) -> MaximinJointEstimate:
     """Certify a finite lower envelope of coherent class-conditional EIG."""
-
     if (
         len(components) != len(states)
         or len(states) != len(powers)
         or tuple(item.engine.likelihood_power for item in states) != powers
     ):
         raise ValueError("P3J posterior and residual families are not aligned")
+    root = None if checkpoint_root is None else Path(checkpoint_root)
+    if root is not None and not root.is_dir():
+        raise FileNotFoundError("P3J ranking checkpoint root must already exist")
     samples, looks = minimum_samples, 0
     preceding: tuple[ClassConditionalEIGEstimate, ...] | None = None
     planned = _planned_look_count(minimum_samples, maximum_samples, growth_factor)
     while True:
         looks += 1
-        estimates = tuple(
-            (
+        estimates_list = []
+        for model_index, (item, state, previous) in enumerate(zip(
+            components,
+            states,
+            preceding if preceding is not None else (None,) * len(states),
+            strict=True,
+        )):
+            estimate = (
                 refine_class_conditional_semiparametric_eig(
                     item,
                     state.residual_state,
@@ -723,21 +762,27 @@ def _estimate_class_conditional_maximin_until_ranked(
                     samples,
                     error_safety_factor=error_safety_factor,
                 )
-                if preceding is not None
+                if root is None and preceding is not None
                 else estimate_class_conditional_semiparametric_eig(
                     item,
                     state.residual_state,
                     samples,
                     error_safety_factor=error_safety_factor,
                 )
+                if root is None
+                else _checkpointed_p3j_model_look(
+                    item,
+                    state,
+                    previous if preceding is not None else None,
+                    samples,
+                    error_safety_factor,
+                    root,
+                    model_index,
+                    action_chunk_size,
+                )
             )
-            for item, state, previous in zip(
-                components,
-                states,
-                preceding if preceding is not None else (None,) * len(states),
-                strict=True,
-            )
-        )
+            estimates_list.append(estimate)
+        estimates = tuple(estimates_list)
         preceding = estimates
         class_scores = np.asarray([item.scores for item in estimates])
         class_errors = np.asarray([item.error_bounds for item in estimates])
@@ -1321,6 +1366,8 @@ def score_class_conditional_decision_actions(
     error_safety_factor: float,
     growth_factor: int,
     unresolved_action: str = P3H_INTERVAL_FRONTIER_RESOLUTION,
+    checkpoint_root: Path | None = None,
+    action_chunk_size: int = 16,
 ) -> AcquisitionScores:
     """Score the coherent P3J class-conditional joint and no nuisance target."""
 
@@ -1353,6 +1400,8 @@ def score_class_conditional_decision_actions(
         maximum_samples,
         error_safety_factor,
         growth_factor,
+        checkpoint_root,
+        action_chunk_size,
     )
     return _finalize_class_conditional_scores(
         engine,

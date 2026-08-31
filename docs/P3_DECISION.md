@@ -628,3 +628,13 @@ reuses a preceding complete grid only under the same residual state,
 partition, action domain, quadrature schedule, and error rule. The formal
 four-model adaptive-ranking runner remains blocked pending P3J.7. See
 `docs/pcpi_p3j6_checkpointed_estimator_audit_20260831.md`.
+
+## P3J.7 checkpointed complete ambiguity family
+
+P3J.7 completes every one of the four frozen likelihood-power models at a
+given quadrature look before evaluating the lower-envelope rank certificate.
+Adaptive refinement passes each model only its own complete preceding estimate,
+and an interrupted model family cannot reach candidate selection. The real
+runner remains blocked pending dataset/seed/query/candidate-domain identity
+binding and supervised terminal reporting in P3J.8. See
+`docs/pcpi_p3j7_checkpointed_family_audit_20260831.md`.

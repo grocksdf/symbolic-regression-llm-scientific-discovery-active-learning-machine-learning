@@ -1,0 +1,15 @@
+{
+  "schema": "pcpi-p3j7-checkpointed-family-gate-config-v1",
+  "stage": "P3J.7",
+  "predecessor": "P3J.6/checkpointed-quadrature-estimator",
+  "model_powers": [0.125, 0.25, 0.5, 1.0],
+  "family_completion": "all-models-at-look-before-lower-envelope-certificate",
+  "selection_lifecycle": "score-complete-family-then-select-no-response-access",
+  "real_data_access": false,
+  "candidate_response_access": false,
+  "validation_access": false,
+  "heldout_access": false,
+  "simulated_experiment": false,
+  "operational_execution_authorized": false,
+  "formal_runner_authorized": false
+}
