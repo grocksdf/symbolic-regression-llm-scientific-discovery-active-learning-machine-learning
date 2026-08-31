@@ -648,3 +648,7 @@ P3J.9 publishes an indivisible response-free query decision and terminally
 closes its first failure. Response admission and the whole dataset runner stay
 blocked until P3J.10 proves matching reveal, exactly-once advance, and terminal
 run-ledger composition.
+P3J.10 proves matching reveal, deterministic exactly-once state reconstruction,
+and contiguous run manifests using correctness fixtures only. The measured-pool
+runner remains blocked until P3J.11 replaces the P3I scoring branch with these
+transactions and freezes the supervised execution surface.

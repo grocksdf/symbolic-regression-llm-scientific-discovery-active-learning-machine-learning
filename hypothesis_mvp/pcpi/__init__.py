@@ -197,6 +197,13 @@ from .p3j_query_runner import (
     p3j_query_progress_snapshot,
     run_p3j_formal_query,
 )
+from .p3j_reveal_runner import (
+    P3J_QUERY_LEDGER_SCHEMA,
+    P3J_REVEAL_RECEIPT_SCHEMA,
+    P3J_RUN_MANIFEST_SCHEMA,
+    admit_p3j_formal_response,
+    finalize_p3j_run_manifest,
+)
 from .decision import (
     REFERENCE_DOMINANCE_METHOD,
     REFERENCE_FALLBACK_MODE,
@@ -407,6 +414,11 @@ __all__ = [
     "P3J_QUERY_DECISION_SCHEMA",
     "p3j_query_progress_snapshot",
     "run_p3j_formal_query",
+    "P3J_QUERY_LEDGER_SCHEMA",
+    "P3J_REVEAL_RECEIPT_SCHEMA",
+    "P3J_RUN_MANIFEST_SCHEMA",
+    "admit_p3j_formal_response",
+    "finalize_p3j_run_manifest",
     "REFERENCE_DOMINANCE_METHOD",
     "REFERENCE_FALLBACK_MODE",
     "TARGETED_HANDOVER_MODE",

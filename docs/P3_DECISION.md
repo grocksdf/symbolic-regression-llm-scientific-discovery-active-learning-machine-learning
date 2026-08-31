@@ -658,3 +658,14 @@ response has been opened. The first error publishes a no-overwrite terminal
 failure and forbids query retry. Response admission and the full dataset runner
 remain blocked pending P3J.10. See
 `docs/pcpi_p3j9_query_transaction_audit_20260901.md`.
+
+## P3J.10 matching reveal, exactly-once advance, and run manifest
+
+P3J.10 accepts only the candidate and coordinates frozen by the published
+decision, persists a no-overwrite response receipt, advances the complete
+four-model state once, and publishes a prior/next-state-linked query ledger.
+Recovery reconstructs the same next state from the frozen prior state rather
+than double-advancing. A run manifest requires an ordered contiguous chain of
+complete query ledgers with no terminal failure. The measured-pool dataset
+runner remains blocked pending P3J.11 integration. See
+`docs/pcpi_p3j10_reveal_manifest_audit_20260901.md`.

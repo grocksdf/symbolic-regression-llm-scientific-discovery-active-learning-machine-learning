@@ -1,0 +1,23 @@
+{
+  "schema": "pcpi-p3j10-reveal-manifest-gate-config-v1",
+  "stage": "P3J.10",
+  "predecessor": "P3J.9/indivisible-response-free-query-transaction",
+  "reveal_receipt_schema": "pcpi-p3j10-matching-reveal-receipt-v1",
+  "query_ledger_schema": "pcpi-p3j10-exactly-once-query-ledger-v1",
+  "run_manifest_schema": "pcpi-p3j10-complete-run-manifest-v1",
+  "admission_order": [
+    "load-published-decision",
+    "validate-matching-reveal",
+    "publish-no-overwrite-receipt",
+    "advance-complete-family-once",
+    "publish-state-linked-query-ledger"
+  ],
+  "response_admission_composed": true,
+  "real_data_access": false,
+  "real_candidate_response_access": false,
+  "validation_access": false,
+  "heldout_access": false,
+  "simulated_experiment": false,
+  "operational_execution_authorized": false,
+  "formal_dataset_runner_authorized": false
+}
