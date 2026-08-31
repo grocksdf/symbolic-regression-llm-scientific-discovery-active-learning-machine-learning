@@ -652,3 +652,7 @@ P3J.10 proves matching reveal, deterministic exactly-once state reconstruction,
 and contiguous run manifests using correctness fixtures only. The measured-pool
 runner remains blocked until P3J.11 replaces the P3I scoring branch with these
 transactions and freezes the supervised execution surface.
+P3J.11 provides the only permitted measured-pool adapter and proves that a
+complete decision precedes one matching oracle reveal. Do not call the oracle
+directly from the P3J dataset branch; P3J.12 must route that branch exclusively
+through this adapter and finalize its contiguous query manifest.

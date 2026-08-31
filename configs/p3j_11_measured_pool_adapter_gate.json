@@ -1,0 +1,14 @@
+{
+  "schema": "pcpi-p3j11-measured-pool-adapter-gate-config-v1",
+  "stage": "P3J.11",
+  "predecessor": "P3J.10/matching-reveal-exactly-once-advance",
+  "adapter_order": "identity-bound-decision-then-one-matching-oracle-reveal-then-exact-advance-v1",
+  "oracle_call_count_per_query": 1,
+  "real_data_access": false,
+  "real_oracle_invoked": false,
+  "validation_access": false,
+  "heldout_access": false,
+  "simulated_experiment": false,
+  "operational_execution_authorized": false,
+  "formal_dataset_runner_authorized": false
+}

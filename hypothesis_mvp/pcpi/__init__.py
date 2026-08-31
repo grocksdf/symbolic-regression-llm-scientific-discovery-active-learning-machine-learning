@@ -204,6 +204,11 @@ from .p3j_reveal_runner import (
     admit_p3j_formal_response,
     finalize_p3j_run_manifest,
 )
+from .p3j_measured_pool import (
+    P3J_MEASURED_POOL_ORDER,
+    P3JMeasuredPoolQueryResult,
+    run_p3j_measured_pool_query,
+)
 from .decision import (
     REFERENCE_DOMINANCE_METHOD,
     REFERENCE_FALLBACK_MODE,
@@ -419,6 +424,9 @@ __all__ = [
     "P3J_RUN_MANIFEST_SCHEMA",
     "admit_p3j_formal_response",
     "finalize_p3j_run_manifest",
+    "P3J_MEASURED_POOL_ORDER",
+    "P3JMeasuredPoolQueryResult",
+    "run_p3j_measured_pool_query",
     "REFERENCE_DOMINANCE_METHOD",
     "REFERENCE_FALLBACK_MODE",
     "TARGETED_HANDOVER_MODE",

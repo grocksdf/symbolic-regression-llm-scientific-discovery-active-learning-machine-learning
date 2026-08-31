@@ -669,3 +669,13 @@ than double-advancing. A run manifest requires an ordered contiguous chain of
 complete query ledgers with no terminal failure. The measured-pool dataset
 runner remains blocked pending P3J.11 integration. See
 `docs/pcpi_p3j10_reveal_manifest_audit_20260901.md`.
+
+## P3J.11 measured-pool oracle boundary
+
+P3J.11 exposes one measured-pool adapter: the complete identity-bound decision
+is published before exactly one selected candidate is requested from the
+oracle; returned identity and frozen-standardized coordinates are rechecked
+before P3J.10 admission and advance. Decision failure opens no response, while
+crossed oracle output cannot reach advance. The full dataset loop remains
+blocked pending P3J.12 integration. See
+`docs/pcpi_p3j11_measured_pool_adapter_audit_20260901.md`.
