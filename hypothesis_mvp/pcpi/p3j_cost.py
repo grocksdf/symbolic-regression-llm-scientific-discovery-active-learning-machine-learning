@@ -60,6 +60,32 @@ class P3JCostLedger:
             raise ValueError("P3J computational ledger is inconsistent")
 
 
+@dataclass(frozen=True)
+class P3JBatchCallLedger:
+    candidate_count: int
+    action_chunk_size: int
+    chunk_count: int
+    ambiguity_model_count: int
+    maximum_class_count: int
+    grid_evaluation_count: int
+    scalar_scipy_distribution_calls: int
+    batched_scipy_distribution_calls: int
+    saved_scipy_distribution_calls: int
+    savings_fraction: float
+
+    def __post_init__(self) -> None:
+        if (
+            self.chunk_count != (
+                self.candidate_count + self.action_chunk_size - 1
+            ) // self.action_chunk_size
+            or self.saved_scipy_distribution_calls
+            != self.scalar_scipy_distribution_calls
+            - self.batched_scipy_distribution_calls
+            or not 0.0 <= self.savings_fraction < 1.0
+        ):
+            raise ValueError("P3J batched-call ledger is inconsistent")
+
+
 def p3j_worst_case_cost_ledger(
     *,
     candidate_count: int,
@@ -104,9 +130,45 @@ def p3j_worst_case_cost_ledger(
     )
 
 
+def p3j_batch_call_ledger(
+    *,
+    candidate_count: int,
+    action_chunk_size: int,
+    ambiguity_model_count: int,
+    maximum_class_count: int,
+    grid_evaluation_count: int,
+) -> P3JBatchCallLedger:
+    """Count SciPy distribution dispatches; scalar density work is unchanged."""
+
+    candidates = _positive_integer(candidate_count, "candidate_count")
+    chunk = _positive_integer(action_chunk_size, "action_chunk_size")
+    models = _positive_integer(ambiguity_model_count, "ambiguity_model_count")
+    classes = _positive_integer(maximum_class_count, "maximum_class_count")
+    grids = _positive_integer(grid_evaluation_count, "grid_evaluation_count")
+    chunks = (candidates + chunk - 1) // chunk
+    # Per source class: one t.ppf plus 65 t.cdf calls for fixed inversion.
+    # Per source/target class pair: one t.logpdf plus one t.cdf call.
+    calls_per_action_group = 66 * classes + 2 * classes * classes
+    scalar = models * grids * candidates * calls_per_action_group
+    batched = models * grids * chunks * calls_per_action_group
+    saved = scalar - batched
+    return P3JBatchCallLedger(
+        candidate_count=candidates,
+        action_chunk_size=chunk,
+        chunk_count=chunks,
+        ambiguity_model_count=models,
+        maximum_class_count=classes,
+        grid_evaluation_count=grids,
+        scalar_scipy_distribution_calls=scalar,
+        batched_scipy_distribution_calls=batched,
+        saved_scipy_distribution_calls=saved,
+        savings_fraction=saved / scalar,
+    )
 __all__ = [
     "P3J_COST_METHOD",
     "P3JCostLedger",
+    "P3JBatchCallLedger",
+    "p3j_batch_call_ledger",
     "p3j_worst_case_cost_ledger",
     "quadrature_orders",
 ]

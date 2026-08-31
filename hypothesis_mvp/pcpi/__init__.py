@@ -139,6 +139,7 @@ from .class_conditional_semiparametric import (
     advance_calibrated_class_posterior,
     advance_class_conditional_residual_state,
     class_conditional_semiparametric_coupling,
+    class_conditional_semiparametric_couplings,
     estimate_class_conditional_semiparametric_eig,
     initialize_calibrated_class_posterior,
     initialize_class_conditional_residual_state,
@@ -156,6 +157,8 @@ from .operational_class_conditional import (
 from .p3j_cost import (
     P3J_COST_METHOD,
     P3JCostLedger,
+    P3JBatchCallLedger,
+    p3j_batch_call_ledger,
     p3j_worst_case_cost_ledger,
     quadrature_orders,
 )
@@ -324,6 +327,7 @@ __all__ = [
     "advance_calibrated_class_posterior",
     "advance_class_conditional_residual_state",
     "class_conditional_semiparametric_coupling",
+    "class_conditional_semiparametric_couplings",
     "estimate_class_conditional_semiparametric_eig",
     "initialize_calibrated_class_posterior",
     "initialize_class_conditional_residual_state",
@@ -337,6 +341,8 @@ __all__ = [
     "score_operational_class_conditional_candidates",
     "P3J_COST_METHOD",
     "P3JCostLedger",
+    "P3JBatchCallLedger",
+    "p3j_batch_call_ledger",
     "p3j_worst_case_cost_ledger",
     "quadrature_orders",
     "REFERENCE_DOMINANCE_METHOD",

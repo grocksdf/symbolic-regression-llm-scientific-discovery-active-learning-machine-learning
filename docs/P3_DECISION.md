@@ -597,3 +597,14 @@ therefore passes as a refinement/cost audit but keeps runner composition and
 operational execution blocked. The next Gate must reduce and chunk this work
 without changing the joint law or registered score intervals. See
 `docs/pcpi_p3j3_refinement_cost_audit_20260831.md`.
+
+## P3J.4 batched class-density kernel
+
+P3J.4 batches contiguous actions through the fixed 64-step class-mixture
+inverse CDF and all target-class density evaluations. Chunk sizes 1, 2 and 7
+match the scalar kernel within `2e-15`; candidate order, nodes, tolerances,
+joint law and intervals are unchanged. At the frozen architectural maxima,
+SciPy distribution dispatches fall from `1,720,320` to `107,520` (`93.75%`).
+The scalar cross-class work remains fully charged. Runner composition stays
+blocked pending durable deterministic checkpointing. See
+`docs/pcpi_p3j4_batched_density_audit_20260831.md`.

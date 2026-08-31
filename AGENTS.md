@@ -257,6 +257,12 @@ long-horizon context and remain binding even when a local task omits them.
   maximum schedule. P3J.3 is therefore a passed correctness/cost audit with
   runner composition explicitly blocked; do not authorize a real run before
   batched, chunked and recoverable scoring passes a separate source Gate.
+- P3J.4 evaluates contiguous action chunks through one vectorized fixed-step
+  inverse-CDF and all source/target class densities. Scalar and multiple chunk
+  boundaries agree within `2e-15`; no candidate is reordered and scalar work
+  remains charged. The static maximum dispatch ledger falls by `93.75%`, but
+  runner and real execution remain blocked until chunk progress is durably
+  fsync-published and deterministically resumable without partial selection.
 - `P3F.4-CERT.14` replaces authority for the resident floating factor-basis
   collapsed target with the same 512-bit Arb function-space covariance builder
   used by CERT.13. For an exact rational bridge weight matrix `W`, it evaluates

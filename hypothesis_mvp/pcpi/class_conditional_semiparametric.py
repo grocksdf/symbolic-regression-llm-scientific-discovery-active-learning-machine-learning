@@ -426,6 +426,184 @@ def _class_inverse_cdf_nodes(
     )
 
 
+def _mixture_inverse_cdf_action_batch(
+    probabilities: np.ndarray,
+    locations: np.ndarray,
+    scales: np.ndarray,
+    degrees: np.ndarray,
+    weights: np.ndarray,
+) -> np.ndarray:
+    """Invert one component mixture for many actions in one fixed 64-step batch."""
+
+    raw = np.asarray(probabilities, dtype=float).reshape(-1)
+    location = np.asarray(locations, dtype=float)
+    scale = np.asarray(scales, dtype=float)
+    degree = np.asarray(degrees, dtype=float).reshape(-1)
+    mixture_weights = np.asarray(weights, dtype=float).reshape(-1)
+    if (
+        location.ndim != 2
+        or location.shape != scale.shape
+        or location.shape[0] != len(degree)
+        or len(degree) != len(mixture_weights)
+        or not len(raw)
+    ):
+        raise ValueError("P3J batched inverse-CDF inputs are not aligned")
+    quantiles = student_t.ppf(
+        raw[None, None, :],
+        df=degree[:, None, None],
+        loc=location[:, :, None],
+        scale=scale[:, :, None],
+    )
+    lower, upper = np.min(quantiles, axis=0), np.max(quantiles, axis=0)
+    if not np.all(np.isfinite(lower)) or not np.all(np.isfinite(upper)):
+        raise FloatingPointError("P3J batched mixture inversion has no finite bracket")
+    for _ in range(64):
+        midpoint = 0.5 * (lower + upper)
+        cdf = np.sum(
+            mixture_weights[:, None, None]
+            * student_t.cdf(
+                midpoint[None, :, :],
+                df=degree[:, None, None],
+                loc=location[:, :, None],
+                scale=scale[:, :, None],
+            ),
+            axis=0,
+        )
+        below = cdf < raw[None, :]
+        lower = np.where(below, midpoint, lower)
+        upper = np.where(below, upper, midpoint)
+    responses = 0.5 * (lower + upper)
+    recovered = np.sum(
+        mixture_weights[:, None, None]
+        * student_t.cdf(
+            responses[None, :, :],
+            df=degree[:, None, None],
+            loc=location[:, :, None],
+            scale=scale[:, :, None],
+        ),
+        axis=0,
+    )
+    if float(np.max(np.abs(recovered - raw[None, :]))) > 2e-13:
+        raise FloatingPointError("P3J batched mixture inversion missed its tolerance")
+    return responses
+
+
+def _class_base_logpdf_and_cdf_action_batch(
+    components: PredictiveComponents,
+    action_slice: slice,
+    responses: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    class_probabilities = _validated_class_probabilities(components)
+    targets = np.asarray(responses, dtype=float)
+    action_count, node_count = targets.shape
+    logpdf = np.empty((len(class_probabilities), action_count, node_count))
+    cdf = np.empty_like(logpdf)
+    for class_index, members in enumerate(components.partition.member_indices):
+        indices = np.asarray(members, dtype=int)
+        weights = components.structure_probabilities[indices] / class_probabilities[
+            class_index
+        ]
+        locations = components.locations[indices, action_slice]
+        scales = components.scales[indices, action_slice]
+        component_logpdf = student_t.logpdf(
+            targets[None, :, :],
+            df=components.degrees_freedom[indices, None, None],
+            loc=locations[:, :, None],
+            scale=scales[:, :, None],
+        )
+        logpdf[class_index] = logsumexp(
+            np.log(weights)[:, None, None] + component_logpdf, axis=0
+        )
+        cdf[class_index] = np.sum(
+            weights[:, None, None]
+            * student_t.cdf(
+                targets[None, :, :],
+                df=components.degrees_freedom[indices, None, None],
+                loc=locations[:, :, None],
+                scale=scales[:, :, None],
+            ),
+            axis=0,
+        )
+    if not np.all(np.isfinite(logpdf)) or not np.all(np.isfinite(cdf)):
+        raise FloatingPointError("P3J batched class forecast is not finite")
+    return logpdf, cdf
+
+
+def class_conditional_semiparametric_couplings(
+    components: PredictiveComponents,
+    state: ClassConditionalResidualState,
+    nodes_per_leaf: int,
+    *,
+    action_chunk_size: int = 16,
+) -> tuple[ClassConditionalCoupling, ...]:
+    """Evaluate every action in bounded batches without changing its joint law."""
+
+    class_probabilities = _validate_state_for_components(components, state)
+    chunk_size = int(action_chunk_size)
+    if (
+        isinstance(action_chunk_size, bool)
+        or chunk_size != action_chunk_size
+        or chunk_size < 1
+    ):
+        raise ValueError("P3J action chunk size must be a positive integer")
+    laws = state.residual_laws
+    action_count = components.locations.shape[1]
+    information = np.zeros(action_count, dtype=float)
+    maximum_normalization_error = 0.0
+    for start in range(0, action_count, chunk_size):
+        stop = min(action_count, start + chunk_size)
+        action_slice = slice(start, stop)
+        chunk_information = np.zeros(stop - start, dtype=float)
+        for source_index, law in enumerate(laws):
+            raw_pits, weights = _residual_quadrature(law, nodes_per_leaf)
+            members = np.asarray(
+                components.partition.member_indices[source_index], dtype=int
+            )
+            source_probability = class_probabilities[source_index]
+            source_weights = (
+                components.structure_probabilities[members] / source_probability
+            )
+            responses = _mixture_inverse_cdf_action_batch(
+                raw_pits,
+                components.locations[members, action_slice],
+                components.scales[members, action_slice],
+                components.degrees_freedom[members],
+                source_weights,
+            )
+            base_logpdf, base_cdf = _class_base_logpdf_and_cdf_action_batch(
+                components, action_slice, responses
+            )
+            calibrated = np.stack([
+                base_logpdf[index]
+                + laws[index].log_density(base_cdf[index].reshape(-1)).reshape(
+                    stop - start, -1
+                )
+                for index in range(len(laws))
+            ])
+            mixture = logsumexp(
+                np.log(class_probabilities)[:, None, None] + calibrated, axis=0
+            )
+            chunk_information += source_probability * np.sum(
+                weights[None, :] * (calibrated[source_index] - mixture), axis=1
+            )
+            maximum_normalization_error = max(
+                maximum_normalization_error, abs(float(np.sum(weights)) - 1.0)
+            )
+        information[action_slice] = chunk_information
+    roundoff = 4096.0 * np.finfo(float).eps
+    if np.any(information < -roundoff):
+        raise FloatingPointError("P3J batched quadrature produced negative information")
+    return tuple(
+        ClassConditionalCoupling(
+            class_probabilities=class_probabilities,
+            mutual_information=max(0.0, float(value)),
+            nodes_per_leaf=int(nodes_per_leaf),
+            maximum_conditional_normalization_error=maximum_normalization_error,
+        )
+        for value in information
+    )
+
+
 def class_conditional_semiparametric_coupling(
     components: PredictiveComponents,
     state: ClassConditionalResidualState,
@@ -489,17 +667,9 @@ def estimate_class_conditional_semiparametric_eig(
         or error_safety_factor < 1.0
     ):
         raise ValueError("P3J nested quadrature controls are invalid")
-    fine = tuple(
-        class_conditional_semiparametric_coupling(
-            components, state, action_index, order
-        )
-        for action_index in range(components.locations.shape[1])
-    )
-    coarse = tuple(
-        class_conditional_semiparametric_coupling(
-            components, state, action_index, order // 2
-        )
-        for action_index in range(components.locations.shape[1])
+    fine = class_conditional_semiparametric_couplings(components, state, order)
+    coarse = class_conditional_semiparametric_couplings(
+        components, state, order // 2
     )
     scores = np.asarray([item.mutual_information for item in fine])
     coarse_scores = np.asarray([item.mutual_information for item in coarse])
@@ -555,12 +725,7 @@ def refine_class_conditional_semiparametric_eig(
         )
     ):
         raise ValueError("P3J refinement does not match its preceding estimate")
-    fine = tuple(
-        class_conditional_semiparametric_coupling(
-            components, state, action_index, order
-        )
-        for action_index in range(components.locations.shape[1])
-    )
+    fine = class_conditional_semiparametric_couplings(components, state, order)
     scores = np.asarray([item.mutual_information for item in fine])
     normalization_error = max(
         preceding.maximum_conditional_normalization_error,
@@ -794,6 +959,7 @@ __all__ = [
     "advance_calibrated_class_posterior",
     "advance_class_conditional_residual_state",
     "class_conditional_semiparametric_coupling",
+    "class_conditional_semiparametric_couplings",
     "estimate_class_conditional_semiparametric_eig",
     "initialize_calibrated_class_posterior",
     "initialize_class_conditional_residual_state",

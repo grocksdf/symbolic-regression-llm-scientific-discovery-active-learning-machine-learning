@@ -1,0 +1,20 @@
+{
+  "schema": "pcpi-p3j4-batched-density-gate-config-v1",
+  "stage": "P3J.4",
+  "candidate_count_upper": 128,
+  "action_chunk_size": 16,
+  "ambiguity_model_count": 4,
+  "maximum_class_count": 7,
+  "grid_evaluation_count": 6,
+  "inverse_cdf_iterations": 64,
+  "inverse_cdf_tolerance": 2e-13,
+  "batch_policy": "contiguous-candidate-order-no-reordering",
+  "batch_claim": "distribution-dispatch-reduction-not-scalar-work-reduction",
+  "runner_composition_authorized": false,
+  "operational_execution_authorized": false,
+  "real_data_access": false,
+  "candidate_response_access": false,
+  "validation_response_access": false,
+  "heldout_access": false,
+  "simulated_experiment": false
+}
