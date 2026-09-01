@@ -221,12 +221,18 @@ from .p3j_reporting import (
     P3J_REPORTING_ORDER,
     P3JPolicyArtifacts,
     build_p3j_policy_artifacts,
+    summarize_p3j_policy_artifacts,
 )
 from .p3j_policy_integration import (
     P3J_POLICY_DISPATCH,
     P3J_POLICY_FAILURE_SCHEMA,
     dispatch_p3j_matched_policy,
     publish_p3j_policy_failure_snapshot,
+)
+from .p3j_outer_runner import (
+    P3J_OUTER_RUNNER_COMPOSITION,
+    P3JOuterPolicyResult,
+    run_p3j_outer_policy,
 )
 from .decision import (
     REFERENCE_DOMINANCE_METHOD,
@@ -455,10 +461,14 @@ __all__ = [
     "P3J_REPORTING_ORDER",
     "P3JPolicyArtifacts",
     "build_p3j_policy_artifacts",
+    "summarize_p3j_policy_artifacts",
     "P3J_POLICY_DISPATCH",
     "P3J_POLICY_FAILURE_SCHEMA",
     "dispatch_p3j_matched_policy",
     "publish_p3j_policy_failure_snapshot",
+    "P3J_OUTER_RUNNER_COMPOSITION",
+    "P3JOuterPolicyResult",
+    "run_p3j_outer_policy",
     "REFERENCE_DOMINANCE_METHOD",
     "REFERENCE_FALLBACK_MODE",
     "TARGETED_HANDOVER_MODE",

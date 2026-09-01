@@ -702,3 +702,15 @@ selection. Terminal policy snapshots expose checkpoint publication bits but no
 response values and are no-overwrite. This is still a no-data source gate;
 shared outer-runner wiring and formal execution remain blocked for P3J.14. See
 `docs/pcpi_p3j13_policy_integration_audit_20260901.md`.
+
+## P3J.14 shared outer-runner composition
+
+P3J.14 routes only PCPI through transactional acquisition, post-ledger
+validation, and matched metric summary, while random, uncertainty, and QBC call
+the existing shared policy runner unchanged. One fail-closed boundary covers
+transaction, reporting, and summary. A byte-frozen full configuration binds all
+datasets, seeds, budgets, ambiguity models, quadrature settings, and protocol
+identities. Both execution authorizations remain false and the runner stops
+before data-root inspection. Supervised process/restart control and execution
+authorization remain for P3J.15. See
+`docs/pcpi_p3j14_shared_outer_runner_audit_20260901.md`.

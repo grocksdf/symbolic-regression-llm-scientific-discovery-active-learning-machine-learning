@@ -16,6 +16,7 @@ from hypothesis_mvp.pcpi import (
     build_p3j_policy_artifacts,
     dispatch_p3j_matched_policy,
     publish_p3j_policy_failure_snapshot,
+    summarize_p3j_policy_artifacts,
 )
 from hypothesis_mvp.pcpi import p3j_policy_integration, p3j_reporting
 from tests.test_pcpi_p3j2_operational_class_conditional import _scores
@@ -74,6 +75,10 @@ def test_reporting_occurs_only_after_admitted_query_state(tmp_path) -> None:
     assert row["response_receipt_admitted_before_reporting"] is True
     assert row["selection_used_validation"] is False
     assert row["selected_row_id"] == "row-3"
+    summary = summarize_p3j_policy_artifacts(artifacts, structure_count=7)
+    assert summary["pcpi_decision_rule_valid_rate"] == 1.0
+    assert summary["pcpi_target_only_class_eig_used_rate"] == 1.0
+    assert np.isfinite(summary["normalized_aulc_validation_rmse"])
 
 
 def test_dispatch_isolates_p3j_state_from_all_baselines(tmp_path) -> None:

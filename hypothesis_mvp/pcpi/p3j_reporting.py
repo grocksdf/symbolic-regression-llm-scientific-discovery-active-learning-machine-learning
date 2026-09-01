@@ -5,11 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from scipy.stats import spearmanr
 
 from .acquisition import class_partition
+from .class_conditional_semiparametric import P3J_CLASS_CONDITIONAL_JOINT_METHOD
 from .operational_class_conditional import OperationalClassConditionalState
 from .p3j_measured_run import P3JMeasuredRunResult
-from .real_acquisition import fixed_class_entropy, posterior_metrics
+from .real_acquisition import (
+    fixed_class_entropy,
+    normalized_area_under_learning_curve,
+    posterior_metrics,
+)
 from .reference import aggregate_decision_equivalent_classes
 
 
@@ -23,6 +29,13 @@ class P3JPolicyArtifacts:
     curve_rows: tuple[dict[str, object], ...]
     query_rows: tuple[dict[str, object], ...]
     protocol: str = P3J_REPORTING_ORDER
+
+
+def _safe_spearman(left: np.ndarray, right: np.ndarray) -> tuple[float, bool]:
+    if len(left) < 2 or np.all(left == left[0]) or np.all(right == right[0]):
+        return 0.0, False
+    value = float(spearmanr(left, right).statistic)
+    return (value, True) if np.isfinite(value) else (0.0, False)
 
 
 def _curve_row(
@@ -275,8 +288,122 @@ def build_p3j_policy_artifacts(
     return P3JPolicyArtifacts(curve_rows=curves, query_rows=queries)
 
 
+def _p3j_decision_valid(row: dict[str, object], partition_hash: object) -> bool:
+    return bool(
+        "class-conditional-semiparametric" in str(row["utility_mode"])
+        and row["acquisition_target_partition_hash"] == partition_hash
+        and row["representative_guard_applied"]
+        and row["representative_safe_set_nonempty"]
+        and not row["representative_fallback_used"]
+        and row["representative_selected_in_safe_set"]
+        and row["representative_selected_mmd_nonincrease"]
+        and row["eig_selected_from_admissible_set"]
+        and row["eig_ranking_certified"]
+        and row["semiparametric_transport_method"]
+        == P3J_CLASS_CONDITIONAL_JOINT_METHOD
+        and not row["semiparametric_information_invariance_applied"]
+        and row["selected_conditional_predictive_eig"] == 0.0
+        and np.isclose(
+            row["selected_joint_class_predictive_score"],
+            row["selected_class_eig"],
+            rtol=0.0,
+            atol=2e-14,
+        )
+    )
+
+
+def summarize_p3j_policy_artifacts(
+    artifacts: P3JPolicyArtifacts,
+    *,
+    structure_count: int,
+) -> dict[str, object]:
+    """Produce the metric surface consumed by the matched outer assessment."""
+
+    curves = artifacts.curve_rows
+    queries = artifacts.query_rows
+    if len(curves) != len(queries) + 1 or not queries or structure_count < 1:
+        raise ValueError("P3J policy artifacts are incomplete for summary")
+    initial = curves[0]
+    final = curves[-1]
+    gains = np.asarray([
+        row["realized_query_local_class_entropy_gain"] for row in queries
+    ], dtype=float)
+    scores = np.asarray([row["score"] for row in queries], dtype=float)
+    correlation, correlation_valid = _safe_spearman(scores, gains)
+    decision_valid = tuple(
+        _p3j_decision_valid(
+            row, initial["initial_frozen_class_partition_hash"]
+        )
+        for row in queries
+    )
+    rmse = np.asarray([row["validation_rmse"] for row in curves], dtype=float)
+    normalized_aulc = normalized_area_under_learning_curve(rmse)
+    return {
+        "normalized_aulc_validation_rmse": normalized_aulc,
+        "final_validation_rmse": final["validation_rmse"],
+        "final_validation_nll": final["validation_nll"],
+        "final_structure_entropy": final["structure_entropy"],
+        "final_class_entropy": final["class_entropy"],
+        "final_maximum_class_probability": final["maximum_class_probability"],
+        "initial_operational_class_count": initial["operational_class_count"],
+        "final_operational_class_count": final["operational_class_count"],
+        "initial_class_aggregation_fraction": (
+            1.0 - float(initial["operational_class_count"]) / structure_count
+        ),
+        "operational_class_distance_threshold": (
+            initial["operational_class_distance_threshold"]
+        ),
+        "initial_frozen_class_entropy": initial["frozen_class_entropy"],
+        "final_frozen_class_entropy": final["frozen_class_entropy"],
+        "frozen_class_entropy_gain": (
+            float(initial["frozen_class_entropy"])
+            - float(final["frozen_class_entropy"])
+        ),
+        "sum_query_local_class_entropy_gain": float(np.sum(gains)),
+        "dynamic_partition_count": len({
+            row["operational_class_partition_hash"] for row in curves
+        }),
+        "eig_ranking_certified_rate": float(np.mean([
+            row["eig_ranking_certified"] for row in queries
+        ])),
+        "pcpi_class_eig_used_rate": 1.0,
+        "pcpi_maximin_joint_eig_used_rate": 1.0,
+        "pcpi_target_only_class_eig_used_rate": 1.0,
+        "pcpi_primary_ranking_certified_rate": float(np.mean([
+            row["eig_primary_ranking_certified"] for row in queries
+        ])),
+        "pcpi_secondary_resolution_rate": float(np.mean([
+            row["eig_secondary_resolution_used"] for row in queries
+        ])),
+        "pcpi_mean_possible_maximizer_count": float(np.mean([
+            row["eig_possible_maximizer_count"] for row in queries
+        ])),
+        "pcpi_epistemic_fallback_rate": 0.0,
+        "pcpi_representative_guard_applied_rate": 1.0,
+        "pcpi_representative_safe_set_nonempty_rate": 1.0,
+        "pcpi_representative_fallback_rate": 0.0,
+        "pcpi_representative_selected_nonincrease_rate": float(np.mean([
+            row["representative_selected_mmd_nonincrease"] for row in queries
+        ])),
+        "pcpi_mean_representative_safe_set_size": float(np.mean([
+            row["representative_safe_set_size"] for row in queries
+        ])),
+        "pcpi_mean_selected_discrepancy_variance": 0.0,
+        "pcpi_decision_rule_valid_rate": float(np.mean(decision_valid)),
+        "pcpi_targeted_handover_rate": 0.0,
+        "pcpi_reference_fallback_rate": 0.0,
+        "pcpi_mean_reference_dominance_gap": 0.0,
+        "maximum_eig_samples_used": max(
+            int(row["score_sample_count"]) for row in queries
+        ),
+        "score_realized_gain_spearman": correlation,
+        "score_realized_gain_spearman_valid": correlation_valid,
+    }
+
+
 __all__ = [
     "P3J_REPORTING_ORDER",
     "P3JPolicyArtifacts",
     "build_p3j_policy_artifacts",
+    "summarize_p3j_policy_artifacts",
 ]
