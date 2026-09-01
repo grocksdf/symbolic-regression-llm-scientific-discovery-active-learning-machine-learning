@@ -1,0 +1,15 @@
+{
+  "schema": "pcpi-p3j13-policy-integration-gate-config-v1",
+  "stage": "P3J.13",
+  "policy_dispatch": "pcpi-only-transactional-path-baselines-unchanged-v1",
+  "reporting_order": "complete-query-ledger-before-validation-and-reporting-v1",
+  "failure_snapshot_no_response_values": true,
+  "matched_baselines_use_legacy_runner": true,
+  "real_data_access": false,
+  "real_oracle_invoked": false,
+  "validation_access": false,
+  "heldout_access": false,
+  "simulated_experiment": false,
+  "operational_execution_authorized": false,
+  "formal_dataset_runner_authorized": false
+}

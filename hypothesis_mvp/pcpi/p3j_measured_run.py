@@ -11,7 +11,10 @@ from .operational_class_conditional import (
     OperationalClassConditionalDecision,
     OperationalClassConditionalState,
 )
-from .p3j_measured_pool import resume_or_run_p3j_measured_pool_query
+from .p3j_measured_pool import (
+    P3JMeasuredPoolQueryResult,
+    resume_or_run_p3j_measured_pool_query,
+)
 from .p3j_reveal_runner import finalize_p3j_run_manifest
 from .p3j_run_identity import (
     P3JFormalQueryIdentity,
@@ -30,6 +33,7 @@ P3J_MEASURED_RUN_PROTOCOL = (
 class P3JMeasuredRunResult:
     final_state: OperationalClassConditionalState
     decisions: tuple[OperationalClassConditionalDecision, ...]
+    query_results: tuple[P3JMeasuredPoolQueryResult, ...]
     identities: tuple[P3JFormalQueryIdentity, ...]
     manifest_path: Path
     protocol: str = P3J_MEASURED_RUN_PROTOCOL
@@ -76,6 +80,7 @@ def run_p3j_measured_pool_acquisition(
     state = initial_state
     available = np.arange(len(identifiers), dtype=int)
     decisions: list[OperationalClassConditionalDecision] = []
+    query_results: list[P3JMeasuredPoolQueryResult] = []
     identities: list[P3JFormalQueryIdentity] = []
     for query_index in range(1, acquisition_budget + 1):
         visible_actions = actions[available]
@@ -115,12 +120,14 @@ def run_p3j_measured_pool_acquisition(
         representative = np.vstack((representative, result.revealed_action))
         state = result.next_state
         decisions.append(result.decision)
+        query_results.append(result)
         identities.append(identity)
     ordered_identities = tuple(identities)
     manifest = finalize_p3j_run_manifest(root, ordered_identities)
     return P3JMeasuredRunResult(
         final_state=state,
         decisions=tuple(decisions),
+        query_results=tuple(query_results),
         identities=ordered_identities,
         manifest_path=manifest,
     )

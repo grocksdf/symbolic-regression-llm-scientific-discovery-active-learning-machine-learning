@@ -217,6 +217,17 @@ from .p3j_measured_run import (
     P3JMeasuredRunResult,
     run_p3j_measured_pool_acquisition,
 )
+from .p3j_reporting import (
+    P3J_REPORTING_ORDER,
+    P3JPolicyArtifacts,
+    build_p3j_policy_artifacts,
+)
+from .p3j_policy_integration import (
+    P3J_POLICY_DISPATCH,
+    P3J_POLICY_FAILURE_SCHEMA,
+    dispatch_p3j_matched_policy,
+    publish_p3j_policy_failure_snapshot,
+)
 from .decision import (
     REFERENCE_DOMINANCE_METHOD,
     REFERENCE_FALLBACK_MODE,
@@ -441,6 +452,13 @@ __all__ = [
     "P3J_MEASURED_RUN_PROTOCOL",
     "P3JMeasuredRunResult",
     "run_p3j_measured_pool_acquisition",
+    "P3J_REPORTING_ORDER",
+    "P3JPolicyArtifacts",
+    "build_p3j_policy_artifacts",
+    "P3J_POLICY_DISPATCH",
+    "P3J_POLICY_FAILURE_SCHEMA",
+    "dispatch_p3j_matched_policy",
+    "publish_p3j_policy_failure_snapshot",
     "REFERENCE_DOMINANCE_METHOD",
     "REFERENCE_FALLBACK_MODE",
     "TARGETED_HANDOVER_MODE",

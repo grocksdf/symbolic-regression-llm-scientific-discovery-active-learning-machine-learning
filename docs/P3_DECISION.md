@@ -691,3 +691,14 @@ only after the full state-linked lineage closes. This remains a no-data
 correctness gate; matched-baseline/reporting integration and formal dataset
 execution remain blocked pending P3J.13. See
 `docs/pcpi_p3j12_measured_run_audit_20260901.md`.
+
+## P3J.13 policy integration and post-transaction reporting
+
+P3J.13 restricts the transactional path to the registered PCPI policy while
+the three matched baselines remain on the unchanged legacy runner. Validation
+metrics and learning-curve rows are derived only after matching response
+admission, from the resulting state lineage; they cannot feed candidate
+selection. Terminal policy snapshots expose checkpoint publication bits but no
+response values and are no-overwrite. This is still a no-data source gate;
+shared outer-runner wiring and formal execution remain blocked for P3J.14. See
+`docs/pcpi_p3j13_policy_integration_audit_20260901.md`.
