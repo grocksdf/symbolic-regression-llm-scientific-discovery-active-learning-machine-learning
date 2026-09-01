@@ -428,13 +428,16 @@ def _class_base_logpdf_and_cdf(
             ),
             axis=0,
         )
-    if (
-        not np.all(np.isfinite(logpdf))
-        or not np.all(np.isfinite(cdf))
-        or np.any(cdf < 0.0)
-        or np.any(cdf > 1.0)
-    ):
+    if not np.all(np.isfinite(logpdf)) or not np.all(np.isfinite(cdf)):
         raise FloatingPointError("P3J class-conditional base law is invalid")
+    # Mixture CDF accumulation can cross a probability endpoint by a few
+    # ulps even though every component CDF is in [0, 1].  Treat only this
+    # bounded arithmetic noise as an endpoint representation issue; a larger
+    # excursion remains a genuine model/numerical failure and is rejected.
+    endpoint_roundoff = 1024.0 * np.finfo(float).eps
+    if np.any(cdf < -endpoint_roundoff) or np.any(cdf > 1.0 + endpoint_roundoff):
+        raise FloatingPointError("P3J class-conditional base law is invalid")
+    cdf = np.clip(cdf, 0.0, 1.0)
     return logpdf, cdf
 
 
