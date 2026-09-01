@@ -8,6 +8,7 @@ import json
 import math
 import os
 from pathlib import Path
+import time
 
 import numpy as np
 
@@ -189,7 +190,18 @@ def _publish(path: Path, payload: dict[str, object], *, create: bool) -> None:
         handle.write(_canonical_json(payload) + "\n")
         handle.flush()
         os.fsync(handle.fileno())
-    os.replace(staging, target)
+    # Windows can transiently deny replacement while an antivirus/indexer or
+    # a reader still holds the previous checkpoint handle.  The staged file
+    # is already fsync-published, so bounded retry preserves atomicity without
+    # turning a transient sharing violation into a terminal protocol failure.
+    for attempt in range(8):
+        try:
+            os.replace(staging, target)
+            break
+        except PermissionError:
+            if attempt == 7:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 def initialize_p3j_checkpoint(path: Path, plan: P3JChunkPlan) -> P3JCheckpoint:
