@@ -1,0 +1,15 @@
+{
+  "schema": "pcpi-p3j12-measured-run-gate-config-v1",
+  "stage": "P3J.12",
+  "protocol": "contiguous-identity-bound-resumable-measured-pool-acquisition-v1",
+  "durable_reveal_recovery": true,
+  "completed_query_oracle_reopen_authorized": false,
+  "contiguous_manifest_required": true,
+  "real_data_access": false,
+  "real_oracle_invoked": false,
+  "validation_access": false,
+  "heldout_access": false,
+  "simulated_experiment": false,
+  "operational_execution_authorized": false,
+  "formal_dataset_runner_authorized": false
+}

@@ -10,8 +10,11 @@ from .operational_class_conditional import (
     OperationalClassConditionalDecision,
     OperationalClassConditionalState,
 )
-from .p3j_query_runner import run_p3j_formal_query
-from .p3j_reveal_runner import admit_p3j_formal_response
+from .p3j_query_runner import _load_decision, run_p3j_formal_query
+from .p3j_reveal_runner import (
+    admit_p3j_formal_response,
+    resume_p3j_formal_response,
+)
 from .p3j_run_identity import P3JQueryWorkspace
 from .reference import DevelopmentStandardizer
 
@@ -97,8 +100,57 @@ def run_p3j_measured_pool_query(
     )
 
 
+def resume_or_run_p3j_measured_pool_query(
+    workspace: P3JQueryWorkspace,
+    state: OperationalClassConditionalState,
+    candidate_actions: np.ndarray,
+    candidate_ids: np.ndarray,
+    predictive_target_actions: np.ndarray,
+    representative_observed_actions: np.ndarray,
+    oracle: object,
+    standardizer: DevelopmentStandardizer,
+    *,
+    eig_min_samples: int,
+    eig_max_samples: int,
+    eig_error_safety_factor: float,
+    eig_growth_factor: int,
+    action_chunk_size: int = 16,
+) -> P3JMeasuredPoolQueryResult:
+    """Recover a durable reveal, otherwise execute the response-free query."""
+
+    receipt_path = workspace.query_root / "REVEAL_RECEIPT.json"
+    if not receipt_path.is_file():
+        return run_p3j_measured_pool_query(
+            workspace,
+            state,
+            candidate_actions,
+            candidate_ids,
+            predictive_target_actions,
+            representative_observed_actions,
+            oracle,
+            standardizer,
+            eig_min_samples=eig_min_samples,
+            eig_max_samples=eig_max_samples,
+            eig_error_safety_factor=eig_error_safety_factor,
+            eig_growth_factor=eig_growth_factor,
+            action_chunk_size=action_chunk_size,
+        )
+    decision = _load_decision(workspace, candidate_actions, candidate_ids)
+    recovered = resume_p3j_formal_response(
+        workspace, state, candidate_actions, candidate_ids
+    )
+    return P3JMeasuredPoolQueryResult(
+        decision=decision,
+        next_state=recovered.next_state,
+        revealed_candidate_id=recovered.candidate_id,
+        revealed_action=recovered.action,
+        revealed_target=recovered.target,
+    )
+
+
 __all__ = [
     "P3J_MEASURED_POOL_ORDER",
     "P3JMeasuredPoolQueryResult",
+    "resume_or_run_p3j_measured_pool_query",
     "run_p3j_measured_pool_query",
 ]

@@ -201,13 +201,21 @@ from .p3j_reveal_runner import (
     P3J_QUERY_LEDGER_SCHEMA,
     P3J_REVEAL_RECEIPT_SCHEMA,
     P3J_RUN_MANIFEST_SCHEMA,
+    P3JRecoveredFormalResponse,
     admit_p3j_formal_response,
     finalize_p3j_run_manifest,
+    resume_p3j_formal_response,
 )
 from .p3j_measured_pool import (
     P3J_MEASURED_POOL_ORDER,
     P3JMeasuredPoolQueryResult,
+    resume_or_run_p3j_measured_pool_query,
     run_p3j_measured_pool_query,
+)
+from .p3j_measured_run import (
+    P3J_MEASURED_RUN_PROTOCOL,
+    P3JMeasuredRunResult,
+    run_p3j_measured_pool_acquisition,
 )
 from .decision import (
     REFERENCE_DOMINANCE_METHOD,
@@ -422,11 +430,17 @@ __all__ = [
     "P3J_QUERY_LEDGER_SCHEMA",
     "P3J_REVEAL_RECEIPT_SCHEMA",
     "P3J_RUN_MANIFEST_SCHEMA",
+    "P3JRecoveredFormalResponse",
     "admit_p3j_formal_response",
     "finalize_p3j_run_manifest",
+    "resume_p3j_formal_response",
     "P3J_MEASURED_POOL_ORDER",
     "P3JMeasuredPoolQueryResult",
+    "resume_or_run_p3j_measured_pool_query",
     "run_p3j_measured_pool_query",
+    "P3J_MEASURED_RUN_PROTOCOL",
+    "P3JMeasuredRunResult",
+    "run_p3j_measured_pool_acquisition",
     "REFERENCE_DOMINANCE_METHOD",
     "REFERENCE_FALLBACK_MODE",
     "TARGETED_HANDOVER_MODE",

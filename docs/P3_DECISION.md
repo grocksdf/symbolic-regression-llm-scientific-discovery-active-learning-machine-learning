@@ -679,3 +679,15 @@ before P3J.10 admission and advance. Decision failure opens no response, while
 crossed oracle output cannot reach advance. The full dataset loop remains
 blocked pending P3J.12 integration. See
 `docs/pcpi_p3j11_measured_pool_adapter_audit_20260901.md`.
+
+## P3J.12 durable measured-run coordinator
+
+P3J.12 composes the query transaction into a contiguous multi-query measured
+run. On restart, a durable matching reveal receipt is validated and used to
+reconstruct the exact state advance before any new oracle access. Only an
+admitted response can shrink the visible candidate domain and extend the
+opened representative history, and the complete run manifest is published
+only after the full state-linked lineage closes. This remains a no-data
+correctness gate; matched-baseline/reporting integration and formal dataset
+execution remain blocked pending P3J.13. See
+`docs/pcpi_p3j12_measured_run_audit_20260901.md`.

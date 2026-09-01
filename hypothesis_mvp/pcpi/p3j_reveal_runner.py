@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from hashlib import sha256
 import json
 import math
@@ -25,6 +26,14 @@ from .p3j_run_identity import (
 P3J_REVEAL_RECEIPT_SCHEMA = "pcpi-p3j10-matching-reveal-receipt-v1"
 P3J_QUERY_LEDGER_SCHEMA = "pcpi-p3j10-exactly-once-query-ledger-v1"
 P3J_RUN_MANIFEST_SCHEMA = "pcpi-p3j10-complete-run-manifest-v1"
+
+
+@dataclass(frozen=True)
+class P3JRecoveredFormalResponse:
+    next_state: OperationalClassConditionalState
+    candidate_id: int
+    action: np.ndarray
+    target: float
 
 
 def _canonical(value: object) -> str:
@@ -149,6 +158,58 @@ def admit_p3j_formal_response(
     return next_state
 
 
+def resume_p3j_formal_response(
+    workspace: P3JQueryWorkspace,
+    prior_state: OperationalClassConditionalState,
+    candidate_actions: np.ndarray,
+    candidate_ids: np.ndarray,
+) -> P3JRecoveredFormalResponse:
+    """Reconstruct an already-received reveal without reopening its oracle."""
+
+    receipt_path = workspace.query_root / "REVEAL_RECEIPT.json"
+    if not receipt_path.is_file():
+        raise FileNotFoundError("P3J reveal receipt is not available for recovery")
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if (
+        set(receipt) != {"schema", "identity_hash", "candidate_id", "action", "target"}
+        or receipt.get("schema") != P3J_REVEAL_RECEIPT_SCHEMA
+        or receipt.get("identity_hash") != workspace.identity.stable_hash
+    ):
+        raise ValueError("P3J persisted reveal receipt identity is invalid")
+    candidate_id = receipt["candidate_id"]
+    raw_target = receipt["target"]
+    try:
+        action = np.asarray(receipt["action"], dtype=float)
+    except (TypeError, ValueError) as error:
+        raise ValueError("P3J persisted reveal receipt payload is invalid") from error
+    if (
+        isinstance(candidate_id, bool)
+        or not isinstance(candidate_id, int)
+        or isinstance(raw_target, bool)
+        or not isinstance(raw_target, (int, float))
+        or action.ndim != 1
+        or not np.all(np.isfinite(action))
+        or not math.isfinite(float(raw_target))
+    ):
+        raise ValueError("P3J persisted reveal receipt payload is invalid")
+    target = float(raw_target)
+    next_state = admit_p3j_formal_response(
+        workspace,
+        prior_state,
+        candidate_actions,
+        candidate_ids,
+        candidate_id,
+        action,
+        target,
+    )
+    return P3JRecoveredFormalResponse(
+        next_state=next_state,
+        candidate_id=candidate_id,
+        action=action,
+        target=target,
+    )
+
+
 def finalize_p3j_run_manifest(
     run_root: Path,
     expected_identities: tuple[P3JFormalQueryIdentity, ...],
@@ -214,6 +275,8 @@ __all__ = [
     "P3J_QUERY_LEDGER_SCHEMA",
     "P3J_REVEAL_RECEIPT_SCHEMA",
     "P3J_RUN_MANIFEST_SCHEMA",
+    "P3JRecoveredFormalResponse",
     "admit_p3j_formal_response",
     "finalize_p3j_run_manifest",
+    "resume_p3j_formal_response",
 ]
