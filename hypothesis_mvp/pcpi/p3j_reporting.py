@@ -127,6 +127,16 @@ def _representative_audit(scores, local: int) -> dict[str, object]:
             <= scores.representative_current_mmd_squared
             + scores.representative_mmd_tolerance
         ),
+        "representative_mmd_tolerance": scores.representative_mmd_tolerance,
+        "representative_kernel_bandwidth_squared": (
+            scores.representative_kernel_bandwidth_squared
+        ),
+        "representative_selected_is_minimum_mmd": bool(np.isclose(
+            selected_mmd,
+            float(np.min(scores.representative_augmented_mmd_squared)),
+            rtol=0.0,
+            atol=scores.representative_mmd_tolerance,
+        )),
         "representative_safe_set_nonempty": scores.representative_safe_set_nonempty,
         "representative_safe_set_size": scores.representative_safe_set_size,
         "representative_fallback_used": scores.representative_fallback_used,

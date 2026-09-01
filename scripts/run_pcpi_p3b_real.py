@@ -13,7 +13,7 @@ from pathlib import Path
 import platform
 import sys
 import time
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 from scipy.stats import spearmanr, t as student_t
@@ -55,6 +55,7 @@ from hypothesis_mvp.pcpi import (
     P3I_INFORMATION_INVARIANCE,
     OperationalSemiparametricDecision,
     OperationalSemiparametricState,
+    OperationalClassConditionalState,
     P3D_ACQUISITION_POLICIES,
     P3H_OPERATIONAL_LIFECYCLE,
     P3H_OPERATIONAL_POWERS,
@@ -75,6 +76,7 @@ from hypothesis_mvp.pcpi import (
     class_partition,
     fixed_class_entropy,
     initialize_operational_semiparametric_state,
+    initialize_operational_class_conditional_state,
     normalized_area_under_learning_curve,
     posterior_metrics,
     score_acquisition_actions,
@@ -84,6 +86,7 @@ from hypothesis_mvp.pcpi import (
     select_acquisition_candidate,
     stable_derived_seed,
     stable_reference_policy_seed,
+    run_p3j_outer_policy,
 )
 from hypothesis_mvp.pcpi.reference import (
     CALIBRATION_METHOD,
@@ -135,6 +138,8 @@ class RealAcquisitionProtocol:
     shared_initial_frozen_target: bool = False
     fail_fast: bool = False
     operational_execution_authorized: bool = True
+    p3j_class_conditional_lifecycle: bool = False
+    config_validator: Callable[[Path, Path], dict[str, Any]] | None = None
 
 
 @dataclass(frozen=True)
@@ -329,6 +334,8 @@ def _load_config(
     root: Path,
     protocol: RealAcquisitionProtocol = P3B10_PROTOCOL,
 ) -> dict[str, Any]:
+    if protocol.config_validator is not None:
+        return protocol.config_validator(path, root)
     if not path.is_file() or (path != root and root not in path.parents):
         raise ValueError("P3B config must be an existing file inside the project root")
     config = json.loads(path.read_text(encoding="utf-8"))
@@ -375,7 +382,7 @@ def _load_config(
             "p3h5_terminal_status",
             "runtime_dependency_hash",
         }
-    if protocol.decision_target_alignment:
+    if protocol.decision_target_alignment or protocol.p3j_class_conditional_lifecycle:
         required |= {
             "p3i_decision_target",
             "p3i_information_invariance",
@@ -564,7 +571,10 @@ def _load_config(
             != config["initial_observation_budget"]
         ):
             raise ValueError("P3H initial role budgets do not close")
-    if protocol.decision_target_alignment:
+    if (
+        protocol.decision_target_alignment
+        or protocol.p3j_class_conditional_lifecycle
+    ):
         p3i_contract = {
             "p3i_decision_target": "frozen-operational-class-log-risk",
             "p3i_information_invariance": P3I_INFORMATION_INVARIANCE,
@@ -608,9 +618,18 @@ def _load_config(
     return config
 
 
-def _prepare_output(path: Path) -> None:
+def _prepare_output(path: Path, *, allow_p3j_resume: bool = False) -> None:
     if path.exists() and any(path.iterdir()):
-        raise FileExistsError(f"output directory is not empty: {path}")
+        if not allow_p3j_resume:
+            raise FileExistsError(f"output directory is not empty: {path}")
+        allowed = {"hypotheses", "diagnostics", "tables", "figures", "logs", "p3j"}
+        unexpected = [item.name for item in path.iterdir() if item.name not in allowed]
+        terminal = tuple(path.glob("p3j/**/POLICY_FAILURE.json"))
+        if unexpected or terminal:
+            raise FileExistsError(
+                "P3J resume output contains terminal or unexpected artifacts: "
+                + ",".join(unexpected or [str(item) for item in terminal])
+            )
     for name in ("hypotheses", "diagnostics", "tables", "figures", "logs"):
         (path / name).mkdir(parents=True, exist_ok=True)
 
@@ -664,6 +683,10 @@ def _aggregate_protocol_classes(
 ) -> OperationalClassPosterior:
     threshold = _operational_class_threshold(config)
     if protocol.decision_target_alignment:
+        return aggregate_decision_equivalent_classes(
+            engine, posterior, actions, distance_threshold=threshold
+        )
+    if protocol.p3j_class_conditional_lifecycle:
         return aggregate_decision_equivalent_classes(
             engine, posterior, actions, distance_threshold=threshold
         )
@@ -856,6 +879,186 @@ def _reference_score_audit_adapter(
         robust_lower_bounds=zeros,
         robust_upper_bounds=zeros,
     )
+
+
+def _p3j_compatible_query_rows(
+    outer_result: object,
+    subset_commitments: dict[str, str],
+    config: dict[str, Any],
+) -> list[dict[str, Any]]:
+    rows = []
+    for index, (row, identity) in enumerate(zip(
+        outer_result.artifacts.query_rows,
+        outer_result.measured_run.identities,
+        strict=True,
+    )):
+        curve = outer_result.artifacts.curve_rows[index]
+        selected_mmd = float(row["representative_selected_mmd_squared"])
+        rows.append(dict(row) | {
+            "operational_class_count": curve["operational_class_count"],
+            "operational_class_partition_hash_before_query": curve[
+                "operational_class_partition_hash"
+            ],
+            "initial_frozen_class_partition_hash": row[
+                "acquisition_target_partition_hash"
+            ],
+            "operational_class_distance_threshold": _operational_class_threshold(
+                config
+            ),
+            "operational_class_metric": curve["operational_class_metric"],
+            "operational_class_scale_hash": curve[
+                "operational_class_scale_hash"
+            ],
+            "p3h_operational_lifecycle_applied": False,
+            "p3h_family_hash_before_query": "not-applied",
+            "p3h_family_hash_after_query": "not-applied",
+            "discrepancy_method": "not-applied",
+            "discrepancy_residual_excess_variance": 0.0,
+            "discrepancy_support_bandwidth_squared": 0.0,
+            "selected_discrepancy_candidate_variance": 0.0,
+            "mean_discrepancy_target_variance": 0.0,
+            "predictive_target_distribution": config[
+                "predictive_target_distribution"
+            ],
+            "predictive_target_subset_hash": subset_commitments["candidate"],
+            "conditional_predictive_information_method": config[
+                "conditional_predictive_information_method"
+            ],
+            "representative_selected_mmd_change": (
+                selected_mmd - float(row["representative_current_mmd_squared"])
+            ),
+            "eig_possible_maximizer_candidate_ids": row[
+                "eig_possible_maximizer_local_indices"
+            ],
+            "eig_selection_admissible_candidate_ids": row[
+                "eig_selection_admissible_local_indices"
+            ],
+            "remaining_candidates_before_query": identity.candidate_count,
+            "reference_dominance_applied": False,
+            "reference_targeted_handover": False,
+        })
+    return rows
+
+
+def _p3j_compatible_summary(
+    outer_result: object,
+    *,
+    dataset_id: str,
+    seed: int,
+    initial_count: int,
+    validation_count: int,
+    candidate_count: int,
+    subset_commitments: dict[str, str],
+    design_preconditioner: DesignPreconditioner,
+    calibration_hash: str,
+    frozen_initial_target: FrozenInitialClassTarget,
+    config: dict[str, Any],
+    wall_time_seconds: float,
+) -> dict[str, Any]:
+    first_curve = outer_result.artifacts.curve_rows[0]
+    summary = dict(outer_result.summary_metrics)
+    summary.update({
+        "dataset_id": dataset_id,
+        "dataset_family": _family(dataset_id),
+        "seed": seed,
+        "policy": config["policies"][-1],
+        "initial_observations": initial_count,
+        "acquired_observations": len(outer_result.artifacts.query_rows),
+        "validation_observations": validation_count,
+        "candidate_pool_observations": candidate_count,
+        "candidate_evaluations": sum(
+            item.candidate_count for item in outer_result.measured_run.identities
+        ),
+        "initial_subset_hash": subset_commitments["initial"],
+        "validation_subset_hash": subset_commitments["validation"],
+        "candidate_subset_hash": subset_commitments["candidate"],
+        "posterior_type": config["posterior_type"],
+        "likelihood_power": 1.0,
+        "posterior_target_hash": outer_result.measured_run.final_state.nominal_state.engine.target_hash,
+        "pcpi_ambiguity_set": list(P3H_OPERATIONAL_POWERS),
+        "pcpi_robust_utility": config["pcpi_robust_utility"],
+        "pcpi_discrepancy_profile": "not-applied",
+        "design_preconditioner_hash": design_preconditioner.stable_hash,
+        "likelihood_power_calibration_hash": calibration_hash,
+        "likelihood_power_calibration_wall_time_seconds": 0.0,
+        "operational_class_metric": first_curve["operational_class_metric"],
+        "initial_operational_class_scale_hash": first_curve[
+            "operational_class_scale_hash"
+        ],
+        "initial_frozen_class_partition_hash": (
+            frozen_initial_target.partition.stable_hash
+        ),
+        "initial_frozen_target_source": frozen_initial_target.source,
+        "predictive_target_distribution": config["predictive_target_distribution"],
+        "predictive_target_subset_hash": subset_commitments["candidate"],
+        "conditional_predictive_information_method": config[
+            "conditional_predictive_information_method"
+        ],
+        "decision_target": "frozen-operational-class-log-risk",
+        "semiparametric_transport_method": config[
+            "p3j_joint_information_method"
+        ],
+        "representative_mmd_method": config["representative_discrepancy"],
+        "operational_class_resolution_method": BUDGET_RESOLUTION_METHOD,
+        "wall_time_seconds": wall_time_seconds,
+        "wall_time_seconds_including_shared_calibration": wall_time_seconds,
+        "failure_status": "",
+    })
+    return summary
+
+
+def _run_p3j_shared_policy(
+    *,
+    run_root: Path,
+    source_git_tree: str,
+    config_sha256: str,
+    state: OperationalClassConditionalState,
+    dataset_id: str,
+    seed: int,
+    initial_X: np.ndarray,
+    validation_X: np.ndarray,
+    validation_y: np.ndarray,
+    fixed_domain_X: np.ndarray,
+    candidate_indices: np.ndarray,
+    pool_X: np.ndarray,
+    pool_row_ids: np.ndarray,
+    oracle: object,
+    standardizer: DevelopmentStandardizer,
+    subset_commitments: dict[str, str],
+    config: dict[str, Any],
+    design_preconditioner: DesignPreconditioner,
+    calibration_hash: str,
+    frozen_initial_target: FrozenInitialClassTarget,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    started = time.perf_counter()
+    run_root.mkdir(parents=True, exist_ok=True)
+    outer = run_p3j_outer_policy(
+        run_root, state, standardizer.transform_X(pool_X[candidate_indices]),
+        candidate_indices, fixed_domain_X, initial_X, validation_X, validation_y,
+        pool_row_ids, oracle, standardizer, source_git_tree=source_git_tree,
+        config_sha256=config_sha256, dataset_id=dataset_id,
+        dataset_family=_family(dataset_id), seed=seed,
+        policy=config["policies"][-1],
+        acquisition_budget=int(config["acquisition_observation_budget"]),
+        eig_min_samples=int(config["eig_quadrature_min_evaluations"]),
+        eig_max_samples=int(config["eig_quadrature_max_evaluations"]),
+        eig_error_safety_factor=float(config["eig_quadrature_error_safety_factor"]),
+        eig_growth_factor=int(config["eig_quadrature_growth_factor"]),
+        class_distance_threshold=_operational_class_threshold(config),
+        structure_count=len(generic_real_bank(initial_X.shape[1]).structures),
+        action_chunk_size=int(config["eig_action_chunk_size"]),
+    )
+    queries = _p3j_compatible_query_rows(outer, subset_commitments, config)
+    summary = _p3j_compatible_summary(
+        outer, dataset_id=dataset_id, seed=seed, initial_count=len(initial_X),
+        validation_count=len(validation_y), candidate_count=len(candidate_indices),
+        subset_commitments=subset_commitments,
+        design_preconditioner=design_preconditioner,
+        calibration_hash=calibration_hash,
+        frozen_initial_target=frozen_initial_target, config=config,
+        wall_time_seconds=time.perf_counter() - started,
+    )
+    return summary, list(outer.artifacts.curve_rows), queries
 
 
 def _run_policy(
@@ -2065,6 +2268,23 @@ def _manifest_method_contract(
                 "operational_execution_authorized",
             )
         }
+    if protocol.p3j_class_conditional_lifecycle:
+        contract |= {
+            key: config[key]
+            for key in (
+                "p3j_operational_lifecycle",
+                "p3j_residual_state_method",
+                "p3j_class_posterior_update",
+                "p3j_joint_information_method",
+                "p3j_measured_run_protocol",
+                "p3j_policy_dispatch",
+                "p3j_reporting_order",
+                "p3j_outer_runner_composition",
+                "eig_action_chunk_size",
+                "operational_execution_authorized",
+                "formal_dataset_runner_authorized",
+            )
+        }
     return contract
 
 
@@ -2307,7 +2527,9 @@ def run(
         raise RuntimeError(
             "formal P3H runtime differs from the frozen canonical environment"
         )
-    _prepare_output(output)
+    _prepare_output(
+        output, allow_p3j_resume=protocol.p3j_class_conditional_lifecycle
+    )
     reporter = ProgressReporter(output / "logs" / "run.jsonl")
     identity = {
         **source_identity,
@@ -2414,7 +2636,10 @@ def run(
                 )
                 warmup_count = (
                     int(config["initial_base_warmup_budget"])
-                    if protocol.semiparametric_lifecycle
+                    if (
+                        protocol.semiparametric_lifecycle
+                        or protocol.p3j_class_conditional_lifecycle
+                    )
                     else len(initial_indices)
                 )
                 warmup_indices = initial_indices[:warmup_count]
@@ -2433,7 +2658,10 @@ def run(
                     design_preconditioner.to_dict()
                     | {"preconditioner_hash": design_preconditioner.stable_hash}
                 )
-                if protocol.semiparametric_lifecycle:
+                if (
+                    protocol.semiparametric_lifecycle
+                    or protocol.p3j_class_conditional_lifecycle
+                ):
                     calibration = None
                     calibration_wall_time = 0.0
                     calibration_hash = _hash_json({
@@ -2488,6 +2716,7 @@ def run(
                     )
                     try:
                         semiparametric_state = None
+                        p3j_state = None
                         if protocol.semiparametric_lifecycle and policy == protocol.pcpi_policy:
                             family_engines = tuple(
                                 SequentialReferencePosterior(
@@ -2504,31 +2733,63 @@ def run(
                                     initial_y[warmup_count:],
                                 )
                             )
-                        summary, curves, queries = _run_policy(
-                            dataset_id=dataset_id,
-                            seed=int(seed),
-                            policy=policy,
-                            initial_X=initial_X,
-                            initial_y=initial_y,
-                            validation_X=validation_X,
-                            validation_y=validation_y,
-                            fixed_domain_X=fixed_domain_X,
-                            candidate_indices=candidates,
-                            pool_X=selection.acquisition_pool.X,
-                            pool_row_ids=prepared.acquisition_pool_row_ids,
-                            oracle=oracle,
-                            standardizer=standardizer,
-                            subset_commitments=subset_commitments,
-                            config=config,
-                            reporter=reporter,
-                            design_preconditioner=design_preconditioner,
-                            likelihood_power=selected_likelihood_power,
-                            calibration_hash=calibration_hash,
-                            calibration_wall_time_seconds=calibration_wall_time,
-                            protocol=protocol,
-                            semiparametric_state=semiparametric_state,
-                            frozen_initial_target=frozen_initial_target,
-                        )
+                        if (
+                            protocol.p3j_class_conditional_lifecycle
+                            and policy == protocol.pcpi_policy
+                        ):
+                            if frozen_initial_target is None:
+                                raise ValueError("P3J requires the shared frozen target")
+                            family_engines = tuple(
+                                SequentialReferencePosterior(
+                                    bank, power, design_preconditioner
+                                )
+                                for power in P3H_OPERATIONAL_POWERS
+                            )
+                            p3j_state = initialize_operational_class_conditional_state(
+                                family_engines,
+                                initial_X[:warmup_count],
+                                initial_y[:warmup_count],
+                                initial_X[warmup_count:],
+                                initial_y[warmup_count:],
+                                frozen_initial_target.partition,
+                            )
+                            summary, curves, queries = _run_p3j_shared_policy(
+                                run_root=output / "p3j" / dataset_id / f"seed-{seed}",
+                                source_git_tree=str(identity["source_git_tree"]),
+                                config_sha256=str(identity["config_file_hash"]),
+                                state=p3j_state, dataset_id=dataset_id, seed=int(seed),
+                                initial_X=initial_X, validation_X=validation_X,
+                                validation_y=validation_y,
+                                fixed_domain_X=fixed_domain_X,
+                                candidate_indices=candidates,
+                                pool_X=selection.acquisition_pool.X,
+                                pool_row_ids=prepared.acquisition_pool_row_ids,
+                                oracle=oracle, standardizer=standardizer,
+                                subset_commitments=subset_commitments, config=config,
+                                design_preconditioner=design_preconditioner,
+                                calibration_hash=calibration_hash,
+                                frozen_initial_target=frozen_initial_target,
+                            )
+                        else:
+                            summary, curves, queries = _run_policy(
+                                dataset_id=dataset_id, seed=int(seed), policy=policy,
+                                initial_X=initial_X, initial_y=initial_y,
+                                validation_X=validation_X, validation_y=validation_y,
+                                fixed_domain_X=fixed_domain_X,
+                                candidate_indices=candidates,
+                                pool_X=selection.acquisition_pool.X,
+                                pool_row_ids=prepared.acquisition_pool_row_ids,
+                                oracle=oracle, standardizer=standardizer,
+                                subset_commitments=subset_commitments, config=config,
+                                reporter=reporter,
+                                design_preconditioner=design_preconditioner,
+                                likelihood_power=selected_likelihood_power,
+                                calibration_hash=calibration_hash,
+                                calibration_wall_time_seconds=calibration_wall_time,
+                                protocol=protocol,
+                                semiparametric_state=semiparametric_state,
+                                frozen_initial_target=frozen_initial_target,
+                            )
                         run_rows.append(summary)
                         curve_rows.extend(curves)
                         query_rows.extend(queries)
@@ -2749,7 +3010,9 @@ def run(
         )
     )
     expected_robust_utility = (
-        "p3i-copula-transport-invariant-maximin-operational-class-information"
+        "p3j-class-conditional-semiparametric-maximin-operational-class-information"
+        if protocol.p3j_class_conditional_lifecycle
+        else "p3i-copula-transport-invariant-maximin-operational-class-information"
         if protocol.decision_target_alignment
         else "p3h-semiparametric-discrepancy-aware-maximin-joint-class-predictive-information"
         if protocol.semiparametric_lifecycle
@@ -2963,6 +3226,52 @@ def run(
                 for row in pcpi_query_rows
             ),
             "p3i_fail_fast_policy_frozen": (
+                protocol.fail_fast
+                and config["failure_policy"]
+                == "fail_fast_record_terminal_no_seed_replacement"
+            ),
+        })
+    if protocol.p3j_class_conditional_lifecycle:
+        protocol_decisions.update({
+            "p3j_transaction_identity_present_for_every_pcpi_query": bool(
+                pcpi_query_rows
+            ) and all(
+                row.get("p3j_identity_hash")
+                and row.get("p3j_prior_state_hash")
+                and row.get("p3j_next_state_hash")
+                for row in pcpi_query_rows
+            ),
+            "p3j_response_admitted_before_every_report": bool(pcpi_query_rows)
+            and all(
+                row.get("response_receipt_admitted_before_reporting") is True
+                and row.get("selection_used_validation") is False
+                for row in pcpi_query_rows
+            ),
+            "p3j_class_conditional_method_used_for_every_pcpi_query": bool(
+                pcpi_query_rows
+            ) and all(
+                row["semiparametric_transport_method"]
+                == config["p3j_joint_information_method"]
+                and not row["semiparametric_information_invariance_applied"]
+                for row in pcpi_query_rows
+            ),
+            "p3j_primary_score_excludes_conditional_epig": bool(pcpi_query_rows)
+            and all(
+                row["selected_conditional_predictive_eig"] == 0.0
+                and np.isclose(
+                    row["selected_joint_class_predictive_score"],
+                    row["selected_class_eig"], rtol=0.0, atol=2e-14,
+                )
+                for row in pcpi_query_rows
+            ),
+            "p3j_no_representative_fallback_or_utility_switch": bool(
+                pcpi_query_rows
+            ) and all(
+                row["representative_safe_set_nonempty"]
+                and not row["representative_fallback_used"]
+                for row in pcpi_query_rows
+            ),
+            "p3j_fail_fast_policy_frozen": (
                 protocol.fail_fast
                 and config["failure_policy"]
                 == "fail_fast_record_terminal_no_seed_replacement"

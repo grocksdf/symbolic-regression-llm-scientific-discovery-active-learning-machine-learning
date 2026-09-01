@@ -714,3 +714,13 @@ identities. Both execution authorizations remain false and the runner stops
 before data-root inspection. Supervised process/restart control and execution
 authorization remain for P3J.15. See
 `docs/pcpi_p3j14_shared_outer_runner_audit_20260901.md`.
+
+## P3J.15 formal user execution freeze
+
+P3J.15 connects the transactional PCPI path to the registered real-data loop,
+preserves the three matched baseline implementations, freezes the complete
+runtime/source/config identity, and provides a supervised PowerShell process
+with checkpoint visibility and nonterminal resume. Both execution flags are
+now true only in the byte-frozen P3J.15 configuration. The no-data gate does
+not execute the experiment; the unique formal command is delegated to the user.
+See `docs/pcpi_p3j15_formal_execution_freeze_20260901.md`.
