@@ -559,6 +559,10 @@ def _class_base_logpdf_and_cdf_action_batch(
         )
     if not np.all(np.isfinite(logpdf)) or not np.all(np.isfinite(cdf)):
         raise FloatingPointError("P3J batched class forecast is not finite")
+    endpoint_roundoff = 1024.0 * np.finfo(float).eps
+    if np.any(cdf < -endpoint_roundoff) or np.any(cdf > 1.0 + endpoint_roundoff):
+        raise FloatingPointError("P3J batched class forecast is invalid")
+    cdf = np.clip(cdf, 0.0, 1.0)
     return logpdf, cdf
 
 
