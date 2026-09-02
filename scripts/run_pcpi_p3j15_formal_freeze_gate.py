@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from hypothesis_mvp.hypotheses import runtime_dependency_hash, runtime_dependency_snapshot
 from hypothesis_mvp.pcpi.class_conditional_semiparametric import (
+    advance_calibrated_class_posterior,
     _posterior_class_kl_at_responses,
 )
 from scripts import run_pcpi_p3b_real as shared
@@ -30,6 +31,7 @@ def main() -> int:
     adapter = inspect.getsource(shared._run_p3j_shared_policy)
     supervisor = SUPERVISOR.read_text(encoding="utf-8")
     information_source = inspect.getsource(_posterior_class_kl_at_responses)
+    update_source = inspect.getsource(advance_calibrated_class_posterior)
     decisions = {
         "config_hash_frozen": (
             sha256(CONFIG.read_bytes()).hexdigest() == runner.CONFIG_SHA256
@@ -46,6 +48,15 @@ def main() -> int:
             token in information_source
             for token in ("rel_entr", "posterior /=", "np.maximum(0.0, information)")
         ) and "source_index" not in information_source,
+        "class_bayes_update_uses_one_canonical_log_weight_vector": all(
+            token in update_source
+            for token in (
+                "calibrated_structure_log_weights",
+                "calibrated_class_log_joint",
+                "posterior_class_probabilities",
+                "joint_class_after",
+            )
+        ) and "base_logpdf" not in update_source,
         "pcpi_has_no_direct_oracle_surface": (
             "run_p3j_outer_policy" in adapter
             and "oracle.acquire_indices" not in adapter

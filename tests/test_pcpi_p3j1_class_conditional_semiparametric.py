@@ -222,6 +222,34 @@ def test_calibrated_inference_uses_the_same_class_likelihood_as_eig() -> None:
     assert next_state.stable_hash != state.stable_hash
     assert np.isfinite(audit.calibrated_predictive_log_density)
     assert len(actions) == 12
+    source = inspect.getsource(advance_calibrated_class_posterior)
+    assert source.index("_calibrated_structure_log_weights") < source.index(
+        "calibrated_class_log_joint"
+    )
+    assert "base_logpdf" not in source
+
+
+def test_long_calibrated_update_chain_uses_one_log_normalization_identity() -> None:
+    _, _, engine, partition, residual, base_h0 = _posterior_case()
+    state = initialize_calibrated_class_posterior(
+        engine, base_h0, partition, residual
+    )
+    maximum_identity_error = 0.0
+    for index in range(128):
+        action = np.asarray([-1.45 if index % 2 == 0 else 1.45])
+        response = float(3.0 * np.sin(index * 0.71) + (0.2 * index) % 1.0)
+        state, audit = advance_calibrated_class_posterior(
+            state, action, response
+        )
+        maximum_identity_error = max(
+            maximum_identity_error,
+            float(np.max(np.abs(
+                audit.class_probabilities_after
+                - audit.joint_law_class_probabilities_after
+            ))),
+        )
+    assert state.calibrated_update_count == 128
+    assert maximum_identity_error <= np.finfo(float).eps
 
 
 def test_reconstruction_uses_strict_prefixes_and_no_external_response_surface() -> None:

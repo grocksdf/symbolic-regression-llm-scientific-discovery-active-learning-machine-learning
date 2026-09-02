@@ -929,11 +929,11 @@ def reconstruct_class_conditional_residual_state(
     return state, posterior
 
 
-def _reweight_base_posterior(
+def _calibrated_structure_log_weights(
     base: ExactPosterior,
     partition: ClassPartition,
     class_log_factors: np.ndarray,
-) -> ExactPosterior:
+) -> np.ndarray:
     offsets = np.asarray(class_log_factors, dtype=float).reshape(-1)
     if (
         len(offsets) != len(partition.class_ids)
@@ -942,9 +942,19 @@ def _reweight_base_posterior(
     ):
         raise ValueError("P3J class calibration offsets are invalid")
     structure_offsets = offsets[np.asarray(partition.structure_to_class, dtype=int)]
-    log_weights = np.log([
+    return np.log([
         item.probability for item in base.members
     ]) + structure_offsets
+
+
+def _reweight_base_posterior(
+    base: ExactPosterior,
+    partition: ClassPartition,
+    class_log_factors: np.ndarray,
+) -> ExactPosterior:
+    log_weights = _calibrated_structure_log_weights(
+        base, partition, class_log_factors
+    )
     log_normalizer = float(logsumexp(log_weights))
     probabilities = np.exp(log_weights - log_normalizer)
     members = tuple(
@@ -997,23 +1007,27 @@ def advance_calibrated_class_posterior(
         values,
     )
     class_before = _validated_class_probabilities(components)
-    base_logpdf, _ = _class_base_logpdf_and_cdf(
-        components, 0, np.asarray([target])
-    )
     next_residual, raw_pits, factors = advance_class_conditional_residual_state(
         components, state.residual_state, 0, target
-    )
-    calibrated_class_log_joint = (
-        np.log(class_before) + base_logpdf[:, 0] + np.log(factors)
-    )
-    predictive_log_density = float(logsumexp(calibrated_class_log_joint))
-    joint_class_after = np.exp(
-        calibrated_class_log_joint - predictive_log_density
     )
     next_base = state.engine.update_one(state.base_posterior, values[0], target)
     next_offsets = state.class_log_calibration_factors + np.log(factors)
     next_posterior = _reweight_base_posterior(
         next_base, state.target_partition, next_offsets
+    )
+    calibrated_structure_log_weights = _calibrated_structure_log_weights(
+        next_base, state.target_partition, next_offsets
+    )
+    calibration_log_normalizer = float(logsumexp(calibrated_structure_log_weights))
+    calibrated_class_log_joint = np.asarray([
+        float(logsumexp(calibrated_structure_log_weights[np.asarray(members)]))
+        for members in state.target_partition.member_indices
+    ])
+    joint_class_after = np.exp(
+        calibrated_class_log_joint - calibration_log_normalizer
+    )
+    predictive_log_density = (
+        next_posterior.log_evidence - state.posterior.log_evidence
     )
     posterior_class_probabilities = np.zeros(len(joint_class_after), dtype=float)
     for structure_index, class_index in enumerate(

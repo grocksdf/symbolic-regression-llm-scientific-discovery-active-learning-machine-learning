@@ -174,6 +174,7 @@ def _evaluate(config: dict[str, object]) -> dict[str, object]:
         "nominal_bayes_identity_and_family_calibration_composition_are_explicit": all(
             token in update_source
             for token in (
+                "calibrated_structure_log_weights",
                 "calibrated_class_log_joint",
                 "np.log(factors)",
                 "joint_law_update_identity_required=nominal_identity",

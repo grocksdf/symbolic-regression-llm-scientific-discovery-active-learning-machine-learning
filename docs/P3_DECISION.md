@@ -732,3 +732,11 @@ the exactly equivalent mixture expectation of pointwise posterior-class KL,
 which is nonnegative at every response node. The failed output remains frozen
 and cannot be resumed; a corrected run requires a new source-bound output.
 See `docs/pcpi_p3j15_negative_information_repair_20260902.md`.
+
+The next execution completed CCPP and stopped at CO seed `2026080701`, query 8
+because two algebraically identical but independently normalized class-Bayes
+updates diverged numerically. Reveal now uses one canonical calibrated
+structure-log-weight vector for structure, class, evidence, and audit
+normalization, while retaining a separate aggregation identity check. The
+second failed output is also immutable. See
+`docs/pcpi_p3j15_class_bayes_normalization_repair_20260902.md`.
