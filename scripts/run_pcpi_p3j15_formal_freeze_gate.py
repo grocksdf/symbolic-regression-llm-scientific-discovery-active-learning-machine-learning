@@ -13,6 +13,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from hypothesis_mvp.hypotheses import runtime_dependency_hash, runtime_dependency_snapshot
+from hypothesis_mvp.pcpi.class_conditional_semiparametric import (
+    _posterior_class_kl_at_responses,
+)
 from scripts import run_pcpi_p3b_real as shared
 from scripts import run_pcpi_p3j15_formal_real_acquisition as runner
 
@@ -26,6 +29,7 @@ def main() -> int:
     run_source = inspect.getsource(shared.run)
     adapter = inspect.getsource(shared._run_p3j_shared_policy)
     supervisor = SUPERVISOR.read_text(encoding="utf-8")
+    information_source = inspect.getsource(_posterior_class_kl_at_responses)
     decisions = {
         "config_hash_frozen": (
             sha256(CONFIG.read_bytes()).hexdigest() == runner.CONFIG_SHA256
@@ -38,6 +42,10 @@ def main() -> int:
             run_source.index("initialize_operational_class_conditional_state")
             < run_source.index("_run_p3j_shared_policy")
         ),
+        "pointwise_posterior_kl_replaces_signed_grid_cancellation": all(
+            token in information_source
+            for token in ("rel_entr", "posterior /=", "np.maximum(0.0, information)")
+        ) and "source_index" not in information_source,
         "pcpi_has_no_direct_oracle_surface": (
             "run_p3j_outer_policy" in adapter
             and "oracle.acquire_indices" not in adapter

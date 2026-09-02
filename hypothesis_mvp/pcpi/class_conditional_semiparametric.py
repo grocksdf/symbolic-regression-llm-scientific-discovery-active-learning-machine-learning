@@ -22,7 +22,7 @@ from hashlib import sha256
 import math
 
 import numpy as np
-from scipy.special import logsumexp
+from scipy.special import logsumexp, rel_entr
 from scipy.stats import t as student_t
 
 from .acquisition import (
@@ -566,6 +566,36 @@ def _class_base_logpdf_and_cdf_action_batch(
     return logpdf, cdf
 
 
+def _posterior_class_kl_at_responses(
+    calibrated_logpdf: np.ndarray,
+    class_probabilities: np.ndarray,
+) -> np.ndarray:
+    """Evaluate the pointwise nonnegative class-information integrand.
+
+    This is ``KL(p(C | y) || p(C))``.  Integrating it under the calibrated
+    response mixture is exactly mutual information, while avoiding the
+    cancellation between separate class-specific quadrature grids in the
+    equivalent ``sum_c p(c) E_{q_c}[log(q_c / mixture)]`` expression.
+    """
+
+    calibrated = np.asarray(calibrated_logpdf, dtype=float)
+    probabilities = np.asarray(class_probabilities, dtype=float)
+    broadcast = (len(probabilities),) + (1,) * (calibrated.ndim - 1)
+    log_joint = np.log(probabilities).reshape(broadcast) + calibrated
+    log_mixture = logsumexp(log_joint, axis=0)
+    posterior = np.exp(log_joint - log_mixture[None, ...])
+    posterior /= np.sum(posterior, axis=0, keepdims=True)
+    information = np.sum(
+        rel_entr(posterior, probabilities.reshape(broadcast)), axis=0
+    )
+    if not np.all(np.isfinite(information)):
+        raise FloatingPointError("P3J pointwise class information is not finite")
+    roundoff = 4096.0 * np.finfo(float).eps
+    if np.any(information < -roundoff):
+        raise FloatingPointError("P3J pointwise class information is negative")
+    return np.maximum(0.0, information)
+
+
 def _class_conditional_semiparametric_chunk(
     components: PredictiveComponents,
     state: ClassConditionalResidualState,
@@ -604,11 +634,11 @@ def _class_conditional_semiparametric_chunk(
             )
             for index in range(len(laws))
         ])
-        mixture = logsumexp(
-            np.log(class_probabilities)[:, None, None] + calibrated, axis=0
+        pointwise_information = _posterior_class_kl_at_responses(
+            calibrated, class_probabilities
         )
         information += source_probability * np.sum(
-            weights[None, :] * (calibrated[source_index] - mixture), axis=1
+            weights[None, :] * pointwise_information, axis=1
         )
         maximum_normalization_error = max(
             maximum_normalization_error, abs(float(np.sum(weights)) - 1.0)
@@ -709,12 +739,11 @@ def class_conditional_semiparametric_coupling(
             + laws[index].log_density(base_cdf[index])
             for index in range(len(laws))
         ])
-        mixture_logpdf = logsumexp(
-            np.log(class_probabilities)[:, None] + calibrated_logpdf,
-            axis=0,
+        pointwise_information = _posterior_class_kl_at_responses(
+            calibrated_logpdf, class_probabilities
         )
         information += class_probabilities[class_index] * float(np.sum(
-            weights * (calibrated_logpdf[class_index] - mixture_logpdf)
+            weights * pointwise_information
         ))
         normalization_errors.append(abs(float(np.sum(weights)) - 1.0))
     roundoff = 4096.0 * np.finfo(float).eps

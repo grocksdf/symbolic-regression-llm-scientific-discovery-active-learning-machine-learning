@@ -724,3 +724,11 @@ with checkpoint visibility and nonterminal resume. Both execution flags are
 now true only in the byte-frozen P3J.15 configuration. The no-data gate does
 not execute the experiment; the unique formal command is delegated to the user.
 See `docs/pcpi_p3j15_formal_execution_freeze_20260901.md`.
+
+The first P3J.15 execution stopped before response reveal at `uci_ccpp`, seed
+`2026080705`, query 16 because signed class-specific quadrature produced a
+spurious negative mutual-information estimate. The implementation now uses
+the exactly equivalent mixture expectation of pointwise posterior-class KL,
+which is nonnegative at every response node. The failed output remains frozen
+and cannot be resumed; a corrected run requires a new source-bound output.
+See `docs/pcpi_p3j15_negative_information_repair_20260902.md`.

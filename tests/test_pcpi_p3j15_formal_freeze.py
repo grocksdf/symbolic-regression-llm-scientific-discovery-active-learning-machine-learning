@@ -11,6 +11,9 @@ import pytest
 from scripts import run_pcpi_p3b_real as shared
 from scripts import run_pcpi_p3j15_formal_real_acquisition as runner
 from scripts.run_pcpi_p3i4_shared_h0_real_acquisition import P3I4_PROTOCOL
+from hypothesis_mvp.pcpi.class_conditional_semiparametric import (
+    _posterior_class_kl_at_responses,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +51,13 @@ def test_shared_runner_initializes_p3j_and_never_directly_opens_pcpi_response() 
     assert adapter.index("run_p3j_outer_policy") < adapter.index(
         "_p3j_compatible_summary"
     )
+
+
+def test_formal_information_integrand_is_pointwise_posterior_kl() -> None:
+    source = inspect.getsource(_posterior_class_kl_at_responses)
+    assert "rel_entr" in source
+    assert "posterior /=" in source
+    assert "source_index" not in source
 
 
 def test_resume_accepts_only_nonterminal_p3j_workspace(tmp_path) -> None:

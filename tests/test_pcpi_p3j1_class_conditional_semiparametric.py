@@ -6,6 +6,7 @@ import inspect
 
 import numpy as np
 import pytest
+from scipy.special import logsumexp
 
 from hypothesis_mvp.pcpi import (
     ClassConditionalResidualState,
@@ -25,6 +26,9 @@ from hypothesis_mvp.pcpi import (
 )
 from hypothesis_mvp.pcpi.reference import DyadicPolyaTreeState
 from tests._pcpi_fixtures import unit_bank
+from hypothesis_mvp.pcpi.class_conditional_semiparametric import (
+    _posterior_class_kl_at_responses,
+)
 
 
 def _components() -> PredictiveComponents:
@@ -127,6 +131,26 @@ def test_class_conditional_joint_preserves_the_registered_class_marginal() -> No
     )
     assert 0.0 < coupling.mutual_information < np.log(2.0)
     assert coupling.maximum_conditional_normalization_error < 2e-15
+
+
+def test_pointwise_posterior_kl_is_nonnegative_and_matches_information_identity() -> None:
+    probabilities = np.asarray([1e-12, 0.2, 0.8 - 1e-12])
+    calibrated_logpdf = np.asarray([
+        [-740.0, -30.0, 0.0, 18.0],
+        [-12.0, 0.0, 2.0, -25.0],
+        [0.0, -4.0, -1.0, -40.0],
+    ])
+    information = _posterior_class_kl_at_responses(
+        calibrated_logpdf, probabilities
+    )
+    log_joint = np.log(probabilities)[:, None] + calibrated_logpdf
+    log_mixture = logsumexp(log_joint, axis=0)
+    posterior = np.exp(log_joint - log_mixture[None, :])
+    expected = np.sum(
+        posterior * (calibrated_logpdf - log_mixture[None, :]), axis=0
+    )
+    assert np.all(information >= 0.0)
+    np.testing.assert_allclose(information, expected, rtol=0.0, atol=2e-14)
 
 
 def test_refinement_reuses_the_exact_preceding_fine_grid() -> None:
