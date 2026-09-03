@@ -13,6 +13,7 @@ from .operational_class_conditional import (
     OperationalClassConditionalState,
 )
 from .p3j_run_identity import (
+    P3K_RUN_IDENTITY_SCHEMA,
     P3JQueryWorkspace,
     _publish_no_overwrite,
     publish_p3j_terminal_failure,
@@ -22,6 +23,15 @@ from .real_acquisition import AcquisitionScores
 
 
 P3J_QUERY_DECISION_SCHEMA = "pcpi-p3j9-indivisible-query-decision-v1"
+P3K_QUERY_DECISION_SCHEMA = "pcpi-p3k2-indivisible-query-decision-v1"
+
+
+def _decision_schema(workspace: P3JQueryWorkspace) -> str:
+    return (
+        P3K_QUERY_DECISION_SCHEMA
+        if workspace.identity.schema == P3K_RUN_IDENTITY_SCHEMA
+        else P3J_QUERY_DECISION_SCHEMA
+    )
 
 
 def _encode_value(value: object) -> object:
@@ -55,7 +65,7 @@ def _decision_payload(
         for field in fields(AcquisitionScores)
     }
     return {
-        "schema": P3J_QUERY_DECISION_SCHEMA,
+        "schema": _decision_schema(workspace),
         "identity_hash": workspace.identity.stable_hash,
         "prior_state_hash": decision.prior_state_hash,
         "selected_candidate_id": decision.selected_candidate_id,
@@ -82,7 +92,7 @@ def _load_decision(
     identifiers = np.asarray(candidate_ids, dtype=int).reshape(-1)
     if (
         set(payload) != expected
-        or payload["schema"] != P3J_QUERY_DECISION_SCHEMA
+        or payload["schema"] != _decision_schema(workspace)
         or payload["identity_hash"] != workspace.identity.stable_hash
         or payload["response_opened"] is not False
         or isinstance(local, bool)
@@ -179,6 +189,7 @@ def run_p3j_formal_query(
 
 __all__ = [
     "P3J_QUERY_DECISION_SCHEMA",
+    "P3K_QUERY_DECISION_SCHEMA",
     "p3j_query_progress_snapshot",
     "run_p3j_formal_query",
 ]

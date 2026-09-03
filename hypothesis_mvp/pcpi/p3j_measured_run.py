@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from .operational_class_conditional import (
+    P3K_OPERATIONAL_LIFECYCLE,
     OperationalClassConditionalDecision,
     OperationalClassConditionalState,
 )
@@ -26,6 +27,9 @@ from .reference import DevelopmentStandardizer
 
 P3J_MEASURED_RUN_PROTOCOL = (
     "contiguous-identity-bound-resumable-measured-pool-acquisition-v1"
+)
+P3K_MEASURED_RUN_PROTOCOL = (
+    "p3k-contiguous-identity-bound-resumable-measured-pool-acquisition-v1"
 )
 
 
@@ -130,11 +134,17 @@ def run_p3j_measured_pool_acquisition(
         query_results=tuple(query_results),
         identities=ordered_identities,
         manifest_path=manifest,
+        protocol=(
+            P3K_MEASURED_RUN_PROTOCOL
+            if initial_state.lifecycle == P3K_OPERATIONAL_LIFECYCLE
+            else P3J_MEASURED_RUN_PROTOCOL
+        ),
     )
 
 
 __all__ = [
     "P3J_MEASURED_RUN_PROTOCOL",
+    "P3K_MEASURED_RUN_PROTOCOL",
     "P3JMeasuredRunResult",
     "run_p3j_measured_pool_acquisition",
 ]

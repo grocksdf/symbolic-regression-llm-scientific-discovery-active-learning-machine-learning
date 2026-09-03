@@ -16,6 +16,7 @@ from .operational_class_conditional import (
 )
 from .p3j_query_runner import _load_decision
 from .p3j_run_identity import (
+    P3K_RUN_IDENTITY_SCHEMA,
     P3JFormalQueryIdentity,
     P3JQueryWorkspace,
     _publish_no_overwrite,
@@ -26,6 +27,23 @@ from .p3j_run_identity import (
 P3J_REVEAL_RECEIPT_SCHEMA = "pcpi-p3j10-matching-reveal-receipt-v1"
 P3J_QUERY_LEDGER_SCHEMA = "pcpi-p3j10-exactly-once-query-ledger-v1"
 P3J_RUN_MANIFEST_SCHEMA = "pcpi-p3j10-complete-run-manifest-v1"
+P3K_REVEAL_RECEIPT_SCHEMA = "pcpi-p3k2-matching-reveal-receipt-v1"
+P3K_QUERY_LEDGER_SCHEMA = "pcpi-p3k2-exactly-once-query-ledger-v1"
+P3K_RUN_MANIFEST_SCHEMA = "pcpi-p3k2-complete-run-manifest-v1"
+
+
+def _schemas(identity: P3JFormalQueryIdentity) -> tuple[str, str, str]:
+    if identity.schema == P3K_RUN_IDENTITY_SCHEMA:
+        return (
+            P3K_REVEAL_RECEIPT_SCHEMA,
+            P3K_QUERY_LEDGER_SCHEMA,
+            P3K_RUN_MANIFEST_SCHEMA,
+        )
+    return (
+        P3J_REVEAL_RECEIPT_SCHEMA,
+        P3J_QUERY_LEDGER_SCHEMA,
+        P3J_RUN_MANIFEST_SCHEMA,
+    )
 
 
 @dataclass(frozen=True)
@@ -51,7 +69,7 @@ def _receipt_payload(
     target: float,
 ) -> dict[str, object]:
     return {
-        "schema": P3J_REVEAL_RECEIPT_SCHEMA,
+        "schema": _schemas(workspace.identity)[0],
         "identity_hash": workspace.identity.stable_hash,
         "candidate_id": int(candidate_id),
         "action": np.asarray(action, dtype=float).reshape(-1).tolist(),
@@ -81,7 +99,7 @@ def _query_ledger_payload(
     selected_score: float,
 ) -> dict[str, object]:
     return {
-        "schema": P3J_QUERY_LEDGER_SCHEMA,
+        "schema": _schemas(workspace.identity)[1],
         "identity_hash": workspace.identity.stable_hash,
         "dataset_id": workspace.identity.dataset_id,
         "seed": workspace.identity.seed,
@@ -172,7 +190,7 @@ def resume_p3j_formal_response(
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     if (
         set(receipt) != {"schema", "identity_hash", "candidate_id", "action", "target"}
-        or receipt.get("schema") != P3J_REVEAL_RECEIPT_SCHEMA
+        or receipt.get("schema") != _schemas(workspace.identity)[0]
         or receipt.get("identity_hash") != workspace.identity.stable_hash
     ):
         raise ValueError("P3J persisted reveal receipt identity is invalid")
@@ -225,6 +243,10 @@ def finalize_p3j_run_manifest(
     ))
     if ordered != expected_identities or len({item.stable_hash for item in ordered}) != len(ordered):
         raise ValueError("P3J run identities are not unique and ordered")
+    if len({item.schema for item in ordered}) != 1:
+        raise ValueError("P3J/P3K run identities cannot be mixed")
+    ledger_schema = _schemas(ordered[0])[1]
+    manifest_schema = _schemas(ordered[0])[2]
     ledgers = []
     lineage: dict[tuple[str, int], str] = {}
     next_query: dict[tuple[str, int], int] = {}
@@ -241,7 +263,7 @@ def finalize_p3j_run_manifest(
             raise RuntimeError("P3J run contains a terminal query failure")
         ledger = json.loads((query_root / "QUERY_LEDGER.json").read_text(encoding="utf-8"))
         if (
-            ledger.get("schema") != P3J_QUERY_LEDGER_SCHEMA
+            ledger.get("schema") != ledger_schema
             or ledger.get("identity_hash") != identity.stable_hash
             or ledger.get("complete") is not True
             or ledger.get("heldout_opened") is not False
@@ -253,7 +275,7 @@ def finalize_p3j_run_manifest(
         next_query[key] = expected_query + 1
         ledgers.append(_payload_hash(ledger))
     payload = {
-        "schema": P3J_RUN_MANIFEST_SCHEMA,
+        "schema": manifest_schema,
         "query_count": len(ordered),
         "identity_hashes": [item.stable_hash for item in ordered],
         "query_ledger_hashes": ledgers,
@@ -275,6 +297,9 @@ __all__ = [
     "P3J_QUERY_LEDGER_SCHEMA",
     "P3J_REVEAL_RECEIPT_SCHEMA",
     "P3J_RUN_MANIFEST_SCHEMA",
+    "P3K_QUERY_LEDGER_SCHEMA",
+    "P3K_REVEAL_RECEIPT_SCHEMA",
+    "P3K_RUN_MANIFEST_SCHEMA",
     "P3JRecoveredFormalResponse",
     "admit_p3j_formal_response",
     "finalize_p3j_run_manifest",

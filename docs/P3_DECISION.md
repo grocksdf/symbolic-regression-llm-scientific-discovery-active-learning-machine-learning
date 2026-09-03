@@ -775,3 +775,22 @@ entry point is retired at the new source so it cannot silently run P3K under the
 old experimental identity. No real or simulated experiment is authorized.
 
 See `docs/pcpi_p3k1_shared_innovation_repair_contract_20260903.md`.
+
+## P3K.2 transaction Gate and P3K.3 formal freeze
+
+P3K.2 binds the repaired state to an exact P3K persistence identity across
+quadrature checkpoints, decisions, reveal receipts, query ledgers, run
+manifests, reporting rows, and failure snapshots. Mixed P3J/P3K lineages fail
+closed. Recovery from a durable receipt reconstructs the same state without
+reopening the measured-response oracle, and validation remains downstream of a
+complete response ledger.
+
+P3K.3 freezes one matched-budget, failure-informed real-development comparison
+using the unchanged three real datasets, eight seeds, baselines, budgets,
+numerical schedule, assessment rules, and closed held-out boundary. The formal
+runner and supervisor require exact source/config/runtime identities, preserve
+terminal failures, expose progress and checkpoints, and allow only nonterminal
+resume. No real experiment is executed by the correctness Gate; execution is
+delegated to the user after the source commit and tree are frozen.
+
+See `docs/pcpi_p3k2_p3k3_transaction_and_formal_freeze_20260903.md`.

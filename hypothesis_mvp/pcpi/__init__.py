@@ -172,6 +172,7 @@ from .p3j_cost import (
 from .p3j_checkpoint import (
     P3J_CHECKPOINT_PUBLICATION,
     P3J_CHECKPOINT_SCHEMA,
+    P3K_CHECKPOINT_SCHEMA,
     P3JCheckpoint,
     P3JChunkPlan,
     append_p3j_checkpoint_chunk,
@@ -187,6 +188,7 @@ from .p3j_checkpointed import (
 )
 from .p3j_run_identity import (
     P3J_RUN_IDENTITY_SCHEMA,
+    P3K_RUN_IDENTITY_SCHEMA,
     P3J_RUN_PUBLICATION,
     P3JFormalQueryIdentity,
     P3JQueryWorkspace,
@@ -198,6 +200,7 @@ from .p3j_run_identity import (
 )
 from .p3j_query_runner import (
     P3J_QUERY_DECISION_SCHEMA,
+    P3K_QUERY_DECISION_SCHEMA,
     p3j_query_progress_snapshot,
     run_p3j_formal_query,
 )
@@ -205,6 +208,9 @@ from .p3j_reveal_runner import (
     P3J_QUERY_LEDGER_SCHEMA,
     P3J_REVEAL_RECEIPT_SCHEMA,
     P3J_RUN_MANIFEST_SCHEMA,
+    P3K_QUERY_LEDGER_SCHEMA,
+    P3K_REVEAL_RECEIPT_SCHEMA,
+    P3K_RUN_MANIFEST_SCHEMA,
     P3JRecoveredFormalResponse,
     admit_p3j_formal_response,
     finalize_p3j_run_manifest,
@@ -212,29 +218,35 @@ from .p3j_reveal_runner import (
 )
 from .p3j_measured_pool import (
     P3J_MEASURED_POOL_ORDER,
+    P3K_MEASURED_POOL_ORDER,
     P3JMeasuredPoolQueryResult,
     resume_or_run_p3j_measured_pool_query,
     run_p3j_measured_pool_query,
 )
 from .p3j_measured_run import (
     P3J_MEASURED_RUN_PROTOCOL,
+    P3K_MEASURED_RUN_PROTOCOL,
     P3JMeasuredRunResult,
     run_p3j_measured_pool_acquisition,
 )
 from .p3j_reporting import (
     P3J_REPORTING_ORDER,
+    P3K_REPORTING_ORDER,
     P3JPolicyArtifacts,
     build_p3j_policy_artifacts,
     summarize_p3j_policy_artifacts,
 )
 from .p3j_policy_integration import (
     P3J_POLICY_DISPATCH,
+    P3K_POLICY_DISPATCH,
     P3J_POLICY_FAILURE_SCHEMA,
+    P3K_POLICY_FAILURE_SCHEMA,
     dispatch_p3j_matched_policy,
     publish_p3j_policy_failure_snapshot,
 )
 from .p3j_outer_runner import (
     P3J_OUTER_RUNNER_COMPOSITION,
+    P3K_OUTER_RUNNER_COMPOSITION,
     P3JOuterPolicyResult,
     run_p3j_outer_policy,
 )
@@ -430,6 +442,7 @@ __all__ = [
     "quadrature_orders",
     "P3J_CHECKPOINT_PUBLICATION",
     "P3J_CHECKPOINT_SCHEMA",
+    "P3K_CHECKPOINT_SCHEMA",
     "P3JCheckpoint",
     "P3JChunkPlan",
     "append_p3j_checkpoint_chunk",
@@ -441,6 +454,7 @@ __all__ = [
     "checkpointed_class_conditional_semiparametric_eig",
     "complete_p3j_quadrature_grid",
     "P3J_RUN_IDENTITY_SCHEMA",
+    "P3K_RUN_IDENTITY_SCHEMA",
     "P3J_RUN_PUBLICATION",
     "P3JFormalQueryIdentity",
     "P3JQueryWorkspace",
@@ -450,31 +464,41 @@ __all__ = [
     "publish_p3j_terminal_failure",
     "score_identity_bound_p3j_query",
     "P3J_QUERY_DECISION_SCHEMA",
+    "P3K_QUERY_DECISION_SCHEMA",
     "p3j_query_progress_snapshot",
     "run_p3j_formal_query",
     "P3J_QUERY_LEDGER_SCHEMA",
     "P3J_REVEAL_RECEIPT_SCHEMA",
     "P3J_RUN_MANIFEST_SCHEMA",
+    "P3K_QUERY_LEDGER_SCHEMA",
+    "P3K_REVEAL_RECEIPT_SCHEMA",
+    "P3K_RUN_MANIFEST_SCHEMA",
     "P3JRecoveredFormalResponse",
     "admit_p3j_formal_response",
     "finalize_p3j_run_manifest",
     "resume_p3j_formal_response",
     "P3J_MEASURED_POOL_ORDER",
+    "P3K_MEASURED_POOL_ORDER",
     "P3JMeasuredPoolQueryResult",
     "resume_or_run_p3j_measured_pool_query",
     "run_p3j_measured_pool_query",
     "P3J_MEASURED_RUN_PROTOCOL",
+    "P3K_MEASURED_RUN_PROTOCOL",
     "P3JMeasuredRunResult",
     "run_p3j_measured_pool_acquisition",
     "P3J_REPORTING_ORDER",
+    "P3K_REPORTING_ORDER",
     "P3JPolicyArtifacts",
     "build_p3j_policy_artifacts",
     "summarize_p3j_policy_artifacts",
     "P3J_POLICY_DISPATCH",
+    "P3K_POLICY_DISPATCH",
     "P3J_POLICY_FAILURE_SCHEMA",
+    "P3K_POLICY_FAILURE_SCHEMA",
     "dispatch_p3j_matched_policy",
     "publish_p3j_policy_failure_snapshot",
     "P3J_OUTER_RUNNER_COMPOSITION",
+    "P3K_OUTER_RUNNER_COMPOSITION",
     "P3JOuterPolicyResult",
     "run_p3j_outer_policy",
     "REFERENCE_DOMINANCE_METHOD",

@@ -11,10 +11,14 @@ import re
 
 import numpy as np
 
-from .operational_class_conditional import OperationalClassConditionalState
+from .operational_class_conditional import (
+    P3K_OPERATIONAL_LIFECYCLE,
+    OperationalClassConditionalState,
+)
 
 
 P3J_RUN_IDENTITY_SCHEMA = "pcpi-p3j8-formal-query-identity-v1"
+P3K_RUN_IDENTITY_SCHEMA = "pcpi-p3k2-formal-query-identity-v1"
 P3J_RUN_PUBLICATION = "fsync-staging-then-no-overwrite-hardlink"
 _DATASET_ID = re.compile(r"^[a-z0-9][a-z0-9_]{0,63}$")
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -50,7 +54,7 @@ class P3JFormalQueryIdentity:
 
     def __post_init__(self) -> None:
         if (
-            self.schema != P3J_RUN_IDENTITY_SCHEMA
+            self.schema not in (P3J_RUN_IDENTITY_SCHEMA, P3K_RUN_IDENTITY_SCHEMA)
             or not _HEX40.fullmatch(self.source_git_tree)
             or not _HEX64.fullmatch(self.config_sha256)
             or not _DATASET_ID.fullmatch(self.dataset_id)
@@ -135,6 +139,11 @@ def build_p3j_formal_query_identity(
             representative, np.dtype(np.float64)
         ),
         operational_state_hash=operational_state.stable_hash,
+        schema=(
+            P3K_RUN_IDENTITY_SCHEMA
+            if operational_state.lifecycle == P3K_OPERATIONAL_LIFECYCLE
+            else P3J_RUN_IDENTITY_SCHEMA
+        ),
     )
 
 
@@ -174,7 +183,7 @@ def open_p3j_query_workspace(
     query_root.mkdir(parents=True, exist_ok=True)
     manifest = query_root / "IDENTITY.json"
     payload = {
-        "schema": P3J_RUN_IDENTITY_SCHEMA,
+        "schema": identity.schema,
         "publication": P3J_RUN_PUBLICATION,
         "identity": asdict(identity),
         "identity_hash": identity.stable_hash,
@@ -209,7 +218,7 @@ def publish_p3j_query_progress(
     ):
         raise ValueError("P3J query progress is invalid")
     _publish_replace(workspace.progress_path, {
-        "schema": P3J_RUN_IDENTITY_SCHEMA,
+        "schema": workspace.identity.schema,
         "identity_hash": workspace.identity.stable_hash,
         "completed_models": int(completed_models),
         "nodes_per_leaf": int(nodes_per_leaf),
@@ -227,7 +236,7 @@ def publish_p3j_terminal_failure(
     ):
         raise ValueError("P3J terminal failure is invalid")
     _publish_no_overwrite(workspace.terminal_failure_path, {
-        "schema": P3J_RUN_IDENTITY_SCHEMA,
+        "schema": workspace.identity.schema,
         "identity_hash": workspace.identity.stable_hash,
         "failure_type": failure_type,
         "message": message,
@@ -288,6 +297,7 @@ def score_identity_bound_p3j_query(
 
 __all__ = [
     "P3J_RUN_IDENTITY_SCHEMA",
+    "P3K_RUN_IDENTITY_SCHEMA",
     "P3J_RUN_PUBLICATION",
     "P3JFormalQueryIdentity",
     "P3JQueryWorkspace",

@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from hypothesis_mvp.pcpi import (
+    P3K_SHARED_INNOVATION_JOINT_METHOD,
     P3H_OPERATIONAL_POWERS,
     ClassPartition,
     OperationalClassConditionalDecision,
@@ -95,9 +96,7 @@ def _scores(partition_hash: str, *, certified: bool = True) -> AcquisitionScores
         robust_joint_scores_by_model=np.tile(values, (4, 1)),
         robust_lower_bounds=values,
         robust_upper_bounds=values,
-        semiparametric_transport_method=(
-            "normalized-class-conditional-pit-density-composition-v1"
-        ),
+        semiparametric_transport_method=P3K_SHARED_INNOVATION_JOINT_METHOD,
         semiparametric_information_invariance_applied=False,
         decision_target="frozen-operational-class-log-risk",
     )

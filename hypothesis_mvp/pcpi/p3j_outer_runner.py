@@ -7,9 +7,13 @@ from pathlib import Path
 
 import numpy as np
 
-from .operational_class_conditional import OperationalClassConditionalState
+from .operational_class_conditional import P3K_OPERATIONAL_LIFECYCLE, OperationalClassConditionalState
 from .p3j_measured_run import P3JMeasuredRunResult, run_p3j_measured_pool_acquisition
-from .p3j_policy_integration import publish_p3j_policy_failure_snapshot
+from .p3j_policy_integration import (
+    P3J_POLICY_FAILURE_SCHEMA,
+    P3K_POLICY_FAILURE_SCHEMA,
+    publish_p3j_policy_failure_snapshot,
+)
 from .p3j_reporting import (
     P3JPolicyArtifacts,
     build_p3j_policy_artifacts,
@@ -20,6 +24,9 @@ from .reference import DevelopmentStandardizer
 
 P3J_OUTER_RUNNER_COMPOSITION = (
     "transactional-acquisition-then-post-ledger-evaluation-and-summary-v1"
+)
+P3K_OUTER_RUNNER_COMPOSITION = (
+    "p3k-transactional-acquisition-then-post-ledger-evaluation-and-summary-v1"
 )
 
 
@@ -105,17 +112,28 @@ def run_p3j_outer_policy(
             seed=seed,
             failure_type=type(error).__name__,
             message=str(error) or type(error).__name__,
+            schema=(
+                P3K_POLICY_FAILURE_SCHEMA
+                if getattr(initial_state, "lifecycle", None) == P3K_OPERATIONAL_LIFECYCLE
+                else P3J_POLICY_FAILURE_SCHEMA
+            ),
         )
         raise
     return P3JOuterPolicyResult(
         measured_run=measured,
         artifacts=artifacts,
         summary_metrics=summary,
+        protocol=(
+            P3K_OUTER_RUNNER_COMPOSITION
+            if getattr(initial_state, "lifecycle", None) == P3K_OPERATIONAL_LIFECYCLE
+            else P3J_OUTER_RUNNER_COMPOSITION
+        ),
     )
 
 
 __all__ = [
     "P3J_OUTER_RUNNER_COMPOSITION",
+    "P3K_OUTER_RUNNER_COMPOSITION",
     "P3JOuterPolicyResult",
     "run_p3j_outer_policy",
 ]

@@ -8,9 +8,16 @@ import numpy as np
 from scipy.stats import spearmanr
 
 from .acquisition import class_partition
-from .class_conditional_semiparametric import P3J_CLASS_CONDITIONAL_JOINT_METHOD
-from .operational_class_conditional import OperationalClassConditionalState
+from .class_conditional_semiparametric import (
+    P3J_CLASS_CONDITIONAL_JOINT_METHOD,
+    P3K_SHARED_INNOVATION_JOINT_METHOD,
+)
+from .operational_class_conditional import (
+    P3K_OPERATIONAL_LIFECYCLE,
+    OperationalClassConditionalState,
+)
 from .p3j_measured_run import P3JMeasuredRunResult
+from .p3j_run_identity import P3K_RUN_IDENTITY_SCHEMA
 from .real_acquisition import (
     fixed_class_entropy,
     normalized_area_under_learning_curve,
@@ -22,6 +29,7 @@ from .reference import aggregate_decision_equivalent_classes
 P3J_REPORTING_ORDER = (
     "complete-query-ledger-before-validation-and-reporting-v1"
 )
+P3K_REPORTING_ORDER = "p3k-complete-query-ledger-before-validation-and-reporting-v1"
 
 
 @dataclass(frozen=True)
@@ -29,6 +37,7 @@ class P3JPolicyArtifacts:
     curve_rows: tuple[dict[str, object], ...]
     query_rows: tuple[dict[str, object], ...]
     protocol: str = P3J_REPORTING_ORDER
+    expected_joint_method: str = P3J_CLASS_CONDITIONAL_JOINT_METHOD
 
 
 def _safe_spearman(left: np.ndarray, right: np.ndarray) -> tuple[float, bool]:
@@ -195,15 +204,16 @@ def _query_row(
     decision = result.decision
     scores = decision.scores
     local = decision.local_index
+    identity_prefix = "p3k" if identity.schema == P3K_RUN_IDENTITY_SCHEMA else "p3j"
     return {
         "dataset_id": dataset_id,
         "dataset_family": dataset_family,
         "seed": seed,
         "policy": policy,
         "acquisition_round": round_index,
-        "p3j_identity_hash": identity.stable_hash,
-        "p3j_prior_state_hash": decision.prior_state_hash,
-        "p3j_next_state_hash": result.next_state.stable_hash,
+        f"{identity_prefix}_identity_hash": identity.stable_hash,
+        f"{identity_prefix}_prior_state_hash": decision.prior_state_hash,
+        f"{identity_prefix}_next_state_hash": result.next_state.stable_hash,
         "selected_pool_index": decision.selected_candidate_id,
         "selected_row_id": str(pool_row_ids[decision.selected_candidate_id]),
         "realized_query_local_class_entropy_gain": float(
@@ -295,10 +305,21 @@ def build_p3j_policy_artifacts(
             measured_run.query_results, measured_run.identities, strict=True
         ))
     )
-    return P3JPolicyArtifacts(curve_rows=curves, query_rows=queries)
+    is_p3k = initial_state.lifecycle == P3K_OPERATIONAL_LIFECYCLE
+    return P3JPolicyArtifacts(
+        curve_rows=curves,
+        query_rows=queries,
+        protocol=P3K_REPORTING_ORDER if is_p3k else P3J_REPORTING_ORDER,
+        expected_joint_method=(
+            P3K_SHARED_INNOVATION_JOINT_METHOD
+            if is_p3k else P3J_CLASS_CONDITIONAL_JOINT_METHOD
+        ),
+    )
 
 
-def _p3j_decision_valid(row: dict[str, object], partition_hash: object) -> bool:
+def _p3j_decision_valid(
+    row: dict[str, object], partition_hash: object, expected_joint_method: str
+) -> bool:
     return bool(
         "class-conditional-semiparametric" in str(row["utility_mode"])
         and row["acquisition_target_partition_hash"] == partition_hash
@@ -310,7 +331,7 @@ def _p3j_decision_valid(row: dict[str, object], partition_hash: object) -> bool:
         and row["eig_selected_from_admissible_set"]
         and row["eig_ranking_certified"]
         and row["semiparametric_transport_method"]
-        == P3J_CLASS_CONDITIONAL_JOINT_METHOD
+        == expected_joint_method
         and not row["semiparametric_information_invariance_applied"]
         and row["selected_conditional_predictive_eig"] == 0.0
         and np.isclose(
@@ -342,7 +363,9 @@ def summarize_p3j_policy_artifacts(
     correlation, correlation_valid = _safe_spearman(scores, gains)
     decision_valid = tuple(
         _p3j_decision_valid(
-            row, initial["initial_frozen_class_partition_hash"]
+            row,
+            initial["initial_frozen_class_partition_hash"],
+            artifacts.expected_joint_method,
         )
         for row in queries
     )
@@ -413,6 +436,7 @@ def summarize_p3j_policy_artifacts(
 
 __all__ = [
     "P3J_REPORTING_ORDER",
+    "P3K_REPORTING_ORDER",
     "P3JPolicyArtifacts",
     "build_p3j_policy_artifacts",
     "summarize_p3j_policy_artifacts",

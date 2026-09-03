@@ -70,8 +70,9 @@ def test_reporting_occurs_only_after_admitted_query_state(tmp_path) -> None:
     assert len(artifacts.curve_rows) == 2
     assert len(artifacts.query_rows) == 1
     row = artifacts.query_rows[0]
-    assert row["p3j_prior_state_hash"] == state.stable_hash
-    assert row["p3j_next_state_hash"] == run.final_state.stable_hash
+    assert row["p3k_prior_state_hash"] == state.stable_hash
+    assert row["p3k_next_state_hash"] == run.final_state.stable_hash
+    assert "p3j_identity_hash" not in row
     assert row["response_receipt_admitted_before_reporting"] is True
     assert row["selection_used_validation"] is False
     assert row["selected_row_id"] == "row-3"

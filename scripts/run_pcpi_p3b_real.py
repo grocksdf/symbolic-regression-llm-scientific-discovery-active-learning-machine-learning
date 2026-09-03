@@ -118,6 +118,13 @@ P3I_SHARED_INITIAL_TARGET_SOURCE = (
 )
 
 
+def _class_contract_value(config: dict[str, Any], suffix: str) -> Any:
+    matches = [config[key] for key in (f"p3k_{suffix}", f"p3j_{suffix}") if key in config]
+    if len(matches) != 1:
+        raise ValueError(f"exactly one class-conditional contract key is required: {suffix}")
+    return matches[0]
+
+
 @dataclass(frozen=True)
 class RealAcquisitionProtocol:
     stage: str
@@ -139,6 +146,7 @@ class RealAcquisitionProtocol:
     fail_fast: bool = False
     operational_execution_authorized: bool = True
     p3j_class_conditional_lifecycle: bool = False
+    class_conditional_contract_prefix: str = "p3j"
     config_validator: Callable[[Path, Path], dict[str, Any]] | None = None
 
 
@@ -618,13 +626,21 @@ def _load_config(
     return config
 
 
-def _prepare_output(path: Path, *, allow_p3j_resume: bool = False) -> None:
+def _prepare_output(
+    path: Path, *, allow_p3j_resume: bool = False,
+    class_conditional_prefix: str = "p3j",
+) -> None:
     if path.exists() and any(path.iterdir()):
         if not allow_p3j_resume:
             raise FileExistsError(f"output directory is not empty: {path}")
-        allowed = {"hypotheses", "diagnostics", "tables", "figures", "logs", "p3j"}
+        allowed = {
+            "hypotheses", "diagnostics", "tables", "figures", "logs",
+            class_conditional_prefix,
+        }
         unexpected = [item.name for item in path.iterdir() if item.name not in allowed]
-        terminal = tuple(path.glob("p3j/**/POLICY_FAILURE.json"))
+        terminal = tuple(path.glob(
+            f"{class_conditional_prefix}/**/POLICY_FAILURE.json"
+        ))
         if unexpected or terminal:
             raise FileExistsError(
                 "P3J resume output contains terminal or unexpected artifacts: "
@@ -995,9 +1011,9 @@ def _p3j_compatible_summary(
             "conditional_predictive_information_method"
         ],
         "decision_target": "frozen-operational-class-log-risk",
-        "semiparametric_transport_method": config[
-            "p3j_joint_information_method"
-        ],
+        "semiparametric_transport_method": _class_contract_value(
+            config, "joint_information_method"
+        ),
         "representative_mmd_method": config["representative_discrepancy"],
         "operational_class_resolution_method": BUDGET_RESOLUTION_METHOD,
         "wall_time_seconds": wall_time_seconds,
@@ -2269,17 +2285,18 @@ def _manifest_method_contract(
             )
         }
     if protocol.p3j_class_conditional_lifecycle:
+        prefix = protocol.class_conditional_contract_prefix
         contract |= {
             key: config[key]
             for key in (
-                "p3j_operational_lifecycle",
-                "p3j_residual_state_method",
-                "p3j_class_posterior_update",
-                "p3j_joint_information_method",
-                "p3j_measured_run_protocol",
-                "p3j_policy_dispatch",
-                "p3j_reporting_order",
-                "p3j_outer_runner_composition",
+                f"{prefix}_operational_lifecycle",
+                f"{prefix}_residual_state_method",
+                f"{prefix}_class_posterior_update",
+                f"{prefix}_joint_information_method",
+                f"{prefix}_measured_run_protocol",
+                f"{prefix}_policy_dispatch",
+                f"{prefix}_reporting_order",
+                f"{prefix}_outer_runner_composition",
                 "eig_action_chunk_size",
                 "operational_execution_authorized",
                 "formal_dataset_runner_authorized",
@@ -2528,7 +2545,9 @@ def run(
             "formal P3H runtime differs from the frozen canonical environment"
         )
     _prepare_output(
-        output, allow_p3j_resume=protocol.p3j_class_conditional_lifecycle
+        output,
+        allow_p3j_resume=protocol.p3j_class_conditional_lifecycle,
+        class_conditional_prefix=protocol.class_conditional_contract_prefix,
     )
     reporter = ProgressReporter(output / "logs" / "run.jsonl")
     identity = {
@@ -2754,7 +2773,10 @@ def run(
                                 frozen_initial_target.partition,
                             )
                             summary, curves, queries = _run_p3j_shared_policy(
-                                run_root=output / "p3j" / dataset_id / f"seed-{seed}",
+                                run_root=(
+                                    output / protocol.class_conditional_contract_prefix
+                                    / dataset_id / f"seed-{seed}"
+                                ),
                                 source_git_tree=str(identity["source_git_tree"]),
                                 config_sha256=str(identity["config_file_hash"]),
                                 state=p3j_state, dataset_id=dataset_id, seed=int(seed),
@@ -3010,7 +3032,7 @@ def run(
         )
     )
     expected_robust_utility = (
-        "p3j-class-conditional-semiparametric-maximin-operational-class-information"
+        config["pcpi_robust_utility"]
         if protocol.p3j_class_conditional_lifecycle
         else "p3i-copula-transport-invariant-maximin-operational-class-information"
         if protocol.decision_target_alignment
@@ -3232,30 +3254,31 @@ def run(
             ),
         })
     if protocol.p3j_class_conditional_lifecycle:
+        class_contract_prefix = protocol.class_conditional_contract_prefix
         protocol_decisions.update({
-            "p3j_transaction_identity_present_for_every_pcpi_query": bool(
+            f"{class_contract_prefix}_transaction_identity_present_for_every_pcpi_query": bool(
                 pcpi_query_rows
             ) and all(
-                row.get("p3j_identity_hash")
-                and row.get("p3j_prior_state_hash")
-                and row.get("p3j_next_state_hash")
+                row.get(f"{class_contract_prefix}_identity_hash")
+                and row.get(f"{class_contract_prefix}_prior_state_hash")
+                and row.get(f"{class_contract_prefix}_next_state_hash")
                 for row in pcpi_query_rows
             ),
-            "p3j_response_admitted_before_every_report": bool(pcpi_query_rows)
+            f"{class_contract_prefix}_response_admitted_before_every_report": bool(pcpi_query_rows)
             and all(
                 row.get("response_receipt_admitted_before_reporting") is True
                 and row.get("selection_used_validation") is False
                 for row in pcpi_query_rows
             ),
-            "p3j_class_conditional_method_used_for_every_pcpi_query": bool(
+            f"{class_contract_prefix}_class_conditional_method_used_for_every_pcpi_query": bool(
                 pcpi_query_rows
             ) and all(
                 row["semiparametric_transport_method"]
-                == config["p3j_joint_information_method"]
+                == config[f"{class_contract_prefix}_joint_information_method"]
                 and not row["semiparametric_information_invariance_applied"]
                 for row in pcpi_query_rows
             ),
-            "p3j_primary_score_excludes_conditional_epig": bool(pcpi_query_rows)
+            f"{class_contract_prefix}_primary_score_excludes_conditional_epig": bool(pcpi_query_rows)
             and all(
                 row["selected_conditional_predictive_eig"] == 0.0
                 and np.isclose(
@@ -3264,14 +3287,14 @@ def run(
                 )
                 for row in pcpi_query_rows
             ),
-            "p3j_no_representative_fallback_or_utility_switch": bool(
+            f"{class_contract_prefix}_no_representative_fallback_or_utility_switch": bool(
                 pcpi_query_rows
             ) and all(
                 row["representative_safe_set_nonempty"]
                 and not row["representative_fallback_used"]
                 for row in pcpi_query_rows
             ),
-            "p3j_fail_fast_policy_frozen": (
+            f"{class_contract_prefix}_fail_fast_policy_frozen": (
                 protocol.fail_fast
                 and config["failure_policy"]
                 == "fail_fast_record_terminal_no_seed_replacement"

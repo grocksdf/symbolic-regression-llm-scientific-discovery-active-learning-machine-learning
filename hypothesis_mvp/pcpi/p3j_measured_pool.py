@@ -15,12 +15,15 @@ from .p3j_reveal_runner import (
     admit_p3j_formal_response,
     resume_p3j_formal_response,
 )
-from .p3j_run_identity import P3JQueryWorkspace
+from .p3j_run_identity import P3K_RUN_IDENTITY_SCHEMA, P3JQueryWorkspace
 from .reference import DevelopmentStandardizer
 
 
 P3J_MEASURED_POOL_ORDER = (
     "identity-bound-decision-then-one-matching-oracle-reveal-then-exact-advance-v1"
+)
+P3K_MEASURED_POOL_ORDER = (
+    "p3k-identity-bound-decision-then-one-matching-oracle-reveal-then-exact-advance-v1"
 )
 
 
@@ -97,6 +100,7 @@ def run_p3j_measured_pool_query(
         revealed_candidate_id=decision.selected_candidate_id,
         revealed_action=transformed_X[0],
         revealed_target=target,
+        order=(P3K_MEASURED_POOL_ORDER if workspace.identity.schema == P3K_RUN_IDENTITY_SCHEMA else P3J_MEASURED_POOL_ORDER),
     )
 
 
@@ -145,11 +149,13 @@ def resume_or_run_p3j_measured_pool_query(
         revealed_candidate_id=recovered.candidate_id,
         revealed_action=recovered.action,
         revealed_target=recovered.target,
+        order=(P3K_MEASURED_POOL_ORDER if workspace.identity.schema == P3K_RUN_IDENTITY_SCHEMA else P3J_MEASURED_POOL_ORDER),
     )
 
 
 __all__ = [
     "P3J_MEASURED_POOL_ORDER",
+    "P3K_MEASURED_POOL_ORDER",
     "P3JMeasuredPoolQueryResult",
     "resume_or_run_p3j_measured_pool_query",
     "run_p3j_measured_pool_query",

@@ -14,12 +14,14 @@ import numpy as np
 
 from .acquisition import PredictiveComponents
 from .class_conditional_semiparametric import (
+    P3K_SHARED_INNOVATION_RESIDUAL_METHOD,
     ClassConditionalChunkResult,
     ClassConditionalResidualState,
 )
 
 
 P3J_CHECKPOINT_SCHEMA = "pcpi-p3j5-deterministic-chunk-checkpoint-v1"
+P3K_CHECKPOINT_SCHEMA = "pcpi-p3k2-deterministic-chunk-checkpoint-v1"
 P3J_CHECKPOINT_PUBLICATION = "fsync-staging-then-atomic-replace"
 
 
@@ -58,7 +60,7 @@ class P3JChunkPlan:
 
     def __post_init__(self) -> None:
         if (
-            self.schema != P3J_CHECKPOINT_SCHEMA
+            self.schema not in (P3J_CHECKPOINT_SCHEMA, P3K_CHECKPOINT_SCHEMA)
             or isinstance(self.action_count, bool)
             or int(self.action_count) != self.action_count
             or self.action_count < 1
@@ -153,6 +155,11 @@ def build_p3j_chunk_plan(
         residual_state_hash=state.stable_hash,
         target_partition_hash=components.partition.stable_hash,
         predictive_components_hash=_components_hash(components),
+        schema=(
+            P3K_CHECKPOINT_SCHEMA
+            if state.method == P3K_SHARED_INNOVATION_RESIDUAL_METHOD
+            else P3J_CHECKPOINT_SCHEMA
+        ),
     )
 
 
@@ -206,7 +213,7 @@ def _publish(path: Path, payload: dict[str, object], *, create: bool) -> None:
 
 def initialize_p3j_checkpoint(path: Path, plan: P3JChunkPlan) -> P3JCheckpoint:
     payload = {
-        "schema": P3J_CHECKPOINT_SCHEMA,
+        "schema": plan.schema,
         "publication": P3J_CHECKPOINT_PUBLICATION,
         "plan": plan.__dict__,
         "plan_hash": plan.stable_hash,
@@ -225,7 +232,7 @@ def _validated_payload(path: Path, plan: P3JChunkPlan) -> dict[str, object]:
             "schema", "publication", "plan", "plan_hash", "chunks",
             "head_hash", "complete",
         }
-        or payload["schema"] != P3J_CHECKPOINT_SCHEMA
+        or payload["schema"] != plan.schema
         or payload["publication"] != P3J_CHECKPOINT_PUBLICATION
         or payload["plan"] != plan.__dict__
         or payload["plan_hash"] != plan.stable_hash
@@ -324,6 +331,7 @@ def require_complete_p3j_scores(checkpoint: P3JCheckpoint) -> np.ndarray:
 __all__ = [
     "P3J_CHECKPOINT_PUBLICATION",
     "P3J_CHECKPOINT_SCHEMA",
+    "P3K_CHECKPOINT_SCHEMA",
     "P3JCheckpoint",
     "P3JChunkPlan",
     "append_p3j_checkpoint_chunk",
