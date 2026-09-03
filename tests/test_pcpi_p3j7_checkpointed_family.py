@@ -140,8 +140,8 @@ def test_adaptive_look_completes_all_four_models_before_refinement(
             maximum_conditional_normalization_error=0.0,
             error_safety_factor=kwargs["error_safety_factor"],
             class_count=len(residual_state.class_ids),
-            maximum_leaf_count=max(
-                len(law.leaf_probabilities) for law in residual_state.residual_laws
+            maximum_leaf_count=len(
+                residual_state.residual_law.leaf_probabilities
             ),
             residual_state_hash=residual_state.stable_hash,
             target_partition_hash=components.partition.stable_hash,

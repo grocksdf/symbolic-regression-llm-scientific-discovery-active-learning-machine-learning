@@ -61,11 +61,13 @@ def test_formal_information_integrand_is_pointwise_posterior_kl() -> None:
     assert "source_index" not in source
 
 
-def test_formal_reveal_uses_one_canonical_class_bayes_normalization() -> None:
+def test_post_p3j_repair_uses_the_acquisition_predictive_for_every_power() -> None:
     source = inspect.getsource(advance_calibrated_class_posterior)
-    assert "calibrated_structure_log_weights" in source
-    assert "calibrated_class_log_joint" in source
-    assert "base_logpdf" not in source
+    assert "structure_log_predictive" in source
+    assert "_prequential_base_update" in source
+    assert "direct_log_joint" in source
+    assert "joint_law_update_identity_required=True" in source
+    assert "nominal_identity" not in source
 
 
 def test_resume_accepts_only_nonterminal_p3j_workspace(tmp_path) -> None:

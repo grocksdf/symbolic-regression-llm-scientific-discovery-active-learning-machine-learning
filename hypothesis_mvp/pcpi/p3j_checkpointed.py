@@ -143,9 +143,7 @@ def checkpointed_class_conditional_semiparametric_eig(
         maximum_conditional_normalization_error=normalization_error,
         error_safety_factor=float(error_safety_factor),
         class_count=len(state.class_ids),
-        maximum_leaf_count=max(
-            len(law.leaf_probabilities) for law in state.residual_laws
-        ),
+        maximum_leaf_count=len(state.residual_law.leaf_probabilities),
         residual_state_hash=state.stable_hash,
         target_partition_hash=components.partition.stable_hash,
     )

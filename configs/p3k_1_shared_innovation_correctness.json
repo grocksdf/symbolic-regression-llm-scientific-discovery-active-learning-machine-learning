@@ -1,0 +1,21 @@
+{
+  "schema": "pcpi-p3k1-shared-innovation-correctness-config-v1",
+  "stage": "P3K.1",
+  "failed_predecessor": "P3J.15/REAL_ADVANTAGE_NOT_DEMONSTRATED",
+  "scientific_target": "initial-frozen-operational-decision-regret-class",
+  "joint_law": "normalized-shared-innovation-class-conditional-pit-density-v1",
+  "residual_state_method": "likelihood-power-shared-innovation-prequential-kt-dyadic-polya-tree-v1",
+  "posterior_update": "normalized-prequential-structure-update-times-shared-class-calibration-v1",
+  "residual_coordinate": "current-posterior-base-mixture-raw-pit",
+  "within_power_sharing": "one-observable-innovation-law-shared-by-all-frozen-classes",
+  "across_power_sharing": "sharing-forbidden-separate-strict-prefix-state-per-likelihood-power",
+  "initial_state_policy": "shared-h0-base-posterior-zero-retroactive-calibration-weight",
+  "residual_depth_schedule": "floor(log2(max(history-count,1))/2)",
+  "residual_split_prior": "independent-beta-one-half-one-half",
+  "operational_execution_authorized": false,
+  "real_data_access": false,
+  "candidate_response_access": false,
+  "validation_response_access": false,
+  "heldout_access": false,
+  "simulated_experiment": false
+}

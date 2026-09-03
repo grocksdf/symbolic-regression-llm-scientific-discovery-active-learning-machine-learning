@@ -2,16 +2,20 @@
 
 P3H reconstructs one marginal raw-PIT law.  A marginal law alone cannot alter
 class mutual information without choosing an additional class/response copula.
-This module instead gives every *frozen scientific class* its own predictable
-raw-PIT law.  For class ``c`` with base conditional forecast ``F_c`` and density
-``f_c``, the calibrated conditional density is
+This module uses one predictable innovation law for every *likelihood-power
+target*, shared by all frozen scientific classes.  Giving each class an
+unrestricted law would destroy identifiability: for an observed density ``h``,
+each class could learn ``g_c(F_c(y)) f_c(y) = h(y)``.  For class ``c`` with base
+conditional forecast ``F_c`` and density ``f_c``, the repaired density is
 
-``q_c(y) = g_c(F_c(y)) f_c(y)``.
+``q_c(y) = g(F_c(y)) f_c(y)``.
 
 Each ``q_c`` integrates to one, so ``p(c) q_c(y)`` is a coherent joint law with
-the current class marginal.  Every class state is updated only after the same
-response has been scored under its strict prefix.  No latent class label, soft
-assignment, candidate response, validation response, or held-out value is
+the current class marginal.  The one shared state receives the current mixture
+PIT only after the response has been scored under its strict prefix.  Structure
+mass is advanced by the same normalized predictive density used in the joint,
+including for generalized-Bayes coefficient states.  No latent class label,
+soft assignment, candidate response, validation response, or held-out value is
 required.
 """
 
@@ -54,6 +58,18 @@ P3J_CLASS_POSTERIOR_UPDATE_METHOD = (
     "calibrated-class-factor-times-conjugate-structure-update-v1"
 )
 
+# P3J identifiers remain immutable because they name the completed negative
+# real-development run.  P3K identifiers name the repaired statistical object.
+P3K_SHARED_INNOVATION_RESIDUAL_METHOD = (
+    "likelihood-power-shared-innovation-prequential-kt-dyadic-polya-tree-v1"
+)
+P3K_SHARED_INNOVATION_JOINT_METHOD = (
+    "normalized-shared-innovation-class-conditional-pit-density-v1"
+)
+P3K_PREQUENTIAL_POSTERIOR_UPDATE_METHOD = (
+    "normalized-prequential-structure-update-times-shared-class-calibration-v1"
+)
+
 
 def _readonly(values: np.ndarray) -> np.ndarray:
     result = np.ascontiguousarray(values, dtype=float)
@@ -65,34 +81,30 @@ def _readonly(values: np.ndarray) -> np.ndarray:
 
 @dataclass(frozen=True)
 class ClassConditionalResidualState:
-    """One counterfactual strict-prefix residual state per frozen class."""
+    """One identifiable strict-prefix innovation law shared by frozen classes."""
 
     class_ids: tuple[str, ...]
-    residual_states: tuple[DyadicPolyaTreeState, ...]
+    residual_state: DyadicPolyaTreeState
     observation_count: int
     target_partition_hash: str
-    method: str = P3J_CLASS_CONDITIONAL_RESIDUAL_METHOD
+    method: str = P3K_SHARED_INNOVATION_RESIDUAL_METHOD
 
     def __post_init__(self) -> None:
         if (
             not self.class_ids
             or len(set(self.class_ids)) != len(self.class_ids)
-            or len(self.class_ids) != len(self.residual_states)
+            or not isinstance(self.residual_state, DyadicPolyaTreeState)
             or isinstance(self.observation_count, bool)
             or self.observation_count < 0
-            or any(
-                len(item.raw_pits) != self.observation_count
-                for item in self.residual_states
-            )
+            or len(self.residual_state.raw_pits) != self.observation_count
             or not self.target_partition_hash
-            or self.method != P3J_CLASS_CONDITIONAL_RESIDUAL_METHOD
+            or self.method != P3K_SHARED_INNOVATION_RESIDUAL_METHOD
         ):
             raise ValueError("P3J class-conditional residual state is invalid")
 
     @property
-    def residual_laws(self) -> tuple[DyadicPolyaTreePredictiveLaw, ...]:
-        model = DyadicPolyaTreeResidualModel()
-        return tuple(model.predictive_law(item) for item in self.residual_states)
+    def residual_law(self) -> DyadicPolyaTreePredictiveLaw:
+        return DyadicPolyaTreeResidualModel().predictive_law(self.residual_state)
 
     @property
     def stable_hash(self) -> str:
@@ -100,11 +112,9 @@ class ClassConditionalResidualState:
         digest.update(self.method.encode("ascii"))
         digest.update(self.target_partition_hash.encode("ascii"))
         digest.update(np.asarray([self.observation_count], dtype=np.int64).tobytes())
-        for class_id, state in zip(
-            self.class_ids, self.residual_states, strict=True
-        ):
+        for class_id in self.class_ids:
             digest.update(class_id.encode("ascii"))
-            digest.update(state.stable_hash.encode("ascii"))
+        digest.update(self.residual_state.stable_hash.encode("ascii"))
         return digest.hexdigest()
 
 
@@ -116,7 +126,7 @@ class ClassConditionalCoupling:
     mutual_information: float
     nodes_per_leaf: int
     maximum_conditional_normalization_error: float
-    method: str = P3J_CLASS_CONDITIONAL_JOINT_METHOD
+    method: str = P3K_SHARED_INNOVATION_JOINT_METHOD
 
     def __post_init__(self) -> None:
         probabilities = _readonly(self.class_probabilities).reshape(-1)
@@ -133,7 +143,7 @@ class ClassConditionalCoupling:
             or self.nodes_per_leaf < 2
             or not math.isfinite(error)
             or error < 0.0
-            or self.method != P3J_CLASS_CONDITIONAL_JOINT_METHOD
+            or self.method != P3K_SHARED_INNOVATION_JOINT_METHOD
         ):
             raise ValueError("P3J class-conditional coupling is invalid")
         object.__setattr__(self, "class_probabilities", probabilities)
@@ -184,7 +194,7 @@ class ClassConditionalEIGEstimate:
     maximum_leaf_count: int
     residual_state_hash: str
     target_partition_hash: str
-    method: str = P3J_CLASS_CONDITIONAL_JOINT_METHOD
+    method: str = P3K_SHARED_INNOVATION_JOINT_METHOD
 
     def __post_init__(self) -> None:
         scores = _readonly(self.scores).reshape(-1)
@@ -202,7 +212,7 @@ class ClassConditionalEIGEstimate:
             or self.maximum_leaf_count < 1
             or not self.residual_state_hash
             or not self.target_partition_hash
-            or self.method != P3J_CLASS_CONDITIONAL_JOINT_METHOD
+            or self.method != P3K_SHARED_INNOVATION_JOINT_METHOD
         ):
             raise ValueError("P3J class-conditional EIG estimate is invalid")
         object.__setattr__(self, "scores", scores)
@@ -232,7 +242,7 @@ class CalibratedClassPosteriorState:
     residual_state: ClassConditionalResidualState
     class_log_calibration_factors: np.ndarray
     calibrated_update_count: int = 0
-    method: str = P3J_CLASS_POSTERIOR_UPDATE_METHOD
+    method: str = P3K_PREQUENTIAL_POSTERIOR_UPDATE_METHOD
 
     def __post_init__(self) -> None:
         offsets = _readonly(self.class_log_calibration_factors).reshape(-1)
@@ -258,7 +268,7 @@ class CalibratedClassPosteriorState:
             != self.target_partition.stable_hash
             or isinstance(self.calibrated_update_count, bool)
             or self.calibrated_update_count < 0
-            or self.method != P3J_CLASS_POSTERIOR_UPDATE_METHOD
+            or self.method != P3K_PREQUENTIAL_POSTERIOR_UPDATE_METHOD
         ):
             raise ValueError("P3J calibrated posterior state is inconsistent")
         expected = _reweight_base_posterior(
@@ -309,6 +319,7 @@ class CalibratedClassUpdate:
     """Audit record for one reveal admitted after a frozen decision."""
 
     raw_pits_before_update: np.ndarray
+    shared_raw_pit_before_update: float
     calibration_density_factors: np.ndarray
     class_probabilities_before: np.ndarray
     class_probabilities_after: np.ndarray
@@ -330,6 +341,7 @@ class CalibratedClassUpdate:
         before = self.class_probabilities_before
         after = self.class_probabilities_after
         joint_after = self.joint_law_class_probabilities_after
+        shared_raw_pit = float(self.shared_raw_pit_before_update)
         if (
             not len(raw)
             or len(raw) != len(factors)
@@ -338,11 +350,20 @@ class CalibratedClassUpdate:
             or len(raw) != len(joint_after)
             or np.any(raw < 0.0)
             or np.any(raw > 1.0)
+            or not math.isfinite(shared_raw_pit)
+            or shared_raw_pit < 0.0
+            or shared_raw_pit > 1.0
             or np.any(factors <= 0.0)
             or np.any(before <= 0.0)
             or np.any(after <= 0.0)
             or np.any(joint_after <= 0.0)
             or not math.isclose(float(before.sum()), 1.0, abs_tol=2e-13)
+            or not math.isclose(
+                shared_raw_pit,
+                float(before @ raw),
+                rel_tol=0.0,
+                abs_tol=2e-13,
+            )
             or not math.isclose(float(after.sum()), 1.0, abs_tol=2e-13)
             or not math.isclose(float(joint_after.sum()), 1.0, abs_tol=2e-13)
             or not isinstance(self.joint_law_update_identity_required, bool)
@@ -358,16 +379,14 @@ class CalibratedClassUpdate:
 def initialize_class_conditional_residual_state(
     partition: ClassPartition,
 ) -> ClassConditionalResidualState:
-    """Create response-free uniform residual laws for one frozen partition."""
+    """Create one response-free uniform law for one frozen partition."""
 
     if not isinstance(partition, ClassPartition):
         raise TypeError("P3J initialization requires a frozen class partition")
     model = DyadicPolyaTreeResidualModel()
     return ClassConditionalResidualState(
         class_ids=partition.class_ids,
-        residual_states=tuple(
-            model.prior_state() for _ in partition.class_ids
-        ),
+        residual_state=model.prior_state(),
         observation_count=0,
         target_partition_hash=partition.stable_hash,
     )
@@ -606,12 +625,12 @@ def _class_conditional_semiparametric_chunk(
     """Evaluate one already-validated contiguous action slice."""
 
     class_probabilities = _validate_state_for_components(components, state)
-    laws = state.residual_laws
+    law = state.residual_law
+    raw_pits, weights = _residual_quadrature(law, nodes_per_leaf)
     action_slice = slice(start, stop)
     information = np.zeros(stop - start, dtype=float)
     maximum_normalization_error = 0.0
-    for source_index, law in enumerate(laws):
-        raw_pits, weights = _residual_quadrature(law, nodes_per_leaf)
+    for source_index in range(len(state.class_ids)):
         members = np.asarray(
             components.partition.member_indices[source_index], dtype=int
         )
@@ -629,10 +648,10 @@ def _class_conditional_semiparametric_chunk(
         )
         calibrated = np.stack([
             base_logpdf[index]
-            + laws[index].log_density(base_cdf[index].reshape(-1)).reshape(
+            + law.log_density(base_cdf[index].reshape(-1)).reshape(
                 stop - start, -1
             )
-            for index in range(len(laws))
+            for index in range(len(state.class_ids))
         ])
         pointwise_information = _posterior_class_kl_at_responses(
             calibrated, class_probabilities
@@ -723,11 +742,11 @@ def class_conditional_semiparametric_coupling(
     """Integrate ``p(c) q_c(y)`` without inventing a projected copula."""
 
     class_probabilities = _validate_state_for_components(components, state)
-    laws = state.residual_laws
+    law = state.residual_law
+    raw_pits, weights = _residual_quadrature(law, nodes_per_leaf)
     information = 0.0
     normalization_errors: list[float] = []
-    for class_index, law in enumerate(laws):
-        raw_pits, weights = _residual_quadrature(law, nodes_per_leaf)
+    for class_index in range(len(state.class_ids)):
         responses = _class_inverse_cdf_nodes(
             components, class_index, action_index, raw_pits
         )
@@ -736,8 +755,8 @@ def class_conditional_semiparametric_coupling(
         )
         calibrated_logpdf = np.vstack([
             base_logpdf[index]
-            + laws[index].log_density(base_cdf[index])
-            for index in range(len(laws))
+            + law.log_density(base_cdf[index])
+            for index in range(len(state.class_ids))
         ])
         pointwise_information = _posterior_class_kl_at_responses(
             calibrated_logpdf, class_probabilities
@@ -800,9 +819,7 @@ def estimate_class_conditional_semiparametric_eig(
         maximum_conditional_normalization_error=normalization_error,
         error_safety_factor=float(error_safety_factor),
         class_count=len(state.class_ids),
-        maximum_leaf_count=max(
-            len(law.leaf_probabilities) for law in state.residual_laws
-        ),
+        maximum_leaf_count=len(state.residual_law.leaf_probabilities),
         residual_state_hash=state.stable_hash,
         target_partition_hash=components.partition.stable_hash,
     )
@@ -865,8 +882,8 @@ def advance_class_conditional_residual_state(
     state: ClassConditionalResidualState,
     action_index: int,
     response: float,
-) -> tuple[ClassConditionalResidualState, np.ndarray, np.ndarray]:
-    """Score one revealed response under every class prefix, then admit it."""
+) -> tuple[ClassConditionalResidualState, np.ndarray, float, np.ndarray]:
+    """Score one reveal, then update one shared mixture-PIT innovation law."""
 
     _validate_state_for_components(components, state)
     target = float(response)
@@ -876,24 +893,21 @@ def advance_class_conditional_residual_state(
         components, action_index, np.asarray([target])
     )
     raw_pits = cdf[:, 0]
-    laws = state.residual_laws
-    factors = np.asarray([
-        float(law.density(np.asarray([raw_pit]))[0])
-        for law, raw_pit in zip(laws, raw_pits, strict=True)
-    ])
+    class_probabilities = _validated_class_probabilities(components)
+    shared_raw_pit = float(class_probabilities @ raw_pits)
+    law = state.residual_law
+    factors = law.density(raw_pits)
     model = DyadicPolyaTreeResidualModel()
-    next_states = tuple(
-        model.update(item, float(raw_pit))
-        for item, raw_pit in zip(state.residual_states, raw_pits, strict=True)
-    )
+    next_residual_state = model.update(state.residual_state, shared_raw_pit)
     return (
         ClassConditionalResidualState(
             class_ids=state.class_ids,
-            residual_states=next_states,
+            residual_state=next_residual_state,
             observation_count=state.observation_count + 1,
             target_partition_hash=state.target_partition_hash,
         ),
         _readonly(raw_pits),
+        shared_raw_pit,
         _readonly(factors),
     )
 
@@ -906,7 +920,7 @@ def reconstruct_class_conditional_residual_state(
     residual_targets: np.ndarray,
     target_partition: ClassPartition,
 ) -> tuple[ClassConditionalResidualState, ExactPosterior]:
-    """Reconstruct strict-prefix class laws from already-open initial roles."""
+    """Reconstruct one shared strict-prefix law from already-open initial roles."""
 
     conditioning_x, conditioning_y = engine._validated_data(
         conditioning_actions, conditioning_targets
@@ -922,7 +936,7 @@ def reconstruct_class_conditional_residual_state(
         components = predictive_components_for_partition(
             engine, posterior, target_partition, action[None, :]
         )
-        state, _, _ = advance_class_conditional_residual_state(
+        state, _, _, _ = advance_class_conditional_residual_state(
             components, state, 0, float(target)
         )
         posterior = engine.update_one(posterior, action, float(target))
@@ -969,6 +983,43 @@ def _reweight_base_posterior(
     )
 
 
+def _prequential_base_update(
+    base: ExactPosterior,
+    state_update: ExactPosterior,
+    structure_log_predictive: np.ndarray,
+) -> ExactPosterior:
+    """Advance model mass with the normalized forecast used by acquisition."""
+
+    log_density = np.asarray(structure_log_predictive, dtype=float).reshape(-1)
+    if (
+        len(log_density) != len(base.members)
+        or len(state_update.members) != len(base.members)
+        or not np.all(np.isfinite(log_density))
+        or base.bank_hash != state_update.bank_hash
+        or base.likelihood_power != state_update.likelihood_power
+        or any(
+            old.structure != new.structure
+            for old, new in zip(base.members, state_update.members, strict=True)
+        )
+    ):
+        raise ValueError("P3J prequential base update is inconsistent")
+    log_joint = np.log([item.probability for item in base.members]) + log_density
+    log_predictive = float(logsumexp(log_joint))
+    probabilities = np.exp(log_joint - log_predictive)
+    members = tuple(
+        replace(member, probability=float(probability))
+        for member, probability in zip(
+            state_update.members, probabilities, strict=True
+        )
+    )
+    return ExactPosterior(
+        members=members,
+        log_evidence=base.log_evidence + log_predictive,
+        bank_hash=base.bank_hash,
+        likelihood_power=base.likelihood_power,
+    )
+
+
 def initialize_calibrated_class_posterior(
     engine: SequentialReferencePosterior,
     base_posterior: ExactPosterior,
@@ -1007,25 +1058,34 @@ def advance_calibrated_class_posterior(
         values,
     )
     class_before = _validated_class_probabilities(components)
-    next_residual, raw_pits, factors = advance_class_conditional_residual_state(
-        components, state.residual_state, 0, target
+    next_residual, raw_pits, shared_raw_pit, factors = (
+        advance_class_conditional_residual_state(
+            components, state.residual_state, 0, target
+        )
     )
-    next_base = state.engine.update_one(state.base_posterior, values[0], target)
+    structure_log_predictive = student_t.logpdf(
+        target,
+        df=components.degrees_freedom,
+        loc=components.locations[:, 0],
+        scale=components.scales[:, 0],
+    )
+    state_update = state.engine.update_one(
+        state.base_posterior, values[0], target
+    )
+    next_base = _prequential_base_update(
+        state.base_posterior, state_update, structure_log_predictive
+    )
     next_offsets = state.class_log_calibration_factors + np.log(factors)
     next_posterior = _reweight_base_posterior(
         next_base, state.target_partition, next_offsets
     )
-    calibrated_structure_log_weights = _calibrated_structure_log_weights(
-        next_base, state.target_partition, next_offsets
+    class_logpdf, _ = _class_base_logpdf_and_cdf(
+        components, 0, np.asarray([target])
     )
-    calibration_log_normalizer = float(logsumexp(calibrated_structure_log_weights))
-    calibrated_class_log_joint = np.asarray([
-        float(logsumexp(calibrated_structure_log_weights[np.asarray(members)]))
-        for members in state.target_partition.member_indices
-    ])
-    joint_class_after = np.exp(
-        calibrated_class_log_joint - calibration_log_normalizer
+    direct_log_joint = (
+        np.log(class_before) + class_logpdf[:, 0] + np.log(factors)
     )
+    joint_class_after = np.exp(direct_log_joint - logsumexp(direct_log_joint))
     predictive_log_density = (
         next_posterior.log_evidence - state.posterior.log_evidence
     )
@@ -1036,11 +1096,8 @@ def advance_calibrated_class_posterior(
         posterior_class_probabilities[class_index] += (
             next_posterior.members[structure_index].probability
         )
-    nominal_identity = bool(np.isclose(
-        state.engine.likelihood_power, 1.0, rtol=0.0, atol=1e-15
-    ))
     allowance = 1024.0 * np.finfo(float).eps
-    if nominal_identity and not np.allclose(
+    if not np.allclose(
         posterior_class_probabilities,
         joint_class_after,
         rtol=0.0,
@@ -1060,11 +1117,12 @@ def advance_calibrated_class_posterior(
     )
     audit = CalibratedClassUpdate(
         raw_pits_before_update=raw_pits,
+        shared_raw_pit_before_update=shared_raw_pit,
         calibration_density_factors=factors,
         class_probabilities_before=class_before,
         class_probabilities_after=posterior_class_probabilities,
         joint_law_class_probabilities_after=joint_class_after,
-        joint_law_update_identity_required=nominal_identity,
+        joint_law_update_identity_required=True,
         calibrated_predictive_log_density=predictive_log_density,
     )
     return next_state, audit
@@ -1074,6 +1132,9 @@ __all__ = [
     "P3J_CLASS_CONDITIONAL_JOINT_METHOD",
     "P3J_CLASS_CONDITIONAL_RESIDUAL_METHOD",
     "P3J_CLASS_POSTERIOR_UPDATE_METHOD",
+    "P3K_PREQUENTIAL_POSTERIOR_UPDATE_METHOD",
+    "P3K_SHARED_INNOVATION_JOINT_METHOD",
+    "P3K_SHARED_INNOVATION_RESIDUAL_METHOD",
     "CalibratedClassPosteriorState",
     "CalibratedClassUpdate",
     "ClassConditionalCoupling",

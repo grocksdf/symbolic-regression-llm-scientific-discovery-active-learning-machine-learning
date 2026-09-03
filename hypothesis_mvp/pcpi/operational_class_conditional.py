@@ -35,6 +35,9 @@ from .reference import SequentialReferencePosterior
 P3J_OPERATIONAL_LIFECYCLE = (
     "class-conditional-family-score-select-reveal-advance-exactly-once-v1"
 )
+P3K_OPERATIONAL_LIFECYCLE = (
+    "shared-innovation-class-family-score-select-reveal-advance-exactly-once-v1"
+)
 
 
 def _readonly_vector(values: np.ndarray) -> np.ndarray:
@@ -52,7 +55,7 @@ class OperationalClassConditionalState:
     model_states: tuple[CalibratedClassPosteriorState, ...]
     target_partition: ClassPartition
     conditioning_count: int
-    lifecycle: str = P3J_OPERATIONAL_LIFECYCLE
+    lifecycle: str = P3K_OPERATIONAL_LIFECYCLE
 
     def __post_init__(self) -> None:
         states = tuple(sorted(
@@ -64,7 +67,7 @@ class OperationalClassConditionalState:
         }
         calibrated_counts = {item.calibrated_update_count for item in states}
         if (
-            self.lifecycle != P3J_OPERATIONAL_LIFECYCLE
+            self.lifecycle != P3K_OPERATIONAL_LIFECYCLE
             or powers != P3H_OPERATIONAL_POWERS
             or len(observation_counts) != 1
             or len(calibrated_counts) != 1
@@ -315,6 +318,7 @@ def admit_operational_class_conditional_response(
 
 __all__ = [
     "P3J_OPERATIONAL_LIFECYCLE",
+    "P3K_OPERATIONAL_LIFECYCLE",
     "OperationalClassConditionalDecision",
     "OperationalClassConditionalState",
     "admit_operational_class_conditional_response",

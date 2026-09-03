@@ -37,7 +37,7 @@ from .semiparametric_acquisition import (
     refine_semiparametric_class_eig,
 )
 from .class_conditional_semiparametric import (
-    P3J_CLASS_CONDITIONAL_JOINT_METHOD,
+    P3K_SHARED_INNOVATION_JOINT_METHOD,
     CalibratedClassPosteriorState,
     ClassConditionalEIGEstimate,
     estimate_class_conditional_semiparametric_eig,
@@ -1343,11 +1343,11 @@ def _finalize_class_conditional_scores(
             P3H_INTERVAL_FRONTIER_RESOLUTION if secondary_used else "not-applied"
         ),
         selection_admissible_mask=secondary_mask,
-        semiparametric_transport_method=P3J_CLASS_CONDITIONAL_JOINT_METHOD,
+        semiparametric_transport_method=P3K_SHARED_INNOVATION_JOINT_METHOD,
         semiparametric_information_invariance_applied=False,
         decision_target=(
             "frozen-operational-class-log-risk|"
-            + P3J_CLASS_CONDITIONAL_JOINT_METHOD
+            + P3K_SHARED_INNOVATION_JOINT_METHOD
         ),
     )
 

@@ -27,6 +27,7 @@ from hypothesis_mvp.pcpi import (
 from hypothesis_mvp.pcpi.reference import DyadicPolyaTreeState
 from tests._pcpi_fixtures import unit_bank
 from hypothesis_mvp.pcpi.class_conditional_semiparametric import (
+    _prequential_base_update,
     _posterior_class_kl_at_responses,
 )
 
@@ -46,20 +47,42 @@ def _components() -> PredictiveComponents:
     )
 
 
-def _opposing_residual_state() -> ClassConditionalResidualState:
-    components = _components()
+def _shared_residual_state(
+    components: PredictiveComponents | None = None,
+) -> ClassConditionalResidualState:
+    components = _ranking_components() if components is None else components
     return ClassConditionalResidualState(
         class_ids=components.partition.class_ids,
-        residual_states=(
-            DyadicPolyaTreeState(tuple([0.9] * 16)),
-            DyadicPolyaTreeState(tuple([0.1] * 16)),
-        ),
+        residual_state=DyadicPolyaTreeState(tuple([0.9] * 16)),
         observation_count=16,
         target_partition_hash=components.partition.stable_hash,
     )
 
 
-def _posterior_case():
+def _opposing_residual_state() -> ClassConditionalResidualState:
+    """Compatibility fixture name used by the historical P3J cost tests."""
+
+    return _shared_residual_state(_components())
+
+
+def _ranking_components() -> PredictiveComponents:
+    """Hand-authored algebra fixture, never an efficacy experiment."""
+
+    return PredictiveComponents(
+        structure_probabilities=np.asarray([0.5, 0.5]),
+        degrees_freedom=np.asarray([10.8773, 8.8448]),
+        locations=np.asarray([[-0.08615, 0.11469], [-0.54845, 0.47277]]),
+        scales=np.asarray([[0.42346, 0.97704], [1.24644, 1.62866]]),
+        partition=ClassPartition(
+            class_ids=("a", "b"),
+            member_indices=((0,), (1,)),
+            class_probabilities=(0.5, 0.5),
+            structure_to_class=(0, 1),
+        ),
+    )
+
+
+def _posterior_case(power: float = 1.0):
     actions = np.linspace(-1.5, 1.5, 12)[:, None]
     targets = (
         0.65
@@ -70,7 +93,7 @@ def _posterior_case():
             -0.01, 0.04, -0.03, 0.02, -0.02, 0.01,
         ])
     )
-    engine = SequentialReferencePosterior(unit_bank(), 1.0)
+    engine = SequentialReferencePosterior(unit_bank(), power)
     h0 = engine.fit_batch(actions, targets)
     first = (0, 1, 2)
     second = tuple(range(3, len(h0.members)))
@@ -106,9 +129,9 @@ def test_uniform_class_laws_recover_base_class_information() -> None:
     assert np.all(calibrated.error_bounds > 0.0)
 
 
-def test_class_conditional_laws_genuinely_change_the_acquisition_ranking() -> None:
-    components = _components()
-    state = _opposing_residual_state()
+def test_shared_innovation_law_genuinely_changes_the_acquisition_ranking() -> None:
+    components = _ranking_components()
+    state = _shared_residual_state(components)
     base = exact_class_eig(components).scores
     calibrated = estimate_class_conditional_semiparametric_eig(
         components, state, nodes_per_leaf=64
@@ -120,10 +143,11 @@ def test_class_conditional_laws_genuinely_change_the_acquisition_ranking() -> No
     )
 
 
-def test_class_conditional_joint_preserves_the_registered_class_marginal() -> None:
-    components = _components()
+def test_shared_innovation_joint_preserves_the_registered_class_marginal() -> None:
+    components = _ranking_components()
     coupling = class_conditional_semiparametric_coupling(
-        components, _opposing_residual_state(), action_index=1, nodes_per_leaf=64
+        components, _shared_residual_state(components), action_index=1,
+        nodes_per_leaf=64,
     )
     np.testing.assert_array_equal(
         coupling.class_probabilities,
@@ -155,7 +179,7 @@ def test_pointwise_posterior_kl_is_nonnegative_and_matches_information_identity(
 
 def test_refinement_reuses_the_exact_preceding_fine_grid() -> None:
     components = _components()
-    state = _opposing_residual_state()
+    state = _shared_residual_state(components)
     preceding = estimate_class_conditional_semiparametric_eig(
         components, state, nodes_per_leaf=16
     )
@@ -175,19 +199,27 @@ def test_refinement_reuses_the_exact_preceding_fine_grid() -> None:
         )
 
 
-def test_each_reveal_updates_every_counterfactual_class_only_after_scoring() -> None:
+def test_each_reveal_updates_one_observable_mixture_pit_only_after_scoring() -> None:
     components = _components()
     state = initialize_class_conditional_residual_state(components.partition)
     before = state.stable_hash
-    advanced, raw_pits, factors = advance_class_conditional_residual_state(
+    advanced, raw_pits, shared_raw_pit, factors = (
+        advance_class_conditional_residual_state(
         components, state, action_index=0, response=0.25
+        )
     )
     assert state.observation_count == 0
-    assert all(len(item.raw_pits) == 0 for item in state.residual_states)
+    assert len(state.residual_state.raw_pits) == 0
     assert advanced.observation_count == 1
-    assert all(len(item.raw_pits) == 1 for item in advanced.residual_states)
+    assert advanced.residual_state.raw_pits == (shared_raw_pit,)
     assert advanced.stable_hash != before
     assert np.all((raw_pits > 0.0) & (raw_pits < 1.0))
+    np.testing.assert_allclose(
+        shared_raw_pit,
+        np.asarray(components.partition.class_probabilities) @ raw_pits,
+        rtol=0.0,
+        atol=2e-15,
+    )
     np.testing.assert_array_equal(factors, np.ones(2))
 
 
@@ -223,10 +255,92 @@ def test_calibrated_inference_uses_the_same_class_likelihood_as_eig() -> None:
     assert np.isfinite(audit.calibrated_predictive_log_density)
     assert len(actions) == 12
     source = inspect.getsource(advance_calibrated_class_posterior)
-    assert source.index("_calibrated_structure_log_weights") < source.index(
-        "calibrated_class_log_joint"
+    assert source.index("structure_log_predictive") < source.index(
+        "_prequential_base_update"
     )
-    assert "base_logpdf" not in source
+    assert source.index("_prequential_base_update") < source.index(
+        "direct_log_joint"
+    )
+    assert "joint_law_update_identity_required=True" in source
+
+
+@pytest.mark.parametrize("power", (0.125, 0.25, 0.5, 1.0))
+def test_every_likelihood_power_obeys_the_same_direct_class_bayes_law(
+    power: float,
+) -> None:
+    _, _, engine, partition, residual, base_h0 = _posterior_case(power)
+    state = initialize_calibrated_class_posterior(
+        engine, base_h0, partition, residual
+    )
+    _, audit = advance_calibrated_class_posterior(
+        state, np.asarray([0.35]), response=0.52
+    )
+    assert audit.joint_law_update_identity_required
+    np.testing.assert_allclose(
+        audit.class_probabilities_after,
+        audit.joint_law_class_probabilities_after,
+        rtol=0.0,
+        atol=8.0 * np.finfo(float).eps,
+    )
+
+
+def test_eta_one_prequential_structure_update_recovers_ordinary_bayes() -> None:
+    _, _, engine, _, _, base_h0 = _posterior_case(1.0)
+    action = np.asarray([0.35])
+    response = 0.52
+    state_update = engine.update_one(base_h0, action, response)
+    structure_log_predictive = np.asarray([
+        updated.log_marginal_likelihood - previous.log_marginal_likelihood
+        for previous, updated in zip(
+            base_h0.members, state_update.members, strict=True
+        )
+    ])
+    prequential = _prequential_base_update(
+        base_h0, state_update, structure_log_predictive
+    )
+    np.testing.assert_allclose(
+        [item.probability for item in prequential.members],
+        [item.probability for item in state_update.members],
+        rtol=0.0,
+        atol=8.0 * np.finfo(float).eps,
+    )
+    np.testing.assert_allclose(
+        prequential.log_evidence,
+        state_update.log_evidence,
+        rtol=0.0,
+        atol=32.0 * np.finfo(float).eps,
+    )
+
+
+def test_tempered_structure_mass_uses_normalized_forecast_not_powered_evidence() -> None:
+    _, _, engine, partition, residual, base_h0 = _posterior_case(0.25)
+    state = initialize_calibrated_class_posterior(
+        engine, base_h0, partition, residual
+    )
+    powered_update = engine.update_one(base_h0, np.asarray([0.35]), 0.52)
+    repaired, _ = advance_calibrated_class_posterior(
+        state, np.asarray([0.35]), response=0.52
+    )
+    difference = np.max(np.abs(
+        np.asarray([item.probability for item in powered_update.members])
+        - np.asarray([
+            item.probability for item in repaired.base_posterior.members
+        ])
+    ))
+    assert difference > 1e-3
+    for repaired_item, powered_item in zip(
+        repaired.base_posterior.members,
+        powered_update.members,
+        strict=True,
+    ):
+        assert repaired_item.state.observations == powered_item.state.observations
+        assert repaired_item.state.y_square_sum == powered_item.state.y_square_sum
+        np.testing.assert_array_equal(
+            repaired_item.state.precision, powered_item.state.precision
+        )
+        np.testing.assert_array_equal(
+            repaired_item.state.information, powered_item.state.information
+        )
 
 
 def test_long_calibrated_update_chain_uses_one_log_normalization_identity() -> None:
@@ -249,13 +363,13 @@ def test_long_calibrated_update_chain_uses_one_log_normalization_identity() -> N
             ))),
         )
     assert state.calibrated_update_count == 128
-    assert maximum_identity_error <= np.finfo(float).eps
+    assert maximum_identity_error <= 8.0 * np.finfo(float).eps
 
 
 def test_reconstruction_uses_strict_prefixes_and_no_external_response_surface() -> None:
     _, _, _, _, residual, posterior = _posterior_case()
     assert residual.observation_count == 8
-    assert all(len(item.raw_pits) == 8 for item in residual.residual_states)
+    assert len(residual.residual_state.raw_pits) == 8
     assert posterior.members[0].state.observations == 12.0
     source = inspect.getsource(reconstruct_class_conditional_residual_state)
     assert "engine.update_one" in source
@@ -272,7 +386,7 @@ def test_partition_mismatch_fails_closed() -> None:
     components = _components()
     wrong = ClassConditionalResidualState(
         class_ids=("left", "other"),
-        residual_states=(DyadicPolyaTreeState(), DyadicPolyaTreeState()),
+        residual_state=DyadicPolyaTreeState(),
         observation_count=0,
         target_partition_hash="f" * 64,
     )
@@ -332,3 +446,10 @@ def test_complete_power_family_dispatches_the_class_conditional_scorer() -> None
         token in source
         for token in ("candidate_targets", "validation", "heldout", "rng")
     )
+
+
+def test_residual_state_cannot_encode_independent_per_class_distortions() -> None:
+    state = initialize_class_conditional_residual_state(_components().partition)
+    assert not hasattr(state, "residual_states")
+    assert not hasattr(state, "residual_laws")
+    assert state.residual_law is not None

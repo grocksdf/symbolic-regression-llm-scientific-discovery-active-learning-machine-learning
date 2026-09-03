@@ -24,7 +24,7 @@ from hypothesis_mvp.pcpi import (
     P3J_POLICY_DISPATCH,
     P3J_REPORTING_ORDER,
 )
-from scripts.run_pcpi_p3b_real import RealAcquisitionProtocol, build_parser, run
+from scripts.run_pcpi_p3b_real import RealAcquisitionProtocol, build_parser
 
 
 RUNTIME_HASH = "6b8c2611d77caea375d0d90d2e84627c725f0df845194bff14e25d44b4492ad9"
@@ -121,9 +121,10 @@ P3J15_PROTOCOL = RealAcquisitionProtocol(
 
 
 def main() -> int:
-    return run(
-        build_parser(P3J15_PROTOCOL, description=__doc__).parse_args(),
-        P3J15_PROTOCOL,
+    build_parser(P3J15_PROTOCOL, description=__doc__).parse_args()
+    raise RuntimeError(
+        "P3J.15 is frozen to its completed historical source; the current "
+        "P3K implementation requires a new protocol identity and output path"
     )
 
 

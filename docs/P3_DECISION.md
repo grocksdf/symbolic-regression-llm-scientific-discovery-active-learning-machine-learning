@@ -740,3 +740,38 @@ structure-log-weight vector for structure, class, evidence, and audit
 normalization, while retaining a separate aggregation identity check. The
 second failed output is also immutable. See
 `docs/pcpi_p3j15_class_bayes_normalization_repair_20260902.md`.
+
+The subsequent source-frozen execution completed all 96 registered runs with
+zero failures and a passed protocol Gate, while held-out remained closed. Its
+registered effectiveness status is `REAL_ADVANTAGE_NOT_DEMONSTRATED`: PCPI did
+not significantly improve frozen-class gain over random in either dataset
+family and did not control negative transfer. It is formal protocol evidence,
+not formal efficacy evidence. See
+`docs/pcpi_p3j15_result_failure_audit_20260903.md`.
+
+## P3K.1 shared-innovation identifiability repair
+
+The completed P3J.15 development run is frozen with
+`REAL_ADVANTAGE_NOT_DEMONSTRATED`. Its protocol passed, but its unrestricted
+per-class residual densities can asymptotically transport every distinct class
+forecast to the same observed density. This destroys the identifiability needed
+by a class-discovery acquisition target; it is not repaired by a numerical
+tolerance or an output-dependent regularizer.
+
+P3K.1 creates a new method identity. Within each likelihood-power model it uses
+one observable strict-prefix base-mixture PIT law shared across all frozen
+classes, while retaining separate states across powers. Every repaired class
+density remains normalized, but a single strictly increasing residual CDF
+cannot independently erase differences between distinct class CDFs. Structure
+mass now advances with the same normalized one-step predictive density scored
+by acquisition for all four likelihood powers; coefficient sufficient
+statistics retain their registered generalized-Bayes power. The direct class
+Bayes identity is mandatory for every power rather than only `eta=1`.
+
+The no-data Gate passes algebraic normalization, class-mass preservation,
+strict-prefix mixture-PIT, all-power update identity, separate-power state,
+uniform-law reduction, nonidentity utility, and leakage-surface checks. P3J.15's
+entry point is retired at the new source so it cannot silently run P3K under the
+old experimental identity. No real or simulated experiment is authorized.
+
+See `docs/pcpi_p3k1_shared_innovation_repair_contract_20260903.md`.
