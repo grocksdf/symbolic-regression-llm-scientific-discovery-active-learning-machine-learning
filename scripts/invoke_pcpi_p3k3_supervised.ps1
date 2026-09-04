@@ -14,6 +14,7 @@ param(
     [ValidateRange(2, 60)][int]$HeartbeatSeconds = 5,
     [switch]$Resume,
     [switch]$PreflightOnly,
+    [switch]$VerifyCompleteRuntimeIdentity,
     [string]$ProtocolStage = 'P3K.3',
     [string]$RunnerRelativePath = 'scripts\run_pcpi_p3k3_formal_real_acquisition.py'
 )
@@ -95,6 +96,39 @@ try {
     if ($actualTree -ne $ExpectedTree.ToLowerInvariant()) { throw "Tree mismatch: $actualTree" }
     if ($actualConfigHash -ne $ExpectedConfigHash.ToLowerInvariant()) { throw "Config mismatch: $actualConfigHash" }
     if ($actualPythonHash -ne $ExpectedPythonHash.ToLowerInvariant()) { throw "Python mismatch: $actualPythonHash" }
+    if ($VerifyCompleteRuntimeIdentity) {
+        $runtimeInspector = Join-Path $projectPath 'scripts\inspect_pcpi_runtime_identity.py'
+        if (-not (Test-Path -LiteralPath $runtimeInspector -PathType Leaf)) {
+            throw "Runtime identity inspector is missing: $runtimeInspector"
+        }
+        $runtimeText = (& $pythonPath -B $runtimeInspector | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or -not $runtimeText) {
+            throw 'Cannot inspect the complete formal runtime identity'
+        }
+        $actualRuntime = $runtimeText | ConvertFrom-Json
+        $frozenConfig = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+        if (
+            $actualRuntime.runtime_dependency_hash -ne
+            $frozenConfig.runtime_dependency_hash
+        ) {
+            throw "Runtime dependency hash mismatch: $($actualRuntime.runtime_dependency_hash)"
+        }
+        $binaryNames = @(
+            'base_executable', 'python_dll', 'stable_abi_dll',
+            'venv_launcher', 'pyvenv_config'
+        )
+        foreach ($name in $binaryNames) {
+            $actualBinary = $actualRuntime.runtime_binary_identity.$name
+            $expectedBinary = $frozenConfig.runtime_binary_identity.$name
+            if (
+                $null -eq $actualBinary -or $null -eq $expectedBinary -or
+                $actualBinary.length -ne $expectedBinary.length -or
+                $actualBinary.sha256 -ne $expectedBinary.sha256
+            ) {
+                throw "Runtime binary identity mismatch: $name"
+            }
+        }
+    }
     if ($PreflightOnly) {
         Write-Host "$ProtocolStage preflight passed; no data process or output was created."
         return

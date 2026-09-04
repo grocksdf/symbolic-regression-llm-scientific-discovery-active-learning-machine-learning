@@ -16,4 +16,8 @@ param(
     [switch]$PreflightOnly
 )
 
-throw 'P3K.7 is a frozen pre-data runtime failure; use the P3K.8 protocol.'
+$common = Join-Path $PSScriptRoot 'invoke_pcpi_p3k3_supervised.ps1'
+& $common @PSBoundParameters `
+    -VerifyCompleteRuntimeIdentity `
+    -ProtocolStage 'P3K.8' `
+    -RunnerRelativePath 'scripts\run_pcpi_p3k8_formal_real_acquisition.py'

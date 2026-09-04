@@ -32,6 +32,7 @@ from hypothesis_mvp.hypotheses import (
     file_sha256,
     production_code_hash,
     resolve_formal_source_identity,
+    runtime_binary_identity,
     runtime_dependency_hash,
     runtime_dependency_snapshot,
 )
@@ -141,6 +142,7 @@ class RealAcquisitionProtocol:
     semiparametric_unresolved_action: str = P3H_TERMINAL_ABSTENTION
     required_runtime_dependency_hash: str | None = None
     required_python_executable_hash: str | None = None
+    required_runtime_binary_identity: dict[str, dict[str, object]] | None = None
     decision_target_alignment: bool = False
     shared_initial_frozen_target: bool = False
     fail_fast: bool = False
@@ -2538,8 +2540,6 @@ def run(
         raise RuntimeError(
             "formal runtime executable differs from the frozen Python binary"
         )
-    if not data_root.is_dir():
-        raise FileNotFoundError(f"data root does not exist: {data_root}")
     source_identity = resolve_formal_source_identity(root, source)
     dependency_environment = runtime_dependency_snapshot()
     dependency_environment_hash = runtime_dependency_hash(dependency_environment)
@@ -2550,6 +2550,15 @@ def run(
         raise RuntimeError(
             "formal P3H runtime differs from the frozen canonical environment"
         )
+    binary_identity = None
+    if protocol.required_runtime_binary_identity is not None:
+        binary_identity = runtime_binary_identity()
+        if binary_identity != protocol.required_runtime_binary_identity:
+            raise RuntimeError(
+                "formal runtime base interpreter or ABI identity differs from the freeze"
+            )
+    if not data_root.is_dir():
+        raise FileNotFoundError(f"data root does not exist: {data_root}")
     _prepare_output(
         output,
         allow_p3j_resume=protocol.p3j_class_conditional_lifecycle,
@@ -2567,6 +2576,8 @@ def run(
         "dependency_environment": dependency_environment,
         "python_executable_hash": python_executable_hash,
     }
+    if binary_identity is not None:
+        identity["runtime_binary_identity"] = binary_identity
     run_rows: list[dict[str, Any]] = []
     curve_rows: list[dict[str, Any]] = []
     query_rows: list[dict[str, Any]] = []

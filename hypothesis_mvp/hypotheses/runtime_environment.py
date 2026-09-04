@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import platform
 import re
+import sys
 from typing import Any, Mapping
 
 
@@ -104,10 +105,39 @@ def runtime_dependency_hash(snapshot: Mapping[str, Any]) -> str:
     return sha256(_canonical_json(dict(snapshot))).hexdigest()
 
 
+def runtime_binary_identity() -> dict[str, dict[str, Any]]:
+    """Hash the active launcher, immutable base interpreter, ABI DLLs, and venv link."""
+
+    if platform.system() != "Windows":
+        raise RuntimeError("formal PCPI binary identity currently requires Windows")
+    version = sys.version_info
+    base = Path(sys.base_prefix)
+    paths = {
+        "base_executable": Path(sys._base_executable),
+        "python_dll": base / f"python{version.major}{version.minor}.dll",
+        "stable_abi_dll": base / f"python{version.major}.dll",
+        "venv_launcher": Path(sys.executable),
+        "pyvenv_config": Path(sys.prefix) / "pyvenv.cfg",
+    }
+    missing = [name for name, path in paths.items() if not path.is_file()]
+    if missing:
+        raise RuntimeError(
+            "formal runtime binary identity is incomplete: " + ", ".join(missing)
+        )
+    return {
+        name: {
+            "length": path.stat().st_size,
+            "sha256": _file_sha256(path),
+        }
+        for name, path in paths.items()
+    }
+
+
 __all__ = [
     "DEPENDENCY_SPEC_FILES",
     "REQUIRED_DISTRIBUTIONS",
     "dependency_specification_hash",
+    "runtime_binary_identity",
     "runtime_dependency_hash",
     "runtime_dependency_snapshot",
 ]

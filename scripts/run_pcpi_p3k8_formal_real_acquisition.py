@@ -1,4 +1,4 @@
-"""Run the frozen P3K.7 finite-singleton transactional real protocol."""
+"""Run the frozen P3K.8 complete-runtime-identity real protocol."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from hypothesis_mvp.pcpi import (
     P3K_SHARED_INNOVATION_RESIDUAL_METHOD,
     P3K_SINGLETON_RANK_CERTIFICATE,
 )
-from scripts.run_pcpi_p3b_real import RealAcquisitionProtocol, build_parser
+from scripts.run_pcpi_p3b_real import RealAcquisitionProtocol, build_parser, run
 
 
 RUNTIME_HASH = (
@@ -35,28 +35,51 @@ RUNTIME_HASH = (
 PYTHON_EXECUTABLE_HASH = (
     "560b9ef7d856608ab8da02ded2dc8a1951ad1f424c382c0ec6a698874165a18e"
 )
+RUNTIME_IDENTITY_METHOD = (
+    "dependency-snapshot-plus-launcher-base-python-and-abi-dll-hashes-v1"
+)
+RUNTIME_BINARY_IDENTITY = {
+    "base_executable": {
+        "length": 91648,
+        "sha256": "d8e3f0adf246db00358c0c4ed349cf714898178f9558fb0e944f79f5c07f8eaa",
+    },
+    "python_dll": {
+        "length": 6969856,
+        "sha256": "64a1dad031e97f13b1a0bac26c689d8e14a18d7dd1eab06e17f70e22373f4eec",
+    },
+    "stable_abi_dll": {
+        "length": 56320,
+        "sha256": "2d2330ce33d1443c67b1804bbf1a561653499dd4dcf8918048747cc17d1a63c4",
+    },
+    "venv_launcher": {
+        "length": 262144,
+        "sha256": PYTHON_EXECUTABLE_HASH,
+    },
+    "pyvenv_config": {
+        "length": 306,
+        "sha256": "215ca7981b0a4d50d5eee7a23d5157c05d4ea867e8182c04f3cfcc26bdaf5106",
+    },
+}
 CONFIG_SHA256 = (
-    "f53ab9f6692e6c6fbbc43debfd823bcf407d59df3f4c9b0469bdeea851345a93"
+    "ae51f789cff79523f4c00ed364d08afea74878ded09d847419bb4de50479bdd9"
 )
 POLICIES = ("random", "uncertainty", "qbc", DECISION_TARGETED_POLICY)
 
 
-def validate_p3k7_config(path: Path, root: Path) -> dict[str, object]:
+def validate_p3k8_config(path: Path, root: Path) -> dict[str, object]:
     resolved, project = Path(path).resolve(), Path(root).resolve()
     if not resolved.is_file() or (
         resolved != project and project not in resolved.parents
     ):
-        raise ValueError("P3K.7 config must be inside the project root")
+        raise ValueError("P3K.8 config must be inside the project root")
     raw = resolved.read_bytes()
     if sha256(raw).hexdigest() != CONFIG_SHA256:
-        raise ValueError("P3K.7 frozen config hash changed")
+        raise ValueError("P3K.8 frozen config hash changed")
     config = json.loads(raw.decode("utf-8"))
     frozen = {
-        "schema": "pcpi-p3k7-formal-real-acquisition-config-v1",
-        "stage": "P3K.7",
-        "failed_predecessor": (
-            "P3K.5/terminal-nonfinite-singleton-rank-certificate"
-        ),
+        "schema": "pcpi-p3k8-formal-real-acquisition-config-v1",
+        "stage": "P3K.8",
+        "failed_predecessor": "P3K.7/pre-data-mutable-base-runtime-drift",
         "datasets": list(P2A_REAL_DATASETS),
         "policies": list(POLICIES),
         "seeds": list(range(2026080701, 2026080709)),
@@ -84,6 +107,9 @@ def validate_p3k7_config(path: Path, root: Path) -> dict[str, object]:
         "p3k_outer_runner_composition": P3K_OUTER_RUNNER_COMPOSITION,
         "p3k_singleton_rank_certificate": P3K_SINGLETON_RANK_CERTIFICATE,
         "runtime_dependency_hash": RUNTIME_HASH,
+        "runtime_identity_method": RUNTIME_IDENTITY_METHOD,
+        "runtime_binary_identity": RUNTIME_BINARY_IDENTITY,
+        "runtime_storage": "workspace-local-copy-not-managed-runtime-symlink",
         "split_seed": SPLIT_SEED,
         "heldout_state": "closed",
         "failure_policy": "fail_fast_record_terminal_no_seed_replacement",
@@ -91,38 +117,38 @@ def validate_p3k7_config(path: Path, root: Path) -> dict[str, object]:
         "formal_dataset_runner_authorized": True,
     }
     if any(config.get(key) != value for key, value in frozen.items()):
-        raise ValueError("P3K.7 frozen formal contract changed")
+        raise ValueError("P3K.8 frozen formal contract changed")
     return config
 
 
 CLAIM_BOUNDARY = (
-    "P3K.7 is one failure-informed, held-out-closed real-development comparison. "
-    "It preserves every P3K.5 dataset, seed, budget, baseline, model, utility, "
-    "representative projection, numerical schedule, runtime and selection rule. "
-    "When the projected admissible domain has exactly one candidate, the vacuous "
-    "rank certificate is represented by finite neutral margin, error and gap values "
-    "and a distinct method identity; no score is clipped and no alternative "
-    "candidate exists in that certificate domain. No response, validation target, "
-    "held-out value, "
-    "dataset label or empirical effect size enters this representation. This is "
-    "development evidence, not independent confirmation or a universal claim."
+    "P3K.8 is one failure-informed, held-out-closed real-development comparison. "
+    "It preserves every P3K.7 statistical and experimental choice. P3K.7 reached "
+    "no data because its unchanged virtual-environment launcher resolved through a "
+    "managed base interpreter that had changed from CPython 3.12.13 to 3.12.14. "
+    "P3K.8 restores 3.12.13 in a workspace-local runtime and freezes the complete "
+    "dependency snapshot, launcher, base executable, versioned Python DLL, stable-ABI "
+    "DLL, and virtual-environment configuration before data-path validation. No "
+    "dataset, seed, budget, baseline, model, utility, projection, ranking, assessment "
+    "or held-out rule changes. This is development evidence, not confirmation."
 )
 
 
-P3K7_PROTOCOL = RealAcquisitionProtocol(
-    stage="P3K.7",
-    schema="pcpi-p3k7-formal-real-acquisition-config-v1",
-    experiment="real_measurement_matched_budget_p3k_finite_singleton_acquisition",
-    hypothesis_id="pcpi-p3k7-real-shared-innovation-finite-singleton-acquisition",
+P3K8_PROTOCOL = RealAcquisitionProtocol(
+    stage="P3K.8",
+    schema="pcpi-p3k8-formal-real-acquisition-config-v1",
+    experiment="real_measurement_matched_budget_p3k_complete_runtime_identity",
+    hypothesis_id="pcpi-p3k8-real-shared-innovation-complete-runtime-identity",
     pcpi_policy=DECISION_TARGETED_POLICY,
     policies=POLICIES,
     claim_boundary=CLAIM_BOUNDARY,
     parent_lineage=(
-        "pcpi-p3k5-terminal-nonfinite-singleton-rank-certificate",
-        "pcpi-p3k6-finite-singleton-rank-certificate-correctness",
+        "pcpi-p3k7-pre-data-mutable-base-runtime-drift",
+        "pcpi-p3k8-complete-runtime-identity-correctness",
     ),
     required_runtime_dependency_hash=RUNTIME_HASH,
     required_python_executable_hash=PYTHON_EXECUTABLE_HASH,
+    required_runtime_binary_identity=RUNTIME_BINARY_IDENTITY,
     shared_initial_frozen_target=True,
     fail_fast=True,
     operational_execution_authorized=True,
@@ -132,15 +158,14 @@ P3K7_PROTOCOL = RealAcquisitionProtocol(
         P3K_PROJECTED_REPRESENTATIVE_MMD_METHOD
     ),
     class_conditional_singleton_rank_certificate=P3K_SINGLETON_RANK_CERTIFICATE,
-    config_validator=validate_p3k7_config,
+    config_validator=validate_p3k8_config,
 )
 
 
 def main() -> int:
-    build_parser(P3K7_PROTOCOL, description=__doc__).parse_args()
-    raise RuntimeError(
-        "P3K.7 is frozen to its pre-data mutable-base-runtime failure; "
-        "complete runtime identity requires the new P3K.8 protocol and output"
+    return run(
+        build_parser(P3K8_PROTOCOL, description=__doc__).parse_args(),
+        P3K8_PROTOCOL,
     )
 
 

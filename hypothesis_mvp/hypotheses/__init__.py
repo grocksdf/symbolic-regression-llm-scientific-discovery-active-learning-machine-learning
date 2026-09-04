@@ -23,6 +23,7 @@ from .source_identity import (
 )
 from .runtime_environment import (
     dependency_specification_hash,
+    runtime_binary_identity,
     runtime_dependency_hash,
     runtime_dependency_snapshot,
 )
@@ -43,6 +44,7 @@ __all__ = [
     "file_sha256",
     "production_code_hash",
     "resolve_formal_source_identity",
+    "runtime_binary_identity",
     "runtime_dependency_hash",
     "runtime_dependency_snapshot",
     "verify_clean_git_source",

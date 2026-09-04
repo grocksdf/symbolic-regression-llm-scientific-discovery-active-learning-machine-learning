@@ -31,7 +31,8 @@ acquisition is source-frozen but has not yet produced a completed result.
 | P3K.4 | minimum-violation representative projection | no-data feasibility and leakage-isolation Gate passed |
 | P3K.5 | projected-guard real acquisition | terminal before response at strict-JSON publication of a singleton certificate; no efficacy evidence |
 | P3K.6 | canonical finite singleton rank certificate | end-to-end no-data scoring and strict-JSON round-trip Gate passed |
-| P3K.7 | frozen finite-singleton real acquisition | pending one user-executed real-development run; held-out closed |
+| P3K.7 | finite-singleton formal launch | rejected before data by mutable base-interpreter drift; no efficacy evidence |
+| P3K.8 | complete-runtime-identity real acquisition | restored CPython 3.12.13 and source-frozen; pending one user-executed run |
 | P4 | excluded from core | no motif claim |
 | P5 | blocked | no broad real superiority claim |
 | P6 | held-out closed | no confirmation claim |

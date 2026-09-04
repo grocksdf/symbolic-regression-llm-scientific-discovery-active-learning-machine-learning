@@ -5,6 +5,8 @@ from __future__ import annotations
 import inspect
 from pathlib import Path
 
+import pytest
+
 from hypothesis_mvp.pcpi import (
     P3K_PROJECTED_REPRESENTATIVE_MMD_METHOD,
     P3K_SINGLETON_RANK_CERTIFICATE,
@@ -37,35 +39,26 @@ def test_exact_p3k7_config_freezes_projection_and_singleton_certificate() -> Non
     )
 
 
-def test_p3k7_supervisor_delegates_to_the_common_fail_closed_monitor() -> None:
+def test_p3k7_supervisor_refuses_the_pre_data_runtime_failure() -> None:
     source = SUPERVISOR.read_text(encoding="utf-8")
-    common = (ROOT / "scripts" / "invoke_pcpi_p3k3_supervised.ps1").read_text(
-        encoding="utf-8"
+    assert "P3K.7 is a frozen pre-data runtime failure" in source
+    assert "P3K.8" in source
+    assert "Remove-Item" not in source
+    assert "heldout-open" not in source
+
+
+def test_p3k7_formal_runner_refuses_current_source(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runner,
+        "build_parser",
+        lambda *args, **kwargs: type(
+            "Parser", (), {"parse_args": lambda self: object()}
+        )(),
     )
-    assert "P3K.7" in source
-    assert "run_pcpi_p3k7_formal_real_acquisition.py" in source
-    for token in (
-        "ExpectedCommit",
-        "ExpectedTree",
-        "ExpectedConfigHash",
-        "ExpectedPythonHash",
-        "PROGRESS.json",
-        "summary.json",
-        "RUN_MANIFEST.json",
-        "child exit code is unavailable",
-        "-WindowStyle Hidden",
-        "[switch]$Resume",
-        "[switch]$PreflightOnly",
-    ):
-        assert token in source + common
-    assert "Remove-Item" not in source + common
-    assert "heldout-open" not in source + common
-
-
-def test_formal_runner_calls_only_the_shared_real_runner() -> None:
+    with pytest.raises(RuntimeError, match="P3K.7 is frozen"):
+        runner.main()
     source = inspect.getsource(runner.main)
-    assert "return run(" in source
-    assert "simulate" not in source and "default_rng" not in source
+    assert "P3K.8" in source
 
 
 def test_formal_assessment_audits_singleton_certificate_fields() -> None:

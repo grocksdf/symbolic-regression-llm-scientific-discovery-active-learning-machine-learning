@@ -843,3 +843,22 @@ projection, quadrature controls, assessment rules, runtime, and held-out-closed
 boundary remain fixed.
 
 See `docs/pcpi_p3k5_failure_p3k6_certificate_p3k7_freeze_20260904.md`.
+
+## P3K.7 pre-data runtime failure and P3K.8 complete freeze
+
+P3K.7 was rejected before output preparation or registered-data loading. Its
+virtual-environment launcher retained the frozen hash, but the launcher pointed
+to a Codex-managed base interpreter that had been replaced in place from
+CPython 3.12.13 by 3.12.14. The dependency snapshot therefore changed from the
+frozen `6b8c...` identity to `f2c0...`. Only adjacent stdout/stderr logs were
+created; no experiment directory, decision, response, validation value, or
+held-out value exists for P3K.7. Its runner and supervisor now refuse execution.
+
+P3K.8 restores the exact CPython 3.12.13 dependency snapshot in a
+workspace-local base runtime. The formal runner and supervisor now bind both
+the dependency snapshot and five binary/link identities: base executable,
+versioned Python DLL, stable-ABI DLL, virtual-environment launcher, and
+`pyvenv.cfg`. Both checks precede even data-directory validation. P3K.8 changes
+no statistical or experimental choice inherited from P3K.7.
+
+See `docs/pcpi_p3k7_runtime_failure_p3k8_complete_freeze_20260904.md`.
