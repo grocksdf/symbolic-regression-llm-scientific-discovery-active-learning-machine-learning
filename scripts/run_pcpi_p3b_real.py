@@ -147,6 +147,7 @@ class RealAcquisitionProtocol:
     operational_execution_authorized: bool = True
     p3j_class_conditional_lifecycle: bool = False
     class_conditional_contract_prefix: str = "p3j"
+    class_conditional_representative_method: str = REPRESENTATIVE_MMD_METHOD
     config_validator: Callable[[Path, Path], dict[str, Any]] | None = None
 
 
@@ -2928,12 +2929,20 @@ def run(
         row for row in query_rows
         if row["policy"] != protocol.pcpi_policy
     ]
+    projected_representative_guard = (
+        protocol.p3j_class_conditional_lifecycle
+        and protocol.class_conditional_contract_prefix == "p3k"
+    )
     representative_decisions_auditable = bool(pcpi_query_rows) and all(
         (
             row["representative_safe_set_nonempty"]
             and not row["representative_fallback_used"]
             and row["representative_selected_in_safe_set"]
-            and row["representative_selected_mmd_nonincrease"]
+            and (
+                row.get("representative_selected_within_projected_budget", False)
+                if projected_representative_guard
+                else row["representative_selected_mmd_nonincrease"]
+            )
         )
         or (
             not row["representative_safe_set_nonempty"]
@@ -3042,6 +3051,11 @@ def run(
         if discrepancy_expected
         else "maximin-joint-class-predictive-information"
     )
+    expected_representative_method = (
+        protocol.class_conditional_representative_method
+        if protocol.p3j_class_conditional_lifecycle
+        else REPRESENTATIVE_MMD_METHOD
+    )
     protocol_decisions = {
         "all_runs_completed": len(run_rows) == expected_runs,
         "no_failed_runs": not failures,
@@ -3103,7 +3117,8 @@ def run(
             "conditional_predictive_information_method", "not-applied"
         ),
         "representative_guard_matches_frozen_contract": (
-            config.get("representative_discrepancy") == REPRESENTATIVE_MMD_METHOD
+            config.get("representative_discrepancy")
+            == expected_representative_method
             and config.get("representative_target_distribution")
             == "registered-action-domain-uniform"
         ),
@@ -3292,6 +3307,9 @@ def run(
             ) and all(
                 row["representative_safe_set_nonempty"]
                 and not row["representative_fallback_used"]
+                and row.get(
+                    "representative_selected_within_projected_budget", False
+                )
                 for row in pcpi_query_rows
             ),
             f"{class_contract_prefix}_fail_fast_policy_frozen": (

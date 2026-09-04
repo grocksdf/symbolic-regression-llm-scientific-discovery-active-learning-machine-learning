@@ -58,7 +58,7 @@ def test_supervisor_is_resumable_visible_and_fail_closed() -> None:
         "ExpectedCommit", "ExpectedTree", "ExpectedConfigHash",
         "ExpectedPythonHash", "PROGRESS.json", "[switch]$Resume",
         "[switch]$PreflightOnly", "-WindowStyle Hidden",
-        "P3K.3 child exit code is unavailable", "summary.json",
+        "child exit code is unavailable", "summary.json",
         "RUN_MANIFEST.json",
     ):
         assert token in source

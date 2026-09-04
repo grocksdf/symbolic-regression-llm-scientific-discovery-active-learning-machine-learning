@@ -135,6 +135,9 @@ class RepresentativeSafeSet:
     tolerance: float
     kernel_bandwidth_squared: float
     method: str
+    nonincrease_feasible: bool = True
+    minimum_augmented_mmd_change: float = 0.0
+    safe_threshold_squared: float = math.inf
 
     @property
     def safe_set_nonempty(self) -> bool:
@@ -201,6 +204,9 @@ GAUSSIAN_CLASS_CONDITIONAL_EPIG = (
 )
 REPRESENTATIVE_MMD_METHOD = (
     "registered-domain-standardized-rbf-biased-mmd-nonincreasing"
+)
+P3K_PROJECTED_REPRESENTATIVE_MMD_METHOD = (
+    "registered-domain-standardized-rbf-biased-mmd-minimum-violation-projection-v1"
 )
 ANALYTIC_CLASS_EIG_BOUNDS_METHOD = (
     "quantized-data-processing-lower-gaussian-maximum-entropy-upper-v1"
@@ -845,6 +851,47 @@ def representative_mmd_safe_set(
         tolerance=float(tolerance),
         kernel_bandwidth_squared=float(bandwidth),
         method=REPRESENTATIVE_MMD_METHOD,
+        nonincrease_feasible=bool(np.any(safe_mask)),
+        minimum_augmented_mmd_change=float(np.min(augmented) - current),
+        safe_threshold_squared=float(current),
+    )
+
+
+def p3k_projected_representative_mmd_safe_set(
+    observed_actions: np.ndarray,
+    candidate_actions: np.ndarray,
+    target_actions: np.ndarray,
+) -> RepresentativeSafeSet:
+    """Project an infeasible nonincrease guard onto minimum MMD violation.
+
+    If a nonincreasing candidate exists this is exactly the historical safe
+    set. Otherwise only candidates attaining the smallest possible MMD
+    increase (up to roundoff) are admissible. The construction is covariate
+    only and is nonempty for every finite nonempty candidate domain.
+    """
+
+    base = representative_mmd_safe_set(
+        observed_actions, candidate_actions, target_actions
+    )
+    augmented = np.asarray(base.augmented_mmd_squared, dtype=float)
+    minimum = float(np.min(augmented))
+    threshold = max(base.current_mmd_squared, minimum)
+    scale = max(1.0, abs(threshold), float(np.max(np.abs(augmented))))
+    tolerance = 512.0 * np.finfo(float).eps * scale
+    safe_mask = augmented <= threshold + tolerance
+    safe_mask.setflags(write=False)
+    if not np.any(safe_mask):
+        raise AssertionError("minimum-violation projection must be nonempty")
+    return RepresentativeSafeSet(
+        current_mmd_squared=base.current_mmd_squared,
+        augmented_mmd_squared=base.augmented_mmd_squared,
+        safe_mask=safe_mask,
+        tolerance=float(tolerance),
+        kernel_bandwidth_squared=base.kernel_bandwidth_squared,
+        method=P3K_PROJECTED_REPRESENTATIVE_MMD_METHOD,
+        nonincrease_feasible=base.safe_set_nonempty,
+        minimum_augmented_mmd_change=minimum - base.current_mmd_squared,
+        safe_threshold_squared=threshold,
     )
 
 
@@ -1267,6 +1314,7 @@ __all__ = [
     "GAUSSIAN_CLASS_CONDITIONAL_EPIG",
     "PredictiveComponents",
     "REPRESENTATIVE_MMD_METHOD",
+    "P3K_PROJECTED_REPRESENTATIVE_MMD_METHOD",
     "RepresentativeSafeSet",
     "analytic_class_eig_bounds",
     "categorical_entropy",
@@ -1284,4 +1332,5 @@ __all__ = [
     "predictive_variance",
     "qbc_disagreement",
     "representative_mmd_safe_set",
+    "p3k_projected_representative_mmd_safe_set",
 ]

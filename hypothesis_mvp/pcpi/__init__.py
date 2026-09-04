@@ -46,6 +46,7 @@ from .acquisition import (
     GAUSSIAN_CLASS_CONDITIONAL_EPIG,
     PredictiveComponents,
     REPRESENTATIVE_MMD_METHOD,
+    P3K_PROJECTED_REPRESENTATIVE_MMD_METHOD,
     RepresentativeSafeSet,
     analytic_class_eig_bounds,
     categorical_entropy,
@@ -63,6 +64,7 @@ from .acquisition import (
     predictive_components_for_partition,
     predictive_variance,
     qbc_disagreement,
+    p3k_projected_representative_mmd_safe_set,
     representative_mmd_safe_set,
 )
 from .real_acquisition import (
@@ -297,6 +299,7 @@ __all__ = [
     "GAUSSIAN_CLASS_CONDITIONAL_EPIG",
     "PredictiveComponents",
     "REPRESENTATIVE_MMD_METHOD",
+    "P3K_PROJECTED_REPRESENTATIVE_MMD_METHOD",
     "RepresentativeSafeSet",
     "ConditionalPosteriorParameters",
     "DesignPreconditioner",
@@ -349,6 +352,7 @@ __all__ = [
     "predictive_components_for_partition",
     "predictive_variance",
     "qbc_disagreement",
+    "p3k_projected_representative_mmd_safe_set",
     "representative_mmd_safe_set",
     "ACQUISITION_POLICIES",
     "DECISION_TARGETED_POLICY",

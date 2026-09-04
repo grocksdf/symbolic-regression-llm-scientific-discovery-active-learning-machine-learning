@@ -1,0 +1,14 @@
+{
+  "schema": "pcpi-p3k4-projected-representative-guard-config-v1",
+  "stage": "P3K.4",
+  "failed_predecessor": "P3K.3/terminal-empty-representative-safe-set",
+  "method": "registered-domain-standardized-rbf-biased-mmd-minimum-violation-projection-v1",
+  "constraint": "augmented-mmd-change-at-most-max-zero-minimum-attainable-change",
+  "inputs": "opened-and-candidate-covariates-plus-registered-action-domain-only",
+  "operational_execution_authorized": false,
+  "real_data_access": false,
+  "response_access": false,
+  "validation_access": false,
+  "heldout_access": false,
+  "simulated_experiment": false
+}

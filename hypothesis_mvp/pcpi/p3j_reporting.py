@@ -124,6 +124,15 @@ def _score_audit(scores, local: int) -> dict[str, object]:
 
 def _representative_audit(scores, local: int) -> dict[str, object]:
     selected_mmd = float(scores.representative_augmented_mmd_squared[local])
+    minimum_mmd = float(np.min(scores.representative_augmented_mmd_squared))
+    projected_threshold = max(
+        float(scores.representative_current_mmd_squared), minimum_mmd
+    )
+    nonincrease_feasible = bool(np.any(
+        scores.representative_augmented_mmd_squared
+        <= scores.representative_current_mmd_squared
+        + scores.representative_mmd_tolerance
+    ))
     return {
         "representative_guard_applied": scores.representative_guard_applied,
         "representative_mmd_method": scores.representative_mmd_method,
@@ -151,6 +160,16 @@ def _representative_audit(scores, local: int) -> dict[str, object]:
         "representative_fallback_used": scores.representative_fallback_used,
         "representative_selected_in_safe_set": bool(
             scores.representative_safe_mask[local]
+        ),
+        "representative_nonincrease_feasible": nonincrease_feasible,
+        "representative_minimum_mmd_change": (
+            minimum_mmd - scores.representative_current_mmd_squared
+        ),
+        "representative_safe_threshold_squared": projected_threshold,
+        "representative_selected_within_projected_budget": bool(
+            scores.representative_safe_mask[local]
+            and selected_mmd
+            <= projected_threshold + scores.representative_mmd_tolerance
         ),
     }
 
@@ -320,6 +339,11 @@ def build_p3j_policy_artifacts(
 def _p3j_decision_valid(
     row: dict[str, object], partition_hash: object, expected_joint_method: str
 ) -> bool:
+    representative_valid = (
+        row["representative_selected_within_projected_budget"]
+        if expected_joint_method == P3K_SHARED_INNOVATION_JOINT_METHOD
+        else row["representative_selected_mmd_nonincrease"]
+    )
     return bool(
         "class-conditional-semiparametric" in str(row["utility_mode"])
         and row["acquisition_target_partition_hash"] == partition_hash
@@ -327,7 +351,7 @@ def _p3j_decision_valid(
         and row["representative_safe_set_nonempty"]
         and not row["representative_fallback_used"]
         and row["representative_selected_in_safe_set"]
-        and row["representative_selected_mmd_nonincrease"]
+        and representative_valid
         and row["eig_selected_from_admissible_set"]
         and row["eig_ranking_certified"]
         and row["semiparametric_transport_method"]
@@ -418,6 +442,15 @@ def summarize_p3j_policy_artifacts(
         "pcpi_representative_selected_nonincrease_rate": float(np.mean([
             row["representative_selected_mmd_nonincrease"] for row in queries
         ])),
+        "pcpi_representative_projection_rate": float(np.mean([
+            not row["representative_nonincrease_feasible"] for row in queries
+        ])),
+        "pcpi_representative_selected_within_projected_budget_rate": float(
+            np.mean([
+                row["representative_selected_within_projected_budget"]
+                for row in queries
+            ])
+        ),
         "pcpi_mean_representative_safe_set_size": float(np.mean([
             row["representative_safe_set_size"] for row in queries
         ])),

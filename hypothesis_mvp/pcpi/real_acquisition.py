@@ -27,6 +27,7 @@ from .acquisition import (
     predictive_variance,
     qbc_disagreement,
     representative_mmd_safe_set,
+    p3k_projected_representative_mmd_safe_set,
 )
 from .semiparametric_acquisition import (
     P3I_COPULA_TRANSPORT_METHOD,
@@ -1378,13 +1379,9 @@ def score_class_conditional_decision_actions(
         engine, posterior, target_partition, calibrated_posterior_states
     )
 
-    representative = representative_mmd_safe_set(
+    representative = p3k_projected_representative_mmd_safe_set(
         representative_observed_actions, actions, predictive_target_actions
     )
-    if not representative.safe_set_nonempty:
-        raise FloatingPointError(
-            "P3J has no representative-safe candidate and cannot switch utility"
-        )
     family_components = tuple(
         predictive_components_for_partition(
             item.engine, item.posterior, target_partition, actions

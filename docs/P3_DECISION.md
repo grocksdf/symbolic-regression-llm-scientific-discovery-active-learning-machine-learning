@@ -794,3 +794,26 @@ resume. No real experiment is executed by the correctness Gate; execution is
 delegated to the user after the source commit and tree are frozen.
 
 See `docs/pcpi_p3k2_p3k3_transaction_and_formal_freeze_20260903.md`.
+
+## P3K.3 terminal result, P3K.4 projection, and P3K.5 freeze
+
+P3K.3 stopped at CCPP seed 2026080707, PCPI query 27 before opening its
+response because the historical nonincreasing-MMD safe set was empty. The
+terminal output and its 26 completed query ledgers remain immutable; held-out
+was closed. This exposes a general finite-pool feasibility defect in the
+representative constraint, not a defect in P3K's shared-innovation Bayes law.
+
+P3K.4 replaces the infeasible constraint by its covariate-only
+minimum-violation projection. Whenever a nonincreasing candidate exists the
+historical set is unchanged. Otherwise only candidates with the minimum
+attainable MMD increase are eligible for the unchanged P3K utility. The rule is
+always nonempty, contains no fitted penalty, and has no response, validation,
+held-out, dataset-name, seed, or effect-size input. Its no-data correctness Gate
+passes.
+
+P3K.5 freezes a new formal identity and fresh output path while retaining all
+P3K inference, datasets, seeds, splits, budgets, baselines, quadrature controls,
+assessment rules, runtime, and the closed held-out boundary. P3K.3 cannot be
+rerun under current source.
+
+See `docs/pcpi_p3k3_failure_p3k4_projection_p3k5_freeze_20260904.md`.

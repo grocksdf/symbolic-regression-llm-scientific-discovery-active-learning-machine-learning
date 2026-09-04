@@ -13,7 +13,9 @@ param(
     [Parameter(Mandatory = $true)][string]$ExpectedPythonHash,
     [ValidateRange(2, 60)][int]$HeartbeatSeconds = 5,
     [switch]$Resume,
-    [switch]$PreflightOnly
+    [switch]$PreflightOnly,
+    [string]$ProtocolStage = 'P3K.3',
+    [string]$RunnerRelativePath = 'scripts\run_pcpi_p3k3_formal_real_acquisition.py'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -25,7 +27,7 @@ $outputPath = [IO.Path]::GetFullPath($Output).TrimEnd('\')
 $stashPath = [IO.Path]::GetFullPath($EvidenceStash).TrimEnd('\')
 $outputsRoot = (Join-Path $projectPath 'outputs').TrimEnd('\')
 $evidencePath = Join-Path $projectPath 'evidence'
-$runner = Join-Path $projectPath 'scripts\run_pcpi_p3k3_formal_real_acquisition.py'
+$runner = Join-Path $projectPath $RunnerRelativePath
 $stdoutLog = $outputPath + '.stdout.log'
 $stderrLog = $outputPath + '.stderr.log'
 $progressPath = Join-Path $outputPath 'logs\run.jsonl'
@@ -94,12 +96,12 @@ try {
     if ($actualConfigHash -ne $ExpectedConfigHash.ToLowerInvariant()) { throw "Config mismatch: $actualConfigHash" }
     if ($actualPythonHash -ne $ExpectedPythonHash.ToLowerInvariant()) { throw "Python mismatch: $actualPythonHash" }
     if ($PreflightOnly) {
-        Write-Host 'P3K.3 preflight passed; no data process or output was created.'
+        Write-Host "$ProtocolStage preflight passed; no data process or output was created."
         return
     }
 
     $child = ('& {0} -B {1} --data-root {2} --output-dir {3} --config {4} ' +
-        '--phase P3K.3 --heldout-state closed 1>> {5} 2>> {6}; exit $LASTEXITCODE') -f @(
+        "--phase $ProtocolStage --heldout-state closed 1>> {5} 2>> {6}; exit `$LASTEXITCODE") -f @(
         (Quote-Literal $pythonPath), (Quote-Literal $runner),
         (Quote-Literal $dataRootPath), (Quote-Literal $outputPath),
         (Quote-Literal $configPath), (Quote-Literal $stdoutLog),
@@ -109,7 +111,7 @@ try {
     $process = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') `
         -ArgumentList @('-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded) `
         -WindowStyle Hidden -PassThru
-    Write-Host "P3K.3 started: PID=$($process.Id) output=$outputPath resume=$Resume"
+    Write-Host "$ProtocolStage started: PID=$($process.Id) output=$outputPath resume=$Resume"
 
     $lastProgress = ''
     $lastCheckpoint = ''
@@ -137,10 +139,10 @@ try {
     }
     $process.WaitForExit()
     $process.Refresh()
-    if ($null -eq $process.ExitCode) { throw 'P3K.3 child exit code is unavailable' }
+    if ($null -eq $process.ExitCode) { throw "$ProtocolStage child exit code is unavailable" }
     if ([int]$process.ExitCode -ne 0) {
         if (Test-Path -LiteralPath $stderrLog) { Get-Content -LiteralPath $stderrLog -Tail 80 | Write-Host }
-        throw "P3K.3 process failed with exit code $($process.ExitCode)"
+        throw "$ProtocolStage process failed with exit code $($process.ExitCode)"
     }
     $summaryPath = Join-Path $outputPath 'summary.json'
     $manifestPath = Join-Path $outputPath 'RUN_MANIFEST.json'
@@ -150,13 +152,13 @@ try {
     $summary = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
     if (-not $summary.protocol_gate_passed -or $summary.successful_runs -ne $summary.expected_runs -or $summary.failure_count -ne 0 -or $summary.heldout_opened) {
-        throw 'P3K.3 summary completeness or held-out check failed'
+        throw "$ProtocolStage summary completeness or held-out check failed"
     }
-    if ($manifest.stage -ne 'P3K.3' -or -not $manifest.protocol_gate_passed -or -not $manifest.evidence_registry.valid -or
+    if ($manifest.stage -ne $ProtocolStage -or -not $manifest.protocol_gate_passed -or -not $manifest.evidence_registry.valid -or
         $manifest.source_git_commit -ne $ExpectedCommit.ToLowerInvariant() -or $manifest.source_git_tree -ne $ExpectedTree.ToLowerInvariant() -or
         $manifest.config_file_hash -ne $ExpectedConfigHash.ToLowerInvariant() -or $manifest.python_executable_hash -ne $ExpectedPythonHash.ToLowerInvariant() -or
-        $manifest.heldout_opened) { throw 'P3K.3 manifest identity or evidence check failed' }
-    Write-Host ("P3K.3 complete: assessment={0} runs={1}/{2}" -f $summary.effectiveness_assessment.status, $summary.successful_runs, $summary.expected_runs)
+        $manifest.heldout_opened) { throw "$ProtocolStage manifest identity or evidence check failed" }
+    Write-Host ("$ProtocolStage complete: assessment={0} runs={1}/{2}" -f $summary.effectiveness_assessment.status, $summary.successful_runs, $summary.expected_runs)
 }
 finally {
     if ($null -ne $process) {
