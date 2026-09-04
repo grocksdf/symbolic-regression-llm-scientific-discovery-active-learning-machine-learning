@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 import pytest
@@ -19,7 +18,9 @@ SUPERVISOR = ROOT / "scripts" / "invoke_pcpi_p3k5_supervised.ps1"
 
 def test_exact_p3k5_config_freezes_the_projected_guard() -> None:
     config = runner.validate_p3k5_config(CONFIG, ROOT)
-    assert config["representative_discrepancy"] == P3K_PROJECTED_REPRESENTATIVE_MMD_METHOD
+    assert config["representative_discrepancy"] == (
+        P3K_PROJECTED_REPRESENTATIVE_MMD_METHOD
+    )
     assert config["representative_safe_set_rule"] == (
         "nonincrease-if-feasible-else-minimum-attainable-mmd-increase"
     )
@@ -33,31 +34,29 @@ def test_exact_p3k5_config_freezes_the_projected_guard() -> None:
 def test_p3k3_cannot_relabel_the_projected_source(monkeypatch) -> None:
     monkeypatch.setattr(
         retired, "build_parser",
-        lambda *args, **kwargs: type("Parser", (), {"parse_args": lambda self: object()})(),
+        lambda *args, **kwargs: type(
+            "Parser", (), {"parse_args": lambda self: object()}
+        )(),
     )
     with pytest.raises(RuntimeError, match="P3K.3 is frozen"):
         retired.main()
 
 
-def test_p3k5_supervisor_delegates_to_the_common_fail_closed_monitor() -> None:
+def test_p3k5_supervisor_refuses_the_terminal_identity() -> None:
     source = SUPERVISOR.read_text(encoding="utf-8")
-    common = (ROOT / "scripts" / "invoke_pcpi_p3k3_supervised.ps1").read_text(
-        encoding="utf-8"
+    assert "P3K.5 is terminal" in source
+    assert "P3K.7" in source
+    assert "Remove-Item" not in source
+    assert "heldout-open" not in source
+
+
+def test_p3k5_formal_runner_refuses_current_source(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runner,
+        "build_parser",
+        lambda *args, **kwargs: type(
+            "Parser", (), {"parse_args": lambda self: object()}
+        )(),
     )
-    assert "P3K.5" in source
-    assert "run_pcpi_p3k5_formal_real_acquisition.py" in source
-    for token in (
-        "ExpectedCommit", "ExpectedTree", "ExpectedConfigHash",
-        "ExpectedPythonHash", "PROGRESS.json", "summary.json",
-        "RUN_MANIFEST.json", "child exit code is unavailable",
-        "-WindowStyle Hidden", "[switch]$Resume", "[switch]$PreflightOnly",
-    ):
-        assert token in source + common
-    assert "Remove-Item" not in source + common
-    assert "heldout-open" not in source + common
-
-
-def test_formal_runner_calls_only_the_shared_real_runner() -> None:
-    source = inspect.getsource(runner.main)
-    assert "return run(" in source
-    assert "simulate" not in source and "default_rng" not in source
+    with pytest.raises(RuntimeError, match="P3K.5 is frozen"):
+        runner.main()

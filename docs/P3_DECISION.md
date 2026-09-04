@@ -817,3 +817,29 @@ assessment rules, runtime, and the closed held-out boundary. P3K.3 cannot be
 rerun under current source.
 
 See `docs/pcpi_p3k3_failure_p3k4_projection_p3k5_freeze_20260904.md`.
+
+## P3K.5 terminal result, P3K.6 finite certificate, and P3K.7 freeze
+
+P3K.5 reached the previously infeasible CCPP seed 2026080707, PCPI query 27,
+and produced a singleton projected admissible set. Selection itself was defined,
+but the generic lower-envelope rank certificate encoded the absence of a
+competitor as infinite margin and gap. Strict JSON publication correctly
+rejected those nonfinite values before the decision or response was published.
+The P3K.5 output is terminal, held-out remained closed, and current source
+refuses any P3K.5 rerun.
+
+P3K.6 defines a singleton-domain certificate as a distinct vacuous ranking
+certificate with finite neutral margin, numerical-error bound, and gap, all
+equal to zero. The certified boolean, singleton admissible mask, and possible
+maximizer count one carry the ordering statement. This is not score clipping,
+does not create a competitor, and does not change candidate selection. The
+no-data Gate exercises the complete class-conditional scorer and strict JSON
+decision round trip.
+
+P3K.7 freezes a fresh formal identity and output path. Relative to P3K.5 it
+changes only the representation and audit of singleton certificates. All real
+datasets, seeds, splits, budgets, baselines, models, utilities, representative
+projection, quadrature controls, assessment rules, runtime, and held-out-closed
+boundary remain fixed.
+
+See `docs/pcpi_p3k5_failure_p3k6_certificate_p3k7_freeze_20260904.md`.

@@ -16,4 +16,7 @@ param(
     [switch]$PreflightOnly
 )
 
-throw 'P3K.5 is terminal and cannot be resumed or rerun; use the frozen P3K.7 protocol.'
+$common = Join-Path $PSScriptRoot 'invoke_pcpi_p3k3_supervised.ps1'
+& $common @PSBoundParameters `
+    -ProtocolStage 'P3K.7' `
+    -RunnerRelativePath 'scripts\run_pcpi_p3k7_formal_real_acquisition.py'

@@ -1,4 +1,4 @@
-"""Run the frozen P3K.5 projected-guard transactional real protocol."""
+"""Run the frozen P3K.7 finite-singleton transactional real protocol."""
 
 from __future__ import annotations
 
@@ -24,28 +24,39 @@ from hypothesis_mvp.pcpi import (
     P3K_REPORTING_ORDER,
     P3K_SHARED_INNOVATION_JOINT_METHOD,
     P3K_SHARED_INNOVATION_RESIDUAL_METHOD,
+    P3K_SINGLETON_RANK_CERTIFICATE,
 )
 from scripts.run_pcpi_p3b_real import RealAcquisitionProtocol, build_parser, run
 
 
-RUNTIME_HASH = "6b8c2611d77caea375d0d90d2e84627c725f0df845194bff14e25d44b4492ad9"
-PYTHON_EXECUTABLE_HASH = "560b9ef7d856608ab8da02ded2dc8a1951ad1f424c382c0ec6a698874165a18e"
-CONFIG_SHA256 = "34ceace6510c6a7a56b8e9bcae0f012b9849cb74c11d0a16ba4a8a5b69cfffd8"
+RUNTIME_HASH = (
+    "6b8c2611d77caea375d0d90d2e84627c725f0df845194bff14e25d44b4492ad9"
+)
+PYTHON_EXECUTABLE_HASH = (
+    "560b9ef7d856608ab8da02ded2dc8a1951ad1f424c382c0ec6a698874165a18e"
+)
+CONFIG_SHA256 = (
+    "f53ab9f6692e6c6fbbc43debfd823bcf407d59df3f4c9b0469bdeea851345a93"
+)
 POLICIES = ("random", "uncertainty", "qbc", DECISION_TARGETED_POLICY)
 
 
-def validate_p3k5_config(path: Path, root: Path) -> dict[str, object]:
+def validate_p3k7_config(path: Path, root: Path) -> dict[str, object]:
     resolved, project = Path(path).resolve(), Path(root).resolve()
-    if not resolved.is_file() or (resolved != project and project not in resolved.parents):
-        raise ValueError("P3K.5 config must be inside the project root")
+    if not resolved.is_file() or (
+        resolved != project and project not in resolved.parents
+    ):
+        raise ValueError("P3K.7 config must be inside the project root")
     raw = resolved.read_bytes()
     if sha256(raw).hexdigest() != CONFIG_SHA256:
-        raise ValueError("P3K.5 frozen config hash changed")
+        raise ValueError("P3K.7 frozen config hash changed")
     config = json.loads(raw.decode("utf-8"))
     frozen = {
-        "schema": "pcpi-p3k5-formal-real-acquisition-config-v1",
-        "stage": "P3K.5",
-        "failed_predecessor": "P3K.3/terminal-empty-representative-safe-set",
+        "schema": "pcpi-p3k7-formal-real-acquisition-config-v1",
+        "stage": "P3K.7",
+        "failed_predecessor": (
+            "P3K.5/terminal-nonfinite-singleton-rank-certificate"
+        ),
         "datasets": list(P2A_REAL_DATASETS),
         "policies": list(POLICIES),
         "seeds": list(range(2026080701, 2026080709)),
@@ -57,8 +68,12 @@ def validate_p3k5_config(path: Path, root: Path) -> dict[str, object]:
         "validation_budget": 256,
         "likelihood_power_candidates": list(P3H_OPERATIONAL_POWERS),
         "representative_discrepancy": P3K_PROJECTED_REPRESENTATIVE_MMD_METHOD,
-        "representative_safe_set_rule": "nonincrease-if-feasible-else-minimum-attainable-mmd-increase",
-        "representative_empty_safe_set_action": "minimum-violation-projection-no-utility-switch",
+        "representative_safe_set_rule": (
+            "nonincrease-if-feasible-else-minimum-attainable-mmd-increase"
+        ),
+        "representative_empty_safe_set_action": (
+            "minimum-violation-projection-no-utility-switch"
+        ),
         "p3k_operational_lifecycle": P3K_OPERATIONAL_LIFECYCLE,
         "p3k_residual_state_method": P3K_SHARED_INNOVATION_RESIDUAL_METHOD,
         "p3k_class_posterior_update": P3K_PREQUENTIAL_POSTERIOR_UPDATE_METHOD,
@@ -67,6 +82,7 @@ def validate_p3k5_config(path: Path, root: Path) -> dict[str, object]:
         "p3k_policy_dispatch": P3K_POLICY_DISPATCH,
         "p3k_reporting_order": P3K_REPORTING_ORDER,
         "p3k_outer_runner_composition": P3K_OUTER_RUNNER_COMPOSITION,
+        "p3k_singleton_rank_certificate": P3K_SINGLETON_RANK_CERTIFICATE,
         "runtime_dependency_hash": RUNTIME_HASH,
         "split_seed": SPLIT_SEED,
         "heldout_state": "closed",
@@ -75,34 +91,35 @@ def validate_p3k5_config(path: Path, root: Path) -> dict[str, object]:
         "formal_dataset_runner_authorized": True,
     }
     if any(config.get(key) != value for key, value in frozen.items()):
-        raise ValueError("P3K.5 frozen formal contract changed")
+        raise ValueError("P3K.7 frozen formal contract changed")
     return config
 
 
 CLAIM_BOUNDARY = (
-    "P3K.5 is one failure-informed, held-out-closed real-development comparison. "
-    "It preserves P3K shared-innovation inference and replaces only the infeasible "
-    "sequential representative constraint by its covariate-only minimum-violation "
-    "projection: nonincreasing candidates are unchanged when any exist; otherwise "
-    "only minimum-MMD-increase candidates are eligible for the same P3K utility. "
-    "No response, validation target, held-out value, dataset label, or empirical "
-    "effect size enters this projection. All datasets, seeds, budgets, baselines, "
-    "numerical schedules, runtime, source and configuration are frozen. This is "
+    "P3K.7 is one failure-informed, held-out-closed real-development comparison. "
+    "It preserves every P3K.5 dataset, seed, budget, baseline, model, utility, "
+    "representative projection, numerical schedule, runtime and selection rule. "
+    "When the projected admissible domain has exactly one candidate, the vacuous "
+    "rank certificate is represented by finite neutral margin, error and gap values "
+    "and a distinct method identity; no score is clipped and no alternative "
+    "candidate exists in that certificate domain. No response, validation target, "
+    "held-out value, "
+    "dataset label or empirical effect size enters this representation. This is "
     "development evidence, not independent confirmation or a universal claim."
 )
 
 
-P3K5_PROTOCOL = RealAcquisitionProtocol(
-    stage="P3K.5",
-    schema="pcpi-p3k5-formal-real-acquisition-config-v1",
-    experiment="real_measurement_matched_budget_p3k_projected_guard_acquisition",
-    hypothesis_id="pcpi-p3k5-real-shared-innovation-projected-guard-acquisition",
+P3K7_PROTOCOL = RealAcquisitionProtocol(
+    stage="P3K.7",
+    schema="pcpi-p3k7-formal-real-acquisition-config-v1",
+    experiment="real_measurement_matched_budget_p3k_finite_singleton_acquisition",
+    hypothesis_id="pcpi-p3k7-real-shared-innovation-finite-singleton-acquisition",
     pcpi_policy=DECISION_TARGETED_POLICY,
     policies=POLICIES,
     claim_boundary=CLAIM_BOUNDARY,
     parent_lineage=(
-        "pcpi-p3k3-terminal-empty-representative-safe-set",
-        "pcpi-p3k4-minimum-violation-projection-correctness",
+        "pcpi-p3k5-terminal-nonfinite-singleton-rank-certificate",
+        "pcpi-p3k6-finite-singleton-rank-certificate-correctness",
     ),
     required_runtime_dependency_hash=RUNTIME_HASH,
     required_python_executable_hash=PYTHON_EXECUTABLE_HASH,
@@ -111,16 +128,18 @@ P3K5_PROTOCOL = RealAcquisitionProtocol(
     operational_execution_authorized=True,
     p3j_class_conditional_lifecycle=True,
     class_conditional_contract_prefix="p3k",
-    class_conditional_representative_method=P3K_PROJECTED_REPRESENTATIVE_MMD_METHOD,
-    config_validator=validate_p3k5_config,
+    class_conditional_representative_method=(
+        P3K_PROJECTED_REPRESENTATIVE_MMD_METHOD
+    ),
+    class_conditional_singleton_rank_certificate=P3K_SINGLETON_RANK_CERTIFICATE,
+    config_validator=validate_p3k7_config,
 )
 
 
 def main() -> int:
-    build_parser(P3K5_PROTOCOL, description=__doc__).parse_args()
-    raise RuntimeError(
-        "P3K.5 is frozen to its terminal nonfinite singleton-certificate result; "
-        "the finite singleton certificate requires the new P3K.7 protocol and output"
+    return run(
+        build_parser(P3K7_PROTOCOL, description=__doc__).parse_args(),
+        P3K7_PROTOCOL,
     )
 
 

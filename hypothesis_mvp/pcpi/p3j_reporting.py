@@ -157,6 +157,9 @@ def _representative_audit(scores, local: int) -> dict[str, object]:
         )),
         "representative_safe_set_nonempty": scores.representative_safe_set_nonempty,
         "representative_safe_set_size": scores.representative_safe_set_size,
+        "representative_singleton_admissible_set": bool(
+            scores.representative_safe_set_size == 1
+        ),
         "representative_fallback_used": scores.representative_fallback_used,
         "representative_selected_in_safe_set": bool(
             scores.representative_safe_mask[local]

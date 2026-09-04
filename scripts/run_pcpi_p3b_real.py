@@ -148,6 +148,7 @@ class RealAcquisitionProtocol:
     p3j_class_conditional_lifecycle: bool = False
     class_conditional_contract_prefix: str = "p3j"
     class_conditional_representative_method: str = REPRESENTATIVE_MMD_METHOD
+    class_conditional_singleton_rank_certificate: str | None = None
     config_validator: Callable[[Path, Path], dict[str, Any]] | None = None
 
 
@@ -2303,6 +2304,10 @@ def _manifest_method_contract(
                 "formal_dataset_runner_authorized",
             )
         }
+        if protocol.class_conditional_singleton_rank_certificate is not None:
+            contract[f"{prefix}_singleton_rank_certificate"] = config[
+                f"{prefix}_singleton_rank_certificate"
+            ]
     return contract
 
 
@@ -3318,6 +3323,27 @@ def run(
                 == "fail_fast_record_terminal_no_seed_replacement"
             ),
         })
+        singleton_method = protocol.class_conditional_singleton_rank_certificate
+        if singleton_method is not None:
+            protocol_decisions[
+                f"{class_contract_prefix}_singleton_rank_certificates_finite_and_explicit"
+            ] = bool(pcpi_query_rows) and all(
+                (
+                    row["eig_ranking_certificate_method"] == singleton_method
+                    and row["eig_primary_ranking_certified"]
+                    and row["eig_ranking_certified"]
+                    and row["eig_possible_maximizer_count"] == 1
+                    and row["eig_ranking_margin"] == 0.0
+                    and row["eig_ranking_error_bound"] == 0.0
+                    and row["eig_ranking_certificate_gap"] == 0.0
+                    and np.isfinite(row["eig_ranking_margin"])
+                    and np.isfinite(row["eig_ranking_error_bound"])
+                    and np.isfinite(row["eig_ranking_certificate_gap"])
+                )
+                if row["representative_safe_set_size"] == 1
+                else row["eig_ranking_certificate_method"] != singleton_method
+                for row in pcpi_query_rows
+            )
     if protocol.reference_dominance_method is not None:
         for key in (
             "predictive_target_distribution_shared_across_policies",

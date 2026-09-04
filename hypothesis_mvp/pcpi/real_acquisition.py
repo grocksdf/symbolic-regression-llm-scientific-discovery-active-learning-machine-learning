@@ -76,6 +76,9 @@ P3H_INTERVAL_FRONTIER_RESOLUTION = (
 P3J_MAXIMIN_RANK_CERTIFICATE = (
     "finite-model-lower-envelope-class-conditional-pit-quadrature-interval-dominance"
 )
+P3K_SINGLETON_RANK_CERTIFICATE = (
+    "singleton-projected-admissible-set-vacuous-rank-certificate-v1"
+)
 DISCREPANCY_PROFILE_METHOD = (
     "posterior-residual-excess-variance-covariate-support-moment-envelope-v1"
 )
@@ -549,7 +552,10 @@ def _lower_envelope_certificate(
     eligible = np.flatnonzero(eligible_mask)
     order = eligible[np.argsort(-scores[eligible], kind="stable")]
     if len(order) < 2:
-        return True, float("inf"), 0.0, float("inf")
+        # There is no competitor in the certified domain.  Finite neutral
+        # scalars are the canonical representation of this vacuous ordering;
+        # the boolean certificate and singleton mask retain its full meaning.
+        return True, 0.0, 0.0, 0.0
     best = int(order[0])
     competitors = np.asarray(order[1:], dtype=int)
     nearest = int(competitors[np.argmax(scores[competitors])])
@@ -1305,6 +1311,7 @@ def _finalize_class_conditional_scores(
     robust: MaximinJointEstimate,
     unresolved_action: str,
 ) -> AcquisitionScores:
+    singleton_admissible = representative.safe_set_size == 1
     least = robust.least_favorable_indices
     class_scores = _least_favorable_values(robust.class_scores_by_model, least)
     class_errors = _least_favorable_values(robust.class_errors_by_model, least)
@@ -1331,19 +1338,46 @@ def _finalize_class_conditional_scores(
     return replace(
         result,
         policy=DECISION_TARGETED_POLICY,
-        ranking_certified=bool(robust.ranking_certified or secondary_used),
+        ranking_certified=bool(
+            singleton_admissible or robust.ranking_certified or secondary_used
+        ),
+        ranking_margin=(0.0 if singleton_admissible else result.ranking_margin),
+        ranking_error_bound=(
+            0.0 if singleton_admissible else result.ranking_error_bound
+        ),
+        ranking_certificate_gap=(
+            0.0 if singleton_admissible else result.ranking_certificate_gap
+        ),
         ranking_certificate_method=(
-            P3H_INTERVAL_FRONTIER_RESOLUTION
-            if secondary_used else P3J_MAXIMIN_RANK_CERTIFICATE
+            P3K_SINGLETON_RANK_CERTIFICATE
+            if singleton_admissible
+            else (
+                P3H_INTERVAL_FRONTIER_RESOLUTION
+                if secondary_used else P3J_MAXIMIN_RANK_CERTIFICATE
+            )
         ),
-        primary_ranking_certified=robust.ranking_certified,
-        possible_maximizer_mask=robust.possible_maximizer_mask,
-        possible_maximizer_count=robust.possible_maximizer_count,
-        secondary_resolution_used=secondary_used,
+        primary_ranking_certified=bool(
+            singleton_admissible or robust.ranking_certified
+        ),
+        possible_maximizer_mask=(
+            representative.safe_mask
+            if singleton_admissible else robust.possible_maximizer_mask
+        ),
+        possible_maximizer_count=(
+            1 if singleton_admissible else robust.possible_maximizer_count
+        ),
+        secondary_resolution_used=(
+            False if singleton_admissible else secondary_used
+        ),
         secondary_resolution_method=(
-            P3H_INTERVAL_FRONTIER_RESOLUTION if secondary_used else "not-applied"
+            "not-applied"
+            if singleton_admissible or not secondary_used
+            else P3H_INTERVAL_FRONTIER_RESOLUTION
         ),
-        selection_admissible_mask=secondary_mask,
+        selection_admissible_mask=(
+            representative.safe_mask
+            if singleton_admissible else secondary_mask
+        ),
         semiparametric_transport_method=P3K_SHARED_INNOVATION_JOINT_METHOD,
         semiparametric_information_invariance_applied=False,
         decision_target=(

@@ -1,10 +1,10 @@
 # PCPI AISTATS paper completion assessment
 
-Synchronization assessment date: 2026-08-16
+Synchronization assessment date: 2026-09-04
 
 `paper/pcpi_aistats_main.tex` is the sole manuscript entry. This assessment is
-advanced through the rebuilt P3F.1 and P3F.2a--c correctness mainline; the
-returned P3E.3 real audit remains bound to frozen experiment commit `c0b48ab`.
+advanced through the P3K.6 correctness mainline. P3K.7 real-development
+acquisition is source-frozen but has not yet produced a completed result.
 
 | Phase | Current state | Evidence consequence |
 |---|---|---|
@@ -27,6 +27,11 @@ returned P3E.3 real audit remains bound to frozen experiment commit `c0b48ab`.
 | P3F.2a | proper countably-open typed target | normalization, explicit tail, and response-independent contract passed |
 | P3F.2b | exact open-target finite-slice posterior | raw/class mass, generative mixture, and batch/sequential correctness passed |
 | P3F.2c | collapsed sequential SMC/RJMCMC reference | detailed balance, stationarity, telescoping, proposal invariance, and row-order Gates passed |
+| P3K.3 | shared-innovation transactional real acquisition | terminal before response at an empty representative safe set; no efficacy evidence |
+| P3K.4 | minimum-violation representative projection | no-data feasibility and leakage-isolation Gate passed |
+| P3K.5 | projected-guard real acquisition | terminal before response at strict-JSON publication of a singleton certificate; no efficacy evidence |
+| P3K.6 | canonical finite singleton rank certificate | end-to-end no-data scoring and strict-JSON round-trip Gate passed |
+| P3K.7 | frozen finite-singleton real acquisition | pending one user-executed real-development run; held-out closed |
 | P4 | excluded from core | no motif claim |
 | P5 | blocked | no broad real superiority claim |
 | P6 | held-out closed | no confirmation claim |

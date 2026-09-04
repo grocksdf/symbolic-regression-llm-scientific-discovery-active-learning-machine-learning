@@ -799,7 +799,11 @@ def _ranking_certificate(
     eligible = np.flatnonzero(eligible_mask)
     order = eligible[np.argsort(-scores[eligible], kind="stable")]
     if len(order) < 2:
-        return math.inf, 0.0, math.inf, True
+        # A singleton eligible set is ranked without a pairwise comparison.
+        # Record the vacuous certificate with finite neutral scalars so the
+        # result has an exact strict-JSON representation; ``True`` carries the
+        # logical certificate and the caller records the singleton domain.
+        return 0.0, 0.0, 0.0, True
     best = int(order[0])
     competitors = np.asarray(order[1:], dtype=int)
     margins = scores[best] - scores[competitors]

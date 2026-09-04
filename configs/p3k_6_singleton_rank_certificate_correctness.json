@@ -1,0 +1,21 @@
+{
+  "schema": "pcpi-p3k6-singleton-rank-certificate-correctness-config-v1",
+  "stage": "P3K.6",
+  "failed_predecessor": "P3K.5/terminal-nonfinite-singleton-rank-certificate",
+  "method": "singleton-projected-admissible-set-vacuous-rank-certificate-v1",
+  "certificate_domain": "exactly-one-projected-representative-admissible-candidate",
+  "finite_representation": {
+    "ranking_margin": 0.0,
+    "ranking_error_bound": 0.0,
+    "ranking_certificate_gap": 0.0,
+    "ranking_certified": true,
+    "possible_maximizer_count": 1
+  },
+  "selection_rule_change": false,
+  "operational_execution_authorized": false,
+  "real_data_access": false,
+  "response_access": false,
+  "validation_access": false,
+  "heldout_access": false,
+  "simulated_experiment": false
+}
