@@ -10,6 +10,7 @@ import pytest
 
 from hypothesis_mvp.pcpi import DECISION_TARGETED_POLICY
 from scripts import run_pcpi_p3b_real as shared_runner
+from scripts import run_pcpi_p3i3_execution_freeze_gate as gate
 from scripts import run_pcpi_p3i3_decision_targeted_real_acquisition as real_runner
 from scripts.run_pcpi_p3h9_interval_resolved_real_acquisition import P3H9_PROTOCOL
 from scripts.run_pcpi_p3i2_decision_targeted_source_gate import P3I2_PROTOCOL
@@ -83,7 +84,15 @@ def test_p3i3_config_tampering_fails_closed(
         )
 
 
-def test_p3i3_gate_uses_no_data_and_authorizes_only_user_execution() -> None:
+def test_p3i3_gate_uses_no_data_and_authorizes_only_its_frozen_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(gate, "runtime_dependency_hash", lambda snapshot: "mismatch")
+    with pytest.raises(AssertionError, match="execution-freeze Gate failed"):
+        _evaluate()
+    monkeypatch.setattr(
+        gate, "runtime_dependency_hash", lambda snapshot: gate.RUNTIME_HASH
+    )
     result = _evaluate()
     assert result["status"] == (
         "passed-user-real-execution-frozen-codex-execution-forbidden"

@@ -1,0 +1,21 @@
+{
+  "schema": "pcpi-p3l1-information-risk-correctness-config-v1",
+  "stage": "P3L.1",
+  "failed_predecessor": "P3K.8/real-advantage-not-demonstrated",
+  "decision_target": "frozen-operational-class-entropy-reduction",
+  "risk_functional": "lower-tail-cvar",
+  "tail_probability": 0.25,
+  "tail_probability_source": "p3k8-preregistered-negative-transfer-rate-maximum",
+  "ambiguity_aggregation": "minimum-over-complete-frozen-likelihood-power-family",
+  "primary_utility": "maximin-lower-tail-cvar-of-frozen-class-entropy-reduction",
+  "mean_information_role": "audit-only-not-selection",
+  "response_measure": "normalized-shared-innovation-class-conditional-semiparametric-joint",
+  "quadrature": "nested-deterministic-complete-response-grid",
+  "checkpoint_policy": "identity-bound-complete-chunks-before-selection",
+  "representative_guard": "p3k-covariate-only-minimum-violation-projection",
+  "unresolved_ranking_action": "interval-possible-maximizer-representative-mmd-then-candidate-id-v1",
+  "heldout_state": "closed",
+  "real_data_access_authorized": false,
+  "simulated_experiment_authorized": false,
+  "operational_execution_authorized": false
+}

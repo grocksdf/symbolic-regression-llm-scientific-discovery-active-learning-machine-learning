@@ -164,7 +164,7 @@ try {
             $raw = Get-Content -LiteralPath $checkpoint.FullName -Raw
             if ($raw -and $raw -ne $lastCheckpoint) {
                 $item = $raw | ConvertFrom-Json
-                Write-Host ("P3K checkpoint: models={0}/4 nodes={1} identity={2}" -f $item.completed_models, $item.nodes_per_leaf, $item.identity_hash)
+                Write-Host ("$ProtocolStage checkpoint: models={0}/4 nodes={1} identity={2}" -f $item.completed_models, $item.nodes_per_leaf, $item.identity_hash)
                 $lastCheckpoint = $raw
             }
         }

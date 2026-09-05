@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 
@@ -39,13 +40,21 @@ from .semiparametric_acquisition import (
 )
 from .class_conditional_semiparametric import (
     P3K_SHARED_INNOVATION_JOINT_METHOD,
+    P3L_INFORMATION_RISK_METHOD,
+    P3L_INFORMATION_RISK_TAIL_PROBABILITY,
     CalibratedClassPosteriorState,
     ClassConditionalEIGEstimate,
+    ClassConditionalInformationRiskEstimate,
+    estimate_class_conditional_information_risk,
     estimate_class_conditional_semiparametric_eig,
+    refine_class_conditional_information_risk,
     refine_class_conditional_semiparametric_eig,
 )
 from .likelihood_power_residuals import LikelihoodPowerResidualFamily
-from .p3j_checkpointed import checkpointed_class_conditional_semiparametric_eig
+from .p3j_checkpointed import (
+    checkpointed_class_conditional_information_risk,
+    checkpointed_class_conditional_semiparametric_eig,
+)
 from .reference import (
     DyadicPolyaTreePredictiveLaw,
     ExactPosterior,
@@ -78,6 +87,9 @@ P3J_MAXIMIN_RANK_CERTIFICATE = (
 )
 P3K_SINGLETON_RANK_CERTIFICATE = (
     "singleton-projected-admissible-set-vacuous-rank-certificate-v1"
+)
+P3L_INFORMATION_RISK_RANK_CERTIFICATE = (
+    "finite-model-lower-envelope-lower-tail-cvar-interval-dominance-v1"
 )
 DISCREPANCY_PROFILE_METHOD = (
     "posterior-residual-excess-variance-covariate-support-moment-envelope-v1"
@@ -143,7 +155,11 @@ class MaximinJointEstimate:
     least_favorable_indices: np.ndarray
     likelihood_powers: tuple[float, ...]
     estimates: tuple[
-        EIGEstimate | SemiparametricEIGEstimate | ClassConditionalEIGEstimate, ...
+        EIGEstimate
+        | SemiparametricEIGEstimate
+        | ClassConditionalEIGEstimate
+        | ClassConditionalInformationRiskEstimate,
+        ...,
     ]
     ranking_certified: bool
     ranking_margin: float
@@ -208,6 +224,15 @@ class AcquisitionScores:
     semiparametric_transport_method: str = "not-applied"
     semiparametric_information_invariance_applied: bool = False
     decision_target: str = "legacy-joint-class-predictive-information"
+    information_risk_method: str = "not-applied"
+    information_risk_tail_probability: float = 0.0
+    lower_tail_cvar_scores: np.ndarray | None = None
+    lower_tail_cvar_error_bounds: np.ndarray | None = None
+    negative_gain_probability_by_model: np.ndarray | None = None
+    robust_lower_tail_cvar_by_model: np.ndarray | None = None
+    robust_lower_tail_cvar_lower_bounds: np.ndarray | None = None
+    robust_lower_tail_cvar_upper_bounds: np.ndarray | None = None
+    least_favorable_information_risk_powers: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -727,6 +752,35 @@ def _checkpointed_p3j_model_look(
     )
 
 
+def _checkpointed_p3l_model_look(
+    components: PredictiveComponents,
+    state: CalibratedClassPosteriorState,
+    preceding: ClassConditionalInformationRiskEstimate | None,
+    samples: int,
+    tail_probability: float,
+    error_safety_factor: float,
+    checkpoint_root: Path | None,
+    model_index: int,
+    action_chunk_size: int,
+) -> ClassConditionalInformationRiskEstimate:
+    if checkpoint_root is None:
+        raise ValueError("P3L checkpointed model look requires a checkpoint root")
+    model_root = checkpoint_root / (
+        f"model-{model_index:02d}-power-{state.engine.likelihood_power.hex()}"
+    )
+    model_root.mkdir(exist_ok=True)
+    return checkpointed_class_conditional_information_risk(
+        model_root,
+        components,
+        state.residual_state,
+        samples,
+        tail_probability=tail_probability,
+        error_safety_factor=error_safety_factor,
+        action_chunk_size=action_chunk_size,
+        preceding=preceding,
+    )
+
+
 def _estimate_class_conditional_maximin_until_ranked(
     components: tuple[PredictiveComponents, ...],
     states: tuple[CalibratedClassPosteriorState, ...],
@@ -814,6 +868,147 @@ def _estimate_class_conditional_maximin_until_ranked(
                 joint_scores_by_model=class_scores,
                 least_favorable_indices=least_favorable_model_indices(
                     class_scores, powers
+                ),
+                likelihood_powers=powers,
+                estimates=estimates,
+                ranking_certified=certified,
+                ranking_margin=margin,
+                conservative_error_bound=bound,
+                certificate_gap=gap,
+                planned_looks=planned,
+                looks_used=looks,
+                possible_maximizer_mask=possible,
+                possible_maximizer_count=int(np.count_nonzero(possible)),
+            )
+        samples = min(maximum_samples, samples * growth_factor)
+
+
+def _information_risk_model_look(
+    components: PredictiveComponents,
+    state: CalibratedClassPosteriorState,
+    preceding: ClassConditionalInformationRiskEstimate | None,
+    samples: int,
+    tail_probability: float,
+    error_safety_factor: float,
+    checkpoint_root: Path | None,
+    model_index: int,
+    action_chunk_size: int,
+) -> ClassConditionalInformationRiskEstimate:
+    if checkpoint_root is not None:
+        return _checkpointed_p3l_model_look(
+            components,
+            state,
+            preceding,
+            samples,
+            tail_probability,
+            error_safety_factor,
+            checkpoint_root,
+            model_index,
+            action_chunk_size,
+        )
+    if preceding is not None:
+        return refine_class_conditional_information_risk(
+            components,
+            state.residual_state,
+            preceding,
+            samples,
+            tail_probability=tail_probability,
+            error_safety_factor=error_safety_factor,
+        )
+    return estimate_class_conditional_information_risk(
+        components,
+        state.residual_state,
+        samples,
+        tail_probability=tail_probability,
+        error_safety_factor=error_safety_factor,
+    )
+
+
+def _estimate_class_conditional_information_risk_until_ranked(
+    components: tuple[PredictiveComponents, ...],
+    states: tuple[CalibratedClassPosteriorState, ...],
+    powers: tuple[float, ...],
+    eligible_mask: np.ndarray,
+    minimum_samples: int,
+    maximum_samples: int,
+    error_safety_factor: float,
+    growth_factor: int,
+    tail_probability: float,
+    checkpoint_root: Path | None = None,
+    action_chunk_size: int = 16,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> MaximinJointEstimate:
+    """Certify the maximin lower-tail class-entropy reduction."""
+
+    if (
+        len(components) != len(states)
+        or len(states) != len(powers)
+        or tuple(item.engine.likelihood_power for item in states) != powers
+        or not 0.0 < float(tail_probability) < 1.0
+    ):
+        raise ValueError("P3L posterior, residual, or tail identities are invalid")
+    root = None if checkpoint_root is None else Path(checkpoint_root)
+    if root is not None and not root.is_dir():
+        raise FileNotFoundError("P3L ranking checkpoint root must already exist")
+    samples, looks = minimum_samples, 0
+    preceding: tuple[ClassConditionalInformationRiskEstimate, ...] | None = None
+    planned = _planned_look_count(minimum_samples, maximum_samples, growth_factor)
+    while True:
+        looks += 1
+        estimates_list = []
+        for model_index, (item, state, previous) in enumerate(zip(
+            components,
+            states,
+            preceding if preceding is not None else (None,) * len(states),
+            strict=True,
+        )):
+            estimate = _information_risk_model_look(
+                item,
+                state,
+                previous,
+                samples,
+                tail_probability,
+                error_safety_factor,
+                root,
+                model_index,
+                action_chunk_size,
+            )
+            estimates_list.append(estimate)
+            if progress_callback is not None:
+                progress_callback(model_index + 1, samples)
+        estimates = tuple(estimates_list)
+        preceding = estimates
+        risk_by_model = np.asarray([item.lower_tail_cvar for item in estimates])
+        risk_errors = np.asarray([
+            item.lower_tail_cvar_error_bounds for item in estimates
+        ])
+        information_by_model = np.asarray([
+            item.mutual_information for item in estimates
+        ])
+        information_errors = np.asarray([
+            item.mutual_information_error_bounds for item in estimates
+        ])
+        scores = np.min(risk_by_model, axis=0)
+        lower = np.min(risk_by_model - risk_errors, axis=0)
+        upper = np.min(risk_by_model + risk_errors, axis=0)
+        certified, margin, bound, gap = _lower_envelope_certificate(
+            scores, lower, upper, eligible_mask
+        )
+        possible = _lower_envelope_possible_maximizers(
+            lower, upper, eligible_mask
+        )
+        if certified or samples >= maximum_samples:
+            zeros = np.zeros_like(information_by_model)
+            return MaximinJointEstimate(
+                scores=scores,
+                lower_bounds=lower,
+                upper_bounds=upper,
+                class_scores_by_model=information_by_model,
+                class_errors_by_model=information_errors,
+                conditional_scores_by_model=zeros,
+                joint_scores_by_model=information_by_model,
+                least_favorable_indices=least_favorable_model_indices(
+                    information_by_model, powers
                 ),
                 likelihood_powers=powers,
                 estimates=estimates,
@@ -1302,6 +1497,70 @@ def _validated_class_conditional_family(
     return ordered, powers
 
 
+def _class_conditional_information_contract(
+    tail_probability: float | None,
+) -> tuple[str, str, str]:
+    if tail_probability is None:
+        return (
+            "representative-safe-robust-class-conditional-semiparametric-"
+            "operational-class-eig",
+            P3K_SHARED_INNOVATION_JOINT_METHOD,
+            P3J_MAXIMIN_RANK_CERTIFICATE,
+        )
+    return (
+        "representative-safe-robust-class-conditional-semiparametric-"
+        "lower-tail-class-entropy-reduction-cvar",
+        P3L_INFORMATION_RISK_METHOD,
+        P3L_INFORMATION_RISK_RANK_CERTIFICATE,
+    )
+
+
+def _attach_information_risk_audit(
+    result: AcquisitionScores,
+    robust: MaximinJointEstimate,
+    tail_probability: float,
+) -> AcquisitionScores:
+    estimates = tuple(
+        item for item in robust.estimates
+        if isinstance(item, ClassConditionalInformationRiskEstimate)
+    )
+    if len(estimates) != len(robust.estimates):
+        raise TypeError("P3L finalization requires only information-risk estimates")
+    information_by_model = np.asarray([
+        item.mutual_information for item in estimates
+    ])
+    information_errors = np.asarray([
+        item.mutual_information_error_bounds for item in estimates
+    ])
+    risk_by_model = np.asarray([item.lower_tail_cvar for item in estimates])
+    negative_by_model = np.asarray([
+        item.negative_gain_probability for item in estimates
+    ])
+    risk_least = least_favorable_model_indices(
+        risk_by_model, robust.likelihood_powers
+    )
+    return replace(
+        result,
+        robust_lower_bounds=np.min(
+            information_by_model - information_errors, axis=0
+        ),
+        robust_upper_bounds=np.min(
+            information_by_model + information_errors, axis=0
+        ),
+        information_risk_method=P3L_INFORMATION_RISK_METHOD,
+        information_risk_tail_probability=float(tail_probability),
+        lower_tail_cvar_scores=np.asarray(robust.scores),
+        lower_tail_cvar_error_bounds=_robust_error_radii(robust),
+        negative_gain_probability_by_model=negative_by_model,
+        robust_lower_tail_cvar_by_model=risk_by_model,
+        robust_lower_tail_cvar_lower_bounds=np.asarray(robust.lower_bounds),
+        robust_lower_tail_cvar_upper_bounds=np.asarray(robust.upper_bounds),
+        least_favorable_information_risk_powers=np.asarray([
+            robust.likelihood_powers[index] for index in risk_least
+        ]),
+    )
+
+
 def _finalize_class_conditional_scores(
     engine: SequentialReferencePosterior,
     posterior: ExactPosterior,
@@ -1310,6 +1569,7 @@ def _finalize_class_conditional_scores(
     representative: RepresentativeSafeSet,
     robust: MaximinJointEstimate,
     unresolved_action: str,
+    information_risk_tail_probability: float | None = None,
 ) -> AcquisitionScores:
     singleton_admissible = representative.safe_set_size == 1
     least = robust.least_favorable_indices
@@ -1319,6 +1579,11 @@ def _finalize_class_conditional_scores(
         robust, representative, unresolved_action
     )
     secondary_used = secondary_mask is not None
+    utility_mode, target_method, rank_method = (
+        _class_conditional_information_contract(
+            information_risk_tail_probability
+        )
+    )
     nominal_components = predictive_components_for_partition(
         engine, posterior, target_partition, actions
     )
@@ -1331,11 +1596,10 @@ def _finalize_class_conditional_scores(
         np.zeros(len(actions), dtype=float),
         raw_scores,
         errors,
-        "representative-safe-robust-class-conditional-semiparametric-"
-        "operational-class-eig",
+        utility_mode,
         None,
     )
-    return replace(
+    result = replace(
         result,
         policy=DECISION_TARGETED_POLICY,
         ranking_certified=bool(
@@ -1353,7 +1617,8 @@ def _finalize_class_conditional_scores(
             if singleton_admissible
             else (
                 P3H_INTERVAL_FRONTIER_RESOLUTION
-                if secondary_used else P3J_MAXIMIN_RANK_CERTIFICATE
+                if secondary_used
+                else rank_method
             )
         ),
         primary_ranking_certified=bool(
@@ -1381,9 +1646,14 @@ def _finalize_class_conditional_scores(
         semiparametric_transport_method=P3K_SHARED_INNOVATION_JOINT_METHOD,
         semiparametric_information_invariance_applied=False,
         decision_target=(
-            "frozen-operational-class-log-risk|"
-            + P3K_SHARED_INNOVATION_JOINT_METHOD
+            "frozen-operational-class-log-risk|" + target_method
         ),
+    )
+    return (
+        result if information_risk_tail_probability is None
+        else _attach_information_risk_audit(
+            result, robust, information_risk_tail_probability
+        )
     )
 
 
@@ -1403,6 +1673,8 @@ def score_class_conditional_decision_actions(
     unresolved_action: str = P3H_INTERVAL_FRONTIER_RESOLUTION,
     checkpoint_root: Path | None = None,
     action_chunk_size: int = 16,
+    information_risk_tail_probability: float | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> AcquisitionScores:
     """Score the coherent P3J class-conditional joint and no nuisance target."""
 
@@ -1422,18 +1694,34 @@ def score_class_conditional_decision_actions(
         )
         for item in ordered_states
     )
-    robust = _estimate_class_conditional_maximin_until_ranked(
-        family_components,
-        ordered_states,
-        powers,
-        representative.safe_mask,
-        minimum_samples,
-        maximum_samples,
-        error_safety_factor,
-        growth_factor,
-        checkpoint_root,
-        action_chunk_size,
-    )
+    if information_risk_tail_probability is None:
+        robust = _estimate_class_conditional_maximin_until_ranked(
+            family_components,
+            ordered_states,
+            powers,
+            representative.safe_mask,
+            minimum_samples,
+            maximum_samples,
+            error_safety_factor,
+            growth_factor,
+            checkpoint_root,
+            action_chunk_size,
+        )
+    else:
+        robust = _estimate_class_conditional_information_risk_until_ranked(
+            family_components,
+            ordered_states,
+            powers,
+            representative.safe_mask,
+            minimum_samples,
+            maximum_samples,
+            error_safety_factor,
+            growth_factor,
+            float(information_risk_tail_probability),
+            checkpoint_root,
+            action_chunk_size,
+            progress_callback,
+        )
     return _finalize_class_conditional_scores(
         engine,
         posterior,
@@ -1442,6 +1730,7 @@ def score_class_conditional_decision_actions(
         representative,
         robust,
         unresolved_action,
+        information_risk_tail_probability,
     )
 
 

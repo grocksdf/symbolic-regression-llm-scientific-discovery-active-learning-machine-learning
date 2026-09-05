@@ -16,12 +16,14 @@ from .acquisition import PredictiveComponents
 from .class_conditional_semiparametric import (
     P3K_SHARED_INNOVATION_RESIDUAL_METHOD,
     ClassConditionalChunkResult,
+    ClassConditionalInformationRiskChunkResult,
     ClassConditionalResidualState,
 )
 
 
 P3J_CHECKPOINT_SCHEMA = "pcpi-p3j5-deterministic-chunk-checkpoint-v1"
 P3K_CHECKPOINT_SCHEMA = "pcpi-p3k2-deterministic-chunk-checkpoint-v1"
+P3L_CHECKPOINT_SCHEMA = "pcpi-p3l1-information-risk-chunk-checkpoint-v1"
 P3J_CHECKPOINT_PUBLICATION = "fsync-staging-then-atomic-replace"
 
 
@@ -56,11 +58,14 @@ class P3JChunkPlan:
     residual_state_hash: str
     target_partition_hash: str
     predictive_components_hash: str
+    information_risk_tail_probability: float | None = None
     schema: str = P3J_CHECKPOINT_SCHEMA
 
     def __post_init__(self) -> None:
         if (
-            self.schema not in (P3J_CHECKPOINT_SCHEMA, P3K_CHECKPOINT_SCHEMA)
+            self.schema not in (
+                P3J_CHECKPOINT_SCHEMA, P3K_CHECKPOINT_SCHEMA, P3L_CHECKPOINT_SCHEMA
+            )
             or isinstance(self.action_count, bool)
             or int(self.action_count) != self.action_count
             or self.action_count < 1
@@ -73,6 +78,17 @@ class P3JChunkPlan:
             or not self.residual_state_hash
             or not self.target_partition_hash
             or not self.predictive_components_hash
+            or (
+                self.information_risk_tail_probability is None
+                and self.schema == P3L_CHECKPOINT_SCHEMA
+            )
+            or (
+                self.information_risk_tail_probability is not None
+                and (
+                    self.schema != P3L_CHECKPOINT_SCHEMA
+                    or not 0.0 < float(self.information_risk_tail_probability) < 1.0
+                )
+            )
         ):
             raise ValueError("P3J checkpoint plan is invalid")
 
@@ -90,6 +106,9 @@ class P3JChunkPlan:
             "residual_state_hash": self.residual_state_hash,
             "target_partition_hash": self.target_partition_hash,
             "predictive_components_hash": self.predictive_components_hash,
+            "information_risk_tail_probability": (
+                self.information_risk_tail_probability
+            ),
         }).encode("utf-8")).hexdigest()
 
 
@@ -101,12 +120,27 @@ class P3JCheckpoint:
     scores: np.ndarray
     maximum_conditional_normalization_error: float
     head_hash: str
+    mutual_information: np.ndarray | None = None
+    negative_gain_probability: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         values = np.asarray(self.scores, dtype=float).reshape(-1).copy()
+        information = (
+            None
+            if self.mutual_information is None
+            else np.asarray(self.mutual_information, dtype=float).reshape(-1).copy()
+        )
+        negative = (
+            None
+            if self.negative_gain_probability is None
+            else np.asarray(
+                self.negative_gain_probability, dtype=float
+            ).reshape(-1).copy()
+        )
+        risk_checkpoint = self.plan.schema == P3L_CHECKPOINT_SCHEMA
         if (
             not np.all(np.isfinite(values))
-            or np.any(values < 0.0)
+            or (not risk_checkpoint and np.any(values < 0.0))
             or len(values) != self.completed_action_count
             or not math.isfinite(self.maximum_conditional_normalization_error)
             or self.maximum_conditional_normalization_error < 0.0
@@ -120,10 +154,28 @@ class P3JCheckpoint:
                 self.completed_chunk_count * self.plan.action_chunk_size,
             )
             or not self.head_hash
+            or risk_checkpoint != (information is not None and negative is not None)
+            or (
+                risk_checkpoint
+                and (
+                    len(information) != len(values)
+                    or len(negative) != len(values)
+                    or not np.all(np.isfinite(information))
+                    or np.any(information < 0.0)
+                    or not np.all(np.isfinite(negative))
+                    or np.any(negative < 0.0)
+                    or np.any(negative > 1.0)
+                )
+            )
         ):
             raise ValueError("P3J checkpoint snapshot is invalid")
         values.setflags(write=False)
         object.__setattr__(self, "scores", values)
+        if information is not None and negative is not None:
+            information.setflags(write=False)
+            negative.setflags(write=False)
+            object.__setattr__(self, "mutual_information", information)
+            object.__setattr__(self, "negative_gain_probability", negative)
 
     @property
     def complete(self) -> bool:
@@ -136,6 +188,7 @@ def build_p3j_chunk_plan(
     nodes_per_leaf: int,
     *,
     action_chunk_size: int = 16,
+    information_risk_tail_probability: float | None = None,
 ) -> P3JChunkPlan:
     if state.target_partition_hash != components.partition.stable_hash:
         raise ValueError("P3J checkpoint inputs have crossed partition identities")
@@ -148,6 +201,13 @@ def build_p3j_chunk_plan(
         or action_chunk_size < 1
     ):
         raise ValueError("P3J checkpoint discretization is invalid")
+    alpha = (
+        None
+        if information_risk_tail_probability is None
+        else float(information_risk_tail_probability)
+    )
+    if alpha is not None and not 0.0 < alpha < 1.0:
+        raise ValueError("P3L information-risk tail probability is invalid")
     return P3JChunkPlan(
         action_count=components.locations.shape[1],
         action_chunk_size=int(action_chunk_size),
@@ -155,8 +215,11 @@ def build_p3j_chunk_plan(
         residual_state_hash=state.stable_hash,
         target_partition_hash=components.partition.stable_hash,
         predictive_components_hash=_components_hash(components),
+        information_risk_tail_probability=alpha,
         schema=(
-            P3K_CHECKPOINT_SCHEMA
+            P3L_CHECKPOINT_SCHEMA
+            if alpha is not None
+            else P3K_CHECKPOINT_SCHEMA
             if state.method == P3K_SHARED_INNOVATION_RESIDUAL_METHOD
             else P3J_CHECKPOINT_SCHEMA
         ),
@@ -170,20 +233,41 @@ def _root_hash(plan: P3JChunkPlan) -> str:
 def _chunk_payload(
     plan: P3JChunkPlan,
     chunk_index: int,
-    chunk: ClassConditionalChunkResult,
+    chunk: ClassConditionalChunkResult | ClassConditionalInformationRiskChunkResult,
     previous_hash: str,
 ) -> dict[str, object]:
-    return {
+    payload = {
         "plan_hash": plan.stable_hash,
         "chunk_index": chunk_index,
         "start": chunk.start,
         "stop": chunk.stop,
-        "scores": [float(value) for value in chunk.mutual_information],
+        "scores": [
+            float(value)
+            for value in (
+                chunk.lower_tail_cvar
+                if isinstance(chunk, ClassConditionalInformationRiskChunkResult)
+                else chunk.mutual_information
+            )
+        ],
         "maximum_conditional_normalization_error": float(
             chunk.maximum_conditional_normalization_error
         ),
         "previous_hash": previous_hash,
     }
+    if plan.schema == P3L_CHECKPOINT_SCHEMA:
+        if not isinstance(chunk, ClassConditionalInformationRiskChunkResult):
+            raise TypeError("P3L checkpoint requires an information-risk chunk")
+        payload |= {
+            "mutual_information": [
+                float(value) for value in chunk.mutual_information
+            ],
+            "negative_gain_probability": [
+                float(value) for value in chunk.negative_gain_probability
+            ],
+        }
+    elif isinstance(chunk, ClassConditionalInformationRiskChunkResult):
+        raise TypeError("legacy checkpoint cannot accept an information-risk chunk")
+    return payload
 
 
 def _publish(path: Path, payload: dict[str, object], *, create: bool) -> None:
@@ -245,14 +329,21 @@ def _validated_payload(path: Path, plan: P3JChunkPlan) -> dict[str, object]:
 def load_p3j_checkpoint(path: Path, plan: P3JChunkPlan) -> P3JCheckpoint:
     payload = _validated_payload(path, plan)
     previous, completed, scores, normalization_error = _root_hash(plan), 0, [], 0.0
+    mutual_information: list[float] = []
+    negative_gain_probability: list[float] = []
     for chunk_index, item in enumerate(payload["chunks"]):
         expected_stop = min(plan.action_count, completed + plan.action_chunk_size)
-        if (
-            set(item) != {
-                "plan_hash", "chunk_index", "start", "stop", "scores",
-                "maximum_conditional_normalization_error", "previous_hash",
-                "chunk_hash",
+        expected_keys = {
+            "plan_hash", "chunk_index", "start", "stop", "scores",
+            "maximum_conditional_normalization_error", "previous_hash",
+            "chunk_hash",
+        }
+        if plan.schema == P3L_CHECKPOINT_SCHEMA:
+            expected_keys |= {
+                "mutual_information", "negative_gain_probability"
             }
+        if (
+            set(item) != expected_keys
             or item["plan_hash"] != plan.stable_hash
             or item["chunk_index"] != chunk_index
             or item["start"] != completed
@@ -268,9 +359,28 @@ def load_p3j_checkpoint(path: Path, plan: P3JChunkPlan) -> P3JCheckpoint:
         if observed != item["chunk_hash"]:
             raise ValueError("P3J checkpoint chunk hash mismatch")
         values = np.asarray(item["scores"], dtype=float)
-        if not np.all(np.isfinite(values)) or np.any(values < 0.0):
+        if not np.all(np.isfinite(values)):
             raise ValueError("P3J checkpoint contains invalid scores")
+        if plan.schema != P3L_CHECKPOINT_SCHEMA and np.any(values < 0.0):
+            raise ValueError("P3J checkpoint contains negative information")
         scores.extend(float(value) for value in values)
+        if plan.schema == P3L_CHECKPOINT_SCHEMA:
+            information_values = np.asarray(item["mutual_information"], dtype=float)
+            negative_values = np.asarray(
+                item["negative_gain_probability"], dtype=float
+            )
+            if (
+                len(information_values) != len(values)
+                or len(negative_values) != len(values)
+                or not np.all(np.isfinite(information_values))
+                or np.any(information_values < 0.0)
+                or not np.all(np.isfinite(negative_values))
+                or np.any(negative_values < 0.0)
+                or np.any(negative_values > 1.0)
+            ):
+                raise ValueError("P3L checkpoint contains invalid risk audit values")
+            mutual_information.extend(float(value) for value in information_values)
+            negative_gain_probability.extend(float(value) for value in negative_values)
         normalization_error = max(
             normalization_error,
             float(item["maximum_conditional_normalization_error"]),
@@ -286,13 +396,21 @@ def load_p3j_checkpoint(path: Path, plan: P3JChunkPlan) -> P3JCheckpoint:
         scores=np.asarray(scores),
         maximum_conditional_normalization_error=normalization_error,
         head_hash=previous,
+        mutual_information=(
+            np.asarray(mutual_information)
+            if plan.schema == P3L_CHECKPOINT_SCHEMA else None
+        ),
+        negative_gain_probability=(
+            np.asarray(negative_gain_probability)
+            if plan.schema == P3L_CHECKPOINT_SCHEMA else None
+        ),
     )
 
 
 def append_p3j_checkpoint_chunk(
     path: Path,
     plan: P3JChunkPlan,
-    chunk: ClassConditionalChunkResult,
+    chunk: ClassConditionalChunkResult | ClassConditionalInformationRiskChunkResult,
 ) -> P3JCheckpoint:
     snapshot = load_p3j_checkpoint(path, plan)
     expected_stop = min(
@@ -306,6 +424,14 @@ def append_p3j_checkpoint_chunk(
         or chunk.nodes_per_leaf != plan.nodes_per_leaf
         or chunk.residual_state_hash != plan.residual_state_hash
         or chunk.target_partition_hash != plan.target_partition_hash
+        or (
+            plan.schema == P3L_CHECKPOINT_SCHEMA
+            and (
+                not isinstance(chunk, ClassConditionalInformationRiskChunkResult)
+                or chunk.tail_probability
+                != plan.information_risk_tail_probability
+            )
+        )
     ):
         raise ValueError("P3J checkpoint append is not the next bound chunk")
     payload = _validated_payload(path, plan)
@@ -328,10 +454,31 @@ def require_complete_p3j_scores(checkpoint: P3JCheckpoint) -> np.ndarray:
     return checkpoint.scores
 
 
+def require_complete_p3l_information_risk(
+    checkpoint: P3JCheckpoint,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Release CVaR, EIG, and negative-mass audits only after a complete grid."""
+
+    if (
+        not isinstance(checkpoint, P3JCheckpoint)
+        or not checkpoint.complete
+        or checkpoint.plan.schema != P3L_CHECKPOINT_SCHEMA
+        or checkpoint.mutual_information is None
+        or checkpoint.negative_gain_probability is None
+    ):
+        raise RuntimeError("P3L partial or non-risk checkpoint cannot release scores")
+    return (
+        checkpoint.scores,
+        checkpoint.mutual_information,
+        checkpoint.negative_gain_probability,
+    )
+
+
 __all__ = [
     "P3J_CHECKPOINT_PUBLICATION",
     "P3J_CHECKPOINT_SCHEMA",
     "P3K_CHECKPOINT_SCHEMA",
+    "P3L_CHECKPOINT_SCHEMA",
     "P3JCheckpoint",
     "P3JChunkPlan",
     "append_p3j_checkpoint_chunk",
@@ -339,4 +486,5 @@ __all__ = [
     "initialize_p3j_checkpoint",
     "load_p3j_checkpoint",
     "require_complete_p3j_scores",
+    "require_complete_p3l_information_risk",
 ]

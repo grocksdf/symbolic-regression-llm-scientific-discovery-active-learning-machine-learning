@@ -65,6 +65,7 @@ def run_p3j_outer_policy(
     class_distance_threshold: float,
     structure_count: int,
     action_chunk_size: int = 16,
+    information_risk_tail_probability: float | None = None,
 ) -> P3JOuterPolicyResult:
     """Compose selection, durable reveals, evaluation, and summary in order."""
 
@@ -88,6 +89,7 @@ def run_p3j_outer_policy(
             eig_error_safety_factor=eig_error_safety_factor,
             eig_growth_factor=eig_growth_factor,
             action_chunk_size=action_chunk_size,
+            information_risk_tail_probability=information_risk_tail_probability,
         )
         artifacts = build_p3j_policy_artifacts(
             measured,

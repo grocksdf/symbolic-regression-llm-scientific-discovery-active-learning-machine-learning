@@ -94,7 +94,7 @@ def _curve_row(
 
 
 def _score_audit(scores, local: int) -> dict[str, object]:
-    return {
+    audit = {
         "score": float(scores.scores[local]),
         "score_integration_error_bound": float(
             scores.integration_error_bounds[local]
@@ -120,6 +120,58 @@ def _score_audit(scores, local: int) -> dict[str, object]:
         "selected_robust_lower_bound": float(scores.robust_lower_bounds[local]),
         "selected_robust_upper_bound": float(scores.robust_upper_bounds[local]),
     }
+    if scores.information_risk_method != "not-applied":
+        required = (
+            scores.lower_tail_cvar_scores,
+            scores.lower_tail_cvar_error_bounds,
+            scores.negative_gain_probability_by_model,
+            scores.robust_lower_tail_cvar_by_model,
+            scores.robust_lower_tail_cvar_lower_bounds,
+            scores.robust_lower_tail_cvar_upper_bounds,
+            scores.least_favorable_information_risk_powers,
+        )
+        if any(item is None for item in required):
+            raise ValueError("P3L information-risk audit fields are incomplete")
+        audit |= {
+            "information_risk_method": scores.information_risk_method,
+            "information_risk_tail_probability": (
+                scores.information_risk_tail_probability
+            ),
+            "selected_lower_tail_cvar": float(
+                scores.lower_tail_cvar_scores[local]
+            ),
+            "selected_lower_tail_cvar_error_bound": float(
+                scores.lower_tail_cvar_error_bounds[local]
+            ),
+            "selected_lower_tail_cvar_by_model": (
+                scores.robust_lower_tail_cvar_by_model[:, local].tolist()
+            ),
+            "selected_negative_gain_probability_by_model": (
+                scores.negative_gain_probability_by_model[:, local].tolist()
+            ),
+            "selected_robust_lower_tail_cvar_lower_bound": float(
+                scores.robust_lower_tail_cvar_lower_bounds[local]
+            ),
+            "selected_robust_lower_tail_cvar_upper_bound": float(
+                scores.robust_lower_tail_cvar_upper_bounds[local]
+            ),
+            "selected_least_favorable_information_risk_power": float(
+                scores.least_favorable_information_risk_powers[local]
+            ),
+        }
+    else:
+        audit |= {
+            "information_risk_method": "not-applied",
+            "information_risk_tail_probability": 0.0,
+            "selected_lower_tail_cvar": 0.0,
+            "selected_lower_tail_cvar_error_bound": 0.0,
+            "selected_lower_tail_cvar_by_model": [],
+            "selected_negative_gain_probability_by_model": [],
+            "selected_robust_lower_tail_cvar_lower_bound": 0.0,
+            "selected_robust_lower_tail_cvar_upper_bound": 0.0,
+            "selected_least_favorable_information_risk_power": 0.0,
+        }
+    return audit
 
 
 def _representative_audit(scores, local: int) -> dict[str, object]:

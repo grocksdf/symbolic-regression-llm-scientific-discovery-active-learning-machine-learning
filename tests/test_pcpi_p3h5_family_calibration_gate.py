@@ -60,12 +60,31 @@ def test_correctness_prerequisites_pass_before_any_real_data_access() -> None:
     assert all(result["status"] == "passed" for result in results.values())
 
 
-def test_frozen_runtime_identity_is_still_exact() -> None:
+def test_historical_runtime_identity_accepts_only_its_frozen_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config = runner._load_config(CONFIG)
-    snapshot = runtime_dependency_snapshot()
-    assert runner._validate_runtime(config, snapshot) == config["runtime_freeze"][
-        "runtime_dependency_hash"
-    ]
+    freeze = config["runtime_freeze"]
+    current = runtime_dependency_snapshot()
+    frozen = dict(current)
+    frozen["python"] = freeze["python"]
+    frozen["platform"] = freeze["platform"]
+    frozen["distributions"] = dict(current["distributions"])
+    frozen["distributions"].update(freeze["critical_distributions"])
+    monkeypatch.setattr(
+        runner,
+        "runtime_dependency_hash",
+        lambda snapshot: freeze["runtime_dependency_hash"],
+    )
+    mismatched = dict(frozen)
+    mismatched["python"] = dict(freeze["python"]) | {"version": "0.0.0"}
+    with pytest.raises(RuntimeError, match="frozen canonical identity"):
+        runner._validate_runtime(
+            config, mismatched, freeze["binary_identity"]
+        )
+    assert runner._validate_runtime(
+        config, frozen, freeze["binary_identity"]
+    ) == freeze["runtime_dependency_hash"]
 
 
 def test_family_calibration_core_is_deterministic_and_power_complete() -> None:

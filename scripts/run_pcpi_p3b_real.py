@@ -1067,6 +1067,11 @@ def _run_p3j_shared_policy(
         class_distance_threshold=_operational_class_threshold(config),
         structure_count=len(generic_real_bank(initial_X.shape[1]).structures),
         action_chunk_size=int(config["eig_action_chunk_size"]),
+        information_risk_tail_probability=(
+            float(config["pcpi_information_risk_tail_probability"])
+            if "pcpi_information_risk_tail_probability" in config
+            else None
+        ),
     )
     queries = _p3j_compatible_query_rows(outer, subset_commitments, config)
     summary = _p3j_compatible_summary(
@@ -2310,6 +2315,16 @@ def _manifest_method_contract(
             contract[f"{prefix}_singleton_rank_certificate"] = config[
                 f"{prefix}_singleton_rank_certificate"
             ]
+        if "pcpi_information_risk_method" in config:
+            contract |= {
+                key: config[key]
+                for key in (
+                    "pcpi_information_risk_method",
+                    "pcpi_information_risk_tail_probability",
+                    "pcpi_information_risk_tail_probability_source",
+                    "pcpi_mean_information_role",
+                )
+            }
     return contract
 
 
@@ -3355,6 +3370,55 @@ def run(
                 else row["eig_ranking_certificate_method"] != singleton_method
                 for row in pcpi_query_rows
             )
+        if "pcpi_information_risk_method" in config:
+            alpha = float(config["pcpi_information_risk_tail_probability"])
+            protocol_decisions.update({
+                "p3l_information_risk_tail_matches_assessment": (
+                    alpha
+                    == float(config["assessment_rules"]["negative_transfer_rate_max"])
+                    == 0.25
+                ),
+                "p3l_information_risk_used_for_every_pcpi_query": bool(
+                    pcpi_query_rows
+                ) and all(
+                    row["information_risk_method"]
+                    == config["pcpi_information_risk_method"]
+                    and row["information_risk_tail_probability"] == alpha
+                    and np.isclose(
+                        row["score"],
+                        row["selected_lower_tail_cvar"],
+                        rtol=0.0,
+                        atol=2e-14,
+                    )
+                    for row in pcpi_query_rows
+                ),
+                "p3l_complete_ambiguity_risk_envelope_auditable": bool(
+                    pcpi_query_rows
+                ) and all(
+                    len(row["selected_lower_tail_cvar_by_model"])
+                    == len(ambiguity_powers)
+                    and len(row["selected_negative_gain_probability_by_model"])
+                    == len(ambiguity_powers)
+                    and np.isclose(
+                        row["selected_lower_tail_cvar"],
+                        min(row["selected_lower_tail_cvar_by_model"]),
+                        rtol=0.0,
+                        atol=2e-14,
+                    )
+                    and row["selected_robust_lower_tail_cvar_lower_bound"]
+                    <= row["selected_lower_tail_cvar"]
+                    <= row["selected_robust_lower_tail_cvar_upper_bound"]
+                    and all(
+                        0.0 <= value <= 1.0
+                        for value in row[
+                            "selected_negative_gain_probability_by_model"
+                        ]
+                    )
+                    and row["selected_least_favorable_information_risk_power"]
+                    in ambiguity_powers
+                    for row in pcpi_query_rows
+                ),
+            })
     if protocol.reference_dominance_method is not None:
         for key in (
             "predictive_target_distribution_shared_across_policies",

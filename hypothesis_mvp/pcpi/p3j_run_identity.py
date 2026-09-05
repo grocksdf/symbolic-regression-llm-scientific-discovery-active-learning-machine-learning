@@ -257,6 +257,7 @@ def score_identity_bound_p3j_query(
     eig_error_safety_factor: float,
     eig_growth_factor: int,
     action_chunk_size: int = 16,
+    information_risk_tail_probability: float | None = None,
 ):
     """Validate the complete formal identity before checkpointed scoring."""
 
@@ -292,6 +293,12 @@ def score_identity_bound_p3j_query(
         eig_error_safety_factor=eig_error_safety_factor,
         eig_growth_factor=eig_growth_factor,
         action_chunk_size=action_chunk_size,
+        information_risk_tail_probability=information_risk_tail_probability,
+        progress_callback=lambda completed_models, nodes_per_leaf: (
+            publish_p3j_query_progress(
+                workspace, completed_models, nodes_per_leaf
+            )
+        ),
     )
 
 

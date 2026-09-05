@@ -126,7 +126,7 @@ def p3j_query_progress_snapshot(workspace: P3JQueryWorkspace) -> dict[str, objec
         if not model_root.is_dir():
             continue
         models += 1
-        for path in sorted(model_root.glob("nodes-*.json")):
+        for path in sorted(model_root.glob("*nodes-*.json")):
             payload = json.loads(path.read_text(encoding="utf-8"))
             if payload.get("complete") is True:
                 complete_grids += 1
@@ -155,6 +155,7 @@ def run_p3j_formal_query(
     eig_error_safety_factor: float,
     eig_growth_factor: int,
     action_chunk_size: int = 16,
+    information_risk_tail_probability: float | None = None,
 ) -> OperationalClassConditionalDecision:
     """Resume, fail terminally, or publish exactly one response-free decision."""
 
@@ -176,6 +177,7 @@ def run_p3j_formal_query(
             eig_error_safety_factor=eig_error_safety_factor,
             eig_growth_factor=eig_growth_factor,
             action_chunk_size=action_chunk_size,
+            information_risk_tail_probability=information_risk_tail_probability,
         )
         _publish_no_overwrite(decision_path, _decision_payload(workspace, decision))
     except Exception as error:

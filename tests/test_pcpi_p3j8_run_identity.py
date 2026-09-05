@@ -131,6 +131,10 @@ def test_valid_identity_delegates_only_to_checkpointed_ranking(
     )
     assert result is sentinel
     assert seen["args"][5] == workspace.ranking_root
+    seen["kwargs"]["progress_callback"](2, 32)
+    progress = json.loads(workspace.progress_path.read_text())
+    assert progress["completed_models"] == 2
+    assert progress["nodes_per_leaf"] == 32
 
 
 def test_progress_replace_and_terminal_failure_no_overwrite(tmp_path) -> None:

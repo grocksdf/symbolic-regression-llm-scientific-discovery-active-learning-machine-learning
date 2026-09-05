@@ -63,6 +63,7 @@ def run_p3j_measured_pool_acquisition(
     eig_error_safety_factor: float,
     eig_growth_factor: int,
     action_chunk_size: int = 16,
+    information_risk_tail_probability: float | None = None,
 ) -> P3JMeasuredRunResult:
     """Run or resume one contiguous query lineage without response lookahead."""
 
@@ -116,6 +117,7 @@ def run_p3j_measured_pool_acquisition(
             eig_error_safety_factor=eig_error_safety_factor,
             eig_growth_factor=eig_growth_factor,
             action_chunk_size=action_chunk_size,
+            information_risk_tail_probability=information_risk_tail_probability,
         )
         matches = np.flatnonzero(visible_ids == result.revealed_candidate_id)
         if len(matches) != 1:

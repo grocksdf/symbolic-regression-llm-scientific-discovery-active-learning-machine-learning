@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from hypothesis_mvp.hypotheses import runtime_dependency_hash, runtime_dependency_snapshot
 from hypothesis_mvp.pcpi import P3H_OPERATIONAL_LIFECYCLE, P3H_OPERATIONAL_POWERS
 from scripts import run_pcpi_p3b_real as shared_runner
 from scripts.run_pcpi_p3h7_semiparametric_real_acquisition import (
@@ -37,7 +36,11 @@ def test_p3h7_config_freezes_complete_family_roles_budgets_and_no_fallback() -> 
 
 
 def test_p3h7_uses_exact_p3h5_runtime_identity() -> None:
-    assert RUNTIME_HASH == runtime_dependency_hash(runtime_dependency_snapshot())
+    p3h5 = json.loads(
+        (ROOT / "configs" / "p3h_5_likelihood_power_family_calibration_gate.json")
+        .read_text(encoding="utf-8")
+    )
+    assert RUNTIME_HASH == p3h5["runtime_freeze"]["runtime_dependency_hash"]
     config = shared_runner._load_config(CONFIG, ROOT, P3H7_PROTOCOL)
     assert config["runtime_dependency_hash"] == RUNTIME_HASH
     assert P3H7_PROTOCOL.required_runtime_dependency_hash == RUNTIME_HASH

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 import math
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 
@@ -192,6 +193,8 @@ def score_operational_class_conditional_candidates(
     unresolved_ranking_action: str = P3H_INTERVAL_FRONTIER_RESOLUTION,
     checkpoint_root: Path | None = None,
     action_chunk_size: int = 16,
+    information_risk_tail_probability: float | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> OperationalClassConditionalDecision:
     """Score only visible covariates, certify, and freeze one candidate."""
 
@@ -224,6 +227,8 @@ def score_operational_class_conditional_candidates(
         unresolved_action=unresolved_ranking_action,
         checkpoint_root=checkpoint_root,
         action_chunk_size=action_chunk_size,
+        information_risk_tail_probability=information_risk_tail_probability,
+        progress_callback=progress_callback,
     )
     if (
         not scores.ranking_certified
@@ -261,6 +266,8 @@ def score_checkpointed_operational_class_conditional_candidates(
     eig_growth_factor: int,
     action_chunk_size: int = 16,
     unresolved_ranking_action: str = P3H_INTERVAL_FRONTIER_RESOLUTION,
+    information_risk_tail_probability: float | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> OperationalClassConditionalDecision:
     """Require the complete checkpointed ambiguity family before selection."""
 
@@ -280,6 +287,8 @@ def score_checkpointed_operational_class_conditional_candidates(
         unresolved_ranking_action=unresolved_ranking_action,
         checkpoint_root=root,
         action_chunk_size=action_chunk_size,
+        information_risk_tail_probability=information_risk_tail_probability,
+        progress_callback=progress_callback,
     )
 
 
