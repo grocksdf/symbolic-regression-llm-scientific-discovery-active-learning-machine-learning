@@ -656,3 +656,23 @@ P3J.11 provides the only permitted measured-pool adapter and proves that a
 complete decision precedes one matching oracle reveal. Do not call the oracle
 directly from the P3J dataset branch; P3J.12 must route that branch exclusively
 through this adapter and finalize its contiguous query manifest.
+- The corrected P3L.2 audit is immutable protocol-valid negative evidence:
+  every registered run/query and evidence identity is valid and held-out stayed
+  closed, but neither real family demonstrates paired gain or nAULC advantage.
+  Its global residual law is candidate-invariant and its selected risk score is
+  nearly uncorrelated with realized gain. Do not rerun P3L.2 or tune its tail,
+  seeds, budgets or thresholds.
+- P3M.1 replaces that missing estimand with a strict-prefix covariate-
+  conditional shared-innovation law. The context transform and kernel anchor
+  use conditioning covariates only; `h_n = h_anchor*n^(-1/(d+4))`, so the
+  standard fixed-dimension kernel limits hold. One local law is shared across
+  frozen classes and normalizes by PIT substitution. This is correctness, not
+  a finite-sample calibration or efficacy claim.
+- P3M.2 composes separate P3M states for all four likelihood powers into the
+  score-select-reveal lifecycle. Candidate actions enter their own normalized
+  response laws; maximin lower-tail CVaR remains the decision score and mean
+  information is audit-only. One matching reveal advances every state once and
+  verifies the direct class Bayes identity. The P3M query schema hashes the
+  exact candidate action matrix. Durable candidate-specific chunk checkpoints
+  and measured-runner composition remain blocked, so real or operational
+  execution is not authorized.

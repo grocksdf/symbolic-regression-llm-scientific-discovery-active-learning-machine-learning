@@ -13,12 +13,14 @@ import numpy as np
 
 from .operational_class_conditional import (
     P3K_OPERATIONAL_LIFECYCLE,
+    P3M_OPERATIONAL_LIFECYCLE,
     OperationalClassConditionalState,
 )
 
 
 P3J_RUN_IDENTITY_SCHEMA = "pcpi-p3j8-formal-query-identity-v1"
 P3K_RUN_IDENTITY_SCHEMA = "pcpi-p3k2-formal-query-identity-v1"
+P3M_RUN_IDENTITY_SCHEMA = "pcpi-p3m2-action-conditional-query-identity-v1"
 P3J_RUN_PUBLICATION = "fsync-staging-then-no-overwrite-hardlink"
 _DATASET_ID = re.compile(r"^[a-z0-9][a-z0-9_]{0,63}$")
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -54,7 +56,11 @@ class P3JFormalQueryIdentity:
 
     def __post_init__(self) -> None:
         if (
-            self.schema not in (P3J_RUN_IDENTITY_SCHEMA, P3K_RUN_IDENTITY_SCHEMA)
+            self.schema not in (
+                P3J_RUN_IDENTITY_SCHEMA,
+                P3K_RUN_IDENTITY_SCHEMA,
+                P3M_RUN_IDENTITY_SCHEMA,
+            )
             or not _HEX40.fullmatch(self.source_git_tree)
             or not _HEX64.fullmatch(self.config_sha256)
             or not _DATASET_ID.fullmatch(self.dataset_id)
@@ -140,7 +146,9 @@ def build_p3j_formal_query_identity(
         ),
         operational_state_hash=operational_state.stable_hash,
         schema=(
-            P3K_RUN_IDENTITY_SCHEMA
+            P3M_RUN_IDENTITY_SCHEMA
+            if operational_state.lifecycle == P3M_OPERATIONAL_LIFECYCLE
+            else P3K_RUN_IDENTITY_SCHEMA
             if operational_state.lifecycle == P3K_OPERATIONAL_LIFECYCLE
             else P3J_RUN_IDENTITY_SCHEMA
         ),
@@ -325,6 +333,7 @@ def score_identity_bound_p3j_query(
 __all__ = [
     "P3J_RUN_IDENTITY_SCHEMA",
     "P3K_RUN_IDENTITY_SCHEMA",
+    "P3M_RUN_IDENTITY_SCHEMA",
     "P3J_RUN_PUBLICATION",
     "P3JFormalQueryIdentity",
     "P3JQueryWorkspace",

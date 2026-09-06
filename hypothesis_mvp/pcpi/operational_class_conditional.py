@@ -18,11 +18,13 @@ import numpy as np
 
 from .acquisition import ClassPartition
 from .class_conditional_semiparametric import (
+    P3M_ACTION_CONDITIONAL_POSTERIOR_UPDATE_METHOD,
     CalibratedClassPosteriorState,
     advance_calibrated_class_posterior,
     initialize_calibrated_class_posterior,
     reconstruct_class_conditional_residual_state,
 )
+from .action_conditional_residual import reconstruct_action_conditional_residual_state
 from .operational_semiparametric import P3H_OPERATIONAL_POWERS
 from .real_acquisition import (
     AcquisitionScores,
@@ -38,6 +40,9 @@ P3J_OPERATIONAL_LIFECYCLE = (
 )
 P3K_OPERATIONAL_LIFECYCLE = (
     "shared-innovation-class-family-score-select-reveal-advance-exactly-once-v1"
+)
+P3M_OPERATIONAL_LIFECYCLE = (
+    "action-conditional-shared-innovation-family-score-select-reveal-v1"
 )
 
 
@@ -68,7 +73,7 @@ class OperationalClassConditionalState:
         }
         calibrated_counts = {item.calibrated_update_count for item in states}
         if (
-            self.lifecycle != P3K_OPERATIONAL_LIFECYCLE
+            self.lifecycle not in (P3K_OPERATIONAL_LIFECYCLE, P3M_OPERATIONAL_LIFECYCLE)
             or powers != P3H_OPERATIONAL_POWERS
             or len(observation_counts) != 1
             or len(calibrated_counts) != 1
@@ -80,6 +85,20 @@ class OperationalClassConditionalState:
                 or item.residual_state.target_partition_hash
                 != self.target_partition.stable_hash
                 for item in states
+            )
+            or (
+                self.lifecycle == P3M_OPERATIONAL_LIFECYCLE
+                and any(
+                    item.method != P3M_ACTION_CONDITIONAL_POSTERIOR_UPDATE_METHOD
+                    for item in states
+                )
+            )
+            or (
+                self.lifecycle == P3K_OPERATIONAL_LIFECYCLE
+                and any(
+                    item.method == P3M_ACTION_CONDITIONAL_POSTERIOR_UPDATE_METHOD
+                    for item in states
+                )
             )
         ):
             raise ValueError("P3J operational state violates the frozen lifecycle")
@@ -136,7 +155,12 @@ class OperationalClassConditionalDecision:
             or self.local_index < 0
             or not self.scores.ranking_certified
             or self.scores.semiparametric_information_invariance_applied
-            or "class-conditional-semiparametric" not in self.scores.utility_mode
+            or not any(
+                marker in self.scores.utility_mode for marker in (
+                    "class-conditional-semiparametric",
+                    "action-conditional-semiparametric",
+                )
+            )
         ):
             raise ValueError("P3J operational decision is not reveal-authorizing")
         object.__setattr__(self, "selected_action", action)
@@ -149,6 +173,8 @@ def initialize_operational_class_conditional_state(
     residual_actions: np.ndarray,
     residual_targets: np.ndarray,
     target_partition: ClassPartition,
+    *,
+    action_conditional_residual: bool = False,
 ) -> OperationalClassConditionalState:
     """Build the fixed family from initial opened roles and no other source."""
 
@@ -159,8 +185,13 @@ def initialize_operational_class_conditional_state(
     residual_y = np.asarray(residual_targets, dtype=float).reshape(-1)
     states = []
     for engine in ordered:
+        reconstruct = (
+            reconstruct_action_conditional_residual_state
+            if action_conditional_residual
+            else reconstruct_class_conditional_residual_state
+        )
         residual_state, base_posterior = (
-            reconstruct_class_conditional_residual_state(
+            reconstruct(
                 engine,
                 conditioning_actions,
                 conditioning_y,
@@ -176,6 +207,10 @@ def initialize_operational_class_conditional_state(
         model_states=tuple(states),
         target_partition=target_partition,
         conditioning_count=len(conditioning_y),
+        lifecycle=(
+            P3M_OPERATIONAL_LIFECYCLE
+            if action_conditional_residual else P3K_OPERATIONAL_LIFECYCLE
+        ),
     )
 
 
@@ -235,7 +270,12 @@ def score_operational_class_conditional_candidates(
         or scores.robust_likelihood_powers != P3H_OPERATIONAL_POWERS
         or scores.robust_model_count != len(P3H_OPERATIONAL_POWERS)
         or scores.semiparametric_information_invariance_applied
-        or "class-conditional-semiparametric" not in scores.utility_mode
+        or not any(
+            marker in scores.utility_mode for marker in (
+                "class-conditional-semiparametric",
+                "action-conditional-semiparametric",
+            )
+        )
         or scores.representative_fallback_used
     ):
         raise FloatingPointError(
@@ -322,12 +362,14 @@ def admit_operational_class_conditional_response(
         model_states=advanced,
         target_partition=state.target_partition,
         conditioning_count=state.conditioning_count,
+        lifecycle=state.lifecycle,
     )
 
 
 __all__ = [
     "P3J_OPERATIONAL_LIFECYCLE",
     "P3K_OPERATIONAL_LIFECYCLE",
+    "P3M_OPERATIONAL_LIFECYCLE",
     "OperationalClassConditionalDecision",
     "OperationalClassConditionalState",
     "admit_operational_class_conditional_response",

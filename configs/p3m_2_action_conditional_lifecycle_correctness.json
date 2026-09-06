@@ -1,0 +1,15 @@
+{
+  "schema": "pcpi-p3m2-action-conditional-lifecycle-correctness-config-v1",
+  "stage": "P3M.2",
+  "prerequisite": "P3M.1/passed-correctness-production-integration-blocked",
+  "likelihood_power_family": [0.125, 0.25, 0.5, 1.0],
+  "lifecycle": "action-conditional-shared-innovation-family-score-select-reveal-v1",
+  "selection": "maximin-lower-tail-cvar-over-complete-likelihood-power-family",
+  "update": "one-matching-reveal-advances-every-model-exactly-once",
+  "query_identity": "bind-source-config-dataset-seed-query-candidates-actions-targets-representative-prefix-state",
+  "checkpointed_quadrature_authorized": false,
+  "heldout_state": "closed",
+  "real_data_access_authorized": false,
+  "simulated_experiment_authorized": false,
+  "operational_execution_authorized": false
+}

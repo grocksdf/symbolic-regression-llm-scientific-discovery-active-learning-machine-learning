@@ -73,6 +73,9 @@ P3L_INFORMATION_RISK_METHOD = (
     "lower-tail-cvar-of-frozen-class-entropy-reduction-v1"
 )
 P3L_INFORMATION_RISK_TAIL_PROBABILITY = 0.25
+P3M_ACTION_CONDITIONAL_POSTERIOR_UPDATE_METHOD = (
+    "action-conditional-prequential-structure-update-times-class-calibration-v1"
+)
 
 
 def _readonly(values: np.ndarray) -> np.ndarray:
@@ -371,7 +374,7 @@ class CalibratedClassPosteriorState:
     base_posterior: ExactPosterior
     posterior: ExactPosterior
     target_partition: ClassPartition
-    residual_state: ClassConditionalResidualState
+    residual_state: object
     class_log_calibration_factors: np.ndarray
     calibrated_update_count: int = 0
     method: str = P3K_PREQUENTIAL_POSTERIOR_UPDATE_METHOD
@@ -400,7 +403,20 @@ class CalibratedClassPosteriorState:
             != self.target_partition.stable_hash
             or isinstance(self.calibrated_update_count, bool)
             or self.calibrated_update_count < 0
-            or self.method != P3K_PREQUENTIAL_POSTERIOR_UPDATE_METHOD
+            or self.method not in (
+                P3K_PREQUENTIAL_POSTERIOR_UPDATE_METHOD,
+                P3M_ACTION_CONDITIONAL_POSTERIOR_UPDATE_METHOD,
+            )
+            or (
+                self.method == P3K_PREQUENTIAL_POSTERIOR_UPDATE_METHOD
+                and getattr(self.residual_state, "method", "")
+                != P3K_SHARED_INNOVATION_RESIDUAL_METHOD
+            )
+            or (
+                self.method == P3M_ACTION_CONDITIONAL_POSTERIOR_UPDATE_METHOD
+                and getattr(self.residual_state, "method", "")
+                != "strict-prefix-rbf-weighted-kt-dyadic-polya-tree-v1"
+            )
         ):
             raise ValueError("P3J calibrated posterior state is inconsistent")
         expected = _reweight_base_posterior(
@@ -1496,13 +1512,19 @@ def initialize_calibrated_class_posterior(
     engine: SequentialReferencePosterior,
     base_posterior: ExactPosterior,
     target_partition: ClassPartition,
-    residual_state: ClassConditionalResidualState,
+    residual_state: object,
 ) -> CalibratedClassPosteriorState:
     """Start calibrated acquisition at H0 without retroactive reweighting."""
 
     offsets = np.zeros(len(target_partition.class_ids), dtype=float)
     posterior = _reweight_base_posterior(
         base_posterior, target_partition, offsets
+    )
+    method = (
+        P3K_PREQUENTIAL_POSTERIOR_UPDATE_METHOD
+        if getattr(residual_state, "method", "")
+        == P3K_SHARED_INNOVATION_RESIDUAL_METHOD
+        else P3M_ACTION_CONDITIONAL_POSTERIOR_UPDATE_METHOD
     )
     return CalibratedClassPosteriorState(
         engine=engine,
@@ -1511,6 +1533,7 @@ def initialize_calibrated_class_posterior(
         target_partition=target_partition,
         residual_state=residual_state,
         class_log_calibration_factors=offsets,
+        method=method,
     )
 
 
@@ -1530,11 +1553,21 @@ def advance_calibrated_class_posterior(
         values,
     )
     class_before = _validated_class_probabilities(components)
-    next_residual, raw_pits, shared_raw_pit, factors = (
-        advance_class_conditional_residual_state(
-            components, state.residual_state, 0, target
+    if state.method == P3M_ACTION_CONDITIONAL_POSTERIOR_UPDATE_METHOD:
+        from .action_conditional_residual import (
+            advance_action_conditional_residual_state,
         )
-    )
+        next_residual, raw_pits, shared_raw_pit, factors = (
+            advance_action_conditional_residual_state(
+                components, state.residual_state, values[0], target
+            )
+        )
+    else:
+        next_residual, raw_pits, shared_raw_pit, factors = (
+            advance_class_conditional_residual_state(
+                components, state.residual_state, 0, target
+            )
+        )
     structure_log_predictive = student_t.logpdf(
         target,
         df=components.degrees_freedom,
@@ -1586,6 +1619,7 @@ def advance_calibrated_class_posterior(
         residual_state=next_residual,
         class_log_calibration_factors=next_offsets,
         calibrated_update_count=state.calibrated_update_count + 1,
+        method=state.method,
     )
     audit = CalibratedClassUpdate(
         raw_pits_before_update=raw_pits,
@@ -1609,6 +1643,7 @@ __all__ = [
     "P3K_SHARED_INNOVATION_RESIDUAL_METHOD",
     "P3L_INFORMATION_RISK_METHOD",
     "P3L_INFORMATION_RISK_TAIL_PROBABILITY",
+    "P3M_ACTION_CONDITIONAL_POSTERIOR_UPDATE_METHOD",
     "CalibratedClassPosteriorState",
     "CalibratedClassUpdate",
     "ClassConditionalCoupling",
