@@ -71,7 +71,7 @@ def main() -> int:
         ),
         "progress_is_response_free_checkpoint_inspection": (
             'glob("model-*")' in progress
-            and 'glob("nodes-*.json")' in progress
+            and 'glob("*nodes-*.json")' in progress
             and 'payload.get("complete")' in progress
         ),
         "no_oracle_response_validation_heldout_or_rng_surface": not any(

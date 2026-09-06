@@ -158,7 +158,8 @@ try {
                 $lastProgress = $latest
             }
         }
-        $checkpoint = Get-ChildItem -LiteralPath $outputPath -Filter 'PROGRESS.json' -Recurse -File -ErrorAction SilentlyContinue |
+        # Matches legacy PROGRESS.json and immutable PROGRESS-*.json events.
+        $checkpoint = Get-ChildItem -LiteralPath $outputPath -Filter 'PROGRESS*.json' -Recurse -File -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
         if ($null -ne $checkpoint) {
             $raw = Get-Content -LiteralPath $checkpoint.FullName -Raw

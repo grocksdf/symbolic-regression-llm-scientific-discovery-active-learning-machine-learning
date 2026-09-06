@@ -98,6 +98,8 @@ fitted coefficient or threshold.
 - Checkpoints bind the response-grid order, alpha, posterior components,
   residual-state hash, target-partition hash, and contiguous action prefix.
 - No proper checkpoint prefix can release scores.
+- Progress telemetry uses immutable, identity-bound event files, so a monitoring
+  reader never competes with the scientific process to replace one mutable file.
 - The oracle is called only after a durable decision identifies one candidate.
 - Validation is evaluated only after the corresponding reveal ledger is durable.
 - Held-out remains closed.

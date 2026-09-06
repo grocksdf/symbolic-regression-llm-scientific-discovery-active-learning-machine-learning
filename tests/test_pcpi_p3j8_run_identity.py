@@ -132,18 +132,27 @@ def test_valid_identity_delegates_only_to_checkpointed_ranking(
     assert result is sentinel
     assert seen["args"][5] == workspace.ranking_root
     seen["kwargs"]["progress_callback"](2, 32)
-    progress = json.loads(workspace.progress_path.read_text())
+    events = tuple(workspace.query_root.glob("PROGRESS-*.json"))
+    assert len(events) == 1
+    progress = json.loads(events[0].read_text())
     assert progress["completed_models"] == 2
     assert progress["nodes_per_leaf"] == 32
 
 
-def test_progress_replace_and_terminal_failure_no_overwrite(tmp_path) -> None:
+def test_progress_events_are_immutable_and_terminal_failure_no_overwrite(tmp_path) -> None:
     *_, workspace = _case(tmp_path)
     publish_p3j_query_progress(workspace, 1, 32)
-    publish_p3j_query_progress(workspace, 4, 64)
-    progress = json.loads(workspace.progress_path.read_text())
+    first = next(workspace.query_root.glob("PROGRESS-*.json"))
+    with first.open("r", encoding="utf-8") as locked_reader:
+        publish_p3j_query_progress(workspace, 4, 64)
+        assert locked_reader.read()
+    events = sorted(workspace.query_root.glob("PROGRESS-*.json"))
+    assert len(events) == 2
+    progress = json.loads(events[-1].read_text())
     assert progress["completed_models"] == 4
     assert progress["identity_hash"] == workspace.identity.stable_hash
+    publish_p3j_query_progress(workspace, 4, 64)
+    assert len(tuple(workspace.query_root.glob("PROGRESS-*.json"))) == 2
     publish_p3j_terminal_failure(workspace, "FloatingPointError", "invalid grid")
     terminal = workspace.terminal_failure_path.read_bytes()
     with pytest.raises(FileExistsError):

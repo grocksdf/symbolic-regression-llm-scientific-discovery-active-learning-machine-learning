@@ -159,13 +159,26 @@ def _publish_no_overwrite(path: Path, payload: dict[str, object]) -> None:
         staging.unlink(missing_ok=True)
 
 
-def _publish_replace(path: Path, payload: dict[str, object]) -> None:
-    staging = path.with_name(path.name + ".staging")
-    with staging.open("x", encoding="utf-8", newline="\n") as handle:
-        handle.write(_canonical(payload) + "\n")
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(staging, path)
+def _progress_event_path(
+    namespace: Path, completed_models: int, nodes_per_leaf: int
+) -> Path:
+    return namespace.with_name(
+        f"PROGRESS-nodes-{nodes_per_leaf:08d}-models-{completed_models:02d}.json"
+    )
+
+
+def _publish_progress_event(path: Path, payload: dict[str, object]) -> None:
+    """Publish one immutable event, or verify an identical resumed event."""
+
+    if path.exists():
+        if json.loads(path.read_text(encoding="utf-8")) != payload:
+            raise ValueError("P3J progress event identity mismatch")
+        return
+    try:
+        _publish_no_overwrite(path, payload)
+    except FileExistsError:
+        if json.loads(path.read_text(encoding="utf-8")) != payload:
+            raise ValueError("P3J concurrent progress event identity mismatch")
 
 
 def open_p3j_query_workspace(
@@ -217,12 +230,19 @@ def publish_p3j_query_progress(
         or nodes_per_leaf < 2
     ):
         raise ValueError("P3J query progress is invalid")
-    _publish_replace(workspace.progress_path, {
+    payload = {
         "schema": workspace.identity.schema,
         "identity_hash": workspace.identity.stable_hash,
         "completed_models": int(completed_models),
         "nodes_per_leaf": int(nodes_per_leaf),
-    })
+        "publication": "fsync-staging-then-no-overwrite-hardlink",
+    }
+    _publish_progress_event(
+        _progress_event_path(
+            workspace.progress_path, int(completed_models), int(nodes_per_leaf)
+        ),
+        payload,
+    )
 
 
 def publish_p3j_terminal_failure(
