@@ -11,6 +11,7 @@ from .acquisition import class_partition
 from .class_conditional_semiparametric import (
     P3J_CLASS_CONDITIONAL_JOINT_METHOD,
     P3K_SHARED_INNOVATION_JOINT_METHOD,
+    P3L_INFORMATION_RISK_METHOD,
 )
 from .operational_class_conditional import (
     P3K_OPERATIONAL_LIFECYCLE,
@@ -399,6 +400,43 @@ def _p3j_decision_valid(
         if expected_joint_method == P3K_SHARED_INNOVATION_JOINT_METHOD
         else row["representative_selected_mmd_nonincrease"]
     )
+    information_risk = row.get("information_risk_method")
+    if information_risk == P3L_INFORMATION_RISK_METHOD:
+        risk_by_model = tuple(row["selected_lower_tail_cvar_by_model"])
+        negative_by_model = tuple(
+            row["selected_negative_gain_probability_by_model"]
+        )
+        score_valid = bool(
+            risk_by_model
+            and len(risk_by_model) == row["robust_model_count"]
+            and len(negative_by_model) == row["robust_model_count"]
+            and np.isclose(
+                row["score"], row["selected_lower_tail_cvar"],
+                rtol=0.0, atol=2e-14,
+            )
+            and np.isclose(
+                row["selected_joint_class_predictive_score"],
+                row["selected_lower_tail_cvar"], rtol=0.0, atol=2e-14,
+            )
+            and np.isclose(
+                row["selected_lower_tail_cvar"], min(risk_by_model),
+                rtol=0.0, atol=2e-14,
+            )
+            and row["selected_robust_lower_tail_cvar_lower_bound"]
+            <= row["selected_lower_tail_cvar"]
+            <= row["selected_robust_lower_tail_cvar_upper_bound"]
+            and all(0.0 <= value <= 1.0 for value in negative_by_model)
+            and row["selected_least_favorable_information_risk_power"]
+            in row["robust_likelihood_powers"]
+        )
+    else:
+        score_valid = bool(
+            information_risk == "not-applied"
+            and np.isclose(
+                row["selected_joint_class_predictive_score"],
+                row["selected_class_eig"], rtol=0.0, atol=2e-14,
+            )
+        )
     return bool(
         "class-conditional-semiparametric" in str(row["utility_mode"])
         and row["acquisition_target_partition_hash"] == partition_hash
@@ -413,13 +451,20 @@ def _p3j_decision_valid(
         == expected_joint_method
         and not row["semiparametric_information_invariance_applied"]
         and row["selected_conditional_predictive_eig"] == 0.0
-        and np.isclose(
-            row["selected_joint_class_predictive_score"],
-            row["selected_class_eig"],
-            rtol=0.0,
-            atol=2e-14,
-        )
+        and score_valid
     )
+
+
+def _information_risk_usage(
+    queries: tuple[dict[str, object], ...],
+) -> tuple[float, float]:
+    used = tuple(
+        row.get("information_risk_method") == P3L_INFORMATION_RISK_METHOD
+        for row in queries
+    )
+    if any(used) and not all(used):
+        raise ValueError("P3L policy artifacts mix information-risk identities")
+    return (0.0 if any(used) else 1.0), float(np.mean(used))
 
 
 def summarize_p3j_policy_artifacts(
@@ -448,6 +493,7 @@ def summarize_p3j_policy_artifacts(
         )
         for row in queries
     )
+    legacy_eig_used_rate, information_risk_used_rate = _information_risk_usage(queries)
     rmse = np.asarray([row["validation_rmse"] for row in curves], dtype=float)
     normalized_aulc = normalized_area_under_learning_curve(rmse)
     return {
@@ -478,9 +524,10 @@ def summarize_p3j_policy_artifacts(
         "eig_ranking_certified_rate": float(np.mean([
             row["eig_ranking_certified"] for row in queries
         ])),
-        "pcpi_class_eig_used_rate": 1.0,
-        "pcpi_maximin_joint_eig_used_rate": 1.0,
-        "pcpi_target_only_class_eig_used_rate": 1.0,
+        "pcpi_class_eig_used_rate": legacy_eig_used_rate,
+        "pcpi_maximin_joint_eig_used_rate": legacy_eig_used_rate,
+        "pcpi_target_only_class_eig_used_rate": legacy_eig_used_rate,
+        "pcpi_information_risk_used_rate": information_risk_used_rate,
         "pcpi_primary_ranking_certified_rate": float(np.mean([
             row["eig_primary_ranking_certified"] for row in queries
         ])),

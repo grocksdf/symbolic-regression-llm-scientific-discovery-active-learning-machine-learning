@@ -1866,6 +1866,11 @@ def _run_policy(
             )
             for row in pcpi_queries
         ])) if pcpi_queries and protocol.decision_target_alignment else 0.0,
+        "pcpi_information_risk_used_rate": float(np.mean([
+            row.get("information_risk_method")
+            == config.get("pcpi_information_risk_method")
+            for row in pcpi_queries
+        ])) if pcpi_queries and "pcpi_information_risk_method" in config else 0.0,
         "pcpi_epistemic_fallback_rate": float(np.mean([
             row["utility_mode"] in epistemic_modes for row in pcpi_queries
         ])) if pcpi_queries else 0.0,
@@ -1939,6 +1944,7 @@ def _aggregates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         "eig_ranking_certified_rate", "maximum_eig_samples_used",
         "pcpi_class_eig_used_rate", "pcpi_maximin_joint_eig_used_rate",
         "pcpi_target_only_class_eig_used_rate",
+        "pcpi_information_risk_used_rate",
         "pcpi_primary_ranking_certified_rate",
         "pcpi_secondary_resolution_rate",
         "pcpi_mean_possible_maximizer_count",
@@ -2092,7 +2098,7 @@ def _assessment(
         aggregation_by_family.values()
     )
     ranking_by_family: dict[str, float] = {}
-    joint_eig_use_by_family: dict[str, float] = {}
+    registered_utility_use_by_family: dict[str, float] = {}
     decision_rule_by_family: dict[str, float] = {}
     for family_id in sorted({row["dataset_family"] for row in run_rows}):
         selected = [
@@ -2106,10 +2112,13 @@ def _assessment(
         ]
         ranking_by_family[family_id] = float(np.mean(values)) if values else 0.0
         use_metric = (
-            "pcpi_target_only_class_eig_used_rate"
-            if decision_targeted else "pcpi_maximin_joint_eig_used_rate"
+            "pcpi_information_risk_used_rate"
+            if "pcpi_information_risk_method" in config
+            else "pcpi_target_only_class_eig_used_rate"
+            if decision_targeted
+            else "pcpi_maximin_joint_eig_used_rate"
         )
-        joint_eig_use_by_family[family_id] = float(np.mean([
+        registered_utility_use_by_family[family_id] = float(np.mean([
             float(row[use_metric]) for row in selected
         ])) if selected else 0.0
         decision_rule_by_family[family_id] = float(np.mean([
@@ -2164,9 +2173,21 @@ def _assessment(
         "class_aggregation_by_dataset_family": aggregation_by_family,
         "pcpi_decision_rule_valid": decision_rule_valid,
         "pcpi_decision_rule_valid_rate_by_dataset_family": decision_rule_by_family,
-        "pcpi_maximin_joint_eig_used_rate_by_dataset_family": joint_eig_use_by_family,
+        "pcpi_registered_utility_used_rate_by_dataset_family": (
+            registered_utility_use_by_family
+        ),
+        "pcpi_information_risk_used_rate_by_dataset_family": (
+            registered_utility_use_by_family
+            if "pcpi_information_risk_method" in config else {}
+        ),
+        "pcpi_maximin_joint_eig_used_rate_by_dataset_family": (
+            {} if "pcpi_information_risk_method" in config
+            else registered_utility_use_by_family
+        ),
         "pcpi_target_only_class_eig_used_rate_by_dataset_family": (
-            joint_eig_use_by_family if decision_targeted else {}
+            registered_utility_use_by_family
+            if decision_targeted and "pcpi_information_risk_method" not in config
+            else {}
         ),
         "eig_ranking_certified_rate_by_dataset_family": ranking_by_family,
         "dataset_family_count": 2,
@@ -2985,21 +3006,40 @@ def run(
     ambiguity_powers = tuple(
         float(value) for value in config["likelihood_power_candidates"]
     )
+    information_risk_expected = "pcpi_information_risk_method" in config
     maximin_decisions_auditable = bool(pcpi_query_rows) and all(
         (
             row["robust_model_count"] == len(ambiguity_powers)
             and tuple(row["robust_likelihood_powers"]) == ambiguity_powers
-            and row["selected_least_favorable_likelihood_power"]
-            in ambiguity_powers
-            and np.isclose(
-                row["selected_joint_class_predictive_score"],
-                min(row["selected_robust_joint_scores_by_model"]),
-                rtol=0.0,
-                atol=1e-15,
+            and (
+                (
+                    row["information_risk_method"]
+                    == config["pcpi_information_risk_method"]
+                    and row["selected_least_favorable_information_risk_power"]
+                    in ambiguity_powers
+                    and np.isclose(
+                        row["selected_joint_class_predictive_score"],
+                        min(row["selected_lower_tail_cvar_by_model"]),
+                        rtol=0.0, atol=2e-14,
+                    )
+                    and row["selected_robust_lower_tail_cvar_lower_bound"]
+                    <= row["selected_joint_class_predictive_score"]
+                    <= row["selected_robust_lower_tail_cvar_upper_bound"]
+                )
+                if information_risk_expected
+                else (
+                    row["selected_least_favorable_likelihood_power"]
+                    in ambiguity_powers
+                    and np.isclose(
+                        row["selected_joint_class_predictive_score"],
+                        min(row["selected_robust_joint_scores_by_model"]),
+                        rtol=0.0, atol=1e-15,
+                    )
+                    and row["selected_robust_lower_bound"]
+                    <= row["selected_joint_class_predictive_score"]
+                    <= row["selected_robust_upper_bound"]
+                )
             )
-            and row["selected_robust_lower_bound"]
-            <= row["selected_joint_class_predictive_score"]
-            <= row["selected_robust_upper_bound"]
         )
         if not row["representative_fallback_used"]
         else row["robust_model_count"] == 0
@@ -3329,7 +3369,12 @@ def run(
                 row["selected_conditional_predictive_eig"] == 0.0
                 and np.isclose(
                     row["selected_joint_class_predictive_score"],
-                    row["selected_class_eig"], rtol=0.0, atol=2e-14,
+                    (
+                        row["selected_lower_tail_cvar"]
+                        if information_risk_expected
+                        else row["selected_class_eig"]
+                    ),
+                    rtol=0.0, atol=2e-14,
                 )
                 for row in pcpi_query_rows
             ),
