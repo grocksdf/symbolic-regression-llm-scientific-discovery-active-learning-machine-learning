@@ -14,6 +14,7 @@ from .operational_class_conditional import (
 )
 from .p3j_run_identity import (
     P3K_RUN_IDENTITY_SCHEMA,
+    P3M_RUN_IDENTITY_SCHEMA,
     P3JQueryWorkspace,
     _publish_no_overwrite,
     publish_p3j_terminal_failure,
@@ -24,11 +25,14 @@ from .real_acquisition import AcquisitionScores
 
 P3J_QUERY_DECISION_SCHEMA = "pcpi-p3j9-indivisible-query-decision-v1"
 P3K_QUERY_DECISION_SCHEMA = "pcpi-p3k2-indivisible-query-decision-v1"
+P3M_QUERY_DECISION_SCHEMA = "pcpi-p3m3-indivisible-query-decision-v1"
 
 
 def _decision_schema(workspace: P3JQueryWorkspace) -> str:
     return (
-        P3K_QUERY_DECISION_SCHEMA
+        P3M_QUERY_DECISION_SCHEMA
+        if workspace.identity.schema == P3M_RUN_IDENTITY_SCHEMA
+        else P3K_QUERY_DECISION_SCHEMA
         if workspace.identity.schema == P3K_RUN_IDENTITY_SCHEMA
         else P3J_QUERY_DECISION_SCHEMA
     )
@@ -192,6 +196,7 @@ def run_p3j_formal_query(
 __all__ = [
     "P3J_QUERY_DECISION_SCHEMA",
     "P3K_QUERY_DECISION_SCHEMA",
+    "P3M_QUERY_DECISION_SCHEMA",
     "p3j_query_progress_snapshot",
     "run_p3j_formal_query",
 ]

@@ -49,6 +49,16 @@ def _readonly(values: np.ndarray) -> np.ndarray:
     return result
 
 
+def action_matrix_hash(actions: np.ndarray) -> str:
+    values = np.ascontiguousarray(actions, dtype=np.float64)
+    if values.ndim != 2 or not len(values) or not np.all(np.isfinite(values)):
+        raise ValueError("P3M candidate action matrix is invalid")
+    digest = sha256()
+    digest.update(np.asarray(values.shape, dtype=np.int64).tobytes())
+    digest.update(values.tobytes())
+    return digest.hexdigest()
+
+
 def _context_transform(actions: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     values = np.asarray(actions, dtype=float)
     if values.ndim != 2 or not len(values) or not np.all(np.isfinite(values)):
@@ -179,6 +189,7 @@ class ActionConditionalInformationRiskEstimate:
     maximum_leaf_count: int
     residual_state_hash: str
     target_partition_hash: str
+    candidate_actions_hash: str
     method: str = P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD
 
     def __post_init__(self) -> None:
@@ -198,6 +209,7 @@ class ActionConditionalInformationRiskEstimate:
             or self.maximum_conditional_normalization_error < 0.0
             or self.class_count < 1 or self.maximum_leaf_count < 1
             or not self.residual_state_hash or not self.target_partition_hash
+            or len(self.candidate_actions_hash) != 64
             or self.method != P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD
         ):
             raise ValueError("P3M action-conditional information-risk estimate is invalid")
@@ -230,6 +242,47 @@ class ActionConditionalInformationRiskEstimate:
     @property
     def integration_method(self) -> str:
         return self.method
+
+
+@dataclass(frozen=True)
+class ActionConditionalInformationRiskChunkResult:
+    """One contiguous candidate-bound P3M response-risk chunk."""
+
+    start: int
+    stop: int
+    mutual_information: np.ndarray
+    lower_tail_cvar: np.ndarray
+    negative_gain_probability: np.ndarray
+    tail_probability: float
+    maximum_conditional_normalization_error: float
+    nodes_per_leaf: int
+    maximum_leaf_count: int
+    residual_state_hash: str
+    target_partition_hash: str
+    candidate_actions_hash: str
+    method: str = P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD
+
+    def __post_init__(self) -> None:
+        information = _readonly(self.mutual_information).reshape(-1)
+        cvar = _readonly(self.lower_tail_cvar).reshape(-1)
+        negative = _readonly(self.negative_gain_probability).reshape(-1)
+        if (
+            self.start < 0 or self.stop <= self.start
+            or len(information) != self.stop - self.start
+            or len(cvar) != len(information) or len(negative) != len(information)
+            or np.any(information < 0.0)
+            or np.any((negative < 0.0) | (negative > 1.0))
+            or not 0.0 < float(self.tail_probability) < 1.0
+            or self.maximum_conditional_normalization_error < 0.0
+            or self.nodes_per_leaf < 2 or self.maximum_leaf_count < 1
+            or not self.residual_state_hash or not self.target_partition_hash
+            or len(self.candidate_actions_hash) != 64
+            or self.method != P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD
+        ):
+            raise ValueError("P3M information-risk chunk is invalid")
+        object.__setattr__(self, "mutual_information", information)
+        object.__setattr__(self, "lower_tail_cvar", cvar)
+        object.__setattr__(self, "negative_gain_probability", negative)
 
 
 def initialize_action_conditional_residual_state(
@@ -357,6 +410,51 @@ def _information_risk_grid(
     )
 
 
+def iter_action_conditional_information_risk_chunks(
+    components: PredictiveComponents,
+    state: ActionConditionalResidualState,
+    actions: np.ndarray,
+    nodes_per_leaf: int,
+    *,
+    tail_probability: float = 0.25,
+    action_chunk_size: int = 16,
+    start_action: int = 0,
+):
+    """Yield complete contiguous chunks without exposing any response surface."""
+
+    values = np.asarray(actions, dtype=float)
+    chunk_size, start = int(action_chunk_size), int(start_action)
+    if (
+        values.ndim != 2 or len(values) != components.locations.shape[1]
+        or chunk_size != action_chunk_size or chunk_size < 1
+        or start != start_action or start < 0 or start > len(values)
+        or start % chunk_size or nodes_per_leaf < 2
+        or not 0.0 < float(tail_probability) < 1.0
+    ):
+        raise ValueError("P3M information-risk chunk traversal is invalid")
+    matrix_hash = action_matrix_hash(values)
+    for chunk_start in range(start, len(values), chunk_size):
+        stop = min(len(values), chunk_start + chunk_size)
+        rows = tuple(
+            _action_information_risk(
+                components, state, values, index, nodes_per_leaf, tail_probability
+            )
+            for index in range(chunk_start, stop)
+        )
+        yield ActionConditionalInformationRiskChunkResult(
+            start=chunk_start,
+            stop=stop,
+            mutual_information=np.asarray([row[0] for row in rows]),
+            lower_tail_cvar=np.asarray([row[1] for row in rows]),
+            negative_gain_probability=np.asarray([row[2] for row in rows]),
+            tail_probability=float(tail_probability),
+            maximum_conditional_normalization_error=max(row[3] for row in rows),
+            nodes_per_leaf=int(nodes_per_leaf),
+            maximum_leaf_count=max(row[4] for row in rows),
+            residual_state_hash=state.stable_hash,
+            target_partition_hash=components.partition.stable_hash,
+            candidate_actions_hash=matrix_hash,
+        )
 def estimate_action_conditional_information_risk(
     components: PredictiveComponents,
     state: ActionConditionalResidualState,
@@ -396,6 +494,7 @@ def estimate_action_conditional_information_risk(
         maximum_leaf_count=max(fine[4], coarse[4]),
         residual_state_hash=state.stable_hash,
         target_partition_hash=components.partition.stable_hash,
+        candidate_actions_hash=action_matrix_hash(values),
     )
 
 
@@ -407,9 +506,12 @@ __all__ = [
     "P3M_CONTEXT_TRANSFORM",
     "P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD",
     "ActionConditionalInformationRiskEstimate",
+    "ActionConditionalInformationRiskChunkResult",
     "ActionConditionalResidualState",
     "advance_action_conditional_residual_state",
+    "action_matrix_hash",
     "estimate_action_conditional_information_risk",
     "initialize_action_conditional_residual_state",
+    "iter_action_conditional_information_risk_chunks",
     "reconstruct_action_conditional_residual_state",
 ]

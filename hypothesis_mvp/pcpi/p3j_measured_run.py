@@ -9,6 +9,7 @@ import numpy as np
 
 from .operational_class_conditional import (
     P3K_OPERATIONAL_LIFECYCLE,
+    P3M_OPERATIONAL_LIFECYCLE,
     OperationalClassConditionalDecision,
     OperationalClassConditionalState,
 )
@@ -31,6 +32,17 @@ P3J_MEASURED_RUN_PROTOCOL = (
 P3K_MEASURED_RUN_PROTOCOL = (
     "p3k-contiguous-identity-bound-resumable-measured-pool-acquisition-v1"
 )
+P3M_MEASURED_RUN_PROTOCOL = (
+    "p3m-contiguous-candidate-bound-resumable-measured-pool-acquisition-v1"
+)
+
+
+def _run_protocol(state: OperationalClassConditionalState) -> str:
+    if state.lifecycle == P3M_OPERATIONAL_LIFECYCLE:
+        return P3M_MEASURED_RUN_PROTOCOL
+    if state.lifecycle == P3K_OPERATIONAL_LIFECYCLE:
+        return P3K_MEASURED_RUN_PROTOCOL
+    return P3J_MEASURED_RUN_PROTOCOL
 
 
 @dataclass(frozen=True)
@@ -136,17 +148,14 @@ def run_p3j_measured_pool_acquisition(
         query_results=tuple(query_results),
         identities=ordered_identities,
         manifest_path=manifest,
-        protocol=(
-            P3K_MEASURED_RUN_PROTOCOL
-            if initial_state.lifecycle == P3K_OPERATIONAL_LIFECYCLE
-            else P3J_MEASURED_RUN_PROTOCOL
-        ),
+        protocol=_run_protocol(initial_state),
     )
 
 
 __all__ = [
     "P3J_MEASURED_RUN_PROTOCOL",
     "P3K_MEASURED_RUN_PROTOCOL",
+    "P3M_MEASURED_RUN_PROTOCOL",
     "P3JMeasuredRunResult",
     "run_p3j_measured_pool_acquisition",
 ]

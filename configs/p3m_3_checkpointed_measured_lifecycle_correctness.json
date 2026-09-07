@@ -1,0 +1,25 @@
+{
+  "schema": "pcpi-p3m3-checkpointed-measured-lifecycle-correctness-config-v1",
+  "stage": "P3M.3",
+  "prerequisite": "P3M.2/passed-source-composition-checkpoint-integration-blocked",
+  "checkpoint_schema": "pcpi-p3m3-action-conditional-risk-checkpoint-v1",
+  "checkpoint_publication": "fsync-staging-then-atomic-replace",
+  "checkpoint_identity_fields": [
+    "residual_state_hash",
+    "target_partition_hash",
+    "predictive_components_hash",
+    "candidate_actions_hash",
+    "tail_probability",
+    "nodes_per_leaf",
+    "action_chunk_size"
+  ],
+  "partial_checkpoint_policy": "resume-next-contiguous-chunk-no-score-release",
+  "query_order": "identity-bound-decision-before-one-matching-reveal-before-exactly-once-advance",
+  "complete_likelihood_power_family_required": true,
+  "outer_runner_composition_authorized": false,
+  "formal_protocol_freeze_authorized": false,
+  "heldout_state": "closed",
+  "real_data_access_authorized": false,
+  "simulated_experiment_authorized": false,
+  "operational_execution_authorized": false
+}

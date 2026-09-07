@@ -61,6 +61,7 @@ from .p3j_checkpointed import (
     checkpointed_class_conditional_information_risk,
     checkpointed_class_conditional_semiparametric_eig,
 )
+from .p3m_checkpoint import checkpointed_action_conditional_information_risk
 from .reference import (
     DyadicPolyaTreePredictiveLaw,
     ExactPosterior,
@@ -907,7 +908,16 @@ def _information_risk_model_look(
 ) -> ClassConditionalInformationRiskEstimate | ActionConditionalInformationRiskEstimate:
     if getattr(state.residual_state, "method", "").startswith("strict-prefix-rbf-"):
         if checkpoint_root is not None:
-            raise ValueError("P3M checkpoint integration is not yet authorized")
+            model_root = checkpoint_root / (
+                f"model-{model_index:02d}-power-{state.engine.likelihood_power.hex()}"
+            )
+            model_root.mkdir(exist_ok=True)
+            return checkpointed_action_conditional_information_risk(
+                model_root, components, state.residual_state, candidate_actions,
+                samples, tail_probability=tail_probability,
+                error_safety_factor=error_safety_factor,
+                action_chunk_size=action_chunk_size, preceding=preceding,
+            )
         return estimate_action_conditional_information_risk(
             components,
             state.residual_state,

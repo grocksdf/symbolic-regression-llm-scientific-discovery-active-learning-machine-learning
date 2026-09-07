@@ -17,6 +17,7 @@ from .operational_class_conditional import (
 from .p3j_query_runner import _load_decision
 from .p3j_run_identity import (
     P3K_RUN_IDENTITY_SCHEMA,
+    P3M_RUN_IDENTITY_SCHEMA,
     P3JFormalQueryIdentity,
     P3JQueryWorkspace,
     _publish_no_overwrite,
@@ -30,9 +31,18 @@ P3J_RUN_MANIFEST_SCHEMA = "pcpi-p3j10-complete-run-manifest-v1"
 P3K_REVEAL_RECEIPT_SCHEMA = "pcpi-p3k2-matching-reveal-receipt-v1"
 P3K_QUERY_LEDGER_SCHEMA = "pcpi-p3k2-exactly-once-query-ledger-v1"
 P3K_RUN_MANIFEST_SCHEMA = "pcpi-p3k2-complete-run-manifest-v1"
+P3M_REVEAL_RECEIPT_SCHEMA = "pcpi-p3m3-matching-reveal-receipt-v1"
+P3M_QUERY_LEDGER_SCHEMA = "pcpi-p3m3-exactly-once-query-ledger-v1"
+P3M_RUN_MANIFEST_SCHEMA = "pcpi-p3m3-complete-run-manifest-v1"
 
 
 def _schemas(identity: P3JFormalQueryIdentity) -> tuple[str, str, str]:
+    if identity.schema == P3M_RUN_IDENTITY_SCHEMA:
+        return (
+            P3M_REVEAL_RECEIPT_SCHEMA,
+            P3M_QUERY_LEDGER_SCHEMA,
+            P3M_RUN_MANIFEST_SCHEMA,
+        )
     if identity.schema == P3K_RUN_IDENTITY_SCHEMA:
         return (
             P3K_REVEAL_RECEIPT_SCHEMA,
@@ -300,6 +310,9 @@ __all__ = [
     "P3K_QUERY_LEDGER_SCHEMA",
     "P3K_REVEAL_RECEIPT_SCHEMA",
     "P3K_RUN_MANIFEST_SCHEMA",
+    "P3M_QUERY_LEDGER_SCHEMA",
+    "P3M_REVEAL_RECEIPT_SCHEMA",
+    "P3M_RUN_MANIFEST_SCHEMA",
     "P3JRecoveredFormalResponse",
     "admit_p3j_formal_response",
     "finalize_p3j_run_manifest",

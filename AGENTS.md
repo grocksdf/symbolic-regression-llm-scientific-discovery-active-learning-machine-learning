@@ -676,3 +676,13 @@ through this adapter and finalize its contiguous query manifest.
   exact candidate action matrix. Durable candidate-specific chunk checkpoints
   and measured-runner composition remain blocked, so real or operational
   execution is not authorized.
+- P3M.3 supplies a separate candidate-bound checkpoint and complete measured-
+  query lifecycle without changing historical checkpoint schemas. Every grid
+  hashes the residual state, partition, predictive components, exact candidate
+  matrix, tail, nodes and chunk plan; only contiguous hash-chained chunks are
+  fsync-published, and no proper prefix releases scores. The typed P3M query,
+  reveal, ledger and manifest schemas preserve decision-before-oracle ordering,
+  exactly-once four-state advance, deterministic recovery and held-out closure.
+  This is no-data source composition. Outer policy dispatch/reporting, formal
+  configuration, runtime freeze and supervisor remain blocked; no real or
+  operational execution is authorized.
