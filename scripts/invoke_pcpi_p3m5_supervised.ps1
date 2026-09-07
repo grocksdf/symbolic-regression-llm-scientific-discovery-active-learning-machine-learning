@@ -6,6 +6,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Config,
     [Parameter(Mandatory = $true)][string]$Output,
     [Parameter(Mandatory = $true)][string]$EvidenceStash,
+    [Parameter(Mandatory = $true)][string]$EvaluationsStash,
     [Parameter(Mandatory = $true)][string]$ExpectedBranch,
     [Parameter(Mandatory = $true)][string]$ExpectedCommit,
     [Parameter(Mandatory = $true)][string]$ExpectedTree,

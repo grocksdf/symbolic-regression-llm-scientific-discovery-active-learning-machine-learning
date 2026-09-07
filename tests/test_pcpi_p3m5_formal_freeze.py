@@ -73,6 +73,8 @@ def test_p3m5_runtime_entry_and_ascii_supervisor_are_frozen() -> None:
     assert "simulate" not in entry and "default_rng" not in entry
     assert supervisor.isascii()
     assert "-VerifyCompleteRuntimeIdentity" in supervisor
+    assert "[Parameter(Mandatory = $true)][string]$EvaluationsStash" in supervisor
+    assert "Move-Item -LiteralPath $evaluationsPath" in common
     assert "Remove-Item" not in supervisor + common
     assert "heldout-open" not in supervisor + common
 

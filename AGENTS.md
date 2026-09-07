@@ -702,4 +702,5 @@ through this adapter and finalize its contiguous query manifest.
   binary identity, config hash, branch, commit and tree must pass the ASCII
   supervisor preflight. This is held-out-closed development evidence and may
   run only once at its unique output path; no result-dependent rerun or tuning
-  is admissible.
+  is admissible. The P3M.5 supervisor must isolate and restore both untracked
+  `evidence/` and `evaluations/` through distinct explicit sibling paths.

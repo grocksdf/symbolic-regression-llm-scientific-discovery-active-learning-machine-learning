@@ -6,6 +6,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Config,
     [Parameter(Mandatory = $true)][string]$Output,
     [Parameter(Mandatory = $true)][string]$EvidenceStash,
+    [string]$EvaluationsStash = '',
     [Parameter(Mandatory = $true)][string]$ExpectedBranch,
     [Parameter(Mandatory = $true)][string]$ExpectedCommit,
     [Parameter(Mandatory = $true)][string]$ExpectedTree,
@@ -28,12 +29,17 @@ $outputPath = [IO.Path]::GetFullPath($Output).TrimEnd('\')
 $stashPath = [IO.Path]::GetFullPath($EvidenceStash).TrimEnd('\')
 $outputsRoot = (Join-Path $projectPath 'outputs').TrimEnd('\')
 $evidencePath = Join-Path $projectPath 'evidence'
+$evaluationsPath = Join-Path $projectPath 'evaluations'
+$evaluationsStashPath = if ($EvaluationsStash) {
+    [IO.Path]::GetFullPath($EvaluationsStash).TrimEnd('\')
+} else { '' }
 $runner = Join-Path $projectPath $RunnerRelativePath
 $stdoutLog = $outputPath + '.stdout.log'
 $stderrLog = $outputPath + '.stderr.log'
 $progressPath = Join-Path $outputPath 'logs\run.jsonl'
 $process = $null
 $hadEvidence = $false
+$hadEvaluations = $false
 
 function Quote-Literal([string]$Value) {
     return "'" + $Value.Replace("'", "''") + "'"
@@ -57,6 +63,14 @@ if ([IO.Directory]::GetParent($stashPath).FullName.TrimEnd('\') -ne $projectPare
     throw "Evidence stash must be a project sibling: $stashPath"
 }
 if (Test-Path -LiteralPath $stashPath) { throw "Evidence stash already exists: $stashPath" }
+if ($evaluationsStashPath) {
+    if ([IO.Directory]::GetParent($evaluationsStashPath).FullName.TrimEnd('\') -ne $projectParent) {
+        throw "Evaluations stash must be a project sibling: $evaluationsStashPath"
+    }
+    if (Test-Path -LiteralPath $evaluationsStashPath) {
+        throw "Evaluations stash already exists: $evaluationsStashPath"
+    }
+}
 
 if ($Resume) {
     if (-not (Test-Path -LiteralPath $outputPath -PathType Container)) {
@@ -76,12 +90,21 @@ if ($Resume) {
 
 $status = @(& git -C $projectPath status --porcelain=v1 --untracked-files=all)
 if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect Git status' }
-$unexpected = @($status | Where-Object { $_ -notmatch '^\?\? evidence/' })
+$unexpected = @($status | Where-Object {
+    $_ -notmatch '^\?\? evidence/' -and $_ -notmatch '^\?\? evaluations/'
+})
 if ($unexpected.Count -ne 0) { throw "Changes exist outside evidence/:`n$($unexpected -join "`n")" }
 $hadEvidence = Test-Path -LiteralPath $evidencePath -PathType Container
+$hadEvaluations = Test-Path -LiteralPath $evaluationsPath -PathType Container
+if ($hadEvaluations -and -not $evaluationsStashPath) {
+    throw 'EvaluationsStash is required while untracked evaluations/ exists'
+}
 
 try {
     if ($hadEvidence) { Move-Item -LiteralPath $evidencePath -Destination $stashPath }
+    if ($hadEvaluations) {
+        Move-Item -LiteralPath $evaluationsPath -Destination $evaluationsStashPath
+    }
     $remaining = @(& git -C $projectPath status --porcelain=v1 --untracked-files=all)
     if ($LASTEXITCODE -ne 0 -or $remaining.Count -ne 0) {
         throw "Worktree is not clean after evidence isolation:`n$($remaining -join "`n")"
@@ -203,5 +226,11 @@ finally {
     if ($hadEvidence -and (Test-Path -LiteralPath $stashPath)) {
         if (Test-Path -LiteralPath $evidencePath) { throw "Cannot restore evidence; safe copy remains at: $stashPath" }
         Move-Item -LiteralPath $stashPath -Destination $evidencePath
+    }
+    if ($hadEvaluations -and (Test-Path -LiteralPath $evaluationsStashPath)) {
+        if (Test-Path -LiteralPath $evaluationsPath) {
+            throw "Cannot restore evaluations; safe copy remains at: $evaluationsStashPath"
+        }
+        Move-Item -LiteralPath $evaluationsStashPath -Destination $evaluationsPath
     }
 }

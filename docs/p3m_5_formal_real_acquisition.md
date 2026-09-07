@@ -15,3 +15,5 @@ The frozen 25% lower-tail CVaR, all seeds, data splits, budgets, baselines,
 representative projection, runtime binary identity, and assessment criteria are
 copied without outcome-dependent adjustment. Partial checkpoint grids cannot
 release a score, and terminal failures cannot be retried in the same output.
+The supervisor temporarily isolates and restores both historical `evidence/`
+and `evaluations/`; neither directory is added to the formal source identity.

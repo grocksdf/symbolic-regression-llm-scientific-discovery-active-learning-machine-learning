@@ -95,6 +95,9 @@ def _evaluate() -> dict[str, object]:
             "-VerifyCompleteRuntimeIdentity" in supervisor
             and "run_pcpi_p3m5_formal_real_acquisition.py" in supervisor
             and "[switch]$PreflightOnly" in supervisor + common
+            and "[Parameter(Mandatory = $true)][string]$EvaluationsStash"
+            in supervisor
+            and "Move-Item -LiteralPath $evaluationsPath" in common
             and "TERMINAL_FAILURE.json" in common
             and "Remove-Item" not in supervisor + common
             and supervisor.isascii()
