@@ -1,0 +1,17 @@
+{
+  "schema": "pcpi-p3m4-outer-reporting-correctness-config-v1",
+  "stage": "P3M.4",
+  "prerequisite": "P3M.3/passed-correctness-outer-runner-freeze-blocked",
+  "policy_dispatch": "p3m-only-transactional-path-baselines-unchanged-v1",
+  "failure_schema": "pcpi-p3m4-policy-failure-snapshot-v1",
+  "reporting_order": "p3m-complete-query-ledger-before-validation-and-reporting-v1",
+  "outer_composition": "p3m-transactional-acquisition-then-post-ledger-evaluation-and-summary-v1",
+  "decision_audit_method": "action-conditional-lower-tail-cvar-of-frozen-class-entropy-reduction-v1",
+  "expected_joint_method": "normalized-action-conditional-shared-innovation-class-joint-v1",
+  "baselines_unchanged": true,
+  "formal_protocol_freeze_authorized": false,
+  "heldout_state": "closed",
+  "real_data_access_authorized": false,
+  "simulated_experiment_authorized": false,
+  "operational_execution_authorized": false
+}

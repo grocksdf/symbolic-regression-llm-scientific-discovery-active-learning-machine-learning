@@ -13,12 +13,17 @@ from .class_conditional_semiparametric import (
     P3K_SHARED_INNOVATION_JOINT_METHOD,
     P3L_INFORMATION_RISK_METHOD,
 )
+from .action_conditional_residual import (
+    P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD,
+    P3M_ACTION_CONDITIONAL_JOINT_METHOD,
+)
 from .operational_class_conditional import (
     P3K_OPERATIONAL_LIFECYCLE,
+    P3M_OPERATIONAL_LIFECYCLE,
     OperationalClassConditionalState,
 )
 from .p3j_measured_run import P3JMeasuredRunResult
-from .p3j_run_identity import P3K_RUN_IDENTITY_SCHEMA
+from .p3j_run_identity import P3K_RUN_IDENTITY_SCHEMA, P3M_RUN_IDENTITY_SCHEMA
 from .real_acquisition import (
     fixed_class_entropy,
     normalized_area_under_learning_curve,
@@ -31,6 +36,7 @@ P3J_REPORTING_ORDER = (
     "complete-query-ledger-before-validation-and-reporting-v1"
 )
 P3K_REPORTING_ORDER = "p3k-complete-query-ledger-before-validation-and-reporting-v1"
+P3M_REPORTING_ORDER = "p3m-complete-query-ledger-before-validation-and-reporting-v1"
 
 
 @dataclass(frozen=True)
@@ -279,7 +285,10 @@ def _query_row(
     decision = result.decision
     scores = decision.scores
     local = decision.local_index
-    identity_prefix = "p3k" if identity.schema == P3K_RUN_IDENTITY_SCHEMA else "p3j"
+    identity_prefix = (
+        "p3m" if identity.schema == P3M_RUN_IDENTITY_SCHEMA
+        else "p3k" if identity.schema == P3K_RUN_IDENTITY_SCHEMA else "p3j"
+    )
     return {
         "dataset_id": dataset_id,
         "dataset_family": dataset_family,
@@ -380,13 +389,15 @@ def build_p3j_policy_artifacts(
             measured_run.query_results, measured_run.identities, strict=True
         ))
     )
+    is_p3m = initial_state.lifecycle == P3M_OPERATIONAL_LIFECYCLE
     is_p3k = initial_state.lifecycle == P3K_OPERATIONAL_LIFECYCLE
     return P3JPolicyArtifacts(
         curve_rows=curves,
         query_rows=queries,
-        protocol=P3K_REPORTING_ORDER if is_p3k else P3J_REPORTING_ORDER,
+        protocol=(P3M_REPORTING_ORDER if is_p3m else P3K_REPORTING_ORDER if is_p3k else P3J_REPORTING_ORDER),
         expected_joint_method=(
-            P3K_SHARED_INNOVATION_JOINT_METHOD
+            P3M_ACTION_CONDITIONAL_JOINT_METHOD if is_p3m
+            else P3K_SHARED_INNOVATION_JOINT_METHOD
             if is_p3k else P3J_CLASS_CONDITIONAL_JOINT_METHOD
         ),
     )
@@ -397,11 +408,17 @@ def _p3j_decision_valid(
 ) -> bool:
     representative_valid = (
         row["representative_selected_within_projected_budget"]
-        if expected_joint_method == P3K_SHARED_INNOVATION_JOINT_METHOD
+        if expected_joint_method in (
+            P3K_SHARED_INNOVATION_JOINT_METHOD,
+            P3M_ACTION_CONDITIONAL_JOINT_METHOD,
+        )
         else row["representative_selected_mmd_nonincrease"]
     )
     information_risk = row.get("information_risk_method")
-    if information_risk == P3L_INFORMATION_RISK_METHOD:
+    if information_risk in (
+        P3L_INFORMATION_RISK_METHOD,
+        P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD,
+    ):
         risk_by_model = tuple(row["selected_lower_tail_cvar_by_model"])
         negative_by_model = tuple(
             row["selected_negative_gain_probability_by_model"]
@@ -438,7 +455,9 @@ def _p3j_decision_valid(
             )
         )
     return bool(
-        "class-conditional-semiparametric" in str(row["utility_mode"])
+        any(marker in str(row["utility_mode"]) for marker in (
+            "class-conditional-semiparametric", "action-conditional-semiparametric"
+        ))
         and row["acquisition_target_partition_hash"] == partition_hash
         and row["representative_guard_applied"]
         and row["representative_safe_set_nonempty"]
@@ -458,12 +477,13 @@ def _p3j_decision_valid(
 def _information_risk_usage(
     queries: tuple[dict[str, object], ...],
 ) -> tuple[float, float]:
-    used = tuple(
-        row.get("information_risk_method") == P3L_INFORMATION_RISK_METHOD
-        for row in queries
-    )
+    methods = tuple(row.get("information_risk_method") for row in queries)
+    accepted = (P3L_INFORMATION_RISK_METHOD, P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD)
+    used = tuple(method in accepted for method in methods)
     if any(used) and not all(used):
         raise ValueError("P3L policy artifacts mix information-risk identities")
+    if any(used) and len(set(methods)) != 1:
+        raise ValueError("information-risk artifacts mix method identities")
     return (0.0 if any(used) else 1.0), float(np.mean(used))
 
 
@@ -572,6 +592,7 @@ def summarize_p3j_policy_artifacts(
 __all__ = [
     "P3J_REPORTING_ORDER",
     "P3K_REPORTING_ORDER",
+    "P3M_REPORTING_ORDER",
     "P3JPolicyArtifacts",
     "build_p3j_policy_artifacts",
     "summarize_p3j_policy_artifacts",

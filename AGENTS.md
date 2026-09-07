@@ -686,3 +686,10 @@ through this adapter and finalize its contiguous query manifest.
   This is no-data source composition. Outer policy dispatch/reporting, formal
   configuration, runtime freeze and supervisor remain blocked; no real or
   operational execution is authorized.
+- P3M.4 composes P3M through the PCPI-only outer dispatch, terminal policy-
+  failure snapshot and post-ledger reporting audit while leaving all baselines
+  unchanged. Reports require the action-conditional joint and CVaR identities,
+  the four-power lower envelope, representative-set validity and certified
+  selection; mean information remains audit-only. Validation is evaluated only
+  after a durable reveal ledger. Formal config/runtime/supervisor freezing is
+  still blocked, so P3M.4 does not authorize a real run.

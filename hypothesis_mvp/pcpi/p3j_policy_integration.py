@@ -14,6 +14,8 @@ P3J_POLICY_DISPATCH = "pcpi-only-transactional-path-baselines-unchanged-v1"
 P3K_POLICY_DISPATCH = "p3k-only-transactional-path-baselines-unchanged-v1"
 P3J_POLICY_FAILURE_SCHEMA = "pcpi-p3j13-policy-failure-snapshot-v1"
 P3K_POLICY_FAILURE_SCHEMA = "pcpi-p3k2-policy-failure-snapshot-v1"
+P3M_POLICY_DISPATCH = "p3m-only-transactional-path-baselines-unchanged-v1"
+P3M_POLICY_FAILURE_SCHEMA = "pcpi-p3m4-policy-failure-snapshot-v1"
 
 
 def dispatch_p3j_matched_policy(
@@ -54,7 +56,11 @@ def publish_p3j_policy_failure_snapshot(
         or seed < 0
         or not failure_type
         or not message
-        or schema not in (P3J_POLICY_FAILURE_SCHEMA, P3K_POLICY_FAILURE_SCHEMA)
+        or schema not in (
+            P3J_POLICY_FAILURE_SCHEMA,
+            P3K_POLICY_FAILURE_SCHEMA,
+            P3M_POLICY_FAILURE_SCHEMA,
+        )
     ):
         raise ValueError("P3J policy failure snapshot inputs are invalid")
     queries = []
@@ -102,6 +108,8 @@ __all__ = [
     "P3K_POLICY_DISPATCH",
     "P3J_POLICY_FAILURE_SCHEMA",
     "P3K_POLICY_FAILURE_SCHEMA",
+    "P3M_POLICY_DISPATCH",
+    "P3M_POLICY_FAILURE_SCHEMA",
     "dispatch_p3j_matched_policy",
     "publish_p3j_policy_failure_snapshot",
 ]

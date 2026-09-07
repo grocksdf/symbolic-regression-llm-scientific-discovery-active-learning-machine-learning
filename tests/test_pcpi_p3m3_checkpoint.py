@@ -12,8 +12,10 @@ from hypothesis_mvp.pcpi import (
     P3M_MEASURED_POOL_ORDER,
     P3M_MEASURED_RUN_PROTOCOL,
     P3M_RUN_MANIFEST_SCHEMA,
+    P3M_REPORTING_ORDER,
     append_p3m_checkpoint_chunk,
     build_p3m_checkpoint_plan,
+    build_p3j_policy_artifacts,
     checkpointed_action_conditional_information_risk,
     complete_p3m_information_risk_grid,
     estimate_action_conditional_information_risk,
@@ -23,6 +25,7 @@ from hypothesis_mvp.pcpi import (
     load_p3m_checkpoint,
     run_p3j_measured_pool_acquisition,
     score_operational_class_conditional_candidates,
+    summarize_p3j_policy_artifacts,
 )
 from hypothesis_mvp.pcpi.acquisition import predictive_components_for_partition
 from hypothesis_mvp.pcpi.reference import DevelopmentStandardizer
@@ -185,3 +188,16 @@ def test_measured_query_composes_decision_before_one_matching_reveal(tmp_path) -
     assert manifest["schema"] == P3M_RUN_MANIFEST_SCHEMA
     assert manifest["complete"] is True
     assert manifest["heldout_opened"] is False
+    artifacts = build_p3j_policy_artifacts(
+        result, state, actions, actions[:2], targets[:2],
+        np.asarray([str(index) for index in range(len(actions))]),
+        dataset_id="correctness_fixture", dataset_family="correctness",
+        seed=1, policy="pcpi_representative_safe_robust_class_eig",
+        class_distance_threshold=1.0,
+    )
+    summary = summarize_p3j_policy_artifacts(
+        artifacts, structure_count=len(state.nominal_state.posterior.members)
+    )
+    assert artifacts.protocol == P3M_REPORTING_ORDER
+    assert summary["pcpi_information_risk_used_rate"] == 1.0
+    assert summary["pcpi_decision_rule_valid_rate"] == 1.0

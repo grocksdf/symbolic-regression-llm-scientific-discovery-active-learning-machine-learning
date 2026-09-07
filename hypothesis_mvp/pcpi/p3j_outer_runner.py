@@ -7,11 +7,16 @@ from pathlib import Path
 
 import numpy as np
 
-from .operational_class_conditional import P3K_OPERATIONAL_LIFECYCLE, OperationalClassConditionalState
+from .operational_class_conditional import (
+    P3K_OPERATIONAL_LIFECYCLE,
+    P3M_OPERATIONAL_LIFECYCLE,
+    OperationalClassConditionalState,
+)
 from .p3j_measured_run import P3JMeasuredRunResult, run_p3j_measured_pool_acquisition
 from .p3j_policy_integration import (
     P3J_POLICY_FAILURE_SCHEMA,
     P3K_POLICY_FAILURE_SCHEMA,
+    P3M_POLICY_FAILURE_SCHEMA,
     publish_p3j_policy_failure_snapshot,
 )
 from .p3j_reporting import (
@@ -28,6 +33,17 @@ P3J_OUTER_RUNNER_COMPOSITION = (
 P3K_OUTER_RUNNER_COMPOSITION = (
     "p3k-transactional-acquisition-then-post-ledger-evaluation-and-summary-v1"
 )
+P3M_OUTER_RUNNER_COMPOSITION = (
+    "p3m-transactional-acquisition-then-post-ledger-evaluation-and-summary-v1"
+)
+
+
+def _p3m_or_p3k(value: str, p3m: str, p3k: str, legacy: str) -> str:
+    if value == P3M_OPERATIONAL_LIFECYCLE:
+        return p3m
+    if value == P3K_OPERATIONAL_LIFECYCLE:
+        return p3k
+    return legacy
 
 
 @dataclass(frozen=True)
@@ -115,9 +131,12 @@ def run_p3j_outer_policy(
             failure_type=type(error).__name__,
             message=str(error) or type(error).__name__,
             schema=(
-                P3K_POLICY_FAILURE_SCHEMA
-                if getattr(initial_state, "lifecycle", None) == P3K_OPERATIONAL_LIFECYCLE
-                else P3J_POLICY_FAILURE_SCHEMA
+                _p3m_or_p3k(
+                    getattr(initial_state, "lifecycle", ""),
+                    P3M_POLICY_FAILURE_SCHEMA,
+                    P3K_POLICY_FAILURE_SCHEMA,
+                    P3J_POLICY_FAILURE_SCHEMA,
+                )
             ),
         )
         raise
@@ -125,10 +144,11 @@ def run_p3j_outer_policy(
         measured_run=measured,
         artifacts=artifacts,
         summary_metrics=summary,
-        protocol=(
-            P3K_OUTER_RUNNER_COMPOSITION
-            if getattr(initial_state, "lifecycle", None) == P3K_OPERATIONAL_LIFECYCLE
-            else P3J_OUTER_RUNNER_COMPOSITION
+        protocol=_p3m_or_p3k(
+            getattr(initial_state, "lifecycle", ""),
+            P3M_OUTER_RUNNER_COMPOSITION,
+            P3K_OUTER_RUNNER_COMPOSITION,
+            P3J_OUTER_RUNNER_COMPOSITION,
         ),
     )
 
@@ -136,6 +156,7 @@ def run_p3j_outer_policy(
 __all__ = [
     "P3J_OUTER_RUNNER_COMPOSITION",
     "P3K_OUTER_RUNNER_COMPOSITION",
+    "P3M_OUTER_RUNNER_COMPOSITION",
     "P3JOuterPolicyResult",
     "run_p3j_outer_policy",
 ]
