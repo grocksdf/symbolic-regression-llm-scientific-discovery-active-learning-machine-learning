@@ -120,7 +120,11 @@ P3I_SHARED_INITIAL_TARGET_SOURCE = (
 
 
 def _class_contract_value(config: dict[str, Any], suffix: str) -> Any:
-    matches = [config[key] for key in (f"p3k_{suffix}", f"p3j_{suffix}") if key in config]
+    matches = [
+        config[key]
+        for key in (f"p3m_{suffix}", f"p3k_{suffix}", f"p3j_{suffix}")
+        if key in config
+    ]
     if len(matches) != 1:
         raise ValueError(f"exactly one class-conditional contract key is required: {suffix}")
     return matches[0]
@@ -2336,6 +2340,17 @@ def _manifest_method_contract(
             contract[f"{prefix}_singleton_rank_certificate"] = config[
                 f"{prefix}_singleton_rank_certificate"
             ]
+        if prefix == "p3m":
+            contract |= {
+                key: config[key]
+                for key in (
+                    "p3m_context_transform",
+                    "p3m_bandwidth_rule",
+                    "p3m_bandwidth_schedule",
+                    "p3m_checkpoint_schema",
+                    "p3m_checkpoint_publication",
+                )
+            }
         if "pcpi_information_risk_method" in config:
             contract |= {
                 key: config[key]
@@ -2824,6 +2839,10 @@ def run(
                                 initial_X[warmup_count:],
                                 initial_y[warmup_count:],
                                 frozen_initial_target.partition,
+                                action_conditional_residual=(
+                                    protocol.class_conditional_contract_prefix
+                                    == "p3m"
+                                ),
                             )
                             summary, curves, queries = _run_p3j_shared_policy(
                                 run_root=(
@@ -2983,7 +3002,7 @@ def run(
     ]
     projected_representative_guard = (
         protocol.p3j_class_conditional_lifecycle
-        and protocol.class_conditional_contract_prefix == "p3k"
+        and protocol.class_conditional_contract_prefix in ("p3k", "p3m")
     )
     representative_decisions_auditable = bool(pcpi_query_rows) and all(
         (

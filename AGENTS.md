@@ -693,3 +693,13 @@ through this adapter and finalize its contiguous query manifest.
   selection; mean information remains audit-only. Validation is evaluated only
   after a durable reveal ledger. Formal config/runtime/supervisor freezing is
   still blocked, so P3M.4 does not authorize a real run.
+- P3M.5 is the only authorized P3M real-development execution. It preserves
+  the P3L.2 datasets, seeds, budgets, baselines, representative projection,
+  lower-tail risk and assessment, but replaces the candidate-invariant global
+  innovation law with the P3M strict-prefix covariate-conditional law. The
+  frozen CPython 3.12.13 runtime at
+  `D:/01/666/.venvs/hypothesis_mvp_p3k8_py31213/Scripts/python.exe`, complete
+  binary identity, config hash, branch, commit and tree must pass the ASCII
+  supervisor preflight. This is held-out-closed development evidence and may
+  run only once at its unique output path; no result-dependent rerun or tuning
+  is admissible.
