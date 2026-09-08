@@ -21,6 +21,7 @@ from .p3j_run_identity import (
     P3JFormalQueryIdentity,
     P3JQueryWorkspace,
     _publish_no_overwrite,
+    p3j_query_root,
     publish_p3j_terminal_failure,
 )
 
@@ -265,10 +266,7 @@ def finalize_p3j_run_manifest(
         expected_query = next_query.get(key, 1)
         if identity.query_index != expected_query:
             raise ValueError("P3J run query indices are not contiguous")
-        query_root = (
-            root / "checkpoints" / identity.dataset_id / f"seed-{identity.seed}"
-            / f"query-{identity.query_index:03d}"
-        )
+        query_root = p3j_query_root(root, identity)
         if (query_root / "TERMINAL_FAILURE.json").exists():
             raise RuntimeError("P3J run contains a terminal query failure")
         ledger = json.loads((query_root / "QUERY_LEDGER.json").read_text(encoding="utf-8"))

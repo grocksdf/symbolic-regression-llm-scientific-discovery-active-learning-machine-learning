@@ -197,11 +197,35 @@ def open_p3j_query_workspace(
     root = Path(run_root)
     if not root.is_dir():
         raise FileNotFoundError("P3J formal run root must already exist")
-    query_root = (
-        root / "checkpoints" / identity.dataset_id / f"seed-{identity.seed}"
+    # P3M formal run roots are already scoped by dataset and seed. Repeating
+    # both names in every query path can push the longest registered Windows
+    # checkpoint staging name to the legacy MAX_PATH boundary. The complete
+    # dataset/seed/query identity remains in IDENTITY.json and its stable hash;
+    # only the redundant filesystem spelling is shortened for P3M.
+    query_root = p3j_query_root(root, identity)
+    query_root.mkdir(parents=True, exist_ok=True)
+    return _initialize_p3j_query_workspace(query_root, identity)
+
+
+def p3j_query_root(
+    run_root: Path, identity: P3JFormalQueryIdentity
+) -> Path:
+    """Resolve the one schema-bound query path used by writers and readers."""
+
+    if not isinstance(identity, P3JFormalQueryIdentity):
+        raise TypeError("P3J query path requires a formal identity")
+    root = Path(run_root)
+    return (
+        root / "checkpoints" / f"q-{identity.query_index:03d}"
+        if identity.schema == P3M_RUN_IDENTITY_SCHEMA
+        else root / "checkpoints" / identity.dataset_id / f"seed-{identity.seed}"
         / f"query-{identity.query_index:03d}"
     )
-    query_root.mkdir(parents=True, exist_ok=True)
+
+
+def _initialize_p3j_query_workspace(
+    query_root: Path, identity: P3JFormalQueryIdentity
+) -> P3JQueryWorkspace:
     manifest = query_root / "IDENTITY.json"
     payload = {
         "schema": identity.schema,
@@ -339,6 +363,7 @@ __all__ = [
     "P3JQueryWorkspace",
     "build_p3j_formal_query_identity",
     "open_p3j_query_workspace",
+    "p3j_query_root",
     "publish_p3j_query_progress",
     "publish_p3j_terminal_failure",
     "score_identity_bound_p3j_query",

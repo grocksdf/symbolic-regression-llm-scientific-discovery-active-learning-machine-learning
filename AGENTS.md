@@ -656,6 +656,16 @@ P3J.11 provides the only permitted measured-pool adapter and proves that a
 complete decision precedes one matching oracle reveal. Do not call the oracle
 directly from the P3J dataset branch; P3J.12 must route that branch exclusively
 through this adapter and finalize its contiguous query manifest.
+
+- The user-executed P3M.5 attempt at source `6d63efad` is an immutable terminal
+  infrastructure failure, not efficacy evidence. Its first Gas NOX query
+  checkpoint staging path reached exactly 260 characters and Windows rejected
+  file creation before that query's decision or response reveal. Current source
+  uses a compact P3M-only query path while retaining the complete identity in
+  the manifest/hash and a shared resolver for writing and final verification.
+  Never resume or overwrite the failed output; any repaired user execution must
+  use a newly frozen source/tree and unique output while preserving all P3M.5
+  statistical, budget, failure, and held-out boundaries.
 - The corrected P3L.2 audit is immutable protocol-valid negative evidence:
   every registered run/query and evidence identity is valid and held-out stayed
   closed, but neither real family demonstrates paired gain or nAULC advantage.

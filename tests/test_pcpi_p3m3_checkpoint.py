@@ -27,6 +27,10 @@ from hypothesis_mvp.pcpi import (
     score_operational_class_conditional_candidates,
     summarize_p3j_policy_artifacts,
 )
+from hypothesis_mvp.pcpi.p3j_run_identity import (
+    build_p3j_formal_query_identity,
+    open_p3j_query_workspace,
+)
 from hypothesis_mvp.pcpi.acquisition import predictive_components_for_partition
 from hypothesis_mvp.pcpi.reference import DevelopmentStandardizer
 from tests.test_pcpi_p3j2_operational_class_conditional import _fixture
@@ -149,6 +153,44 @@ def test_operational_checkpoint_path_matches_direct_selection(tmp_path) -> None:
     assert checkpointed.selected_candidate_id == direct.selected_candidate_id
     np.testing.assert_array_equal(checkpointed.scores.scores, direct.scores.scores)
     assert len(tuple(root.glob("model-*/risk-nodes-*.json"))) == 8
+
+
+def test_p3m_workspace_uses_compact_windows_safe_path_without_losing_identity(
+    tmp_path,
+) -> None:
+    actions, targets, old_state = _fixture()
+    state = initialize_operational_class_conditional_state(
+        tuple(item.engine for item in old_state.model_states),
+        actions[:4], targets[:4], actions[4:8], targets[4:8],
+        old_state.target_partition, action_conditional_residual=True,
+    )
+    identity = build_p3j_formal_query_identity(
+        source_git_tree="1" * 40,
+        config_sha256="2" * 64,
+        dataset_id="uci_gas_turbine_nox",
+        seed=2026080701,
+        query_index=1,
+        candidate_ids=np.asarray([8, 9, 10]),
+        candidate_actions=actions[8:11],
+        predictive_target_actions=actions[8:11],
+        representative_observed_actions=actions[:8],
+        operational_state=state,
+    )
+    root = tmp_path / "p3m" / identity.dataset_id / f"seed-{identity.seed}"
+    root.mkdir(parents=True)
+    workspace = open_p3j_query_workspace(root, identity)
+    assert workspace.query_root == root / "checkpoints" / "q-001"
+    payload = json.loads(
+        (workspace.query_root / "IDENTITY.json").read_text(encoding="utf-8")
+    )
+    assert payload["identity"]["dataset_id"] == identity.dataset_id
+    assert payload["identity"]["seed"] == identity.seed
+    longest = (
+        workspace.ranking_root
+        / "model-00-power-0x1.0000000000000p-3"
+        / "risk-nodes-512.json.staging"
+    )
+    assert len(str(longest)) < 260
 
 
 def test_measured_query_composes_decision_before_one_matching_reveal(tmp_path) -> None:

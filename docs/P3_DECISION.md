@@ -862,3 +862,24 @@ versioned Python DLL, stable-ABI DLL, virtual-environment launcher, and
 no statistical or experimental choice inherited from P3K.7.
 
 See `docs/pcpi_p3k7_runtime_failure_p3k8_complete_freeze_20260904.md`.
+
+## P3M.5 Windows checkpoint-path failure and source repair
+
+The user-executed P3M.5 attempt at source `6d63efad` is retained as a terminal
+infrastructure failure.  It stopped while initializing the first Gas NOX
+query checkpoint, before publishing that query's decision or opening its
+response.  The failing `.staging` pathname was exactly 260 characters: the
+dataset and seed already present in the policy run root were repeated inside
+the query-workspace path.  The parent directory existed, but Windows legacy
+path handling reported `FileNotFoundError` at file creation.  This attempt is
+not efficacy evidence and its output must not be overwritten or resumed.
+
+The source repair gives only P3M identities the compact
+`checkpoints/q-NNN` spelling.  Dataset, seed, query, candidate-domain and state
+identities remain fully bound in `IDENTITY.json` and its stable hash.  P3J and
+P3K retain their historical paths.  Workspace creation and terminal manifest
+verification now share one schema-aware path resolver.  The longest frozen
+P3M checkpoint staging path is below the Windows legacy limit, and full
+no-data regression passes.  A repaired execution requires a new commit, tree,
+output directory and preserved-history stash; all statistical and held-out
+boundaries remain unchanged.
