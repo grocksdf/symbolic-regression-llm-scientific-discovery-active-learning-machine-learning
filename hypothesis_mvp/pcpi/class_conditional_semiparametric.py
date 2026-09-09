@@ -78,6 +78,20 @@ P3M_ACTION_CONDITIONAL_POSTERIOR_UPDATE_METHOD = (
 )
 
 
+def _p3m_residual_methods() -> tuple[str, ...]:
+    """Resolve P3M residual identities lazily to avoid an import cycle."""
+
+    from .action_conditional_residual import (
+        P3M_ACTION_CONDITIONAL_RESIDUAL_METHOD,
+        P3M_GLOBAL_LOCAL_PARTIAL_POOLED_RESIDUAL_METHOD,
+    )
+
+    return (
+        P3M_ACTION_CONDITIONAL_RESIDUAL_METHOD,
+        P3M_GLOBAL_LOCAL_PARTIAL_POOLED_RESIDUAL_METHOD,
+    )
+
+
 def _readonly(values: np.ndarray) -> np.ndarray:
     result = np.ascontiguousarray(values, dtype=float)
     if not np.all(np.isfinite(result)):
@@ -415,7 +429,7 @@ class CalibratedClassPosteriorState:
             or (
                 self.method == P3M_ACTION_CONDITIONAL_POSTERIOR_UPDATE_METHOD
                 and getattr(self.residual_state, "method", "")
-                != "strict-prefix-rbf-weighted-kt-dyadic-polya-tree-v1"
+                not in _p3m_residual_methods()
             )
         ):
             raise ValueError("P3J calibrated posterior state is inconsistent")

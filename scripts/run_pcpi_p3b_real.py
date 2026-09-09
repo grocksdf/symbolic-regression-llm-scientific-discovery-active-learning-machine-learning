@@ -2351,6 +2351,17 @@ def _manifest_method_contract(
                     "p3m_checkpoint_publication",
                 )
             }
+            # P3M.6 binds the partial-pooling prior explicitly.  Keep these
+            # optional so the completed P3M.5 manifest contract remains byte
+            # compatible with its frozen configuration.
+            contract |= {
+                key: config[key]
+                for key in (
+                    "p3m_residual_pooling_kappa",
+                    "p3m_residual_pooling_rule",
+                )
+                if key in config
+            }
         if "pcpi_information_risk_method" in config:
             contract |= {
                 key: config[key]
@@ -2843,6 +2854,13 @@ def run(
                                     protocol.class_conditional_contract_prefix
                                     == "p3m"
                                 ),
+                                action_conditional_residual_method=(
+                                    config.get("p3m_residual_state_method")
+                                    if protocol.class_conditional_contract_prefix
+                                    == "p3m"
+                                    else None
+                                )
+                                or "strict-prefix-rbf-weighted-kt-dyadic-polya-tree-v1",
                             )
                             summary, curves, queries = _run_p3j_shared_policy(
                                 run_root=(

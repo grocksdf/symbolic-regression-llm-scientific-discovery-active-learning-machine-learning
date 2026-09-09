@@ -27,9 +27,18 @@ from .reference import (
 from .semiparametric_acquisition import _residual_quadrature
 
 
+# P3M.5's method identity remains immutable for the completed experiment.
 P3M_ACTION_CONDITIONAL_RESIDUAL_METHOD = (
     "strict-prefix-rbf-weighted-kt-dyadic-polya-tree-v1"
 )
+# P3M.6 adds the global anchor while retaining the same strict-prefix data
+# boundary.  The pooling constant is a registered prior effective sample size,
+# not a fitted knob.
+P3M_GLOBAL_LOCAL_PARTIAL_POOLED_RESIDUAL_METHOD = (
+    "strict-prefix-rbf-global-local-partial-pooled-kt-dyadic-polya-tree-v1"
+)
+P3M_GLOBAL_LOCAL_POOLING_KAPPA = 8.0
+P3M_GLOBAL_LOCAL_POOLING_RULE = "n-effective-over-n-effective-plus-kappa-fixed-8-v1"
 P3M_ACTION_CONDITIONAL_JOINT_METHOD = (
     "normalized-action-conditional-shared-innovation-class-joint-v1"
 )
@@ -83,6 +92,11 @@ def _weighted_predictive_law(
     raw_pits: tuple[float, ...], weights: np.ndarray
 ) -> DyadicPolyaTreePredictiveLaw:
     values = np.asarray(raw_pits, dtype=float)
+    weights = np.asarray(weights, dtype=float).reshape(-1)
+    if len(weights) != len(values) or np.any(weights < 0.0) or not np.all(np.isfinite(weights)):
+        raise ValueError("P3M predictive-law weights are invalid")
+    if len(values) and not float(np.sum(weights)) > 0.0:
+        raise ValueError("P3M predictive-law weights have zero mass")
     masses = np.ones(1, dtype=float)
     depth = universal_dyadic_depth(len(values))
     if depth:
@@ -110,6 +124,7 @@ class ActionConditionalResidualState:
     context_scale: np.ndarray
     bandwidth_squared: float
     target_partition_hash: str
+    pooling_kappa: float = P3M_GLOBAL_LOCAL_POOLING_KAPPA
     method: str = P3M_ACTION_CONDITIONAL_RESIDUAL_METHOD
 
     def __post_init__(self) -> None:
@@ -124,13 +139,21 @@ class ActionConditionalResidualState:
             or np.any(scale <= 0.0) or np.any(pits < 0.0) or np.any(pits > 1.0)
             or not math.isfinite(self.bandwidth_squared)
             or self.bandwidth_squared <= 0.0 or not self.target_partition_hash
-            or self.method != P3M_ACTION_CONDITIONAL_RESIDUAL_METHOD
+            or not math.isclose(
+                float(self.pooling_kappa), P3M_GLOBAL_LOCAL_POOLING_KAPPA,
+                rel_tol=0.0, abs_tol=0.0,
+            )
+            or self.method not in (
+                P3M_ACTION_CONDITIONAL_RESIDUAL_METHOD,
+                P3M_GLOBAL_LOCAL_PARTIAL_POOLED_RESIDUAL_METHOD,
+            )
         ):
             raise ValueError("P3M action-conditional residual state is invalid")
         object.__setattr__(self, "standardized_actions", actions)
         object.__setattr__(self, "context_center", center)
         object.__setattr__(self, "context_scale", scale)
         object.__setattr__(self, "raw_pits", tuple(float(value) for value in pits))
+        object.__setattr__(self, "pooling_kappa", float(self.pooling_kappa))
 
     @property
     def observation_count(self) -> int:
@@ -151,11 +174,18 @@ class ActionConditionalResidualState:
         digest.update(self.target_partition_hash.encode("ascii"))
         for class_id in self.class_ids:
             digest.update(class_id.encode("ascii"))
-        for values in (
+        state_values = (
             self.standardized_actions, self.context_center, self.context_scale,
-            np.asarray(self.raw_pits), np.asarray([self.bandwidth_squared]),
-        ):
+            np.asarray(self.raw_pits),
+        )
+        for values in state_values:
             digest.update(np.asarray(values, dtype=np.float64).tobytes())
+        if self.method == P3M_GLOBAL_LOCAL_PARTIAL_POOLED_RESIDUAL_METHOD:
+            digest.update(np.asarray(
+                [self.bandwidth_squared, self.pooling_kappa]
+            , dtype=np.float64).tobytes())
+        else:
+            digest.update(np.asarray([self.bandwidth_squared], dtype=np.float64).tobytes())
         return digest.hexdigest()
 
     def standardize(self, actions: np.ndarray) -> np.ndarray:
@@ -164,11 +194,55 @@ class ActionConditionalResidualState:
             raise ValueError("P3M query covariates do not match the frozen transform")
         return (values - self.context_center) / self.context_scale
 
-    def predictive_law(self, action: np.ndarray) -> DyadicPolyaTreePredictiveLaw:
+    def kernel_weights(self, action: np.ndarray) -> np.ndarray:
+        """Return numerically stabilized RBF weights for one candidate."""
+
+        if not self.observation_count:
+            return np.empty(0, dtype=float)
         query = self.standardize(np.asarray(action, dtype=float).reshape(1, -1))[0]
         squared = np.sum(np.square(self.standardized_actions - query), axis=1)
-        weights = np.exp(-0.5 * squared / self.effective_bandwidth_squared)
-        return _weighted_predictive_law(self.raw_pits, weights)
+        log_weights = -0.5 * squared / self.effective_bandwidth_squared
+        # Subtracting the maximum preserves the normalized kernel exactly while
+        # avoiding an all-zero vector for distant high-dimensional candidates.
+        log_weights -= float(np.max(log_weights))
+        return np.exp(log_weights)
+
+    def effective_sample_size(self, action: np.ndarray) -> float:
+        weights = self.kernel_weights(action)
+        if not len(weights):
+            return 0.0
+        total = float(np.sum(weights))
+        return total * total / float(np.sum(np.square(weights)))
+
+    def local_pooling_weight(self, action: np.ndarray) -> float:
+        n_eff = self.effective_sample_size(action)
+        return n_eff / (n_eff + self.pooling_kappa)
+
+    def global_predictive_law(self) -> DyadicPolyaTreePredictiveLaw:
+        """Strict-prefix global law used as the partial-pooling anchor."""
+
+        return _weighted_predictive_law(
+            self.raw_pits, np.ones(self.observation_count, dtype=float)
+        )
+
+    def predictive_law(self, action: np.ndarray) -> DyadicPolyaTreePredictiveLaw:
+        if self.method == P3M_ACTION_CONDITIONAL_RESIDUAL_METHOD:
+            # Preserve the completed P3M.5 numerical path byte-for-byte; the
+            # stabilized weights below are part of the new P3M.6 method only.
+            query = self.standardize(np.asarray(action, dtype=float).reshape(1, -1))[0]
+            squared = np.sum(np.square(self.standardized_actions - query), axis=1)
+            weights = np.exp(-0.5 * squared / self.effective_bandwidth_squared)
+            return _weighted_predictive_law(self.raw_pits, weights)
+        local = _weighted_predictive_law(self.raw_pits, self.kernel_weights(action))
+        global_law = self.global_predictive_law()
+        # Both laws use the same response-free depth sieve for a given prefix,
+        # so their leaf masses can be mixed directly and remain normalized.
+        if local.depth != global_law.depth:
+            raise FloatingPointError("P3M local/global dyadic depths diverged")
+        weight = self.local_pooling_weight(action)
+        mixed = weight * local.leaf_probabilities + (1.0 - weight) * global_law.leaf_probabilities
+        mixed /= float(np.sum(mixed))
+        return DyadicPolyaTreePredictiveLaw(local.depth, mixed, self.observation_count)
 
 
 @dataclass(frozen=True)
@@ -286,7 +360,10 @@ class ActionConditionalInformationRiskChunkResult:
 
 
 def initialize_action_conditional_residual_state(
-    partition: ClassPartition, conditioning_actions: np.ndarray
+    partition: ClassPartition,
+    conditioning_actions: np.ndarray,
+    *,
+    residual_method: str = P3M_ACTION_CONDITIONAL_RESIDUAL_METHOD,
 ) -> ActionConditionalResidualState:
     center, scale = _context_transform(conditioning_actions)
     standardized = (np.asarray(conditioning_actions, dtype=float) - center) / scale
@@ -296,6 +373,7 @@ def initialize_action_conditional_residual_state(
         standardized_actions=np.empty((0, standardized.shape[1])),
         raw_pits=(), context_center=center, context_scale=scale,
         bandwidth_squared=bandwidth, target_partition_hash=partition.stable_hash,
+        method=residual_method,
     )
 
 
@@ -326,6 +404,7 @@ def advance_action_conditional_residual_state(
         raw_pits=state.raw_pits + (shared,), context_center=state.context_center,
         context_scale=state.context_scale, bandwidth_squared=state.bandwidth_squared,
         target_partition_hash=state.target_partition_hash,
+        pooling_kappa=state.pooling_kappa, method=state.method,
     )
     return next_state, _readonly(raw_pits), shared, _readonly(law.density(raw_pits))
 
@@ -337,13 +416,17 @@ def reconstruct_action_conditional_residual_state(
     residual_actions: np.ndarray,
     residual_targets: np.ndarray,
     target_partition: ClassPartition,
+    *,
+    residual_method: str = P3M_ACTION_CONDITIONAL_RESIDUAL_METHOD,
 ) -> tuple[ActionConditionalResidualState, ExactPosterior]:
     conditioning_x, conditioning_y = engine._validated_data(
         conditioning_actions, conditioning_targets
     )
     residual_x, residual_y = engine._validated_data(residual_actions, residual_targets)
     posterior = engine.fit_batch(conditioning_x, conditioning_y)
-    state = initialize_action_conditional_residual_state(target_partition, conditioning_x)
+    state = initialize_action_conditional_residual_state(
+        target_partition, conditioning_x, residual_method=residual_method
+    )
     for action, target in zip(residual_x, residual_y, strict=True):
         components = predictive_components_for_partition(
             engine, posterior, target_partition, action[None, :]
@@ -501,10 +584,13 @@ def estimate_action_conditional_information_risk(
 __all__ = [
     "P3M_ACTION_CONDITIONAL_JOINT_METHOD",
     "P3M_ACTION_CONDITIONAL_RESIDUAL_METHOD",
+    "P3M_GLOBAL_LOCAL_PARTIAL_POOLED_RESIDUAL_METHOD",
     "P3M_BANDWIDTH_RULE",
     "P3M_BANDWIDTH_SCHEDULE",
     "P3M_CONTEXT_TRANSFORM",
     "P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD",
+    "P3M_GLOBAL_LOCAL_POOLING_KAPPA",
+    "P3M_GLOBAL_LOCAL_POOLING_RULE",
     "ActionConditionalInformationRiskEstimate",
     "ActionConditionalInformationRiskChunkResult",
     "ActionConditionalResidualState",

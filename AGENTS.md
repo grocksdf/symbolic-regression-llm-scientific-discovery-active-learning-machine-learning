@@ -714,3 +714,15 @@ through this adapter and finalize its contiguous query manifest.
   run only once at its unique output path; no result-dependent rerun or tuning
   is admissible. The P3M.5 supervisor must isolate and restore both untracked
   `evidence/` and `evaluations/` through distinct explicit sibling paths.
+- P3M.6 is a new response-free method/protocol identity following the immutable
+  P3M.5 negative result. It keeps P3M.5's data, seeds, budgets, baselines,
+  posterior family, candidate projection, lower-tail risk and assessment, and
+  changes only the residual-law estimator: the candidate-specific RBF law is
+  mixed with the same strict-prefix global PIT law using
+  `lambda=n_eff/(n_eff+8)`, where `n_eff=(sum w)^2/sum(w^2)` and `kappa=8` is
+  frozen before data access. The mixture is normalized on the common dyadic
+  sieve, remains shared across classes, and uses no validation, held-out,
+  oracle, seed or efficacy information. P3M.6 must pass its exact/reference,
+  lifecycle, checkpoint, source-integrity and no-data freeze Gate before one
+  user-executed held-out-closed development run; it is not confirmation and a
+  negative result remains valid evidence.

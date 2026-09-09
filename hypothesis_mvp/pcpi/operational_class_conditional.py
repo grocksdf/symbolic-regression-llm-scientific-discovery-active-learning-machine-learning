@@ -24,7 +24,10 @@ from .class_conditional_semiparametric import (
     initialize_calibrated_class_posterior,
     reconstruct_class_conditional_residual_state,
 )
-from .action_conditional_residual import reconstruct_action_conditional_residual_state
+from .action_conditional_residual import (
+    P3M_ACTION_CONDITIONAL_RESIDUAL_METHOD,
+    reconstruct_action_conditional_residual_state,
+)
 from .operational_semiparametric import P3H_OPERATIONAL_POWERS
 from .real_acquisition import (
     AcquisitionScores,
@@ -175,6 +178,7 @@ def initialize_operational_class_conditional_state(
     target_partition: ClassPartition,
     *,
     action_conditional_residual: bool = False,
+    action_conditional_residual_method: str = P3M_ACTION_CONDITIONAL_RESIDUAL_METHOD,
 ) -> OperationalClassConditionalState:
     """Build the fixed family from initial opened roles and no other source."""
 
@@ -198,6 +202,10 @@ def initialize_operational_class_conditional_state(
                 residual_actions,
                 residual_y,
                 target_partition,
+                **(
+                    {"residual_method": action_conditional_residual_method}
+                    if action_conditional_residual else {}
+                ),
             )
         )
         states.append(initialize_calibrated_class_posterior(
