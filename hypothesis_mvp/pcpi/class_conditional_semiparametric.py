@@ -1006,7 +1006,7 @@ def iter_class_conditional_semiparametric_chunks(
         or start != start_action
         or start < 0
         or start > components.locations.shape[1]
-        or start % chunk_size
+        or (start != components.locations.shape[1] and start % chunk_size)
     ):
         raise ValueError("P3J action chunk traversal is invalid")
     action_count = components.locations.shape[1]
@@ -1039,7 +1039,7 @@ def iter_class_conditional_information_risk_chunks(
         or start != start_action
         or start < 0
         or start > components.locations.shape[1]
-        or start % chunk_size
+        or (start != components.locations.shape[1] and start % chunk_size)
         or not 0.0 < alpha < 1.0
     ):
         raise ValueError("P3L information-risk chunk traversal is invalid")

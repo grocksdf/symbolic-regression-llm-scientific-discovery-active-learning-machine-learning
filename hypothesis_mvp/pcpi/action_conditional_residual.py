@@ -511,7 +511,9 @@ def iter_action_conditional_information_risk_chunks(
         values.ndim != 2 or len(values) != components.locations.shape[1]
         or chunk_size != action_chunk_size or chunk_size < 1
         or start != start_action or start < 0 or start > len(values)
-        or start % chunk_size or nodes_per_leaf < 2
+        # A complete traversal may end at a short final chunk.  Its terminal
+        # cursor is therefore not necessarily aligned to the chunk size.
+        or (start != len(values) and start % chunk_size) or nodes_per_leaf < 2
         or not 0.0 < float(tail_probability) < 1.0
     ):
         raise ValueError("P3M information-risk chunk traversal is invalid")

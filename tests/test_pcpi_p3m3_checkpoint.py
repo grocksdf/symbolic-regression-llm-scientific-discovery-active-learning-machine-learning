@@ -91,6 +91,14 @@ def test_partial_prefix_resumes_at_exact_next_chunk(tmp_path) -> None:
     assert resumed.complete
     assert resumed.completed_chunk_count == 2
     assert resumed.plan.schema == P3M_CHECKPOINT_SCHEMA
+    # Reopening a completed grid must accept a short, non-aligned terminal
+    # chunk (3 actions with chunk size 2) and return without recomputation.
+    reopened = complete_p3m_information_risk_grid(
+        path, components, state, candidates, 8,
+        tail_probability=0.25, action_chunk_size=2,
+    )
+    assert reopened.complete
+    assert reopened.completed_action_count == len(candidates)
 
 
 def test_changed_candidate_action_cannot_reuse_checkpoint(tmp_path) -> None:
