@@ -21,6 +21,7 @@ from .p3j_run_identity import (
     score_identity_bound_p3j_query,
 )
 from .real_acquisition import AcquisitionScores
+from .action_conditional_residual import P3M6_ENTROPY_UTILITY
 
 
 P3J_QUERY_DECISION_SCHEMA = "pcpi-p3j9-indivisible-query-decision-v1"
@@ -160,6 +161,7 @@ def run_p3j_formal_query(
     eig_growth_factor: int,
     action_chunk_size: int = 16,
     information_risk_tail_probability: float | None = None,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> OperationalClassConditionalDecision:
     """Resume, fail terminally, or publish exactly one response-free decision."""
 
@@ -182,6 +184,7 @@ def run_p3j_formal_query(
             eig_growth_factor=eig_growth_factor,
             action_chunk_size=action_chunk_size,
             information_risk_tail_probability=information_risk_tail_probability,
+            utility_method=utility_method,
         )
         _publish_no_overwrite(decision_path, _decision_payload(workspace, decision))
     except Exception as error:

@@ -55,6 +55,8 @@ from .action_conditional_residual import (
     P3M_ACTION_CONDITIONAL_JOINT_METHOD,
     ActionConditionalInformationRiskEstimate,
     estimate_action_conditional_information_risk,
+    P3M6_ENTROPY_UTILITY,
+    P3M7_DECISION_RISK_UTILITY,
 )
 from .likelihood_power_residuals import LikelihoodPowerResidualFamily
 from .p3j_checkpointed import (
@@ -905,6 +907,7 @@ def _information_risk_model_look(
     model_index: int,
     action_chunk_size: int,
     candidate_actions: np.ndarray,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> ClassConditionalInformationRiskEstimate | ActionConditionalInformationRiskEstimate:
     if getattr(state.residual_state, "method", "").startswith("strict-prefix-rbf-"):
         if checkpoint_root is not None:
@@ -917,6 +920,7 @@ def _information_risk_model_look(
                 samples, tail_probability=tail_probability,
                 error_safety_factor=error_safety_factor,
                 action_chunk_size=action_chunk_size, preceding=preceding,
+                utility_method=utility_method,
             )
         return estimate_action_conditional_information_risk(
             components,
@@ -925,6 +929,7 @@ def _information_risk_model_look(
             samples,
             tail_probability=tail_probability,
             error_safety_factor=error_safety_factor,
+            utility_method=utility_method,
         )
     if checkpoint_root is not None:
         return _checkpointed_p3l_model_look(
@@ -970,6 +975,7 @@ def _estimate_class_conditional_information_risk_until_ranked(
     action_chunk_size: int = 16,
     progress_callback: Callable[[int, int], None] | None = None,
     candidate_actions: np.ndarray | None = None,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> MaximinJointEstimate:
     """Certify the maximin lower-tail class-entropy reduction."""
     if (
@@ -1007,6 +1013,7 @@ def _estimate_class_conditional_information_risk_until_ranked(
                 model_index,
                 action_chunk_size,
                 candidate_actions,
+                utility_method,
             )
             estimates_list.append(estimate)
             if progress_callback is not None:
@@ -1039,8 +1046,7 @@ def _estimate_class_conditional_information_risk_until_ranked(
                 upper_bounds=upper,
                 class_scores_by_model=information_by_model,
                 class_errors_by_model=information_errors,
-                conditional_scores_by_model=zeros,
-                joint_scores_by_model=information_by_model,
+                conditional_scores_by_model=zeros, joint_scores_by_model=information_by_model,
                 least_favorable_indices=least_favorable_model_indices(
                     information_by_model, powers
                 ),
@@ -1050,10 +1056,8 @@ def _estimate_class_conditional_information_risk_until_ranked(
                 ranking_margin=margin,
                 conservative_error_bound=bound,
                 certificate_gap=gap,
-                planned_looks=planned,
-                looks_used=looks,
-                possible_maximizer_mask=possible,
-                possible_maximizer_count=int(np.count_nonzero(possible)),
+                planned_looks=planned, looks_used=looks,
+                possible_maximizer_mask=possible, possible_maximizer_count=int(np.count_nonzero(possible)),
             )
         samples = min(maximum_samples, samples * growth_factor)
 
@@ -1722,6 +1726,7 @@ def score_class_conditional_decision_actions(
     action_chunk_size: int = 16,
     information_risk_tail_probability: float | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> AcquisitionScores:
     """Score the coherent P3J class-conditional joint and no nuisance target."""
 
@@ -1773,6 +1778,7 @@ def score_class_conditional_decision_actions(
             action_chunk_size,
             progress_callback,
             candidate_actions=scoring_actions,
+            utility_method=utility_method,
         )
     if len(scoring_indices) != len(actions):
         robust = _expand_maximin_estimate(robust, scoring_indices, len(actions))

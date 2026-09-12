@@ -25,6 +25,7 @@ from .p3j_reporting import (
     summarize_p3j_policy_artifacts,
 )
 from .reference import DevelopmentStandardizer
+from .action_conditional_residual import P3M6_ENTROPY_UTILITY
 
 
 P3J_OUTER_RUNNER_COMPOSITION = (
@@ -82,6 +83,7 @@ def run_p3j_outer_policy(
     structure_count: int,
     action_chunk_size: int = 16,
     information_risk_tail_probability: float | None = None,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> P3JOuterPolicyResult:
     """Compose selection, durable reveals, evaluation, and summary in order."""
 
@@ -106,6 +108,7 @@ def run_p3j_outer_policy(
             eig_growth_factor=eig_growth_factor,
             action_chunk_size=action_chunk_size,
             information_risk_tail_probability=information_risk_tail_probability,
+            utility_method=utility_method,
         )
         artifacts = build_p3j_policy_artifacts(
             measured,

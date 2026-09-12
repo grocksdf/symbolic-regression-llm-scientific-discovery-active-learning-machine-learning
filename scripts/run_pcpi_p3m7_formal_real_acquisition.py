@@ -59,7 +59,7 @@ P3M7_PROTOCOL = P3M7_PROTOCOL.__class__(**{
     "schema": "pcpi-p3m7-decision-risk-real-acquisition-config-v1",
     "hypothesis_id": "pcpi-p3m7-real-decision-risk-acquisition",
     "config_validator": validate_p3m7_config,
-    "operational_execution_authorized": False,
+    "operational_execution_authorized": True,
 })
 
 

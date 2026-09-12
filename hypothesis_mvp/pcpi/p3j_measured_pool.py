@@ -21,6 +21,7 @@ from .p3j_run_identity import (
     P3JQueryWorkspace,
 )
 from .reference import DevelopmentStandardizer
+from .action_conditional_residual import P3M6_ENTROPY_UTILITY
 
 
 P3J_MEASURED_POOL_ORDER = (
@@ -68,6 +69,7 @@ def run_p3j_measured_pool_query(
     eig_growth_factor: int,
     action_chunk_size: int = 16,
     information_risk_tail_probability: float | None = None,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> P3JMeasuredPoolQueryResult:
     """Publish selection before opening exactly its one measured response."""
 
@@ -84,6 +86,7 @@ def run_p3j_measured_pool_query(
         eig_growth_factor=eig_growth_factor,
         action_chunk_size=action_chunk_size,
         information_risk_tail_probability=information_risk_tail_probability,
+        utility_method=utility_method,
     )
     if not hasattr(oracle, "acquire_indices"):
         raise TypeError("P3J measured pool requires an indexed oracle")
@@ -137,6 +140,7 @@ def resume_or_run_p3j_measured_pool_query(
     eig_growth_factor: int,
     action_chunk_size: int = 16,
     information_risk_tail_probability: float | None = None,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> P3JMeasuredPoolQueryResult:
     """Recover a durable reveal, otherwise execute the response-free query."""
 
@@ -157,6 +161,7 @@ def resume_or_run_p3j_measured_pool_query(
             eig_growth_factor=eig_growth_factor,
             action_chunk_size=action_chunk_size,
             information_risk_tail_probability=information_risk_tail_probability,
+            utility_method=utility_method,
         )
     decision = _load_decision(workspace, candidate_actions, candidate_ids)
     recovered = resume_p3j_formal_response(

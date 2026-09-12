@@ -36,6 +36,7 @@ from .real_acquisition import (
     select_acquisition_candidate,
 )
 from .reference import SequentialReferencePosterior
+from .action_conditional_residual import P3M6_ENTROPY_UTILITY
 
 
 P3J_OPERATIONAL_LIFECYCLE = (
@@ -238,6 +239,7 @@ def score_operational_class_conditional_candidates(
     action_chunk_size: int = 16,
     information_risk_tail_probability: float | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> OperationalClassConditionalDecision:
     """Score only visible covariates, certify, and freeze one candidate."""
 
@@ -272,6 +274,7 @@ def score_operational_class_conditional_candidates(
         action_chunk_size=action_chunk_size,
         information_risk_tail_probability=information_risk_tail_probability,
         progress_callback=progress_callback,
+        utility_method=utility_method,
     )
     if (
         not scores.ranking_certified
@@ -316,6 +319,7 @@ def score_checkpointed_operational_class_conditional_candidates(
     unresolved_ranking_action: str = P3H_INTERVAL_FRONTIER_RESOLUTION,
     information_risk_tail_probability: float | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> OperationalClassConditionalDecision:
     """Require the complete checkpointed ambiguity family before selection."""
 
@@ -337,6 +341,7 @@ def score_checkpointed_operational_class_conditional_candidates(
         action_chunk_size=action_chunk_size,
         information_risk_tail_probability=information_risk_tail_probability,
         progress_callback=progress_callback,
+        utility_method=utility_method,
     )
 
 

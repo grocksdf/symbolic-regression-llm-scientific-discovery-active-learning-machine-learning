@@ -310,6 +310,7 @@ def score_identity_bound_p3j_query(
     eig_growth_factor: int,
     action_chunk_size: int = 16,
     information_risk_tail_probability: float | None = None,
+    utility_method: str = "frozen-class-entropy-lower-tail-cvar-v1",
 ):
     """Validate the complete formal identity before checkpointed scoring."""
 
@@ -351,6 +352,7 @@ def score_identity_bound_p3j_query(
                 workspace, completed_models, nodes_per_leaf
             )
         ),
+        utility_method=utility_method,
     )
 
 

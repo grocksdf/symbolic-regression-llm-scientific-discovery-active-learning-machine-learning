@@ -1076,6 +1076,9 @@ def _run_p3j_shared_policy(
             if "pcpi_information_risk_tail_probability" in config
             else None
         ),
+        utility_method=config.get(
+            "p3m_utility_method", "frozen-class-entropy-lower-tail-cvar-v1"
+        ),
     )
     queries = _p3j_compatible_query_rows(outer, subset_commitments, config)
     summary = _p3j_compatible_summary(

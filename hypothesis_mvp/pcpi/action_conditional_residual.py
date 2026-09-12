@@ -616,6 +616,7 @@ def estimate_action_conditional_information_risk(
     *,
     tail_probability: float = 0.25,
     error_safety_factor: float = 4.0,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> ActionConditionalInformationRiskEstimate:
     """Return nested candidate-specific risk under one strict-prefix state."""
 
@@ -628,8 +629,12 @@ def estimate_action_conditional_information_risk(
         or error_safety_factor < 1.0
     ):
         raise ValueError("P3M information-risk request is invalid")
-    fine = _information_risk_grid(components, state, values, order, alpha)
-    coarse = _information_risk_grid(components, state, values, order // 2, alpha)
+    fine = _information_risk_grid(
+        components, state, values, order, alpha, utility_method=utility_method
+    )
+    coarse = _information_risk_grid(
+        components, state, values, order // 2, alpha, utility_method=utility_method
+    )
     normalization = max(fine[3], coarse[3])
     scale = np.maximum(1.0, np.maximum(np.abs(fine[0]), np.abs(fine[1])))
     roundoff = 4096.0 * np.finfo(float).eps * scale
