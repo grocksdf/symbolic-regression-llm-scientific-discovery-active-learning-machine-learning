@@ -60,6 +60,20 @@ def _readonly(values: np.ndarray) -> np.ndarray:
     return result
 
 
+def bayes_zero_one_decision_risk(probabilities: np.ndarray) -> float:
+    """Return Bayes 0--1 risk for a normalized operational-class posterior."""
+
+    values = np.asarray(probabilities, dtype=float).reshape(-1)
+    if (
+        not len(values)
+        or not np.all(np.isfinite(values))
+        or np.any(values <= 0.0)
+        or not np.isclose(float(np.sum(values)), 1.0, rtol=0.0, atol=2e-13)
+    ):
+        raise ValueError("Bayes decision-risk posterior is invalid")
+    return 1.0 - float(np.max(values))
+
+
 def action_matrix_hash(actions: np.ndarray) -> str:
     values = np.ascontiguousarray(actions, dtype=np.float64)
     if values.ndim != 2 or not len(values) or not np.all(np.isfinite(values)):
@@ -617,6 +631,7 @@ __all__ = [
     "ActionConditionalInformationRiskEstimate",
     "ActionConditionalInformationRiskChunkResult",
     "ActionConditionalResidualState",
+    "bayes_zero_one_decision_risk",
     "advance_action_conditional_residual_state",
     "action_matrix_hash",
     "estimate_action_conditional_information_risk",
