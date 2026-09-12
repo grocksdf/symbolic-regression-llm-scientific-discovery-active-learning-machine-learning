@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from hashlib import sha256
 import math
@@ -39,6 +40,7 @@ P3M_GLOBAL_LOCAL_PARTIAL_POOLED_RESIDUAL_METHOD = (
 )
 P3M_GLOBAL_LOCAL_POOLING_KAPPA = 8.0
 P3M_GLOBAL_LOCAL_POOLING_RULE = "n-effective-over-n-effective-plus-kappa-fixed-8-v1"
+P3M_INFORMATION_RISK_WORKERS = 4
 P3M_ACTION_CONDITIONAL_JOINT_METHOD = (
     "normalized-action-conditional-shared-innovation-class-joint-v1"
 )
@@ -482,10 +484,17 @@ def _information_risk_grid(
     nodes: int,
     alpha: float,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, int]:
-    rows = tuple(
-        _action_information_risk(components, state, actions, index, nodes, alpha)
-        for index in range(len(actions))
-    )
+    # Candidate quadratures are independent.  Collect results in index order
+    # so floating-point reductions and checkpoint identities remain stable.
+    with ThreadPoolExecutor(
+        max_workers=min(P3M_INFORMATION_RISK_WORKERS, max(1, len(actions)))
+    ) as pool:
+        rows = tuple(pool.map(
+            lambda index: _action_information_risk(
+                components, state, actions, index, nodes, alpha
+            ),
+            range(len(actions)),
+        ))
     return (
         np.asarray([row[0] for row in rows]), np.asarray([row[1] for row in rows]),
         np.asarray([row[2] for row in rows]), max(row[3] for row in rows),
