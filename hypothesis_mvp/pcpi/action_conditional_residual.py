@@ -602,6 +602,7 @@ __all__ = [
     "P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD",
     "P3M_GLOBAL_LOCAL_POOLING_KAPPA",
     "P3M_GLOBAL_LOCAL_POOLING_RULE",
+    "P3M_INFORMATION_RISK_WORKERS",
     "ActionConditionalInformationRiskEstimate",
     "ActionConditionalInformationRiskChunkResult",
     "ActionConditionalResidualState",
