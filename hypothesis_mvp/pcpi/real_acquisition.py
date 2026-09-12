@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from hashlib import sha256
 from pathlib import Path
 from typing import Callable
@@ -1856,10 +1856,11 @@ def _expand_maximin_estimate(
 
     expanded_estimates = []
     for item in estimate.estimates:
+        item_fields = {field.name for field in fields(item)}
         updates = {
             name: _expand_vector(getattr(item, name), indices, full_count)
             for name in _VECTOR_ESTIMATE_FIELDS
-            if hasattr(item, name)
+            if name in item_fields
         }
         expanded_estimates.append(replace(item, **updates) if updates else item)
     possible = np.zeros(full_count, dtype=bool)
