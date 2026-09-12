@@ -50,6 +50,8 @@ P3M_BANDWIDTH_SCHEDULE = "h-anchor-times-n-to-minus-one-over-d-plus-four-v1"
 P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD = (
     "action-conditional-lower-tail-cvar-of-frozen-class-entropy-reduction-v1"
 )
+P3M7_DECISION_RISK_UTILITY = "bayes-zero-one-decision-risk-lower-tail-cvar-v1"
+P3M6_ENTROPY_UTILITY = "frozen-class-entropy-lower-tail-cvar-v1"
 
 
 def _readonly(values: np.ndarray) -> np.ndarray:
@@ -482,6 +484,7 @@ def _action_information_risk(
     nodes_per_leaf: int,
     tail_probability: float,
     predictive_law: DyadicPolyaTreePredictiveLaw | None = None,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> tuple[float, float, float, float, int]:
     probabilities = _validated_class_probabilities(components)
     law = (
@@ -490,6 +493,9 @@ def _action_information_risk(
     )
     raw_pits, weights = _residual_quadrature(law, nodes_per_leaf)
     prior_entropy = -float(np.sum(probabilities * np.log(probabilities)))
+    prior_decision_risk = bayes_zero_one_decision_risk(probabilities)
+    if utility_method not in (P3M6_ENTROPY_UTILITY, P3M7_DECISION_RISK_UTILITY):
+        raise ValueError("P3M utility method is invalid")
     information, gains, masses = 0.0, [], []
     for source_index in range(len(state.class_ids)):
         responses = _class_inverse_cdf_nodes(
@@ -507,7 +513,11 @@ def _action_information_risk(
         )[:, 0, :]
         pointwise = _posterior_class_kl_at_responses(calibrated, probabilities)
         information += probabilities[source_index] * float(np.sum(weights * pointwise))
-        gains.append(prior_entropy + np.sum(xlogy(posterior, posterior), axis=0))
+        gains.append(
+            prior_entropy + np.sum(xlogy(posterior, posterior), axis=0)
+            if utility_method == P3M6_ENTROPY_UTILITY
+            else prior_decision_risk - (1.0 - np.max(posterior, axis=0))
+        )
         masses.append(probabilities[source_index] * weights)
     gain_values, mass_values = np.concatenate(gains), np.concatenate(masses)
     cvar = weighted_lower_tail_cvar(gain_values, mass_values, tail_probability)
@@ -522,6 +532,7 @@ def _information_risk_grid(
     nodes: int,
     alpha: float,
     predictive_laws: tuple[DyadicPolyaTreePredictiveLaw, ...] | None = None,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, int]:
     if predictive_laws is not None and len(predictive_laws) != len(actions):
         raise ValueError("P3M predictive-law cache is not aligned")
@@ -534,6 +545,7 @@ def _information_risk_grid(
             lambda index: _action_information_risk(
                 components, state, actions, index, nodes, alpha,
                 None if predictive_laws is None else predictive_laws[index],
+                utility_method,
             ),
             range(len(actions)),
         ))
@@ -554,6 +566,7 @@ def iter_action_conditional_information_risk_chunks(
     action_chunk_size: int = 16,
     start_action: int = 0,
     predictive_laws: tuple[DyadicPolyaTreePredictiveLaw, ...] | None = None,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
 ):
     """Yield complete contiguous chunks without exposing any response surface."""
 
@@ -577,6 +590,7 @@ def iter_action_conditional_information_risk_chunks(
             _action_information_risk(
                 components, state, values, index, nodes_per_leaf, tail_probability,
                 None if predictive_laws is None else predictive_laws[index],
+                utility_method,
             )
             for index in range(chunk_start, stop)
         )

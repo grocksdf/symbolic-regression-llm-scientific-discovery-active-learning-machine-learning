@@ -339,9 +339,10 @@ def complete_p3m_information_risk_grid(
         raise ValueError("P3M predictive-law cache is not aligned")
     for chunk in iter_action_conditional_information_risk_chunks(
         components, state, actions, nodes_per_leaf,
-        tail_probability=tail_probability, action_chunk_size=action_chunk_size,
-        start_action=checkpoint.completed_action_count,
-        predictive_laws=laws,
+            tail_probability=tail_probability, action_chunk_size=action_chunk_size,
+            start_action=checkpoint.completed_action_count,
+            predictive_laws=laws,
+            utility_method=utility_method,
     ):
         checkpoint = append_p3m_checkpoint_chunk(path, plan, chunk)
     if not checkpoint.complete:
