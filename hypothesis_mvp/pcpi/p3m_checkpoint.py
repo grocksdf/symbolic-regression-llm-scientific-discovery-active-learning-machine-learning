@@ -23,6 +23,9 @@ from .action_conditional_residual import (
 
 
 P3M_CHECKPOINT_SCHEMA = "pcpi-p3m3-action-conditional-risk-checkpoint-v1"
+P3M7_CHECKPOINT_SCHEMA = "pcpi-p3m7-decision-risk-checkpoint-v1"
+P3M7_DECISION_RISK_UTILITY = "bayes-zero-one-decision-risk-lower-tail-cvar-v1"
+P3M6_ENTROPY_UTILITY = "frozen-class-entropy-lower-tail-cvar-v1"
 P3M_CHECKPOINT_PUBLICATION = "fsync-staging-then-atomic-replace"
 
 
@@ -54,6 +57,7 @@ class P3MCheckpointPlan:
     target_partition_hash: str
     predictive_components_hash: str
     candidate_actions_hash: str
+    utility_method: str = P3M6_ENTROPY_UTILITY
     schema: str = P3M_CHECKPOINT_SCHEMA
 
     def __post_init__(self) -> None:
@@ -64,11 +68,19 @@ class P3MCheckpointPlan:
             self.candidate_actions_hash,
         )
         if (
-            self.schema != P3M_CHECKPOINT_SCHEMA
+            self.schema not in (P3M_CHECKPOINT_SCHEMA, P3M7_CHECKPOINT_SCHEMA)
             or self.action_count < 1 or self.action_chunk_size < 1
             or self.nodes_per_leaf < 2
             or not 0.0 < float(self.tail_probability) < 1.0
             or any(len(value) != 64 for value in hashes)
+            or (
+                self.schema == P3M_CHECKPOINT_SCHEMA
+                and self.utility_method != P3M6_ENTROPY_UTILITY
+            )
+            or (
+                self.schema == P3M7_CHECKPOINT_SCHEMA
+                and self.utility_method != P3M7_DECISION_RISK_UTILITY
+            )
         ):
             raise ValueError("P3M checkpoint plan is invalid")
 
@@ -132,6 +144,9 @@ def build_p3m_checkpoint_plan(
     nodes_per_leaf: int,
     tail_probability: float,
     action_chunk_size: int,
+    *,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
+    schema: str = P3M_CHECKPOINT_SCHEMA,
 ) -> P3MCheckpointPlan:
     values = np.asarray(actions, dtype=float)
     if (
@@ -148,6 +163,8 @@ def build_p3m_checkpoint_plan(
         target_partition_hash=components.partition.stable_hash,
         predictive_components_hash=_components_hash(components),
         candidate_actions_hash=action_matrix_hash(values),
+        utility_method=utility_method,
+        schema=schema,
     )
 
 
@@ -191,10 +208,16 @@ def initialize_p3m_checkpoint(path: Path, plan: P3MCheckpointPlan) -> P3MCheckpo
 
 def _validated_payload(path: Path, plan: P3MCheckpointPlan) -> dict[str, object]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    observed_plan = payload.get("plan")
+    if isinstance(observed_plan, dict) and "utility_method" not in observed_plan:
+        # P3M.6 checkpoints predate explicit utility identity.  They are
+        # readable only as the original entropy utility, never as P3M.7.
+        observed_plan = dict(observed_plan)
+        observed_plan["utility_method"] = P3M6_ENTROPY_UTILITY
     if (
         payload.get("schema") != plan.schema
         or payload.get("publication") != P3M_CHECKPOINT_PUBLICATION
-        or payload.get("plan") != asdict(plan)
+        or observed_plan != asdict(plan)
         or payload.get("plan_hash") != plan.stable_hash
         or not isinstance(payload.get("chunks"), list)
     ):
@@ -292,9 +315,12 @@ def complete_p3m_information_risk_grid(
     tail_probability: float = 0.25,
     action_chunk_size: int = 16,
     predictive_laws: tuple[object, ...] | None = None,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
+    schema: str = P3M_CHECKPOINT_SCHEMA,
 ) -> P3MCheckpoint:
     plan = build_p3m_checkpoint_plan(
-        components, state, actions, nodes_per_leaf, tail_probability, action_chunk_size
+        components, state, actions, nodes_per_leaf, tail_probability, action_chunk_size,
+        utility_method=utility_method, schema=schema,
     )
     checkpoint = (
         load_p3m_checkpoint(path, plan)
@@ -334,6 +360,8 @@ def checkpointed_action_conditional_information_risk(
     error_safety_factor: float = 4.0,
     action_chunk_size: int = 16,
     preceding: ActionConditionalInformationRiskEstimate | None = None,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
+    schema: str = P3M_CHECKPOINT_SCHEMA,
 ) -> ActionConditionalInformationRiskEstimate:
     order, alpha = int(nodes_per_leaf), float(tail_probability)
     root = Path(directory)
@@ -344,12 +372,14 @@ def checkpointed_action_conditional_information_risk(
         root / f"risk-nodes-{order}.json", components, state, actions, order,
         tail_probability=alpha, action_chunk_size=action_chunk_size,
         predictive_laws=predictive_laws,
+        utility_method=utility_method, schema=schema,
     )
     if preceding is None:
         coarse = complete_p3m_information_risk_grid(
             root / f"risk-nodes-{order // 2}.json", components, state, actions,
             order // 2, tail_probability=alpha, action_chunk_size=action_chunk_size,
             predictive_laws=predictive_laws,
+            utility_method=utility_method, schema=schema,
         )
         coarse_cvar, coarse_information = coarse.lower_tail_cvar, coarse.mutual_information
         normalization = max(fine.maximum_conditional_normalization_error, coarse.maximum_conditional_normalization_error)
@@ -385,6 +415,9 @@ def checkpointed_action_conditional_information_risk(
 __all__ = [
     "P3M_CHECKPOINT_PUBLICATION",
     "P3M_CHECKPOINT_SCHEMA",
+    "P3M7_CHECKPOINT_SCHEMA",
+    "P3M7_DECISION_RISK_UTILITY",
+    "P3M6_ENTROPY_UTILITY",
     "P3MCheckpoint",
     "P3MCheckpointPlan",
     "append_p3m_checkpoint_chunk",

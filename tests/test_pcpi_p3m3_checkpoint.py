@@ -9,6 +9,8 @@ import pytest
 
 from hypothesis_mvp.pcpi import (
     P3M_CHECKPOINT_SCHEMA,
+    P3M7_CHECKPOINT_SCHEMA,
+    P3M7_DECISION_RISK_UTILITY,
     P3M_MEASURED_POOL_ORDER,
     P3M_MEASURED_RUN_PROTOCOL,
     P3M_RUN_MANIFEST_SCHEMA,
@@ -115,6 +117,22 @@ def test_changed_candidate_action_cannot_reuse_checkpoint(tmp_path) -> None:
             path, components, state, changed, 8,
             tail_probability=0.25, action_chunk_size=2,
         )
+
+
+def test_entropy_and_decision_risk_checkpoint_identities_do_not_cross(tmp_path) -> None:
+    _, candidates, components, state, _ = _grid_fixture()
+    path = tmp_path / "grid.json"
+    entropy_plan = build_p3m_checkpoint_plan(
+        components, state, candidates, 8, 0.25, 2
+    )
+    initialize_p3m_checkpoint(path, entropy_plan)
+    decision_plan = build_p3m_checkpoint_plan(
+        components, state, candidates, 8, 0.25, 2,
+        utility_method=P3M7_DECISION_RISK_UTILITY,
+        schema=P3M7_CHECKPOINT_SCHEMA,
+    )
+    with pytest.raises(ValueError, match="identity or schema"):
+        load_p3m_checkpoint(path, decision_plan)
 
 
 def test_tampered_chunk_fails_closed(tmp_path) -> None:

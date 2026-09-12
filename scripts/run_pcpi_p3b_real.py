@@ -2359,6 +2359,7 @@ def _manifest_method_contract(
                 for key in (
                     "p3m_residual_pooling_kappa",
                     "p3m_residual_pooling_rule",
+                    "p3m_utility_method",
                 )
                 if key in config
             }
