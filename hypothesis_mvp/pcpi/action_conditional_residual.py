@@ -447,9 +447,13 @@ def _action_information_risk(
     action_index: int,
     nodes_per_leaf: int,
     tail_probability: float,
+    predictive_law: DyadicPolyaTreePredictiveLaw | None = None,
 ) -> tuple[float, float, float, float, int]:
     probabilities = _validated_class_probabilities(components)
-    law = state.predictive_law(actions[action_index])
+    law = (
+        state.predictive_law(actions[action_index])
+        if predictive_law is None else predictive_law
+    )
     raw_pits, weights = _residual_quadrature(law, nodes_per_leaf)
     prior_entropy = -float(np.sum(probabilities * np.log(probabilities)))
     information, gains, masses = 0.0, [], []
@@ -483,7 +487,10 @@ def _information_risk_grid(
     actions: np.ndarray,
     nodes: int,
     alpha: float,
+    predictive_laws: tuple[DyadicPolyaTreePredictiveLaw, ...] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, int]:
+    if predictive_laws is not None and len(predictive_laws) != len(actions):
+        raise ValueError("P3M predictive-law cache is not aligned")
     # Candidate quadratures are independent.  Collect results in index order
     # so floating-point reductions and checkpoint identities remain stable.
     with ThreadPoolExecutor(
@@ -491,7 +498,8 @@ def _information_risk_grid(
     ) as pool:
         rows = tuple(pool.map(
             lambda index: _action_information_risk(
-                components, state, actions, index, nodes, alpha
+                components, state, actions, index, nodes, alpha,
+                None if predictive_laws is None else predictive_laws[index],
             ),
             range(len(actions)),
         ))
@@ -511,6 +519,7 @@ def iter_action_conditional_information_risk_chunks(
     tail_probability: float = 0.25,
     action_chunk_size: int = 16,
     start_action: int = 0,
+    predictive_laws: tuple[DyadicPolyaTreePredictiveLaw, ...] | None = None,
 ):
     """Yield complete contiguous chunks without exposing any response surface."""
 
@@ -524,6 +533,7 @@ def iter_action_conditional_information_risk_chunks(
         # cursor is therefore not necessarily aligned to the chunk size.
         or (start != len(values) and start % chunk_size) or nodes_per_leaf < 2
         or not 0.0 < float(tail_probability) < 1.0
+        or predictive_laws is not None and len(predictive_laws) != len(values)
     ):
         raise ValueError("P3M information-risk chunk traversal is invalid")
     matrix_hash = action_matrix_hash(values)
@@ -531,7 +541,8 @@ def iter_action_conditional_information_risk_chunks(
         stop = min(len(values), chunk_start + chunk_size)
         rows = tuple(
             _action_information_risk(
-                components, state, values, index, nodes_per_leaf, tail_probability
+                components, state, values, index, nodes_per_leaf, tail_probability,
+                None if predictive_laws is None else predictive_laws[index],
             )
             for index in range(chunk_start, stop)
         )

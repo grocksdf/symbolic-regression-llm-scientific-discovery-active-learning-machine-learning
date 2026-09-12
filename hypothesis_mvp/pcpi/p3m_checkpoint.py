@@ -291,6 +291,7 @@ def complete_p3m_information_risk_grid(
     *,
     tail_probability: float = 0.25,
     action_chunk_size: int = 16,
+    predictive_laws: tuple[object, ...] | None = None,
 ) -> P3MCheckpoint:
     plan = build_p3m_checkpoint_plan(
         components, state, actions, nodes_per_leaf, tail_probability, action_chunk_size
@@ -299,10 +300,22 @@ def complete_p3m_information_risk_grid(
         load_p3m_checkpoint(path, plan)
         if Path(path).exists() else initialize_p3m_checkpoint(path, plan)
     )
+    if checkpoint.complete:
+        return checkpoint
+    # Candidate-specific residual laws depend on the strict-prefix state and
+    # action, but not on quadrature order.  Cache them once so fine/coarse
+    # traversals share the same immutable laws.
+    laws = (
+        tuple(state.predictive_law(action) for action in actions)
+        if predictive_laws is None else predictive_laws
+    )
+    if len(laws) != len(actions):
+        raise ValueError("P3M predictive-law cache is not aligned")
     for chunk in iter_action_conditional_information_risk_chunks(
         components, state, actions, nodes_per_leaf,
         tail_probability=tail_probability, action_chunk_size=action_chunk_size,
         start_action=checkpoint.completed_action_count,
+        predictive_laws=laws,
     ):
         checkpoint = append_p3m_checkpoint_chunk(path, plan, chunk)
     if not checkpoint.complete:
@@ -326,14 +339,17 @@ def checkpointed_action_conditional_information_risk(
     root = Path(directory)
     if order < 4 or order % 2 or not root.is_dir() or error_safety_factor < 1.0:
         raise ValueError("P3M checkpointed estimator controls are invalid")
+    predictive_laws = tuple(state.predictive_law(action) for action in actions)
     fine = complete_p3m_information_risk_grid(
         root / f"risk-nodes-{order}.json", components, state, actions, order,
         tail_probability=alpha, action_chunk_size=action_chunk_size,
+        predictive_laws=predictive_laws,
     )
     if preceding is None:
         coarse = complete_p3m_information_risk_grid(
             root / f"risk-nodes-{order // 2}.json", components, state, actions,
             order // 2, tail_probability=alpha, action_chunk_size=action_chunk_size,
+            predictive_laws=predictive_laws,
         )
         coarse_cvar, coarse_information = coarse.lower_tail_cvar, coarse.mutual_information
         normalization = max(fine.maximum_conditional_normalization_error, coarse.maximum_conditional_normalization_error)
