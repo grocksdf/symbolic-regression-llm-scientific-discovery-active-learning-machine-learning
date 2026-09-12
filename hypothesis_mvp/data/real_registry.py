@@ -35,6 +35,10 @@ FORBIDDEN_SOURCE_COMPONENTS = {
     "nguyen",
     "strict_ood_standard_sr",
     "real_datasets",
+    # Archived workspace copies are never eligible as official sources.  The
+    # loader may recurse from a broad user-provided data root, but must select
+    # only the canonical live dataset rather than a stale backup.
+    "archive",
 }
 
 
@@ -135,8 +139,25 @@ def _find_unique(data_root: Path, filename: str, parent_tokens: Sequence[str]) -
     tokens = tuple(token.lower() for token in parent_tokens)
     for path in data_root.rglob(filename):
         parent_text = path.parent.as_posix().lower()
+        parts = {part.lower() for part in path.resolve().parts}
+        if any(
+            blocked in part
+            for part in parts
+            for blocked in FORBIDDEN_SOURCE_COMPONENTS
+        ):
+            continue
         if any(token in parent_text for token in tokens):
             candidates.append(path)
+    # A broad workspace root can contain user-level exports beside the
+    # repository's hash-registered copy. Prefer the repository data tree when
+    # it is present; ambiguity among remaining candidates still fails closed.
+    canonical = [
+        path for path in candidates
+        if "hypothesis_mvp" in {part.lower() for part in path.parts}
+        and "data" in {part.lower() for part in path.parts}
+    ]
+    if canonical:
+        candidates = canonical
     candidates = sorted(set(candidates))
     if len(candidates) != 1:
         rendered = ", ".join(str(path) for path in candidates) or "none"
