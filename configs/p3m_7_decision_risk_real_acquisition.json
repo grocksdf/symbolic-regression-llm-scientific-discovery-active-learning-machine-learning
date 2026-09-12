@@ -1,0 +1,10 @@
+{
+  "schema": "pcpi-p3m7-decision-risk-real-acquisition-config-v1",
+  "stage": "P3M.7",
+  "base_config": "p3m_6_global_local_partial_pooling_real_acquisition.json",
+  "utility_method": "bayes-zero-one-decision-risk-lower-tail-cvar-v1",
+  "checkpoint_schema": "pcpi-p3m7-decision-risk-checkpoint-v1",
+  "heldout_state": "closed",
+  "operational_execution_authorized": false,
+  "formal_dataset_runner_authorized": false
+}
