@@ -74,6 +74,26 @@ def bayes_zero_one_decision_risk(probabilities: np.ndarray) -> float:
     return 1.0 - float(np.max(values))
 
 
+def bayes_zero_one_decision_gains(
+    prior_probabilities: np.ndarray,
+    posterior_probabilities: np.ndarray,
+) -> np.ndarray:
+    """Return Bayes 0--1 risk reduction for one or more posterior columns."""
+
+    prior = np.asarray(prior_probabilities, dtype=float).reshape(-1)
+    posterior = np.asarray(posterior_probabilities, dtype=float)
+    if posterior.ndim != 2 or posterior.shape[0] != len(prior) or posterior.shape[1] < 1:
+        raise ValueError("Bayes decision-risk posterior matrix is invalid")
+    prior_risk = bayes_zero_one_decision_risk(prior)
+    if (
+        not np.all(np.isfinite(posterior))
+        or np.any(posterior <= 0.0)
+        or not np.allclose(np.sum(posterior, axis=0), 1.0, rtol=0.0, atol=2e-13)
+    ):
+        raise ValueError("Bayes decision-risk posterior matrix is invalid")
+    return prior_risk - (1.0 - np.max(posterior, axis=0))
+
+
 def action_matrix_hash(actions: np.ndarray) -> str:
     values = np.ascontiguousarray(actions, dtype=np.float64)
     if values.ndim != 2 or not len(values) or not np.all(np.isfinite(values)):
@@ -632,6 +652,7 @@ __all__ = [
     "ActionConditionalInformationRiskChunkResult",
     "ActionConditionalResidualState",
     "bayes_zero_one_decision_risk",
+    "bayes_zero_one_decision_gains",
     "advance_action_conditional_residual_state",
     "action_matrix_hash",
     "estimate_action_conditional_information_risk",
