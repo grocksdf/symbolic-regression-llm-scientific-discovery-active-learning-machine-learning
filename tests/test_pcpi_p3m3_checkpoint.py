@@ -181,6 +181,33 @@ def test_operational_checkpoint_path_matches_direct_selection(tmp_path) -> None:
     assert len(tuple(root.glob("model-*/risk-nodes-*.json"))) == 8
 
 
+def test_p3m7_operational_path_binds_decision_utility_to_decision_schema(tmp_path) -> None:
+    actions, targets, old_state = _fixture()
+    state = initialize_operational_class_conditional_state(
+        tuple(item.engine for item in old_state.model_states),
+        actions[:4], targets[:4], actions[4:8], targets[4:8],
+        old_state.target_partition, action_conditional_residual=True,
+    )
+    root = tmp_path / "ranking"
+    root.mkdir()
+    score_operational_class_conditional_candidates(
+        state=state, candidate_actions=actions[8:11],
+        candidate_ids=np.asarray([8, 9, 10]),
+        predictive_target_actions=actions[8:11],
+        representative_observed_actions=actions[:8],
+        eig_min_samples=8, eig_max_samples=8,
+        eig_error_safety_factor=4.0, eig_growth_factor=2,
+        action_chunk_size=2, information_risk_tail_probability=0.25,
+        checkpoint_root=root, utility_method=P3M7_DECISION_RISK_UTILITY,
+    )
+    paths = tuple(root.glob("model-*/risk-nodes-*.json"))
+    assert len(paths) == 8
+    for path in paths:
+        plan = json.loads(path.read_text(encoding="utf-8"))["plan"]
+        assert plan["schema"] == P3M7_CHECKPOINT_SCHEMA
+        assert plan["utility_method"] == P3M7_DECISION_RISK_UTILITY
+
+
 def test_p3m_workspace_uses_compact_windows_safe_path_without_losing_identity(
     tmp_path,
 ) -> None:

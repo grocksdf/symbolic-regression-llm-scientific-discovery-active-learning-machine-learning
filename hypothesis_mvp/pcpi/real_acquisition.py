@@ -63,7 +63,11 @@ from .p3j_checkpointed import (
     checkpointed_class_conditional_information_risk,
     checkpointed_class_conditional_semiparametric_eig,
 )
-from .p3m_checkpoint import checkpointed_action_conditional_information_risk
+from .p3m_checkpoint import (
+    P3M_CHECKPOINT_SCHEMA,
+    P3M7_CHECKPOINT_SCHEMA,
+    checkpointed_action_conditional_information_risk,
+)
 from .reference import (
     DyadicPolyaTreePredictiveLaw,
     ExactPosterior,
@@ -921,6 +925,11 @@ def _information_risk_model_look(
                 error_safety_factor=error_safety_factor,
                 action_chunk_size=action_chunk_size, preceding=preceding,
                 utility_method=utility_method,
+                schema=(
+                    P3M7_CHECKPOINT_SCHEMA
+                    if utility_method == P3M7_DECISION_RISK_UTILITY
+                    else P3M_CHECKPOINT_SCHEMA
+                ),
             )
         return estimate_action_conditional_information_risk(
             components,
