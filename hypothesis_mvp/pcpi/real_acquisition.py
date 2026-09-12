@@ -1735,9 +1735,13 @@ def score_class_conditional_decision_actions(
     representative = p3k_projected_representative_mmd_safe_set(
         representative_observed_actions, actions, predictive_target_actions
     )
+    scoring_indices = np.flatnonzero(representative.safe_mask)
+    if not len(scoring_indices):
+        raise ValueError("representative safe-set is unexpectedly empty")
+    scoring_actions = np.asarray(actions)[scoring_indices]
     family_components = tuple(
         predictive_components_for_partition(
-            item.engine, item.posterior, target_partition, actions
+            item.engine, item.posterior, target_partition, scoring_actions
         )
         for item in ordered_states
     )
@@ -1746,7 +1750,7 @@ def score_class_conditional_decision_actions(
             family_components,
             ordered_states,
             powers,
-            representative.safe_mask,
+            np.ones(len(scoring_actions), dtype=bool),
             minimum_samples,
             maximum_samples,
             error_safety_factor,
@@ -1759,7 +1763,7 @@ def score_class_conditional_decision_actions(
             family_components,
             ordered_states,
             powers,
-            representative.safe_mask,
+            np.ones(len(scoring_actions), dtype=bool),
             minimum_samples,
             maximum_samples,
             error_safety_factor,
@@ -1768,8 +1772,10 @@ def score_class_conditional_decision_actions(
             checkpoint_root,
             action_chunk_size,
             progress_callback,
-            candidate_actions=actions,
+            candidate_actions=scoring_actions,
         )
+    if len(scoring_indices) != len(actions):
+        robust = _expand_maximin_estimate(robust, scoring_indices, len(actions))
     return _finalize_class_conditional_scores(
         engine,
         posterior,
@@ -1790,6 +1796,74 @@ def _mask_ineligible_scores(scores: np.ndarray, eligible: np.ndarray) -> np.ndar
     minimum = float(np.min(values[mask]))
     floor = minimum - max(1.0, abs(minimum))
     return np.where(mask, values, floor)
+
+
+_VECTOR_ESTIMATE_FIELDS = (
+    "scores",
+    "error_bounds",
+    "mutual_information",
+    "mutual_information_error_bounds",
+    "lower_tail_cvar",
+    "lower_tail_cvar_error_bounds",
+    "negative_gain_probability",
+)
+
+
+def _expand_vector(values: np.ndarray, indices: np.ndarray, full_count: int) -> np.ndarray:
+    """Embed a safe-set vector back into the original candidate coordinate system."""
+
+    array = np.asarray(values)
+    if array.ndim != 1 or len(array) != len(indices):
+        raise ValueError("safe-set estimate vector is not aligned")
+    expanded = np.zeros(full_count, dtype=array.dtype)
+    expanded[indices] = array
+    return expanded
+
+
+def _expand_maximin_estimate(
+    estimate: MaximinJointEstimate,
+    indices: np.ndarray,
+    full_count: int,
+) -> MaximinJointEstimate:
+    """Restore full candidate coordinates after safe-set-only scoring."""
+
+    indices = np.asarray(indices, dtype=int).reshape(-1)
+    if len(indices) != len(np.unique(indices)) or np.any(indices < 0) or np.any(indices >= full_count):
+        raise ValueError("safe-set candidate indices are invalid")
+
+    def expand_matrix(values: np.ndarray) -> np.ndarray:
+        matrix = np.asarray(values)
+        if matrix.ndim != 2 or matrix.shape[1] != len(indices):
+            raise ValueError("safe-set estimate matrix is not aligned")
+        expanded = np.zeros((matrix.shape[0], full_count), dtype=matrix.dtype)
+        expanded[:, indices] = matrix
+        return expanded
+
+    expanded_estimates = []
+    for item in estimate.estimates:
+        updates = {
+            name: _expand_vector(getattr(item, name), indices, full_count)
+            for name in _VECTOR_ESTIMATE_FIELDS
+            if hasattr(item, name)
+        }
+        expanded_estimates.append(replace(item, **updates) if updates else item)
+    possible = np.zeros(full_count, dtype=bool)
+    possible[indices] = np.asarray(estimate.possible_maximizer_mask, dtype=bool)
+    least = np.zeros(full_count, dtype=int)
+    least[indices] = np.asarray(estimate.least_favorable_indices, dtype=int)
+    return replace(
+        estimate,
+        scores=_expand_vector(estimate.scores, indices, full_count),
+        lower_bounds=_expand_vector(estimate.lower_bounds, indices, full_count),
+        upper_bounds=_expand_vector(estimate.upper_bounds, indices, full_count),
+        class_scores_by_model=expand_matrix(estimate.class_scores_by_model),
+        class_errors_by_model=expand_matrix(estimate.class_errors_by_model),
+        conditional_scores_by_model=expand_matrix(estimate.conditional_scores_by_model),
+        joint_scores_by_model=expand_matrix(estimate.joint_scores_by_model),
+        least_favorable_indices=least,
+        estimates=tuple(expanded_estimates),
+        possible_maximizer_mask=possible,
+    )
 
 
 def _representative_mmd_fallback(
