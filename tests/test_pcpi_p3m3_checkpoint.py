@@ -149,6 +149,21 @@ def test_tampered_chunk_fails_closed(tmp_path) -> None:
         load_p3m_checkpoint(path, checkpoint.plan)
 
 
+def test_stale_staging_file_is_replaced_on_resume(tmp_path) -> None:
+    _, candidates, components, state, _ = _grid_fixture()
+    path = tmp_path / "grid.json"
+    plan = build_p3m_checkpoint_plan(components, state, candidates, 8, 0.25, 2)
+    initialize_p3m_checkpoint(path, plan)
+    staging = path.with_name(path.name + ".staging")
+    staging.write_text("stale", encoding="utf-8")
+    chunk = next(iter_action_conditional_information_risk_chunks(
+        components, state, candidates, 8, tail_probability=0.25,
+        action_chunk_size=2,
+    ))
+    append_p3m_checkpoint_chunk(path, plan, chunk)
+    assert not staging.exists()
+
+
 def test_operational_checkpoint_path_matches_direct_selection(tmp_path) -> None:
     actions, targets, old_state = _fixture()
     state = initialize_operational_class_conditional_state(

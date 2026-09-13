@@ -178,6 +178,11 @@ def _publish(path: Path, payload: dict[str, object], *, create: bool) -> None:
     if create and path.exists():
         raise FileExistsError("P3M checkpoint already exists")
     staging = path.with_name(path.name + ".staging")
+    # A process interruption can leave only the temporary publication file.
+    # It is never a committed checkpoint, so replace that exact stale artifact
+    # before starting the next fsync-and-rename transaction.
+    if staging.exists():
+        staging.unlink()
     with staging.open("x", encoding="utf-8", newline="\n") as handle:
         handle.write(_canonical(payload) + "\n")
         handle.flush()
