@@ -16,6 +16,8 @@ from .class_conditional_semiparametric import (
 from .action_conditional_residual import (
     P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD,
     P3M_ACTION_CONDITIONAL_JOINT_METHOD,
+    P3M6_ENTROPY_UTILITY,
+    P3M7_DECISION_RISK_UTILITY,
 )
 from .operational_class_conditional import (
     P3K_OPERATIONAL_LIFECYCLE,
@@ -418,6 +420,8 @@ def _p3j_decision_valid(
     if information_risk in (
         P3L_INFORMATION_RISK_METHOD,
         P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD,
+        P3M6_ENTROPY_UTILITY,
+        P3M7_DECISION_RISK_UTILITY,
     ):
         risk_by_model = tuple(row["selected_lower_tail_cvar_by_model"])
         negative_by_model = tuple(
@@ -478,7 +482,12 @@ def _information_risk_usage(
     queries: tuple[dict[str, object], ...],
 ) -> tuple[float, float]:
     methods = tuple(row.get("information_risk_method") for row in queries)
-    accepted = (P3L_INFORMATION_RISK_METHOD, P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD)
+    accepted = (
+        P3L_INFORMATION_RISK_METHOD,
+        P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD,
+        P3M6_ENTROPY_UTILITY,
+        P3M7_DECISION_RISK_UTILITY,
+    )
     used = tuple(method in accepted for method in methods)
     if any(used) and not all(used):
         raise ValueError("P3L policy artifacts mix information-risk identities")

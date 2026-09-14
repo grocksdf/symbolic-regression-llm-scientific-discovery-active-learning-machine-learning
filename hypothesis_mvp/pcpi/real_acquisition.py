@@ -1555,7 +1555,11 @@ def _class_conditional_information_contract(
             P3K_SHARED_INNOVATION_JOINT_METHOD,
             P3J_MAXIMIN_RANK_CERTIFICATE,
         )
-    if information_risk_method == P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD:
+    if information_risk_method in (
+        P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD,
+        P3M6_ENTROPY_UTILITY,
+        P3M7_DECISION_RISK_UTILITY,
+    ):
         return (
             "representative-safe-robust-action-conditional-semiparametric-"
             "lower-tail-class-entropy-reduction-cvar",
@@ -1574,6 +1578,7 @@ def _attach_information_risk_audit(
     result: AcquisitionScores,
     robust: MaximinJointEstimate,
     tail_probability: float,
+    utility_method: str,
 ) -> AcquisitionScores:
     estimate_types = (
         ClassConditionalInformationRiskEstimate,
@@ -1603,7 +1608,11 @@ def _attach_information_risk_audit(
         robust_upper_bounds=np.min(
             information_by_model + information_errors, axis=0
         ),
-        information_risk_method=estimates[0].method,
+        information_risk_method=(
+            utility_method
+            if utility_method == P3M7_DECISION_RISK_UTILITY
+            else estimates[0].method
+        ),
         information_risk_tail_probability=float(tail_probability),
         lower_tail_cvar_scores=np.asarray(robust.scores),
         lower_tail_cvar_error_bounds=_robust_error_radii(robust),
@@ -1626,6 +1635,7 @@ def _finalize_class_conditional_scores(
     robust: MaximinJointEstimate,
     unresolved_action: str,
     information_risk_tail_probability: float | None = None,
+    utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> AcquisitionScores:
     singleton_admissible = representative.safe_set_size == 1
     least = robust.least_favorable_indices
@@ -1636,8 +1646,11 @@ def _finalize_class_conditional_scores(
     )
     secondary_used = secondary_mask is not None
     risk_method = (
-        robust.estimates[0].method
-        if information_risk_tail_probability is not None else None
+        (
+            utility_method
+            if utility_method == P3M7_DECISION_RISK_UTILITY
+            else robust.estimates[0].method
+        ) if information_risk_tail_probability is not None else None
     )
     utility_mode, target_method, rank_method = (
         _class_conditional_information_contract(
@@ -1705,14 +1718,12 @@ def _finalize_class_conditional_scores(
         ),
         semiparametric_transport_method=target_method,
         semiparametric_information_invariance_applied=False,
-        decision_target=(
-            "frozen-operational-class-log-risk|" + target_method
-        ),
+        decision_target="frozen-operational-class-log-risk|" + target_method,
     )
     return (
         result if information_risk_tail_probability is None
         else _attach_information_risk_audit(
-            result, robust, information_risk_tail_probability
+            result, robust, information_risk_tail_probability, utility_method,
         )
     )
 
@@ -1800,6 +1811,7 @@ def score_class_conditional_decision_actions(
         robust,
         unresolved_action,
         information_risk_tail_probability,
+        utility_method,
     )
 
 
