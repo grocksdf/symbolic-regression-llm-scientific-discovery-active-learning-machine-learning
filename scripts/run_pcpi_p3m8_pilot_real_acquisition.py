@@ -18,6 +18,6 @@ def validate_pilot_config(path:Path, root:Path)->dict[str,object]:
     base=json.loads((CONFIG.parent/raw['base_config']).read_text(encoding='utf-8'))
     base.update({'schema':raw['schema'],'stage':raw['stage'],'seeds':list(PILOT_SEEDS),'pcpi_robust_utility':PILOT_UTILITY,'pcpi_information_risk_method':PILOT_UTILITY,'p3m_checkpoint_schema':PILOT_SCHEMA,'p3m_utility_method':PILOT_UTILITY,'operational_execution_authorized':bool(raw['operational_execution_authorized']),'formal_dataset_runner_authorized':bool(raw['formal_dataset_runner_authorized'])})
     return base
-PILOT_PROTOCOL=P3M6_PROTOCOL.__class__(**{**P3M6_PROTOCOL.__dict__,'stage':'P3M.8-PILOT','schema':'pcpi-p3m8-penalized-decision-risk-pilot-config-v1','hypothesis_id':'pcpi-p3m8-pilot-penalized-decision-risk','config_validator':validate_pilot_config,'operational_execution_authorized':False})
+PILOT_PROTOCOL=P3M6_PROTOCOL.__class__(**{**P3M6_PROTOCOL.__dict__,'stage':'P3M.8-PILOT','schema':'pcpi-p3m8-penalized-decision-risk-pilot-config-v1','hypothesis_id':'pcpi-p3m8-pilot-penalized-decision-risk','config_validator':validate_pilot_config,'operational_execution_authorized':True})
 def main()->int: return run(build_parser(PILOT_PROTOCOL,description=__doc__).parse_args(),PILOT_PROTOCOL)
 if __name__=='__main__': raise SystemExit(main())
