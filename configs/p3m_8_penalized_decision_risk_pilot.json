@@ -1,0 +1,11 @@
+{
+  "schema": "pcpi-p3m8-penalized-decision-risk-pilot-config-v1",
+  "stage": "P3M.8-PILOT",
+  "base_config": "p3m_6_global_local_partial_pooling_real_acquisition.json",
+  "utility_method": "bayes-zero-one-decision-risk-cvar-negative-gain-penalty-v1",
+  "checkpoint_schema": "pcpi-p3m8-penalized-decision-risk-checkpoint-v1",
+  "seeds": [2026080701, 2026080702],
+  "heldout_state": "closed",
+  "operational_execution_authorized": false,
+  "formal_dataset_runner_authorized": false
+}
