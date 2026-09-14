@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields, replace
+from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
 from pathlib import Path
 from typing import Callable
@@ -987,13 +988,12 @@ def _estimate_class_conditional_information_risk_until_ranked(
     utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> MaximinJointEstimate:
     """Certify the maximin lower-tail class-entropy reduction."""
-    if (
-        len(components) != len(states)
-        or len(states) != len(powers)
+    if (len(components) != len(states) or len(states) != len(powers)
         or tuple(item.engine.likelihood_power for item in states) != powers
-        or not 0.0 < float(tail_probability) < 1.0
-    ):
+        or not 0.0 < float(tail_probability) < 1.0):
         raise ValueError("P3L posterior, residual, or tail identities are invalid")
+    if utility_method not in (P3M6_ENTROPY_UTILITY, P3M7_DECISION_RISK_UTILITY):
+        raise ValueError("P3M utility method is invalid")
     root = None if checkpoint_root is None else Path(checkpoint_root)
     if root is not None and not root.is_dir():
         raise FileNotFoundError("P3L ranking checkpoint root must already exist")
@@ -1004,14 +1004,11 @@ def _estimate_class_conditional_information_risk_until_ranked(
     planned = _planned_look_count(minimum_samples, maximum_samples, growth_factor)
     while True:
         looks += 1
-        estimates_list = []
-        for model_index, (item, state, previous) in enumerate(zip(
-            components,
-            states,
-            preceding if preceding is not None else (None,) * len(states),
-            strict=True,
-        )):
-            estimate = _information_risk_model_look(
+        previous_states = preceding if preceding is not None else (None,) * len(states)
+        jobs = tuple(zip(components, states, previous_states))
+        with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+            futures = tuple(pool.submit(
+                _information_risk_model_look,
                 item,
                 state,
                 previous,
@@ -1023,10 +1020,11 @@ def _estimate_class_conditional_information_risk_until_ranked(
                 action_chunk_size,
                 candidate_actions,
                 utility_method,
-            )
-            estimates_list.append(estimate)
-            if progress_callback is not None:
-                progress_callback(model_index + 1, samples)
+            ) for model_index, (item, state, previous) in enumerate(jobs))
+            estimates_list = [future.result() for future in futures]
+            for model_index in range(len(estimates_list)):
+                if progress_callback is not None:
+                    progress_callback(model_index + 1, samples)
         estimates = tuple(estimates_list)
         preceding = estimates
         risk_by_model = np.asarray([item.lower_tail_cvar for item in estimates])
