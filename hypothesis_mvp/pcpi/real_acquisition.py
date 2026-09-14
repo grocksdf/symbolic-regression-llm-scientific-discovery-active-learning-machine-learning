@@ -58,6 +58,7 @@ from .action_conditional_residual import (
     estimate_action_conditional_information_risk,
     P3M6_ENTROPY_UTILITY,
     P3M7_DECISION_RISK_UTILITY,
+    P3M8_DECISION_RISK_PENALIZED_UTILITY,
 )
 from .likelihood_power_residuals import LikelihoodPowerResidualFamily
 from .p3j_checkpointed import (
@@ -67,6 +68,7 @@ from .p3j_checkpointed import (
 from .p3m_checkpoint import (
     P3M_CHECKPOINT_SCHEMA,
     P3M7_CHECKPOINT_SCHEMA,
+    P3M8_CHECKPOINT_SCHEMA,
     checkpointed_action_conditional_information_risk,
 )
 from .reference import (
@@ -930,6 +932,8 @@ def _information_risk_model_look(
                     P3M7_CHECKPOINT_SCHEMA
                     if utility_method == P3M7_DECISION_RISK_UTILITY
                     else P3M_CHECKPOINT_SCHEMA
+                    if utility_method == P3M6_ENTROPY_UTILITY
+                    else P3M8_CHECKPOINT_SCHEMA
                 ),
             )
         return estimate_action_conditional_information_risk(
@@ -992,7 +996,8 @@ def _estimate_class_conditional_information_risk_until_ranked(
         or tuple(item.engine.likelihood_power for item in states) != powers
         or not 0.0 < float(tail_probability) < 1.0):
         raise ValueError("P3L posterior, residual, or tail identities are invalid")
-    if utility_method not in (P3M6_ENTROPY_UTILITY, P3M7_DECISION_RISK_UTILITY):
+    if utility_method not in (P3M6_ENTROPY_UTILITY, P3M7_DECISION_RISK_UTILITY,
+                              P3M8_DECISION_RISK_PENALIZED_UTILITY):
         raise ValueError("P3M utility method is invalid")
     root = None if checkpoint_root is None else Path(checkpoint_root)
     if root is not None and not root.is_dir():
@@ -1019,7 +1024,7 @@ def _estimate_class_conditional_information_risk_until_ranked(
                 model_index,
                 action_chunk_size,
                 candidate_actions,
-                utility_method,
+            utility_method,
             ) for model_index, (item, state, previous) in enumerate(jobs))
             estimates_list = [future.result() for future in futures]
             for model_index in range(len(estimates_list)):

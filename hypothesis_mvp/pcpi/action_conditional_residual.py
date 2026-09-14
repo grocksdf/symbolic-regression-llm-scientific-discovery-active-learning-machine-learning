@@ -51,6 +51,9 @@ P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD = (
     "action-conditional-lower-tail-cvar-of-frozen-class-entropy-reduction-v1"
 )
 P3M7_DECISION_RISK_UTILITY = "bayes-zero-one-decision-risk-lower-tail-cvar-v1"
+P3M8_DECISION_RISK_PENALIZED_UTILITY = (
+    "bayes-zero-one-decision-risk-cvar-negative-gain-penalty-v1"
+)
 P3M6_ENTROPY_UTILITY = "frozen-class-entropy-lower-tail-cvar-v1"
 
 
@@ -494,7 +497,10 @@ def _action_information_risk(
     raw_pits, weights = _residual_quadrature(law, nodes_per_leaf)
     prior_entropy = -float(np.sum(probabilities * np.log(probabilities)))
     prior_decision_risk = bayes_zero_one_decision_risk(probabilities)
-    if utility_method not in (P3M6_ENTROPY_UTILITY, P3M7_DECISION_RISK_UTILITY):
+    if utility_method not in (
+        P3M6_ENTROPY_UTILITY, P3M7_DECISION_RISK_UTILITY,
+        P3M8_DECISION_RISK_PENALIZED_UTILITY,
+    ):
         raise ValueError("P3M utility method is invalid")
     information, gains, masses = 0.0, [], []
     for source_index in range(len(state.class_ids)):
@@ -517,6 +523,8 @@ def _action_information_risk(
             prior_entropy + np.sum(xlogy(posterior, posterior), axis=0)
             if utility_method == P3M6_ENTROPY_UTILITY
             else prior_decision_risk - (1.0 - np.max(posterior, axis=0))
+            - (tail_probability * (prior_decision_risk - (1.0 - np.max(posterior, axis=0)) < 0.0)
+               if utility_method == P3M8_DECISION_RISK_PENALIZED_UTILITY else 0.0)
         )
         masses.append(probabilities[source_index] * weights)
     gain_values, mass_values = np.concatenate(gains), np.concatenate(masses)

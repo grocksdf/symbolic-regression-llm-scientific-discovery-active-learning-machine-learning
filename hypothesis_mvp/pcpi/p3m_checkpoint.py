@@ -19,11 +19,13 @@ from .action_conditional_residual import (
     ActionConditionalResidualState,
     action_matrix_hash,
     iter_action_conditional_information_risk_chunks,
+    P3M8_DECISION_RISK_PENALIZED_UTILITY,
 )
 
 
 P3M_CHECKPOINT_SCHEMA = "pcpi-p3m3-action-conditional-risk-checkpoint-v1"
 P3M7_CHECKPOINT_SCHEMA = "pcpi-p3m7-decision-risk-checkpoint-v1"
+P3M8_CHECKPOINT_SCHEMA = "pcpi-p3m8-penalized-decision-risk-checkpoint-v1"
 P3M7_DECISION_RISK_UTILITY = "bayes-zero-one-decision-risk-lower-tail-cvar-v1"
 P3M6_ENTROPY_UTILITY = "frozen-class-entropy-lower-tail-cvar-v1"
 P3M_CHECKPOINT_PUBLICATION = "fsync-staging-then-atomic-replace"
@@ -68,7 +70,7 @@ class P3MCheckpointPlan:
             self.candidate_actions_hash,
         )
         if (
-            self.schema not in (P3M_CHECKPOINT_SCHEMA, P3M7_CHECKPOINT_SCHEMA)
+            self.schema not in (P3M_CHECKPOINT_SCHEMA, P3M7_CHECKPOINT_SCHEMA, P3M8_CHECKPOINT_SCHEMA)
             or self.action_count < 1 or self.action_chunk_size < 1
             or self.nodes_per_leaf < 2
             or not 0.0 < float(self.tail_probability) < 1.0
@@ -80,6 +82,10 @@ class P3MCheckpointPlan:
             or (
                 self.schema == P3M7_CHECKPOINT_SCHEMA
                 and self.utility_method != P3M7_DECISION_RISK_UTILITY
+            )
+            or (
+                self.schema == P3M8_CHECKPOINT_SCHEMA
+                and self.utility_method != P3M8_DECISION_RISK_PENALIZED_UTILITY
             )
         ):
             raise ValueError("P3M checkpoint plan is invalid")
@@ -423,6 +429,8 @@ __all__ = [
     "P3M_CHECKPOINT_SCHEMA",
     "P3M7_CHECKPOINT_SCHEMA",
     "P3M7_DECISION_RISK_UTILITY",
+    "P3M8_CHECKPOINT_SCHEMA",
+    "P3M8_DECISION_RISK_PENALIZED_UTILITY",
     "P3M6_ENTROPY_UTILITY",
     "P3MCheckpoint",
     "P3MCheckpointPlan",
