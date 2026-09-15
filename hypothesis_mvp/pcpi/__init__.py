@@ -188,6 +188,13 @@ from .action_conditional_residual import (
     iter_action_conditional_information_risk_chunks,
     reconstruct_action_conditional_residual_state,
 )
+from .response_free_resolution import (
+    ResolutionAudit,
+    audit_class_resolution,
+    require_resolution_for_risk,
+    penalized_gain,
+    require_negative_transfer_guard,
+)
 from .p3m_checkpoint import (
     P3M_CHECKPOINT_PUBLICATION,
     P3M_CHECKPOINT_SCHEMA,
@@ -536,6 +543,11 @@ __all__ = [
     "P3M7_DECISION_RISK_UTILITY",
     "P3M8_CHECKPOINT_SCHEMA",
     "P3M8_DECISION_RISK_PENALIZED_UTILITY",
+    "ResolutionAudit",
+    "audit_class_resolution",
+    "require_resolution_for_risk",
+    "penalized_gain",
+    "require_negative_transfer_guard",
     "P3M6_ENTROPY_UTILITY",
     "P3MCheckpoint",
     "P3MCheckpointPlan",

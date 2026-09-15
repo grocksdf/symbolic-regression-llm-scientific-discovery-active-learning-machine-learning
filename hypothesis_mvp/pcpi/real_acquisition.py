@@ -71,6 +71,7 @@ from .p3m_checkpoint import (
     P3M8_CHECKPOINT_SCHEMA,
     checkpointed_action_conditional_information_risk,
 )
+from .response_free_resolution import require_resolution_for_risk
 from .reference import (
     DyadicPolyaTreePredictiveLaw,
     ExactPosterior,
@@ -1741,6 +1742,15 @@ def _finalize_class_conditional_scores(
     )
 
 
+def _require_response_free_target_partition(target_partition: ClassPartition, structure_count: int) -> None:
+    require_resolution_for_risk(
+        tuple(
+            type("_Class", (), {"structure_ids": tuple(str(i) for i in members), "probability": probability})()
+            for members, probability in zip(target_partition.member_indices, target_partition.class_probabilities, strict=True)
+        ), tuple(str(i) for i in range(structure_count)),
+    )
+
+
 def score_class_conditional_decision_actions(
     engine: SequentialReferencePosterior,
     posterior: ExactPosterior,
@@ -1762,6 +1772,11 @@ def score_class_conditional_decision_actions(
     utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> AcquisitionScores:
     """Score the coherent P3J class-conditional joint and no nuisance target."""
+
+    # Response-free integrity guard: risk scoring may only consume a complete,
+    # normalized frozen class partition.  This runs before any measured
+    # response is admitted and fails closed on overlap, omission, or bad mass.
+    _require_response_free_target_partition(target_partition, len(posterior.members))
 
     _validate_p3j_ranking_controls(
         minimum_samples, maximum_samples, error_safety_factor, growth_factor
