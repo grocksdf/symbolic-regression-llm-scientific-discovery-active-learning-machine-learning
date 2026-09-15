@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "configs" / "p3m10_resolution_stratified_confirmatory.json"
+CONFIG = ROOT / "configs" / "p3m_10_resolution_stratified_confirmatory.json"
 
 def main() -> int:
     cfg = json.loads(CONFIG.read_text(encoding="utf-8"))
@@ -18,6 +18,8 @@ def main() -> int:
         "no_threshold_mutation": cfg.get("threshold_mutation_allowed") is False,
         "no_family_deletion": cfg.get("family_deletion_allowed") is False,
         "no_posthoc_reclassification": cfg.get("posthoc_family_reclassification_allowed") is False,
+        "confirmatory_authorization_registered": cfg.get("confirmatory_execution_authorized") is True,
+        "runner_identity_registered": cfg.get("checkpoint_schema") == "pcpi-p3m9-downside-severity-risk-checkpoint-v1",
     }
     report = {
         "schema": "pcpi-p3m10-resolution-stratified-freeze-gate-v1",
