@@ -1562,6 +1562,7 @@ def _class_conditional_information_contract(
         P3M_ACTION_CONDITIONAL_INFORMATION_RISK_METHOD,
         P3M6_ENTROPY_UTILITY,
         P3M7_DECISION_RISK_UTILITY,
+        P3M8_DECISION_RISK_PENALIZED_UTILITY,
     ):
         return (
             "representative-safe-robust-action-conditional-semiparametric-"
@@ -1575,6 +1576,19 @@ def _class_conditional_information_contract(
         P3L_INFORMATION_RISK_METHOD,
         P3L_INFORMATION_RISK_RANK_CERTIFICATE,
     )
+
+
+def _reported_information_risk_method(
+    utility_method: str, estimator_method: str
+) -> str:
+    """Keep legacy estimator labels while reporting registered decision utilities."""
+
+    if utility_method in (
+        P3M7_DECISION_RISK_UTILITY,
+        P3M8_DECISION_RISK_PENALIZED_UTILITY,
+    ):
+        return utility_method
+    return estimator_method
 
 
 def _attach_information_risk_audit(
@@ -1611,10 +1625,8 @@ def _attach_information_risk_audit(
         robust_upper_bounds=np.min(
             information_by_model + information_errors, axis=0
         ),
-        information_risk_method=(
-            utility_method
-            if utility_method == P3M7_DECISION_RISK_UTILITY
-            else estimates[0].method
+        information_risk_method=_reported_information_risk_method(
+            utility_method, estimates[0].method
         ),
         information_risk_tail_probability=float(tail_probability),
         lower_tail_cvar_scores=np.asarray(robust.scores),
@@ -1649,10 +1661,8 @@ def _finalize_class_conditional_scores(
     )
     secondary_used = secondary_mask is not None
     risk_method = (
-        (
-            utility_method
-            if utility_method == P3M7_DECISION_RISK_UTILITY
-            else robust.estimates[0].method
+        _reported_information_risk_method(
+            utility_method, robust.estimates[0].method
         ) if information_risk_tail_probability is not None else None
     )
     utility_mode, target_method, rank_method = (
