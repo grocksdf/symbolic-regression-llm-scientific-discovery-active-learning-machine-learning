@@ -1,0 +1,14 @@
+{
+  "schema": "pcpi-p3m10-resolution-stratified-confirmatory-config-v1",
+  "stage": "P3M.10-CONFIRMATORY",
+  "base_config": "p3m_9_downside_severity_pilot.json",
+  "primary_estimand": "frozen-operational-class-decision-risk-on-identifiable-families",
+  "identifiability_rule": "registered-resolution-class-aggregation-positive",
+  "non_identifiable_family_role": "report-negative-evidence-exclude-from-class-superiority-denominator",
+  "secondary_estimand": "predictive-normalized-aulc-validation-rmse-all-families",
+  "heldout_state": "closed",
+  "threshold_mutation_allowed": false,
+  "family_deletion_allowed": false,
+  "posthoc_family_reclassification_allowed": false,
+  "confirmatory_execution_authorized": false
+}
