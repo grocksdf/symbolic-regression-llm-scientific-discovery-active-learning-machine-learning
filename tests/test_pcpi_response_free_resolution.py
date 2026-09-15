@@ -4,6 +4,7 @@ import pytest
 from hypothesis_mvp.pcpi import (
     audit_class_resolution, penalized_gain, require_negative_transfer_guard,
 )
+from hypothesis_mvp.pcpi.action_conditional_residual import downside_severity_decision_gain
 from hypothesis_mvp.pcpi.reference.classes import OperationalClass
 
 def test_class_resolution_partition_algebra():
@@ -24,3 +25,5 @@ def test_penalty_is_monotone_and_positive_gains_unchanged():
 def test_penalty_rejects_invalid_inputs():
     with pytest.raises(ValueError): penalized_gain(np.array([1.]), np.array([2.]), .25)
 
+def test_downside_severity_is_parameter_free_and_monotone():
+    np.testing.assert_allclose(downside_severity_decision_gain(np.array([-2., -0.5, 0., 1.])), [-4., -1., 0., 1.])

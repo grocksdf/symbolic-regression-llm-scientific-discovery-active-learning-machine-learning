@@ -1,0 +1,11 @@
+{
+  "schema": "pcpi-p3m9-downside-severity-pilot-config-v1",
+  "stage": "P3M.9-PILOT",
+  "base_config": "p3m_8_penalized_decision_risk_pilot.json",
+  "utility_method": "bayes-zero-one-decision-risk-downside-severity-lower-tail-cvar-v1",
+  "checkpoint_schema": "pcpi-p3m9-downside-severity-risk-checkpoint-v1",
+  "seeds": [2026080701, 2026080702],
+  "heldout_state": "closed",
+  "operational_execution_authorized": true,
+  "formal_dataset_runner_authorized": true
+}

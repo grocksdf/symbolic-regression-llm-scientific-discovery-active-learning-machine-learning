@@ -54,6 +54,17 @@ P3M7_DECISION_RISK_UTILITY = "bayes-zero-one-decision-risk-lower-tail-cvar-v1"
 P3M8_DECISION_RISK_PENALIZED_UTILITY = (
     "bayes-zero-one-decision-risk-cvar-negative-gain-penalty-v1"
 )
+P3M9_DOWNSIDE_SEVERITY_UTILITY = (
+    "bayes-zero-one-decision-risk-downside-severity-lower-tail-cvar-v1"
+)
+
+
+def downside_severity_decision_gain(gain: np.ndarray) -> np.ndarray:
+    """Dimensionally coherent, parameter-free lower-partial-moment penalty."""
+    values = np.asarray(gain, dtype=float)
+    if not np.all(np.isfinite(values)):
+        raise ValueError("decision gains must be finite")
+    return values - np.maximum(-values, 0.0)
 P3M6_ENTROPY_UTILITY = "frozen-class-entropy-lower-tail-cvar-v1"
 
 
@@ -500,6 +511,7 @@ def _action_information_risk(
     if utility_method not in (
         P3M6_ENTROPY_UTILITY, P3M7_DECISION_RISK_UTILITY,
         P3M8_DECISION_RISK_PENALIZED_UTILITY,
+        P3M9_DOWNSIDE_SEVERITY_UTILITY,
     ):
         raise ValueError("P3M utility method is invalid")
     information, gains, masses = 0.0, [], []
@@ -519,12 +531,16 @@ def _action_information_risk(
         )[:, 0, :]
         pointwise = _posterior_class_kl_at_responses(calibrated, probabilities)
         information += probabilities[source_index] * float(np.sum(weights * pointwise))
+        decision_gain = prior_decision_risk - (1.0 - np.max(posterior, axis=0))
         gains.append(
             prior_entropy + np.sum(xlogy(posterior, posterior), axis=0)
             if utility_method == P3M6_ENTROPY_UTILITY
-            else prior_decision_risk - (1.0 - np.max(posterior, axis=0))
-            - (tail_probability * (prior_decision_risk - (1.0 - np.max(posterior, axis=0)) < 0.0)
-               if utility_method == P3M8_DECISION_RISK_PENALIZED_UTILITY else 0.0)
+            else downside_severity_decision_gain(decision_gain)
+            if utility_method == P3M9_DOWNSIDE_SEVERITY_UTILITY
+            else decision_gain - (
+                tail_probability * (decision_gain < 0.0)
+                if utility_method == P3M8_DECISION_RISK_PENALIZED_UTILITY else 0.0
+            )
         )
         masses.append(probabilities[source_index] * weights)
     gain_values, mass_values = np.concatenate(gains), np.concatenate(masses)
@@ -679,6 +695,8 @@ __all__ = [
     "ActionConditionalInformationRiskChunkResult",
     "ActionConditionalResidualState",
     "bayes_zero_one_decision_risk",
+    "downside_severity_decision_gain",
+    "P3M9_DOWNSIDE_SEVERITY_UTILITY",
     "bayes_zero_one_decision_gains",
     "advance_action_conditional_residual_state",
     "action_matrix_hash",
