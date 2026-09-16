@@ -25,6 +25,8 @@ from .p3j_run_identity import (
 )
 from .reference import DevelopmentStandardizer
 from .action_conditional_residual import P3M6_ENTROPY_UTILITY
+from .action_conditional_residual import DCCA_UTILITY
+from .action_conditional_residual import bayes_zero_one_decision_risk
 
 
 P3J_MEASURED_RUN_PROTOCOL = (
@@ -44,6 +46,32 @@ def _run_protocol(state: OperationalClassConditionalState) -> str:
     if state.lifecycle == P3K_OPERATIONAL_LIFECYCLE:
         return P3K_MEASURED_RUN_PROTOCOL
     return P3J_MEASURED_RUN_PROTOCOL
+
+
+def _class_probabilities(state: OperationalClassConditionalState) -> np.ndarray:
+    probabilities = np.zeros(len(state.target_partition.class_ids), dtype=float)
+    for class_index, members in enumerate(state.target_partition.member_indices):
+        probabilities[class_index] = sum(
+            state.nominal_state.posterior.members[index].probability
+            for index in members
+        )
+    if not np.isclose(float(probabilities.sum()), 1.0, atol=2e-12):
+        raise FloatingPointError("DCCA class posterior is not normalized")
+    return probabilities
+
+
+def _append_dcca_observation(
+    history: list[tuple[float, float]],
+    state: OperationalClassConditionalState,
+    result: P3JMeasuredPoolQueryResult,
+) -> None:
+    predicted = float(result.decision.scores.scores[result.decision.local_index])
+    before = bayes_zero_one_decision_risk(_class_probabilities(state))
+    after = bayes_zero_one_decision_risk(_class_probabilities(result.next_state))
+    realized = before - after
+    if not np.isfinite(predicted) or not np.isfinite(realized):
+        raise FloatingPointError("DCCA realized-regret ledger is not finite")
+    history.append((predicted, realized))
 
 
 @dataclass(frozen=True)
@@ -78,6 +106,7 @@ def run_p3j_measured_pool_acquisition(
     action_chunk_size: int = 16,
     information_risk_tail_probability: float | None = None,
     utility_method: str = P3M6_ENTROPY_UTILITY,
+    dcca_history: tuple[tuple[float, float], ...] = (),
 ) -> P3JMeasuredRunResult:
     """Run or resume one contiguous query lineage without response lookahead."""
 
@@ -101,6 +130,7 @@ def run_p3j_measured_pool_acquisition(
     decisions: list[OperationalClassConditionalDecision] = []
     query_results: list[P3JMeasuredPoolQueryResult] = []
     identities: list[P3JFormalQueryIdentity] = []
+    calibration_history = list(dcca_history)
     for query_index in range(1, acquisition_budget + 1):
         visible_actions = actions[available]
         visible_ids = identifiers[available]
@@ -133,12 +163,13 @@ def run_p3j_measured_pool_acquisition(
             action_chunk_size=action_chunk_size,
             information_risk_tail_probability=information_risk_tail_probability,
             utility_method=utility_method,
+            dcca_history=tuple(calibration_history),
         )
         matches = np.flatnonzero(visible_ids == result.revealed_candidate_id)
-        if len(matches) != 1:
+        if len(matches) != 1:  # exactly one reveal is mandatory
             raise AssertionError("P3J revealed candidate left the available domain")
-        available = np.delete(available, int(matches[0]))
-        representative = np.vstack((representative, result.revealed_action))
+        available = np.delete(available, int(matches[0])); representative = np.vstack((representative, result.revealed_action))
+        if utility_method == DCCA_UTILITY: _append_dcca_observation(calibration_history, state, result)
         state = result.next_state
         decisions.append(result.decision)
         query_results.append(result)

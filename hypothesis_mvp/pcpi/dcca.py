@@ -11,6 +11,7 @@ import numpy as np
 
 DCCA_UTILITY = "decision-calibrated-cross-fitted-regret-reduction-v1"
 DCCA_CHECKPOINT_SCHEMA = "pcpi-dcca-cross-fitted-regret-checkpoint-v1"
+DCCA_WARMUP_QUERIES = 4
 
 @dataclass(frozen=True)
 class DCCAFoldPlan:
@@ -88,3 +89,21 @@ def cross_fitted_intervals(
         lower[crossed] = np.min(intervals[:, crossed, 0], axis=0)
         upper[crossed] = np.max(intervals[:, crossed, 1], axis=0)
     return lower, upper
+
+def calibrate_candidate_intervals(
+    predicted: np.ndarray, history: tuple[tuple[float, float], ...]
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Fit two disjoint historical folds; return None during fixed warm-up."""
+    if len(history) < DCCA_WARMUP_QUERIES:
+        return None
+    values = np.asarray(history, dtype=float)
+    if values.shape != (len(history), 2) or not np.all(np.isfinite(values)):
+        raise ValueError("DCCA history is invalid")
+    plan = make_prefix_fold_plan(len(history), 2)
+    calibrations = tuple(
+        fit_prefix_calibration(
+            values[np.asarray(plan.fold_ids) == fold, 0],
+            values[np.asarray(plan.fold_ids) == fold, 1], fold_id=fold,
+        ) for fold in range(2)
+    )
+    return cross_fitted_intervals(np.asarray(predicted, float), calibrations)

@@ -162,6 +162,7 @@ def run_p3j_formal_query(
     action_chunk_size: int = 16,
     information_risk_tail_probability: float | None = None,
     utility_method: str = P3M6_ENTROPY_UTILITY,
+    dcca_history: tuple[tuple[float, float], ...] = (),
 ) -> OperationalClassConditionalDecision:
     """Resume, fail terminally, or publish exactly one response-free decision."""
 
@@ -185,6 +186,7 @@ def run_p3j_formal_query(
             action_chunk_size=action_chunk_size,
             information_risk_tail_probability=information_risk_tail_probability,
             utility_method=utility_method,
+            dcca_history=dcca_history,
         )
         _publish_no_overwrite(decision_path, _decision_payload(workspace, decision))
     except Exception as error:

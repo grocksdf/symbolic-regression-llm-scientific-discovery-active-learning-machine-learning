@@ -311,6 +311,7 @@ def score_identity_bound_p3j_query(
     action_chunk_size: int = 16,
     information_risk_tail_probability: float | None = None,
     utility_method: str = "frozen-class-entropy-lower-tail-cvar-v1",
+    dcca_history: tuple[tuple[float, float], ...] = (),
 ):
     """Validate the complete formal identity before checkpointed scoring."""
 
@@ -353,6 +354,7 @@ def score_identity_bound_p3j_query(
             )
         ),
         utility_method=utility_method,
+        dcca_history=dcca_history,
     )
 
 

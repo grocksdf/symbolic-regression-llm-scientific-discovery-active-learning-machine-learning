@@ -8,7 +8,7 @@ the explicitly separated conditioning and residual-training arguments.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 import math
 from pathlib import Path
@@ -16,7 +16,7 @@ from typing import Callable
 
 import numpy as np
 
-from .acquisition import ClassPartition
+from .acquisition import ClassPartition, fixed_partition_probabilities
 from .class_conditional_semiparametric import (
     P3M_ACTION_CONDITIONAL_POSTERIOR_UPDATE_METHOD,
     CalibratedClassPosteriorState,
@@ -28,6 +28,7 @@ from .action_conditional_residual import (
     P3M_ACTION_CONDITIONAL_RESIDUAL_METHOD,
     reconstruct_action_conditional_residual_state,
 )
+from .dcca import DCCA_UTILITY, calibrate_candidate_intervals, select_by_certified_interval
 from .operational_semiparametric import P3H_OPERATIONAL_POWERS
 from .real_acquisition import (
     AcquisitionScores,
@@ -240,6 +241,7 @@ def score_operational_class_conditional_candidates(
     information_risk_tail_probability: float | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
     utility_method: str = P3M6_ENTROPY_UTILITY,
+    dcca_history: tuple[tuple[float, float], ...] = (),
 ) -> OperationalClassConditionalDecision:
     """Score only visible covariates, certify, and freeze one candidate."""
 
@@ -292,7 +294,22 @@ def score_operational_class_conditional_candidates(
         raise FloatingPointError(
             "P3J ranking is not certified under the complete calibrated family"
         )
-    selected = select_acquisition_candidate(scores, identifiers)
+    if utility_method == DCCA_UTILITY:
+        intervals = calibrate_candidate_intervals(scores.scores, dcca_history)
+        if intervals is None:
+            selected = select_acquisition_candidate(scores, identifiers)
+        else:
+            lower, upper = intervals
+            local_choice = select_by_certified_interval(lower, upper)
+            calibrated = 0.5 * (lower + upper)
+            scores = replace(
+                scores, scores=calibrated,
+                integration_error_bounds=0.5 * (upper - lower),
+                robust_lower_bounds=lower, robust_upper_bounds=upper,
+            )
+            selected = int(identifiers[local_choice])
+    else:
+        selected = select_acquisition_candidate(scores, identifiers)
     local = int(np.flatnonzero(identifiers == selected)[0])
     return OperationalClassConditionalDecision(
         prior_state_hash=state.stable_hash,
@@ -320,6 +337,7 @@ def score_checkpointed_operational_class_conditional_candidates(
     information_risk_tail_probability: float | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
     utility_method: str = P3M6_ENTROPY_UTILITY,
+    dcca_history: tuple[tuple[float, float], ...] = (),
 ) -> OperationalClassConditionalDecision:
     """Require the complete checkpointed ambiguity family before selection."""
 
@@ -342,6 +360,7 @@ def score_checkpointed_operational_class_conditional_candidates(
         information_risk_tail_probability=information_risk_tail_probability,
         progress_callback=progress_callback,
         utility_method=utility_method,
+        dcca_history=dcca_history,
     )
 
 
