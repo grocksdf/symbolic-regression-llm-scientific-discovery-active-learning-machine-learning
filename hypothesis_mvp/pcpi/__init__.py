@@ -195,6 +195,15 @@ from .response_free_resolution import (
     penalized_gain,
     require_negative_transfer_guard,
 )
+from .dcca import (
+    DCCA_UTILITY,
+    DCCA_CHECKPOINT_SCHEMA,
+    DCCAFoldPlan,
+    DCCACalibration,
+    make_prefix_fold_plan,
+    fit_prefix_calibration,
+    select_by_certified_interval,
+)
 from .p3m_checkpoint import (
     P3M_CHECKPOINT_PUBLICATION,
     P3M_CHECKPOINT_SCHEMA,
@@ -552,6 +561,13 @@ __all__ = [
     "require_resolution_for_risk",
     "penalized_gain",
     "require_negative_transfer_guard",
+    "DCCA_UTILITY",
+    "DCCA_CHECKPOINT_SCHEMA",
+    "DCCAFoldPlan",
+    "DCCACalibration",
+    "make_prefix_fold_plan",
+    "fit_prefix_calibration",
+    "select_by_certified_interval",
     "P3M6_ENTROPY_UTILITY",
     "P3MCheckpoint",
     "P3MCheckpointPlan",
