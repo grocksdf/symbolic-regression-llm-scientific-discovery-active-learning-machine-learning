@@ -171,6 +171,30 @@ class OperationalClassConditionalDecision:
         object.__setattr__(self, "selected_action", action)
 
 
+def _select_dcca_candidate(
+    scores: AcquisitionScores,
+    identifiers: np.ndarray,
+    history: tuple[tuple[float, float], ...],
+) -> tuple[AcquisitionScores, int]:
+    intervals = calibrate_candidate_intervals(scores.scores, history)
+    if intervals is None:
+        return scores, select_acquisition_candidate(scores, identifiers)
+    lower, upper = intervals
+    try:
+        local_choice = select_by_certified_interval(lower, upper)
+        selected = int(identifiers[local_choice])
+    except RuntimeError as error:
+        if "intervals do not separate" not in str(error):
+            raise
+        selected = select_acquisition_candidate(scores, identifiers)
+    calibrated = 0.5 * (lower + upper)
+    return replace(
+        scores, scores=calibrated,
+        integration_error_bounds=0.5 * (upper - lower),
+        robust_lower_bounds=lower, robust_upper_bounds=upper,
+    ), selected
+
+
 def initialize_operational_class_conditional_state(
     engines: tuple[SequentialReferencePosterior, ...],
     conditioning_actions: np.ndarray,
@@ -295,19 +319,7 @@ def score_operational_class_conditional_candidates(
             "P3J ranking is not certified under the complete calibrated family"
         )
     if utility_method == DCCA_UTILITY:
-        intervals = calibrate_candidate_intervals(scores.scores, dcca_history)
-        if intervals is None:
-            selected = select_acquisition_candidate(scores, identifiers)
-        else:
-            lower, upper = intervals
-            local_choice = select_by_certified_interval(lower, upper)
-            calibrated = 0.5 * (lower + upper)
-            scores = replace(
-                scores, scores=calibrated,
-                integration_error_bounds=0.5 * (upper - lower),
-                robust_lower_bounds=lower, robust_upper_bounds=upper,
-            )
-            selected = int(identifiers[local_choice])
+        scores, selected = _select_dcca_candidate(scores, identifiers, dcca_history)
     else:
         selected = select_acquisition_candidate(scores, identifiers)
     local = int(np.flatnonzero(identifiers == selected)[0])
