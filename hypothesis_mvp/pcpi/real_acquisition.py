@@ -60,6 +60,7 @@ from .action_conditional_residual import (
     P3M7_DECISION_RISK_UTILITY,
     P3M8_DECISION_RISK_PENALIZED_UTILITY,
     P3M9_DOWNSIDE_SEVERITY_UTILITY,
+    DCCA_UTILITY,
 )
 from .likelihood_power_residuals import LikelihoodPowerResidualFamily
 from .p3j_checkpointed import (
@@ -71,6 +72,7 @@ from .p3m_checkpoint import (
     P3M7_CHECKPOINT_SCHEMA,
     P3M8_CHECKPOINT_SCHEMA,
     P3M9_CHECKPOINT_SCHEMA,
+    DCCA_CHECKPOINT_SCHEMA,
     checkpointed_action_conditional_information_risk,
 )
 from .response_free_resolution import require_resolution_for_risk
@@ -939,6 +941,8 @@ def _information_risk_model_look(
                     else P3M8_CHECKPOINT_SCHEMA
                     if utility_method == P3M8_DECISION_RISK_PENALIZED_UTILITY
                     else P3M9_CHECKPOINT_SCHEMA
+                    if utility_method == P3M9_DOWNSIDE_SEVERITY_UTILITY
+                    else DCCA_CHECKPOINT_SCHEMA
                 ),
             )
         return estimate_action_conditional_information_risk(
@@ -1001,9 +1005,11 @@ def _estimate_class_conditional_information_risk_until_ranked(
         or tuple(item.engine.likelihood_power for item in states) != powers
         or not 0.0 < float(tail_probability) < 1.0):
         raise ValueError("P3L posterior, residual, or tail identities are invalid")
-    if utility_method not in (P3M6_ENTROPY_UTILITY, P3M7_DECISION_RISK_UTILITY,
-                              P3M8_DECISION_RISK_PENALIZED_UTILITY,
-                              P3M9_DOWNSIDE_SEVERITY_UTILITY):
+    if utility_method not in (
+        P3M6_ENTROPY_UTILITY, P3M7_DECISION_RISK_UTILITY,
+        P3M8_DECISION_RISK_PENALIZED_UTILITY,
+        P3M9_DOWNSIDE_SEVERITY_UTILITY, DCCA_UTILITY,
+    ):
         raise ValueError("P3M utility method is invalid")
     root = None if checkpoint_root is None else Path(checkpoint_root)
     if root is not None and not root.is_dir():
@@ -1570,6 +1576,7 @@ def _class_conditional_information_contract(
         P3M7_DECISION_RISK_UTILITY,
         P3M8_DECISION_RISK_PENALIZED_UTILITY,
         P3M9_DOWNSIDE_SEVERITY_UTILITY,
+        DCCA_UTILITY,
     ):
         return (
             "representative-safe-robust-action-conditional-semiparametric-"
@@ -1594,7 +1601,7 @@ def _reported_information_risk_method(
         P3M7_DECISION_RISK_UTILITY,
         P3M8_DECISION_RISK_PENALIZED_UTILITY,
         P3M9_DOWNSIDE_SEVERITY_UTILITY,
-        P3M9_DOWNSIDE_SEVERITY_UTILITY,
+        DCCA_UTILITY,
     ):
         return utility_method
     return estimator_method

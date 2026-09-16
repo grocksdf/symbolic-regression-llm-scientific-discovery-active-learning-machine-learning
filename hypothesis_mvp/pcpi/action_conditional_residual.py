@@ -57,6 +57,7 @@ P3M8_DECISION_RISK_PENALIZED_UTILITY = (
 P3M9_DOWNSIDE_SEVERITY_UTILITY = (
     "bayes-zero-one-decision-risk-downside-severity-lower-tail-cvar-v1"
 )
+DCCA_UTILITY = "decision-calibrated-cross-fitted-regret-reduction-v1"
 
 
 def downside_severity_decision_gain(gain: np.ndarray) -> np.ndarray:
@@ -500,6 +501,8 @@ def _action_information_risk(
     predictive_law: DyadicPolyaTreePredictiveLaw | None = None,
     utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> tuple[float, float, float, float, int]:
+    if utility_method == DCCA_UTILITY:
+        raise RuntimeError("DCCA calibration and regret target are not composed; real scoring unauthorized")
     probabilities = _validated_class_probabilities(components)
     law = (
         state.predictive_law(actions[action_index])
@@ -512,6 +515,7 @@ def _action_information_risk(
         P3M6_ENTROPY_UTILITY, P3M7_DECISION_RISK_UTILITY,
         P3M8_DECISION_RISK_PENALIZED_UTILITY,
         P3M9_DOWNSIDE_SEVERITY_UTILITY,
+        DCCA_UTILITY,
     ):
         raise ValueError("P3M utility method is invalid")
     information, gains, masses = 0.0, [], []
@@ -536,7 +540,7 @@ def _action_information_risk(
             prior_entropy + np.sum(xlogy(posterior, posterior), axis=0)
             if utility_method == P3M6_ENTROPY_UTILITY
             else downside_severity_decision_gain(decision_gain)
-            if utility_method == P3M9_DOWNSIDE_SEVERITY_UTILITY
+            if utility_method in (P3M9_DOWNSIDE_SEVERITY_UTILITY, DCCA_UTILITY)
             else decision_gain - (
                 tail_probability * (decision_gain < 0.0)
                 if utility_method == P3M8_DECISION_RISK_PENALIZED_UTILITY else 0.0
@@ -697,6 +701,7 @@ __all__ = [
     "bayes_zero_one_decision_risk",
     "downside_severity_decision_gain",
     "P3M9_DOWNSIDE_SEVERITY_UTILITY",
+    "DCCA_UTILITY",
     "bayes_zero_one_decision_gains",
     "advance_action_conditional_residual_state",
     "action_matrix_hash",

@@ -20,6 +20,7 @@ from .action_conditional_residual import (
     P3M7_DECISION_RISK_UTILITY,
     P3M8_DECISION_RISK_PENALIZED_UTILITY,
     P3M9_DOWNSIDE_SEVERITY_UTILITY,
+    DCCA_UTILITY,
 )
 from .operational_class_conditional import (
     P3K_OPERATIONAL_LIFECYCLE,
@@ -426,6 +427,7 @@ def _p3j_decision_valid(
         P3M7_DECISION_RISK_UTILITY,
         P3M8_DECISION_RISK_PENALIZED_UTILITY,
         P3M9_DOWNSIDE_SEVERITY_UTILITY,
+        DCCA_UTILITY,
     ):
         risk_by_model = tuple(row["selected_lower_tail_cvar_by_model"])
         negative_by_model = tuple(
@@ -493,6 +495,7 @@ def _information_risk_usage(
         P3M7_DECISION_RISK_UTILITY,
         P3M8_DECISION_RISK_PENALIZED_UTILITY,
         P3M9_DOWNSIDE_SEVERITY_UTILITY,
+        DCCA_UTILITY,
     )
     used = tuple(method in accepted for method in methods)
     if any(used) and not all(used):

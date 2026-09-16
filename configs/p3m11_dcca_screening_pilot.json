@@ -1,0 +1,11 @@
+{
+  "schema": "pcpi-p3m11-dcca-screening-pilot-config-v1",
+  "stage": "P3M.11-DCCA-SCREENING",
+  "base_config": "p3m_9_downside_severity_pilot.json",
+  "utility_method": "decision-calibrated-cross-fitted-regret-reduction-v1",
+  "checkpoint_schema": "pcpi-dcca-cross-fitted-regret-checkpoint-v1",
+  "seeds": [2026080701, 2026080702],
+  "heldout_state": "closed",
+  "operational_execution_authorized": false,
+  "formal_dataset_runner_authorized": false
+}
