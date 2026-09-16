@@ -203,6 +203,7 @@ from .dcca import (
     make_prefix_fold_plan,
     fit_prefix_calibration,
     select_by_certified_interval,
+    cross_fitted_intervals,
 )
 from .p3m_checkpoint import (
     P3M_CHECKPOINT_PUBLICATION,
@@ -568,6 +569,7 @@ __all__ = [
     "make_prefix_fold_plan",
     "fit_prefix_calibration",
     "select_by_certified_interval",
+    "cross_fitted_intervals",
     "P3M6_ENTROPY_UTILITY",
     "P3MCheckpoint",
     "P3MCheckpointPlan",

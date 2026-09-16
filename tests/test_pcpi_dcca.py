@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from hypothesis_mvp.pcpi.dcca import make_prefix_fold_plan, fit_prefix_calibration, select_by_certified_interval
+from hypothesis_mvp.pcpi.dcca import make_prefix_fold_plan, fit_prefix_calibration, select_by_certified_interval, cross_fitted_intervals
 
 def test_dcca_prefix_fold_plan_is_deterministic():
     a = make_prefix_fold_plan(6, 2); b = make_prefix_fold_plan(6, 2)
@@ -16,3 +16,9 @@ def test_dcca_selection_fails_closed_on_overlap():
 
 def test_dcca_selection_accepts_separated_intervals():
     assert select_by_certified_interval(np.array([1., .2]), np.array([1.1, .8])) == 0
+
+def test_dcca_cross_fitted_intervals_require_fold_agreement():
+    c0 = fit_prefix_calibration(np.array([0., 1.]), np.array([0., 1.]), fold_id=0)
+    c1 = fit_prefix_calibration(np.array([0., 1.]), np.array([0., 1.]), fold_id=1)
+    lower, upper = cross_fitted_intervals(np.array([1., .2]), (c0, c1))
+    np.testing.assert_allclose(lower, [1., .2]); np.testing.assert_allclose(upper, [1., .2])

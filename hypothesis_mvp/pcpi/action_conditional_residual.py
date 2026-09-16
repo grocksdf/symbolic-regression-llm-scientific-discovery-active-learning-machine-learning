@@ -502,7 +502,7 @@ def _action_information_risk(
     utility_method: str = P3M6_ENTROPY_UTILITY,
 ) -> tuple[float, float, float, float, int]:
     if utility_method == DCCA_UTILITY:
-        raise RuntimeError("DCCA calibration and regret target are not composed; real scoring unauthorized")
+        raise RuntimeError("DCCA requires cross-fitted intervals at the selection boundary")
     probabilities = _validated_class_probabilities(components)
     law = (
         state.predictive_law(actions[action_index])

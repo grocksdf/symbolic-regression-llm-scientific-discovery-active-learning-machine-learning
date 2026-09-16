@@ -63,3 +63,28 @@ def select_by_certified_interval(lower: np.ndarray, upper: np.ndarray) -> int:
     if any(hi[i] > lo[leader] for i in range(len(lo)) if i != leader):
         raise RuntimeError("DCCA candidate intervals do not separate; selection abstains")
     return leader
+
+def cross_fitted_intervals(
+    predicted: np.ndarray,
+    calibrations: tuple[DCCACalibration, ...],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Combine held-out-fold calibration intervals conservatively.
+
+    Each calibration object must have been fit on a disjoint prefix fold by the
+    caller. The intersection is used only when all folds agree; otherwise the
+    union is retained and selection can fail closed.
+    """
+    values = np.asarray(predicted, dtype=float).reshape(-1)
+    if not calibrations or not np.all(np.isfinite(values)):
+        raise ValueError("DCCA cross-fit inputs are invalid")
+    intervals = np.asarray([cal.interval(v) for cal in calibrations for v in values], dtype=float)
+    intervals = intervals.reshape(len(calibrations), len(values), 2)
+    lower = np.max(intervals[:, :, 0], axis=0)
+    upper = np.min(intervals[:, :, 1], axis=0)
+    # Disagreement means no certified intersection; preserve a conservative
+    # union so the downstream selector necessarily abstains when appropriate.
+    crossed = lower > upper
+    if np.any(crossed):
+        lower[crossed] = np.min(intervals[:, crossed, 0], axis=0)
+        upper[crossed] = np.max(intervals[:, crossed, 1], axis=0)
+    return lower, upper
