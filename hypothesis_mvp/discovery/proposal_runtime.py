@@ -336,6 +336,11 @@ class ProposalRuntime:
             except Exception as error:
                 outcome = {"provider_attempt_index": attempt, "provider_error": repr(error)}
                 outcomes.append(outcome)
+                if isinstance(error, ProtocolError) and str(error) == "provider_content_missing":
+                    # Identical retries cannot repair a completed response whose
+                    # generation mode yielded no answer channel. The registered
+                    # provider mode must be corrected before another protocol.
+                    break
                 if "401" in str(error) or "402" in str(error) or "403" in str(error):
                     self._disabled.add(route.key)
                     break
@@ -505,12 +510,17 @@ class ProposalRuntime:
         self.call_count += 1
         content, telemetry = self._request(messages, prompt_hash)
         response_hash = hashlib.sha256(content.encode()).hexdigest()
-        parsed = strict_json_loads(content)
-        if not isinstance(parsed, Mapping):
-            raise ProtocolError("root_must_be_object")
-        candidates, rejections, normalizations = self._validate_batch(
-            parsed, context, prompt_hash, response_hash
-        )
+        try:
+            parsed = strict_json_loads(content)
+            if not isinstance(parsed, Mapping):
+                raise ProtocolError("root_must_be_object")
+            candidates, rejections, normalizations = self._validate_batch(
+                parsed, context, prompt_hash, response_hash
+            )
+        except (ProtocolError, json.JSONDecodeError) as error:
+            candidates, normalizations = (), ()
+            rejections = ({"proposal_index": -1, "candidate_id": "",
+                "error_type": type(error).__name__, "error": str(error)},)
         return _ValidatedResponse(
             candidates, rejections, normalizations,
             prompt_hash, response_hash, telemetry,

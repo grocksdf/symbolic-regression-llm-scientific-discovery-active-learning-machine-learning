@@ -65,6 +65,18 @@ balanced/Pareto policy jointly audits accuracy, tail error, complexity and
 novelty, while reducing provider fan-out to one request batch per enabled branch.
 The 240-second ceiling is frozen from transport latency evidence, not efficacy.
 
+The next response-free transport audit diagnosed the complete failure mode:
+three `reasoning_effort=max` responses ended with an empty answer channel. The
+official endpoint rejected disabled thinking because GLM-5.3 is always-thinking,
+so the registered production mode is now `thinking=enabled` with the supported
+`reasoning_effort=low`. A subsequent no-data protocol request returned HTTP 200
+and one valid proposal in 7.516 seconds on its first transport. Empty completed
+responses are no longer retried identically. Strict JSON or top-level protocol
+errors receive at most one separately hashed repair request, preserving both
+responses and all transport telemetry. These are transport/protocol corrections;
+no experimental response, validation result, held-out value or efficacy metric
+entered them.
+
 That execution also exposed a separate orchestration defect: all 48 candidate
 validations were consumed before the LLM phase, so the nominal full branch made
 zero provider attempts and duplicated the no-LLM path. The repair reserves a

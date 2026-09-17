@@ -18,6 +18,12 @@ from .resource_limits import run_bounded
 from hypothesis_mvp.pcpi.discovery_transaction import _publish
 
 
+class ExplorationProtocolError(ValueError):
+    def __init__(self, code):
+        super().__init__(code)
+        self.public_diagnostic = str(code)
+
+
 def audit_usage(config, result, elapsed, compute_ceiling, provider_attempt_ceiling):
     jobs = sum(len(c.engine_report["run_records"]) for c in result.cycles)
     evaluations = sum(c.candidate_evaluations for c in result.cycles)
@@ -47,11 +53,11 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
                         compute_ceiling, provider_attempt_ceiling)
     report = result.discovery.report
     if report.get("llm_error_count", 0) or any(getattr(c, "provider_errors", 0) for c in result.cycles):
-        raise ValueError("provider infrastructure failure blocks matched exploration")
+        raise ExplorationProtocolError("provider-infrastructure-failure-blocks-exploration")
     if provider_settings is not None and (
             int(report.get("llm_call_count", 0)) < 1
             or int(report.get("llm_attempt_count", 0)) < 1):
-        raise ValueError("LLM-enabled exploration completed without a provider attempt")
+        raise ExplorationProtocolError("llm-enabled-exploration-had-zero-provider-attempts")
     # All retained top-k proposals are passed, including LLM descendants.
     # No outcome-conditioned filtering for adapter compatibility is permitted.
     candidates = [{"expression": row["expression"], "source": str(row.get("source", "runtime-retained"))}

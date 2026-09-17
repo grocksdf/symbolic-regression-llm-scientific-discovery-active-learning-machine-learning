@@ -84,6 +84,20 @@ def test_all_invalid_candidates_trigger_one_protocol_repair(monkeypatch) -> None
     assert runtime.call_count == 2
 
 
+def test_top_level_protocol_error_triggers_one_audited_repair(monkeypatch) -> None:
+    runtime = ProposalRuntime(EquationRuntime(3), 3, None, candidates_per_island=4)
+    wrong = json.loads(_content(["x0 + x1"]))
+    wrong["protocol_id"] = "wrong-protocol"
+    responses = iter([json.dumps(wrong), _content(["x0 + x2"])])
+    monkeypatch.setattr(runtime, "_request",
+        lambda messages, prompt_hash: (next(responses), {"actual_provider": "test"}))
+    batch = _propose(runtime)
+    assert batch.protocol_valid and batch.reason == "ok_after_protocol_repair"
+    assert batch.telemetry["protocol_repair_attempted"] is True
+    assert batch.telemetry["candidate_validation_rejections"][0]["error"] == "protocol_id_mismatch"
+    assert len(batch.telemetry["provider_requests"]) == 2
+
+
 def test_provider_failure_is_explicit_without_aborting_search(monkeypatch) -> None:
     runtime = ProposalRuntime(EquationRuntime(3), 3, None, candidates_per_island=4)
 
