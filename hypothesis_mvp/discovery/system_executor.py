@@ -80,7 +80,13 @@ def public_provider_identity(settings):
     return _digest(public)
 
 
-def registered_provider_settings():
+def registered_provider_settings(project_root=None):
+    if project_root is not None:
+        path = Path(project_root) / "config" / "bigmodel_glm_5_2.json"
+        if path.is_file():
+            # Preserve the production file transport (including thinking,
+            # reasoning and retries); malformed files never fall back silently.
+            return ProviderSettings.from_file(path)
     # Do not appropriate generic API credentials injected by unrelated apps.
     names = ("HYPOTHESIS_LLM_API_BASE", "HYPOTHESIS_LLM_MODEL", "HYPOTHESIS_LLM_API_KEY")
     missing = [name for name in names if not os.environ.get(name, "").strip()]
@@ -88,6 +94,13 @@ def registered_provider_settings():
         raise ValueError("missing project LLM settings: " + ", ".join(missing))
     return ProviderSettings.from_environment(base_url=os.environ[names[0]],
         model=os.environ[names[1]], api_key=os.environ[names[2]])
+
+
+def verify_registered_provider(project_root, config):
+    provider = registered_provider_settings(project_root)
+    if not provider.routes or public_provider_identity(provider) != config["provider_public_identity"]:
+        raise ValueError("provider settings differ from frozen public identity")
+    return provider
 
 
 def execute_registered_system(project_root, root, config, expected_freeze, *, execution_role):
@@ -102,9 +115,7 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
     if any(name.startswith("HYPOTHESIS_DISCOVERY_") for name in os.environ):
         raise ValueError("unregistered discovery environment overrides are forbidden")
     verify_system_freeze(project_root, config, expected_freeze)
-    provider = registered_provider_settings()
-    if not provider.routes or public_provider_identity(provider) != config["provider_public_identity"]:
-        raise ValueError("provider settings differ from frozen public identity")
+    provider = verify_registered_provider(project_root, config)
     source_identity = _digest(expected_freeze)
     root.mkdir(parents=True, exist_ok=True)
     if (root / "TERMINAL_FAILURE.json").exists():

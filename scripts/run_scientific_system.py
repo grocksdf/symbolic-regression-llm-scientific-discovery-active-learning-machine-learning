@@ -7,7 +7,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from hypothesis_mvp.discovery.system_executor import execute_registered_system, validate_system_registration
+from hypothesis_mvp.discovery.system_executor import execute_registered_system, validate_system_registration, verify_registered_provider
 from hypothesis_mvp.discovery.system_freeze import verify_system_freeze
 
 
@@ -23,8 +23,11 @@ def main():
     validate_system_registration(config)
     if args.preflight_only:
         verify_system_freeze(ROOT, config, freeze)
+        verify_registered_provider(ROOT, config)
         print(json.dumps({"passed": True, "real_data_access": False,
-            "heldout_access": False, "formal_experiment_authorized": False}))
+            "heldout_access": False, "provider_public_identity_verified": True,
+            "user_pilot_authorized": config["user_execution_authorized"],
+            "provider_authentication_tested": False, "formal_experiment_authorized": False}))
         return 0
     if args.output_dir is None:
         parser.error("--output-dir is required for user execution")

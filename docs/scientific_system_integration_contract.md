@@ -121,6 +121,11 @@ identities are checked before data and between stages. A terminal failure blocks
 automatic resumption; completed measured policies recover without new labels.
 Experiment evidence is appended to the existing verified hypothesis registry,
 not a second registry. Public credential-free identities survive key rotation.
+The provider loader reuses config/bigmodel_glm_5_2.json as the production source,
+including reasoning/thinking controls. A malformed saved file cannot silently
+fall back to environment credentials. Project-specific environment settings are
+accepted only when the file is absent; generic app credentials remain excluded.
+Preflight verifies the actual provider's public identity without a network call.
 
 data/system_protocol.py reads Gas CSVs for 2011--2014 only, at explicit filenames
 with mandatory official hashes; no sealed year file is located, hashed or opened.

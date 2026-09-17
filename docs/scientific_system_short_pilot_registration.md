@@ -1,8 +1,10 @@
 # Short scientific-system development pilot
 
-Status: registered non-executable draft, pending project provider binding.
+Status: registered user-only development pilot, bound to the existing production
+config/bigmodel_glm_5_2.json public provider identity. No transport request has
+been made during registration; key presence is not proof of authentication.
 The sole configuration is configs/scientific_system_short_pilot.json. A null
-public provider identity is permitted only while user authorization is false.
+public provider identity is permitted only for an unauthorized draft.
 There are no placeholder credentials, fabricated results or efficacy claims.
 
 Purpose: bounded end-to-end development screening, not confirmation, superiority
@@ -37,8 +39,12 @@ single-seed results cannot justify family-level, statistical or paper superiorit
 No automatic efficacy GO threshold is introduced. A protocol-valid negative is
 immutable; it cannot be rerun to seek a favorable seed or outcome.
 
-Activation requires the user's project-specific HTTPS base URL, model identifier
-and local HYPOTHESIS_LLM_API_KEY. Generic app credentials are not appropriated.
+The runner first reuses the existing production provider file, preserving model,
+reasoning, thinking, sampling, timeouts and retries. Invalid saved files fail
+closed without environment fallback. Only when the file is absent may the
+project-specific environment settings supply the provider. Generic app credentials
+are not appropriated. Preflight verifies public provider identity without any
+network request; changing endpoint/model/controls requires a new frozen identity.
 Only a credential-free public provider-settings hash enters the configuration.
 Then authorize the exact configuration, commit it locally, capture clean source,
 config, runtime binary and dependency identities, and execute no-data preflight.

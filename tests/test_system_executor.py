@@ -48,7 +48,7 @@ def _inline(function, args=(), kwargs=None, **limits):
 
 def _patch(monkeypatch, supported=True):
     monkeypatch.setattr(executor, "verify_system_freeze", lambda *args: {})
-    monkeypatch.setattr(executor, "registered_provider_settings", lambda: _settings())
+    monkeypatch.setattr(executor, "registered_provider_settings", lambda *args: _settings())
     monkeypatch.setattr(executor, "load_registered_system_data", lambda registration: _data())
     monkeypatch.setattr(executor, "run_bounded", _inline)
     monkeypatch.setattr("hypothesis_mvp.discovery.system_run.run_bounded", _inline)
@@ -134,6 +134,34 @@ def test_unrelated_generic_credentials_are_not_project_authority(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "unrelated-fixture-key")
     with pytest.raises(ValueError, match="missing project LLM"):
         executor.registered_provider_settings()
+
+
+def test_existing_provider_file_is_selected_without_network(tmp_path, monkeypatch):
+    import json
+    path = tmp_path / "config" / "bigmodel_glm_5_2.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps({"api_base_url": "https://fixture.invalid", "api_path": "/chat/completions",
+        "api_method": "POST", "model": "fixture-model", "api_key": "fixture-only",
+        "thinking_type": "enabled", "reasoning_effort": "max"}), encoding="utf-8")
+    monkeypatch.setenv("OPENAI_API_KEY", "unrelated-fixture-key")
+    def forbidden(*args, **kwargs): raise AssertionError("must not use env or network")
+    monkeypatch.setattr(executor.ProviderSettings, "from_environment", forbidden)
+    monkeypatch.setattr("hypothesis_mvp.discovery.proposal_runtime.requests.post", forbidden)
+    settings = executor.registered_provider_settings(tmp_path)
+    assert settings.routes[0].model == "fixture-model"
+    assert settings.thinking_type == "enabled" and settings.reasoning_effort == "max"
+    config = _config(); config["provider_public_identity"] = executor.public_provider_identity(settings)
+    executor.verify_registered_provider(tmp_path, config)
+    config["provider_public_identity"] = "0" * 64
+    with pytest.raises(ValueError): executor.verify_registered_provider(tmp_path, config)
+
+
+def test_invalid_saved_provider_does_not_fall_back(tmp_path, monkeypatch):
+    path = tmp_path / "config" / "bigmodel_glm_5_2.json"
+    path.parent.mkdir(); path.write_text("{}", encoding="utf-8")
+    def forbidden(*args, **kwargs): raise AssertionError("no silent env fallback")
+    monkeypatch.setattr(executor.ProviderSettings, "from_environment", forbidden)
+    with pytest.raises(ValueError): executor.registered_provider_settings(tmp_path)
 
 
 @pytest.mark.parametrize("key,value", [("measurement_budget", 3), ("policy_seconds", float("nan")),
