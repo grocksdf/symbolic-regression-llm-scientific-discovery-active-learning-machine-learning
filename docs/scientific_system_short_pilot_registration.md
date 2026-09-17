@@ -1,8 +1,9 @@
 # Short scientific-system development pilot
 
-Status: registered user-only development pilot, bound to the existing production
-config/bigmodel_glm_5_2.json public provider identity. No transport request has
-been made during registration; key presence is not proof of authentication.
+Status: registered user-only development pilot, bound to the local ignored
+`config/bigmodel.local.json` GLM-5.3 public provider identity. A credential-free
+transport preflight returned HTTP 200 from model `glm-5.3` and one protocol-valid
+candidate; the key itself is excluded from Git and the registration identity.
 The sole configuration is configs/scientific_system_short_pilot.json. A null
 public provider identity is permitted only for an unauthorized draft.
 There are no placeholder credentials, fabricated results or efficacy claims.

@@ -85,6 +85,9 @@ def public_provider_identity(settings):
 
 def registered_provider_settings(project_root=None):
     if project_root is not None:
+        local_path = Path(project_root) / "config" / "bigmodel.local.json"
+        if local_path.is_file():
+            return ProviderSettings.from_file(local_path)
         path = Path(project_root) / "config" / "bigmodel_glm_5_2.json"
         if path.is_file():
             # Preserve the production file transport (including thinking,

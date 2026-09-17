@@ -164,6 +164,16 @@ def test_invalid_saved_provider_does_not_fall_back(tmp_path, monkeypatch):
     with pytest.raises(ValueError): executor.registered_provider_settings(tmp_path)
 
 
+def test_ignored_local_provider_overrides_tracked_default(tmp_path):
+    import json
+    root = tmp_path / "config"; root.mkdir()
+    common = {"api_base_url": "https://fixture.invalid", "api_path": "/chat/completions",
+        "api_method": "POST", "api_key": "fixture-only"}
+    (root / "bigmodel_glm_5_2.json").write_text(json.dumps({**common, "model": "old"}), encoding="utf-8")
+    (root / "bigmodel.local.json").write_text(json.dumps({**common, "model": "local"}), encoding="utf-8")
+    assert executor.registered_provider_settings(tmp_path).routes[0].model == "local"
+
+
 @pytest.mark.parametrize("key,value", [("measurement_budget", 3), ("policy_seconds", float("nan")),
     ("seeds", [11, 11]), ("coefficient_policy", "silent-refit")])
 def test_registration_rejects_invalid_contract(key, value):

@@ -48,7 +48,7 @@
   "policy_seconds": 60,
   "data_loading_seconds": 30,
   "provider_attempt_ceiling": 24,
-  "provider_public_identity": "c0deccca846a01420fb52992d4282e681adf2ea6a7fd3a53fc7a71c06e39fcca",
+  "provider_public_identity": "567cff589ed9c2f1d109b8cb14c86783afb73baaebeb3015cacbd970b9e8ac40",
   "coefficient_policy": "discard-fitted-coefficients-refit-closed-basis",
   "user_execution_authorized": true
 }

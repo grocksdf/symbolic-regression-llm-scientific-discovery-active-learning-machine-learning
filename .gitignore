@@ -26,6 +26,7 @@ paper_locked_outputs/
 *.lock
 
 # Local secrets and editor state
+/config/bigmodel.local.json
 .env
 .env.*
 !.env.example
