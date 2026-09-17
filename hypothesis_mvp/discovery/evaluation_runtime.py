@@ -28,14 +28,30 @@ class EvaluationBudget:
         self.used = 0
         self.denied = 0
         self.counts: Counter[str] = Counter()
+        self.llm_reserve = 0
+        self.llm_phase = False
 
     def reset(self) -> None:
         self.used = 0
         self.denied = 0
         self.counts.clear()
+        self.llm_reserve = 0
+        self.llm_phase = False
+
+    def configure_llm_reserve(self, reserve: int) -> None:
+        reserve = int(reserve)
+        if reserve < 0 or (self.limit is not None and reserve >= self.limit):
+            raise ValueError("LLM evaluation reserve must be nonnegative and below total budget")
+        self.llm_reserve = reserve
+
+    def begin_llm_phase(self) -> None:
+        self.llm_phase = True
 
     def consume(self, category: str) -> bool:
-        if self.limit is not None and self.used >= self.limit:
+        cap = self.limit
+        if cap is not None and not self.llm_phase:
+            cap = cap - self.llm_reserve
+        if cap is not None and self.used >= cap:
             self.denied += 1
             self.counts[f"denied:{category}"] += 1
             return False
@@ -48,7 +64,10 @@ class EvaluationBudget:
 
     @property
     def exhausted(self) -> bool:
-        return self.limit is not None and self.used >= self.limit
+        cap = self.limit
+        if cap is not None and not self.llm_phase:
+            cap = cap - self.llm_reserve
+        return cap is not None and self.used >= cap
 
     @property
     def enforced(self) -> bool:
@@ -62,6 +81,8 @@ class EvaluationBudget:
             "remaining": None if self.limit is None else max(0, self.limit - self.used),
             "enforced": self.limit is not None,
             "exhausted": self.exhausted,
+            "llm_reserve": self.llm_reserve,
+            "llm_phase": self.llm_phase,
             "denied": self.denied,
             "counts": dict(sorted(self.counts.items())),
         }

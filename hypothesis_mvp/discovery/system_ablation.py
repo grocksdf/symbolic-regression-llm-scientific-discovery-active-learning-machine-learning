@@ -48,6 +48,10 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
     report = result.discovery.report
     if report.get("llm_error_count", 0) or any(getattr(c, "provider_errors", 0) for c in result.cycles):
         raise ValueError("provider infrastructure failure blocks matched exploration")
+    if provider_settings is not None and (
+            int(report.get("llm_call_count", 0)) < 1
+            or int(report.get("llm_attempt_count", 0)) < 1):
+        raise ValueError("LLM-enabled exploration completed without a provider attempt")
     # All retained top-k proposals are passed, including LLM descendants.
     # No outcome-conditioned filtering for adapter compatibility is permitted.
     candidates = [{"expression": row["expression"], "source": str(row.get("source", "runtime-retained"))}

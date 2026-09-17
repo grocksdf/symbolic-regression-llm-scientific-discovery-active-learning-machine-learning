@@ -403,6 +403,9 @@ class ScientificDiscoveryRuntime:
         started = time.time()
         self._events.clear()
         self.evaluation.reset()
+        self.evaluation.budget.configure_llm_reserve(
+            self.config.llm_evaluation_reserve if self.proposal.enabled else 0
+        )
         self.proposal.reset()
         arrays = (
             np.asarray(X_train, dtype=float), np.asarray(y_train, dtype=float).reshape(-1),
@@ -423,6 +426,7 @@ class ScientificDiscoveryRuntime:
         llm_states: list[EquationState] = []
         llm_rounds: list[dict[str, Any]] = []
         if refinement_enabled and self.proposal.enabled:
+            self.evaluation.budget.begin_llm_phase()
             state, llm_states, llm_rounds = self._llm_search(state, arrays)
         final, gate = self._select_final(deterministic, llm_states)
         staged = self._stage(final, deterministic)

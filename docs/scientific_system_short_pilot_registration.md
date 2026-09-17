@@ -15,10 +15,14 @@ runs with four labels each. The original outer sealed partition is unchanged.
 The seed is the first historical registered seed, not selected from efficacy.
 Exploration, H0 and development evaluation observations have disjoint IDs.
 
-All branches receive two engine jobs, 48 unique candidate validations, one
-exploration cycle, and the same registered ceilings. Single-engine uses two
-repeats, not half the engine work. No knowledge sharing, engine retries,
-compatibility filtering, utility fallback or automatic restart is allowed.
+All branches receive two engine jobs, at most 48 unique candidate validations,
+one exploration cycle, and the same registered ceilings. In provider-enabled
+branches, 16 of those 48 validations are reserved for LLM proposals so that
+deterministic initialization cannot silently starve the registered LLM phase;
+the no-LLM branch may use all 48 deterministically. Provider-enabled completion
+with zero provider attempts is protocol-invalid. Single-engine uses two repeats,
+not half the engine work. No knowledge sharing, engine retries, compatibility
+filtering, utility fallback or automatic restart is allowed.
 Provider transports including retries share the 24-attempt stage cap; no_llm
 has a zero transport quota. Numerical ranking must pass at the existing controls
 or abort before reveal. Unsupported retained hypotheses reject the entire freeze.
@@ -47,6 +51,14 @@ degree-four, mixed-degree and `cos(x0)` structures because the discovery grammar
 and the downstream closed-basis adapter declared different capabilities. No
 measured comparison completed and held-out remained closed. The failed output
 must not be resumed or overwritten.
+
+That execution also exposed a separate orchestration defect: all 48 candidate
+validations were consumed before the LLM phase, so the nominal full branch made
+zero provider attempts and duplicated the no-LLM path. The repair reserves a
+fixed part of the unchanged total validation budget for the provider phase and
+fails closed if an enabled provider is never attempted. This is a stage-budget
+contract correction, not a result-driven change to candidates, seeds, metrics,
+measurement budgets or acceptance rules.
 
 The source repair does not filter candidates and does not use their validation
 performance. It extends the non-evaluating finite basis registry to the

@@ -10,6 +10,7 @@ from hypothesis_mvp.discovery.resource_limits import (
     ResourceLimitExceeded, before_provider_transport, run_bounded, stage_budget,
 )
 from hypothesis_mvp.discovery.pcpi_adapter import DiscoveryAdapterError
+from hypothesis_mvp.discovery.evaluation_runtime import EvaluationBudget
 
 
 def _sleep():
@@ -49,6 +50,23 @@ def test_only_explicit_public_adapter_diagnostic_crosses_process_boundary():
         run_bounded(_adapter_failure, seconds=15, provider_attempts=0)
 
 
+def test_llm_reserve_preserves_total_budget_without_starving_provider_phase():
+    budget = EvaluationBudget(12)
+    budget.configure_llm_reserve(4)
+    assert sum(budget.consume("deterministic") for _ in range(12)) == 8
+    assert budget.exhausted and budget.used == 8
+    budget.begin_llm_phase()
+    assert not budget.exhausted
+    assert sum(budget.consume("llm") for _ in range(8)) == 4
+    assert budget.exhausted and budget.used == 12
+
+
+@pytest.mark.parametrize("reserve", [-1, 12, 13])
+def test_invalid_llm_reserve_fails_closed(reserve):
+    with pytest.raises(ValueError):
+        EvaluationBudget(12).configure_llm_reserve(reserve)
+
+
 def test_provider_limit_before_network_shared_across_runtimes(monkeypatch):
     from hypothesis_mvp.discovery.proposal_runtime import ProposalRuntime, ProviderSettings, ProviderRoute
     calls = []
@@ -83,4 +101,4 @@ def test_threaded_provider_quota_is_atomic():
 
 @pytest.mark.parametrize("seconds,attempts", [(0, 1), (float("nan"), 1), (1, -1), (1, True)])
 def test_invalid_limits_rejected_before_spawn(seconds, attempts):
-    with pytest.raises(ValueError): run_bounded(abs, args=(-3,), seconds=seconds, provider_attempts=attempts)
+        with pytest.raises(ValueError): run_bounded(abs, args=(-3,), seconds=seconds, provider_attempts=attempts)

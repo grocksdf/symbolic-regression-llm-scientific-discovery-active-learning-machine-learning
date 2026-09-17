@@ -27,7 +27,8 @@
     "random_seed": 2026080701,
     "search_iterations": 24,
     "acquisition_enabled": false,
-    "use_knowledge": false
+    "use_knowledge": false,
+    "llm_evaluation_reserve": 16
   },
   "single_engine": "polynomial_lasso",
   "prior": {

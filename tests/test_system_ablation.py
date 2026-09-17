@@ -18,13 +18,14 @@ def _inputs():
     return selection, config
 
 
-def _result(config):
+def _result(config, provider=True):
     return SimpleNamespace(cycles=[SimpleNamespace(
         engine_report={"run_records": [{"status": "succeeded"}] *
             (len(config.engines) * config.engine_repeats), "failures": []},
-        candidate_evaluations=2, provider_attempts=0, provider_calls=0)],
+        candidate_evaluations=2, provider_attempts=(1 if provider else 0), provider_calls=(1 if provider else 0))],
         discovery=SimpleNamespace(report={"best_val_nmse": 1.,
-            "final_topk": [{"expression": "x0", "source": "fixture"}]}))
+            "final_topk": [{"expression": "x0", "source": "fixture"}],
+            "llm_call_count": (1 if provider else 0), "llm_attempt_count": (1 if provider else 0), "llm_error_count": 0}))
 
 
 def _inline(function, args=(), kwargs=None, **limits):
@@ -38,8 +39,8 @@ def test_equal_jobs_provider_free_and_completed_recovery(tmp_path, monkeypatch):
     seen = []
     class Agent:
         def __init__(self, config, provider):
-            self.config = config; seen.append((config, provider))
-        def run(self, **kwargs): return _result(self.config)
+            self.config = config; self.provider = provider; seen.append((config, provider))
+        def run(self, **kwargs): return _result(self.config, self.provider is not None)
     monkeypatch.setattr("hypothesis_mvp.discovery.system_ablation.DiscoveryAgent", Agent)
     monkeypatch.setattr("hypothesis_mvp.discovery.system_ablation.run_bounded", _inline)
     kwargs = dict(dataset="opaque", config=config, provider_settings=ProviderSettings(

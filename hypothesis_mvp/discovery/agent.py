@@ -35,6 +35,7 @@ class DiscoveryAgentConfig:
     search_iterations: int = 120
     acquisition_enabled: bool = False
     use_knowledge: bool = False
+    llm_evaluation_reserve: int = 0
 
 
 @dataclass(frozen=True)
@@ -136,6 +137,7 @@ class DiscoveryAgent:
             evidence_registry_path=output_dir / "evidence_registry.jsonl",
             config=DiscoveryConfig.from_mapping({
                 "evaluation_budget": self.config.discovery_budget,
+                "llm_evaluation_reserve": self.config.llm_evaluation_reserve,
                 "random_seed": self.config.random_seed,
                 "use_library": self.config.use_knowledge,
             }),
