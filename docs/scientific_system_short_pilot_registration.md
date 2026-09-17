@@ -77,6 +77,18 @@ responses and all transport telemetry. These are transport/protocol corrections;
 no experimental response, validation result, held-out value or efficacy metric
 entered them.
 
+The first `glm53_low` execution completed all three exploration ablations but
+is immutable protocol-invalid acquisition evidence. On the first full-branch
+query, the fast deterministic Gauss--Jacobi fine/coarse intervals did not
+separate the top class-EIG action at the frozen 256-node maximum. The transaction
+abstained before publishing a decision or revealing any pool response. The
+repair does not increase that budget or relax its interval test. Instead, an
+unresolved fast ranking invokes the already independent finite-mixture
+`exact_class_eig` adaptive integration reference. A decision is published only
+when the exact best-action lower endpoint strictly exceeds every competing
+upper endpoint; overlapping exact intervals still abstain. The durable decision
+records whether the fast or exact integration certificate authorized it.
+
 That execution also exposed a separate orchestration defect: all 48 candidate
 validations were consumed before the LLM phase, so the nominal full branch made
 zero provider attempts and duplicated the no-LLM path. The repair reserves a

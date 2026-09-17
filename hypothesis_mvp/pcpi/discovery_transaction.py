@@ -14,8 +14,15 @@ import numpy as np
 
 from hypothesis_mvp.discovery.pcpi_adapter import FrozenDiscoveryModel, FrozenDiscoveryTarget
 from hypothesis_mvp.data.oracle import PoolOracle
-from .acquisition import predictive_components_for_partition, estimate_class_eig_until_ranked
+from .acquisition import (
+    predictive_components_for_partition, estimate_class_eig_until_ranked,
+    exact_class_eig,
+)
 from .p3j_run_identity import _publish_no_overwrite
+
+
+FAST_EIG_METHOD = "adaptive-gauss-jacobi-fine-coarse-interval-ranking"
+EXACT_EIG_METHOD = "adaptive-scipy-quad-exact-finite-mixture-interval-ranking"
 
 
 def _hash(payload: dict) -> str:
@@ -74,7 +81,8 @@ class DiscoveryTransaction:
         identity = {"schema": "discovery-gaussian-transaction-v1", "target": target.stable_hash,
                     "controls": vars(controls), "source": source_identity,
                     "query_policy": query_policy, "random_seed": random_seed,
-                    "likelihood": "homoscedastic-gaussian-nig", "coordinates": "raw"}
+                    "likelihood": "homoscedastic-gaussian-nig", "coordinates": "raw",
+                    "class_eig_ranking_methods": [FAST_EIG_METHOD, EXACT_EIG_METHOD]}
         _publish(self.root / "IDENTITY.json", identity)
         self.identity = _hash(identity)
         self.posterior = target.initial_posterior
@@ -103,6 +111,8 @@ class DiscoveryTransaction:
             or payload["identity"] != self.identity or payload["query"] != index
             or payload["selection_valid"] is not True
             or payload["query_policy"] != self.query_policy
+            or payload.get("integration_method") not in {
+                "query-indexed-uniform-random", FAST_EIG_METHOD, EXACT_EIG_METHOD}
             or payload["certified"] is not (self.query_policy == "class_eig")):
             raise ValueError("invalid durable discovery decision")
         return payload
@@ -132,13 +142,15 @@ class DiscoveryTransaction:
             rng = np.random.default_rng(np.random.SeedSequence([self.random_seed, index]))
             leader = int(rng.integers(len(ids)))
             score, errors, certified = None, [], False
+            integration_method = "query-indexed-uniform-random"
         else:
-            leader, score, errors = self._rank(values, ids)
+            leader, score, errors, integration_method = self._rank(values, ids)
             certified = True
         decision = {"identity": self.identity, "prefix": self.prefix_hash, "query": index,
                     "candidates": candidates_hash, "candidate_id": int(ids[leader]),
                     "action": values[leader].tolist(), "score": score,
                     "errors": errors, "certified": certified,
+                    "integration_method": integration_method,
                     "selection_valid": True, "query_policy": self.query_policy}
         decision["hash"] = _hash(decision)
         _publish(path, decision)
@@ -150,11 +162,26 @@ class DiscoveryTransaction:
         c = self.controls
         ranked = estimate_class_eig_until_ranked(components, c.minimum_samples, c.maximum_samples,
             error_safety_factor=c.error_safety_factor, growth_factor=c.growth_factor)
-        if not ranked.ranking_certified:
-            raise RuntimeError("uncertified class EIG; no response authorized")
-        scores = ranked.estimate.scores
+        if ranked.ranking_certified:
+            scores = ranked.estimate.scores
+            leader = min(range(len(ids)), key=lambda i: (-float(scores[i]), int(ids[i])))
+            return (leader, float(scores[leader]),
+                    ranked.estimate.error_bounds.tolist(), FAST_EIG_METHOD)
+        exact = exact_class_eig(components)
+        scores = np.asarray(exact.scores, dtype=float)
+        errors = np.asarray(exact.quadrature_errors, dtype=float)
+        if (scores.shape != (len(ids),) or errors.shape != scores.shape
+                or not np.all(np.isfinite(scores)) or not np.all(np.isfinite(errors))
+                or np.any(errors < 0.0)):
+            raise RuntimeError("invalid exact class EIG certificate")
         leader = min(range(len(ids)), key=lambda i: (-float(scores[i]), int(ids[i])))
-        return leader, float(scores[leader]), ranked.estimate.error_bounds.tolist()
+        competitors = [i for i in range(len(ids)) if i != leader]
+        certified = (not competitors or
+            float(scores[leader] - errors[leader])
+            > max(float(scores[i] + errors[i]) for i in competitors))
+        if not certified:
+            raise RuntimeError("uncertified exact class EIG; no response authorized")
+        return leader, float(scores[leader]), errors.tolist(), EXACT_EIG_METHOD
 
     def _receipt(self, decision: dict, candidate_id: int, action, response: float) -> dict:
         if (isinstance(candidate_id, bool) or candidate_id in {r["candidate_id"] for r in self.receipts}

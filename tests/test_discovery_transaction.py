@@ -66,10 +66,27 @@ def test_uncertified_ranking_does_not_publish_selection(monkeypatch, tmp_path):
     from types import SimpleNamespace
     monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.estimate_class_eig_until_ranked",
                         lambda *args, **kwargs: SimpleNamespace(ranking_certified=False))
+    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.exact_class_eig",
+        lambda components: SimpleNamespace(scores=np.array([.5, .5]),
+            quadrature_errors=np.array([1e-4, 1e-4])))
     session = _session(tmp_path)
     with pytest.raises(RuntimeError, match="uncertified"):
         session.plan(np.array([10, 11]), np.array([[3.], [4.]]))
     assert not (tmp_path / "DECISION-001.json").exists()
+
+
+def test_uncertified_fast_rule_uses_independent_exact_interval_certificate(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.estimate_class_eig_until_ranked",
+        lambda *args, **kwargs: SimpleNamespace(ranking_certified=False))
+    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.exact_class_eig",
+        lambda components: SimpleNamespace(scores=np.array([.2, .7]),
+            quadrature_errors=np.array([1e-8, 1e-8])))
+    decision = _session(tmp_path).plan(np.array([10, 11]), np.array([[3.], [4.]]))
+    assert decision["candidate_id"] == 11
+    assert decision["integration_method"] == (
+        "adaptive-scipy-quad-exact-finite-mixture-interval-ranking")
+    assert decision["certified"] is True
 
 
 def test_historical_workspace_cannot_be_reused(tmp_path):
