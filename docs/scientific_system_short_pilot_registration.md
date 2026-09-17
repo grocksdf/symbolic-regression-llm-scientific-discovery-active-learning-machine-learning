@@ -28,8 +28,9 @@ Hard stage caps: 30 seconds loading; three 120-second explorations; three
 isolated-stage ceiling is 930 seconds (15.5 minutes), not a promised successful
 run time. Source checks, evidence publication and process cleanup add overhead.
 A timeout is retained as failure, not converted to a passing result. The current
-adapter supports only its declared closed polynomial library and Gaussian/NIG
-refit; this pilot does not establish support for general symbolic functions.
+adapter supports only its declared finite, non-evaluating basis library and
+Gaussian/NIG refit; this pilot does not establish support for arbitrary symbolic
+functions or compositions.
 
 Report every branch, failure, elapsed time and provider attempt. Metrics are
 independent opened-development RMSE prefixes and normalized arithmetic mean RMSE,
@@ -38,6 +39,24 @@ exploration ablations and cannot be pooled for class-risk superiority. CCPP-only
 single-seed results cannot justify family-level, statistical or paper superiority.
 No automatic efficacy GO threshold is introduced. A protocol-valid negative is
 immutable; it cannot be rerun to seek a favorable seed or outcome.
+
+The first user execution at source `542730ffe0e1627f0ad3f8675f99e06f6e98071b`
+is immutable protocol-invalid infrastructure evidence. All three exploration
+branches completed, but the first measured target freeze rejected retained
+degree-four, mixed-degree and `cos(x0)` structures because the discovery grammar
+and the downstream closed-basis adapter declared different capabilities. No
+measured comparison completed and held-out remained closed. The failed output
+must not be resumed or overwritten.
+
+The source repair does not filter candidates and does not use their validation
+performance. It extends the non-evaluating finite basis registry to the
+discovery grammar's degree-at-most-four monomials and explicit single-variable
+`sin`, `cos` and `tanh` atoms. Fitted discovery amplitudes are still discarded;
+all retained structures are refit under the same Gaussian/NIG contract. Unknown
+functions, division, composition, degree above four, duplicate/cancelling terms
+and malformed tokens still fail closed. A repaired user execution therefore
+requires a new clean source freeze and a unique output directory while retaining
+the original configuration, data split, seed, budgets, policies and failure.
 
 The runner first reuses the existing production provider file, preserving model,
 reasoning, thinking, sampling, timeouts and retries. Invalid saved files fail

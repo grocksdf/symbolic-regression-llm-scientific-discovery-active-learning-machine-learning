@@ -9,6 +9,7 @@ import pytest
 from hypothesis_mvp.discovery.resource_limits import (
     ResourceLimitExceeded, before_provider_transport, run_bounded, stage_budget,
 )
+from hypothesis_mvp.discovery.pcpi_adapter import DiscoveryAdapterError
 
 
 def _sleep():
@@ -20,6 +21,10 @@ def _swallow_denial():
     try: before_provider_transport()
     except ResourceLimitExceeded: pass
     return "must not publish success"
+
+
+def _adapter_failure():
+    raise DiscoveryAdapterError("candidate-not-adaptable:fixture-safe-code")
 
 
 def test_bounded_process_success():
@@ -37,6 +42,11 @@ def test_timeout_terminates_and_joins_owned_child():
 def test_swallowed_quota_denial_still_blocks_success():
     with pytest.raises(RuntimeError, match="ResourceLimitExceeded"):
         run_bounded(_swallow_denial, seconds=15, provider_attempts=1)
+
+
+def test_only_explicit_public_adapter_diagnostic_crosses_process_boundary():
+    with pytest.raises(RuntimeError, match="candidate-not-adaptable:fixture-safe-code"):
+        run_bounded(_adapter_failure, seconds=15, provider_attempts=0)
 
 
 def test_provider_limit_before_network_shared_across_runtimes(monkeypatch):

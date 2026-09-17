@@ -65,7 +65,7 @@ def _patch(monkeypatch, supported=True):
                     event_type=EvidenceEventType.EVIDENCE_ATTACHED, payload={"fixture_only": True})
             rows.append({"variant": variant, "candidates": [
                 {"expression": "x0", "source": "fixture-engine"},
-                {"expression": "x0**2" if supported else "sin(x0)", "source": "fixture-llm"}]})
+                {"expression": "x0**2" if supported else "tan(x0)", "source": "fixture-llm"}]})
         return {"rows": rows, "fixture_only": True}
     monkeypatch.setattr(executor, "run_exploration_ablations", exploration)
 

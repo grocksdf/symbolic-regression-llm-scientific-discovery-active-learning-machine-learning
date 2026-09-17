@@ -122,6 +122,9 @@ _FEATURE = re.compile(r"^x([0-9]+)$")
 _SQUARE = re.compile(r"^x([0-9]+)_sq$")
 _CUBIC = re.compile(r"^x([0-9]+)_cube$")
 _INTERACTION = re.compile(r"^x([0-9]+)_x([0-9]+)$")
+_MONOMIAL = re.compile(r"^monomial_((?:x[0-9]+p[1-4](?:_|$))+)$")
+_MONOMIAL_FACTOR = re.compile(r"x([0-9]+)p([1-4])")
+_UNARY_FEATURE = re.compile(r"^(sin|cos|tanh)_x([0-9]+)$")
 
 
 def _inputs(values: np.ndarray) -> np.ndarray:
@@ -158,6 +161,26 @@ def _generic_column(values: np.ndarray, term: str) -> np.ndarray:
         if left >= values.shape[1] or right >= values.shape[1] or left >= right:
             raise ValueError(f"invalid interaction basis term: {term!r}")
         return values[:, left] * values[:, right]
+    match = _MONOMIAL.fullmatch(term)
+    if match:
+        factors = [(int(index), int(power))
+                   for index, power in _MONOMIAL_FACTOR.findall(match.group(1))]
+        if (not factors or len({index for index, _ in factors}) != len(factors)
+                or factors != sorted(factors) or sum(power for _, power in factors) > 4
+                or any(index >= values.shape[1] for index, _ in factors)):
+            raise ValueError(f"invalid monomial basis term: {term!r}")
+        column = np.ones(len(values), dtype=float)
+        for index, power in factors:
+            column *= np.power(values[:, index], power)
+        return column
+    match = _UNARY_FEATURE.fullmatch(term)
+    if match:
+        function, raw_index = match.groups()
+        index = int(raw_index)
+        if index >= values.shape[1]:
+            raise ValueError(f"basis term {term!r} exceeds the feature dimension")
+        operation = {"sin": np.sin, "cos": np.cos, "tanh": np.tanh}[function]
+        return operation(values[:, index])
     raise ValueError(f"unknown reference basis term: {term!r}")
 
 

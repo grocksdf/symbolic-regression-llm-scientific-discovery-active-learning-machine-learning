@@ -25,6 +25,14 @@ from hypothesis_mvp.pcpi.reference import (
 )
 
 
+class DiscoveryAdapterError(ValueError):
+    """A response-free adapter failure safe to report across isolation."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.public_diagnostic = code
+
+
 def _monomial(node: ast.AST, n_features: int) -> tuple[int, ...]:
     if isinstance(node, ast.Constant) and type(node.value) in (int, float):
         if not math.isfinite(node.value) or node.value == 0:
@@ -37,9 +45,9 @@ def _monomial(node: ast.AST, n_features: int) -> tuple[int, ...]:
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
         return tuple(a + b for a, b in zip(_monomial(node.left, n_features), _monomial(node.right, n_features)))
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
-        if isinstance(node.right, ast.Constant) and type(node.right.value) is int and 1 <= node.right.value <= 3:
+        if isinstance(node.right, ast.Constant) and type(node.right.value) is int and 1 <= node.right.value <= 4:
             return tuple(v * node.right.value for v in _monomial(node.left, n_features))
-    raise ValueError("unsupported expression; only additive closed-library polynomial terms are supported")
+    raise DiscoveryAdapterError("unsupported-closed-basis-factor")
 
 
 def _term(power: tuple[int, ...]) -> str:
@@ -51,7 +59,33 @@ def _term(power: tuple[int, ...]) -> str:
         return f"x{i}" + {1: "", 2: "_sq", 3: "_cube"}[p]
     if len(active) == 2 and all(p == 1 for _, p in active):
         return f"x{active[0][0]}_x{active[1][0]}"
-    raise ValueError("monomial outside PCPI's closed basis library")
+    if sum(p for _, p in active) <= 4 and all(1 <= p <= 4 for _, p in active):
+        return "monomial_" + "_".join(f"x{i}p{p}" for i, p in active)
+    raise DiscoveryAdapterError("monomial-outside-registered-degree-four-library")
+
+
+def _closed_term(node: ast.AST, n_features: int) -> str:
+    """Map one additive term to a registered non-evaluating basis token."""
+    # A fitted scalar amplitude carries no structural information and is
+    # intentionally discarded by the structural-refit contract.
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        return _closed_term(node.operand, n_features)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+        if (isinstance(node.left, ast.Constant)
+                and type(node.left.value) in (int, float)
+                and math.isfinite(node.left.value) and node.left.value != 0):
+            return _closed_term(node.right, n_features)
+        if (isinstance(node.right, ast.Constant)
+                and type(node.right.value) in (int, float)
+                and math.isfinite(node.right.value) and node.right.value != 0):
+            return _closed_term(node.left, n_features)
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id in {"sin", "cos", "tanh"}
+            and not node.keywords and len(node.args) == 1
+            and isinstance(node.args[0], ast.Name)
+            and node.args[0].id in {f"x{i}" for i in range(n_features)}):
+        return f"{node.func.id}_{node.args[0].id}"
+    return _term(_monomial(node, n_features))
 
 
 def structural_terms(expression: str, n_features: int) -> tuple[str, ...]:
@@ -65,9 +99,9 @@ def structural_terms(expression: str, n_features: int) -> tuple[str, ...]:
         if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub)):
             return summands(node.left) + summands(node.right)
         return [node]
-    terms = tuple(sorted(_term(_monomial(node, n_features)) for node in summands(root)))
+    terms = tuple(sorted(_closed_term(node, n_features) for node in summands(root)))
     if len(set(terms)) != len(terms):
-        raise ValueError("duplicate/cancelling terms require prior canonical validation")
+        raise DiscoveryAdapterError("duplicate-or-cancelling-structural-terms")
     return terms
 
 
@@ -146,7 +180,14 @@ def freeze_discovery_model(
     bindings = []
     for candidate in candidates:
         expression = str(candidate["expression"])
-        terms = structural_terms(expression, n_features)
+        try:
+            terms = structural_terms(expression, n_features)
+        except (SyntaxError, ValueError) as error:
+            digest = sha256(expression.encode("utf-8", errors="replace")).hexdigest()[:16]
+            code = getattr(error, "public_diagnostic", type(error).__name__)
+            raise DiscoveryAdapterError(
+                f"candidate-not-adaptable:{digest}:{code}"
+            ) from error
         identifier = "discovery-" + sha256(json.dumps(terms).encode()).hexdigest()[:24]
         supports[terms] = identifier
         bindings.append((str(candidate["source"]), expression, identifier))

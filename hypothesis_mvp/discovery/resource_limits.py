@@ -74,6 +74,11 @@ def _worker(connection, function, args, kwargs, seconds, provider_attempts):
                         "function": frame.name} for frame in traceback.extract_tb(error.__traceback__)]}
         if isinstance(error, ResourceLimitExceeded):
             diagnostic["message"] = str(error)
+        elif isinstance(getattr(error, "public_diagnostic", None), str):
+            # Only an exception-authored, response-free diagnostic crosses the
+            # process boundary. Provider bodies and arbitrary exception text
+            # remain suppressed.
+            diagnostic["message"] = error.public_diagnostic
         connection.send(("failed", diagnostic, None))
     finally:
         connection.close()
