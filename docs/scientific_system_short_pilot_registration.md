@@ -28,9 +28,10 @@ Provider transports including retries share the 24-attempt stage cap; no_llm
 has a zero transport quota. Numerical ranking must pass at the existing controls
 or abort before reveal. Unsupported retained hypotheses reject the entire freeze.
 
-Hard stage caps: 30 seconds loading; three 120-second explorations; three
+Hard stage caps after the GLM-5.3 latency repair: 30 seconds loading; three
+240-second explorations; three
 60-second target freezes; six 60-second measured/evaluation policies. The total
-isolated-stage ceiling is 930 seconds (15.5 minutes), not a promised successful
+isolated-stage ceiling is 1290 seconds (21.5 minutes), not a promised successful
 run time. Source checks, evidence publication and process cleanup add overhead.
 A timeout is retained as failure, not converted to a passing result. The current
 adapter supports only its declared finite, non-evaluating basis library and
@@ -52,6 +53,17 @@ degree-four, mixed-degree and `cos(x0)` structures because the discovery grammar
 and the downstream closed-basis adapter declared different capabilities. No
 measured comparison completed and held-out remained closed. The failed output
 must not be resumed or overwritten.
+
+The first GLM-5.3 execution is also immutable protocol-invalid infrastructure
+evidence: deterministic exploration finished in milliseconds, but four parallel
+provider islands did not finish inside the 120-second stage ceiling. An earlier
+response-free provider preflight had already measured a 74-second successful
+response after one empty-content attempt, so the ceiling and duplicated network
+fan-out were inconsistent before efficacy could be measured. The repaired short
+pilot registers one `balanced` island shared by every ablation. Its existing
+balanced/Pareto policy jointly audits accuracy, tail error, complexity and
+novelty, while reducing provider fan-out to one request batch per enabled branch.
+The 240-second ceiling is frozen from transport latency evidence, not efficacy.
 
 That execution also exposed a separate orchestration defect: all 48 candidate
 validations were consumed before the LLM phase, so the nominal full branch made

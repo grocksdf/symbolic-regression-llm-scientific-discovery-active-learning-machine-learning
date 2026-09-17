@@ -36,6 +36,7 @@ class DiscoveryAgentConfig:
     acquisition_enabled: bool = False
     use_knowledge: bool = False
     llm_evaluation_reserve: int = 0
+    discovery_islands: tuple[str, ...] = ("low_complexity", "nmse", "tail", "novelty")
 
 
 @dataclass(frozen=True)
@@ -138,6 +139,7 @@ class DiscoveryAgent:
             config=DiscoveryConfig.from_mapping({
                 "evaluation_budget": self.config.discovery_budget,
                 "llm_evaluation_reserve": self.config.llm_evaluation_reserve,
+                "islands": self.config.discovery_islands,
                 "random_seed": self.config.random_seed,
                 "use_library": self.config.use_knowledge,
             }),

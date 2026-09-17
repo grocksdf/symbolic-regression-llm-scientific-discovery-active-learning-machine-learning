@@ -66,6 +66,10 @@ def validate_system_registration(config):
             or agent.llm_evaluation_reserve < 0
             or agent.llm_evaluation_reserve >= agent.discovery_budget):
         raise ValueError("unmatched or unsupported internal-engine registration")
+    if (not agent.discovery_islands or len(set(agent.discovery_islands)) != len(agent.discovery_islands)
+            or any(value not in {"balanced", "low_complexity", "nmse", "tail", "novelty"}
+                   for value in agent.discovery_islands)):
+        raise ValueError("invalid registered discovery objectives")
     NormalInverseGammaPrior(**config["prior"])
     DiscoveryScoringControls(**config["scoring"])
     identity = config["provider_public_identity"]

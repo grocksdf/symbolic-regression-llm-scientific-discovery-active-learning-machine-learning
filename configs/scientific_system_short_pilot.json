@@ -28,7 +28,8 @@
     "search_iterations": 24,
     "acquisition_enabled": false,
     "use_knowledge": false,
-    "llm_evaluation_reserve": 16
+    "llm_evaluation_reserve": 16,
+    "discovery_islands": ["balanced"]
   },
   "single_engine": "polynomial_lasso",
   "prior": {
@@ -44,7 +45,7 @@
     "growth_factor": 2
   },
   "measurement_budget": 4,
-  "exploration_seconds": 120,
+  "exploration_seconds": 240,
   "policy_seconds": 60,
   "data_loading_seconds": 30,
   "provider_attempt_ceiling": 24,

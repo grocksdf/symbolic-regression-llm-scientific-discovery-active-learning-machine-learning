@@ -111,6 +111,13 @@ def test_discovery_config_keeps_only_supported_profile_controls() -> None:
     assert not hasattr(config, "exemplars_per_prompt")
 
 
+def test_registered_balanced_island_removes_provider_fanout_without_hidden_objective():
+    config = DiscoveryConfig.from_mapping({"evaluation_budget": 48, "islands": ["balanced"]})
+    assert config.islands == ("balanced",)
+    with pytest.raises(ValueError, match="unique registered"):
+        DiscoveryConfig.from_mapping({"islands": ["balanced", "balanced"]})
+
+
 def test_confirmation_requires_untouched_heldout_role(tmp_path) -> None:
     variable = VariableSpec(name="x0", unit="1", description="input")
     target = VariableSpec(name="y", unit="1", description="response")

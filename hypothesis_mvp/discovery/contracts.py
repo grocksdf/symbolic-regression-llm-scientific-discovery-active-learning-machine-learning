@@ -150,6 +150,11 @@ class DiscoveryConfig:
             if parsed_budget <= 0:
                 raise ValueError("evaluation_budget must be a positive integer")
             evaluation_budget = parsed_budget
+        raw_islands = _pick(m, "islands", ISLANDS)
+        islands = tuple(str(value) for value in raw_islands)
+        if (not islands or len(set(islands)) != len(islands)
+                or any(value not in {*ISLANDS, "balanced"} for value in islands)):
+            raise ValueError("islands must be unique registered discovery objectives")
         return cls(
             evaluation_budget=evaluation_budget,
             llm_evaluation_reserve=max(0, _env_int("HYPOTHESIS_DISCOVERY_LLM_EVALUATION_RESERVE", int(_pick(m, "llm_evaluation_reserve", 0)))),
@@ -208,6 +213,7 @@ class DiscoveryConfig:
                 0.0,
                 _env_float("HYPOTHESIS_DISCOVERY_FINAL_STRESS_STRICT_THRESHOLD", float(_pick(m, "final_stress_strict_threshold", 0.10))),
             ),
+            islands=islands,
         )
 
 
