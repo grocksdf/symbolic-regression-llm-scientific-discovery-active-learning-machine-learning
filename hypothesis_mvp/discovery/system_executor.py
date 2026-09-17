@@ -61,7 +61,10 @@ def validate_system_registration(config):
             or any(e not in {"polynomial_lasso", "mcts"} for e in agent.engines)
             or config["single_engine"] not in agent.engines
             or agent.engine_budget != len(agent.engines) * agent.engine_repeats
-            or agent.discovery_budget < 1):
+            or agent.discovery_budget < 1
+            or type(agent.llm_evaluation_reserve) is not int
+            or agent.llm_evaluation_reserve < 0
+            or agent.llm_evaluation_reserve >= agent.discovery_budget):
         raise ValueError("unmatched or unsupported internal-engine registration")
     NormalInverseGammaPrior(**config["prior"])
     DiscoveryScoringControls(**config["scoring"])
