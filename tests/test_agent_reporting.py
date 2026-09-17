@@ -45,6 +45,8 @@ def test_provider_calls_and_acquisition_ablation_are_audited(monkeypatch, tmp_pa
             hypothesis=SimpleNamespace(hypothesis_id=f"hyp-{index}"),
             report={
                 "llm_call_count": index + 3,
+                "evaluation_budget_used": 2,
+                "llm_attempt_count": index + 3,
                 "final_topk": [{"expression": f"x0 + {index}"}],
             },
         )

@@ -161,6 +161,9 @@ def _discover_from_arrays(
     if train.shape[1] != validation.shape[1]:
         raise ValueError("development and validation feature dimensions differ")
     resolved = config if isinstance(config, DiscoveryConfig) else DiscoveryConfig.from_mapping(config)
+    access = dict(selection_contract or {})
+    if access.get("heldout_capability") is not False:
+        raise ValueError("discovery requires a verified selection-only capability surface")
     root, registry = _knowledge_root(knowledge_dir, task_name), PrimitiveRegistry()
     structure_metadata = _structure_metadata(variable_metadata)
     context = DiscoveryContext(train, train_y, structure_metadata, resolved)
@@ -183,12 +186,14 @@ def _discover_from_arrays(
         base_candidates=normalized, refinement_enabled=refinement_enabled,
     )
     train_hash, validation_hash = _fingerprints(train, train_y, validation, validation_y)
-    access = dict(selection_contract or {})
-    if access.get("heldout_capability") is not False:
-        raise ValueError("discovery requires a verified selection-only capability surface")
     report = {
         **dict(raw_report),
         "initializer_candidate_count": len(normalized),
+        "candidate_registry": [{
+            "canonical_hash": row["canonical_hash"], "expression": row["expression"],
+            "engine_provenance": row["engine_provenance"],
+        } for row in normalized],
+        "candidate_arbitration": "canonical-deduplication-then-shared-evaluation-policy",
         "initializer_rejected_candidate_count": rejected,
         "generic_initializer_enabled": include_generic_candidates,
         "enabled_discovery_plugins": enabled_plugins,

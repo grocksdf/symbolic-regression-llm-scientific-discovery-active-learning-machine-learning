@@ -74,7 +74,18 @@ def normalize_candidates(
             dag = runtime.dag(str(candidate.get("expression") or ""))
             if probe is not None:
                 runtime.predict(dag.expression, probe[:min(8, len(probe))])
-            accepted.setdefault(dag.canonical_hash, {**candidate, "expression": dag.expression})
+            identity = dag.canonical_hash
+            provenance = {
+                "source": str(candidate.get("source", "caller_seed")),
+                "lineage_id": str(candidate.get("lineage_id", "")),
+            }
+            if identity in accepted:
+                accepted[identity]["engine_provenance"].append(provenance)
+            else:
+                accepted[identity] = {
+                    **candidate, "expression": dag.expression,
+                    "canonical_hash": identity, "engine_provenance": [provenance],
+                }
         except Exception:
             rejected += 1
     return list(accepted.values()), rejected

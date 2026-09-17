@@ -18,6 +18,7 @@ from hypothesis_mvp.symbolic import EngineScheduler
 from .api import DiscoveryRunResult, discover_from_selection
 from .contracts import DiscoveryConfig
 from .proposal_runtime import ProviderSettings
+from .system_evidence import attach_system_evidence, system_evaluation
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,9 @@ class DiscoveryCycle:
     engine_report: Mapping[str, Any]
     acquisition: Mapping[str, Any]
     provider_calls: int
+    candidate_evaluations: int = 0
+    provider_attempts: int = 0
+    provider_errors: int = 0
 
 
 @dataclass(frozen=True)
@@ -54,6 +58,7 @@ class DiscoveryAgentResult:
     final_selection: SelectionData
     pool_rows_remaining: int
     provider_configured: bool
+    system_evaluation: Mapping[str, Any] = field(default_factory=dict)
 
 
 def _survivors(report: Mapping[str, Any], fallback: str) -> tuple[str, ...]:
@@ -114,6 +119,7 @@ class DiscoveryAgent:
         self, selection: SelectionData, engine_result: Any,
         previous: Sequence[str], task_name: str, task_description: str,
         output_dir: Path, knowledge_dir: Path, variable_metadata: Mapping[str, Any],
+        cycle: int = 0,
     ) -> DiscoveryRunResult:
         seeds = [{
             "expression": row.expression, "source": f"engine:{row.engine}",
@@ -122,7 +128,7 @@ class DiscoveryAgent:
         seeds.extend({
             "expression": expression, "source": "previous_cycle_survivor"
         } for expression in previous)
-        return discover_from_selection(
+        discovery = discover_from_selection(
             selection=selection,
             task_name=task_name, task_description=task_description,
             base_candidates=seeds, knowledge_dir=knowledge_dir,
@@ -137,6 +143,8 @@ class DiscoveryAgent:
             variable_metadata=dict(variable_metadata),
             refinement_enabled=True, include_generic_candidates=True,
         )
+        attach_system_evidence(discovery, _engine_payload(engine_result), cycle)
+        return discovery
 
     def run(
         self, *, selection: SelectionData,
@@ -153,7 +161,7 @@ class DiscoveryAgent:
             engines = self._run_engines(current, cycle)
             final = self._discover(
                 current, engines, previous, task_name, task_description,
-                output, knowledge, variable_metadata,
+                output, knowledge, variable_metadata, cycle=cycle,
             )
             previous = _survivors(final.report, final.expression)
             acquisition = (
@@ -168,12 +176,16 @@ class DiscoveryAgent:
                 cycle, final.expression, final.hypothesis.hypothesis_id,
                 len(current.development.X), _engine_payload(engines),
                 acquisition, int(final.report.get("llm_call_count", 0)),
+                int(final.report["evaluation_budget_used"]),
+                int(final.report["llm_attempt_count"]),
+                int(final.report.get("llm_error_count", 0)),
             ))
         if final is None:
             raise RuntimeError("discovery agent executed no cycle")
         remaining = len(current.acquisition_pool.X) if current.acquisition_pool is not None else 0
         return DiscoveryAgentResult(
             final, tuple(history), current, remaining, self.provider_settings is not None,
+            system_evaluation(history),
         )
 
 

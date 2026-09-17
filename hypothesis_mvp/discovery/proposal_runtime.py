@@ -13,6 +13,7 @@ import time
 from typing import Any, Mapping, Sequence
 
 import requests
+from .resource_limits import before_provider_transport
 
 from .contracts import DISCOVERY_RUNTIME_ID, json_safe
 from .equation_runtime import EquationRuntime, sha256_text
@@ -283,11 +284,15 @@ class ProposalRuntime:
             request_body["reasoning_effort"] = self.settings.reasoning_effort
         if self.settings.do_sample is not None:
             request_body["do_sample"] = self.settings.do_sample
+        remaining = before_provider_transport()
+        timeout = (self.settings.connect_timeout_s, self.settings.read_timeout_s)
+        if remaining is not None:
+            timeout = tuple(min(value, remaining) for value in timeout)
         response = requests.post(
             route.endpoint,
             headers={"Authorization": f"Bearer {route.api_key}", "Content-Type": "application/json"},
             json=request_body,
-            timeout=(self.settings.connect_timeout_s, self.settings.read_timeout_s),
+            timeout=timeout,
         )
         telemetry = {
             "actual_provider": route.provider, "actual_model": route.model,
