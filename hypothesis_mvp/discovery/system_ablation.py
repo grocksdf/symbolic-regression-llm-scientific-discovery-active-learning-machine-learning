@@ -89,7 +89,6 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
         candidates.append(candidate)
     if not candidates:
         raise ExplorationProtocolError("no-pcpi-adaptable-hypotheses-retained")
-                  for row in topk]
     provenance = {
         "schema": "scientific-hypothesis-provenance-audit-v1",
         "candidate_count": len(candidates),
