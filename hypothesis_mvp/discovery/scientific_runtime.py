@@ -236,8 +236,9 @@ class ScientificDiscoveryRuntime:
             if self.evaluation.budget.exhausted:
                 audit.append({"candidate_id": proposal.candidate_id,
                     "expression": proposal.equation, "validated": False,
-                    "accepted": False, "gate": {"reason": "evaluation_budget_exhausted"}})
-                break
+                    "accepted": False, "score": None, "score_status": "not_evaluated_budget_exhausted",
+                    "gate": {"reason": "evaluation_budget_exhausted"}})
+                continue
             rejection_start = len(self.evaluation.rejections)
             candidate = self.evaluation.build_state(
                 proposal.equation, *arrays,
@@ -248,14 +249,18 @@ class ScientificDiscoveryRuntime:
                 self.evaluation.policy.accept_transition(candidate, current, island)
                 if candidate is not None else (False, {"reason": "invalid_candidate"})
             )
-            score = self.evaluation.policy.score(candidate, island, current) if candidate else float("inf")
+            score = self.evaluation.policy.score(candidate, island, current) if candidate else None
+            if score is not None and not np.isfinite(score):
+                raise ValueError("validated LLM candidate has nonfinite selection score")
             audit.append({
                 "candidate_id": proposal.candidate_id,
                 "expression": proposal.equation,
                 "refitted_expression": candidate.dag.expression if candidate else "",
                 "evaluation_rejections": list(self.evaluation.rejections[rejection_start:]),
                 "validated": candidate is not None, "accepted": bool(passed),
-                "score": score, "gate": json_safe(gate),
+                "score": score,
+                "score_status": "evaluated" if candidate is not None else "invalid_candidate_no_score",
+                "gate": json_safe(gate),
             })
             if candidate is not None:
                 exploratory.append(candidate)

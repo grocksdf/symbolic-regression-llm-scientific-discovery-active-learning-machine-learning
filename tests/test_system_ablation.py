@@ -14,6 +14,75 @@ CONTEXT = {"task_name": "fixture_law", "task_description": "fixture description"
            "target_name": "fixture_target", "target_unit": "unit"}
 
 
+def _candidate_audit(score=1., exhausted=False):
+    from hypothesis_mvp.discovery.scientific_runtime import ScientificDiscoveryRuntime
+    controller = ScientificDiscoveryRuntime.__new__(ScientificDiscoveryRuntime)
+    candidate = SimpleNamespace(dag=SimpleNamespace(expression="x0**2"))
+    rejections = []
+    def build(expression, *args, **kwargs):
+        if expression == "invalid":
+            rejections.append({"reason": "fixture_invalid_structure"})
+            return None
+        return candidate
+    controller.evaluation = SimpleNamespace(
+        budget=SimpleNamespace(exhausted=exhausted), rejections=rejections, build_state=build,
+        policy=SimpleNamespace(accept_transition=lambda *args: (True, {"pass": True}),
+                               score=lambda *args: score))
+    batch = SimpleNamespace(candidates=[SimpleNamespace(candidate_id=str(i), equation=e)
+                                       for i, e in enumerate(["x0**2", "invalid"])])
+    winner, exploratory, audit = controller._evaluate_batch(batch, object(), (), "balanced", 1)
+    return winner, exploratory, audit
+
+
+def test_mixed_candidate_audit_publishes_complete_strict_json(tmp_path, monkeypatch):
+    import json
+    winner, exploratory, audit = _candidate_audit()
+    assert winner is exploratory[0]
+    assert audit[0]["score"] == 1.
+    assert audit[1]["score"] is None and not audit[1]["validated"]
+    assert audit[1]["score_status"] == "invalid_candidate_no_score"
+    assert audit[1]["evaluation_rejections"][0]["reason"] == "fixture_invalid_structure"
+    selection, config = _inputs()
+    class Agent:
+        def __init__(self, config, provider): self.config, self.provider = config, provider
+        def run(self, **kwargs):
+            result = _result(self.config, self.provider is not None)
+            result.discovery.report["llm_rounds"] = [{"candidate_audit": audit}] if self.provider else []
+            return result
+    monkeypatch.setattr("hypothesis_mvp.discovery.system_ablation.DiscoveryAgent", Agent)
+    monkeypatch.setattr("hypothesis_mvp.discovery.system_ablation.run_bounded", _inline)
+    run_exploration_ablations(tmp_path, selection, dataset="opaque", config=config,
+        provider_settings=ProviderSettings(routes=(ProviderRoute("https://fixture.invalid", "model", "key"),)),
+        single_engine="polynomial_lasso", compute_ceiling=100, provider_attempt_ceiling=3,
+        source_identity="correctness-fixture", scientific_context=CONTEXT)
+    for variant in ("full", "single_engine"):
+        row = json.loads((tmp_path / variant / "RESULT.json").read_text(encoding="utf-8"))
+        assert row["hypothesis_provenance"]["llm_candidate_lifecycle"][0]["candidate_audit"] == audit
+        json.dumps(row, allow_nan=False)
+        assert not (tmp_path / variant / "RESULT.json.staging").exists()
+
+
+@pytest.mark.parametrize("score", [float("inf"), float("-inf"), float("nan")])
+def test_validated_nonfinite_score_cannot_be_reported_as_missing(score):
+    with pytest.raises(ValueError, match="nonfinite selection score"):
+        _candidate_audit(score)
+
+
+def test_budget_denied_candidates_each_have_explicit_missing_score():
+    winner, exploratory, audit = _candidate_audit(exhausted=True)
+    assert winner is None and exploratory == [] and len(audit) == 2
+    assert all(row["score"] is None and row["score_status"] == "not_evaluated_budget_exhausted"
+               for row in audit)
+
+
+def test_invalid_publication_leaves_neither_result_nor_staging(tmp_path):
+    from hypothesis_mvp.pcpi.discovery_transaction import _publish
+    path = tmp_path / "RESULT.json"
+    with pytest.raises(ValueError):
+        _publish(path, {"best_val_nmse": float("inf")})
+    assert not path.exists() and not path.with_name("RESULT.json.staging").exists()
+
+
 def _inputs():
     selection = SelectionData(
         RoleDataset(DataRole.DEVELOPMENT, np.array([[0.], [1.]]), np.array([0., 1.])),

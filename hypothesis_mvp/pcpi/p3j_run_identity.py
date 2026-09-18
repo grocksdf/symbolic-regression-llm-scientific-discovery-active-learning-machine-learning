@@ -156,9 +156,11 @@ def build_p3j_formal_query_identity(
 
 
 def _publish_no_overwrite(path: Path, payload: dict[str, object]) -> None:
+    # Validate before creating staging; invalid evidence must leave no artifact.
+    canonical = _canonical(payload) + "\n"
     staging = path.with_name(path.name + ".staging")
     with staging.open("x", encoding="utf-8", newline="\n") as handle:
-        handle.write(_canonical(payload) + "\n")
+        handle.write(canonical)
         handle.flush()
         os.fsync(handle.fileno())
     try:

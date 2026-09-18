@@ -51,3 +51,11 @@ constant centered column contributes zero and the existing fitted intercept
 supplies its baseline. Invalid predictions fail explicitly before grammar
 construction. This handles a legal incumbent state rather than forcing a
 nonconstant hypothesis or bypassing bank viability/composition requirements.
+
+LLM candidate audit scores are nullable by meaning, not by numeric cleanup:
+invalid candidates use `score=null` with `invalid_candidate_no_score` and their
+original rejection records; every budget-denied proposal uses `score=null`
+with `not_evaluated_budget_exhausted`. Evaluated candidates require finite
+scores or fail closed. The strict publisher validates before opening staging,
+so invalid evidence creates neither a completed result nor a staging file.
+No historical failed output is changed by this reporting repair.
