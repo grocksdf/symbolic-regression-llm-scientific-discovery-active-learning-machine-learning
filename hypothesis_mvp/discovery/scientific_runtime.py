@@ -234,7 +234,11 @@ class ScientificDiscoveryRuntime:
         audit: list[dict[str, Any]] = []
         for proposal in batch.candidates:
             if self.evaluation.budget.exhausted:
+                audit.append({"candidate_id": proposal.candidate_id,
+                    "expression": proposal.equation, "validated": False,
+                    "accepted": False, "gate": {"reason": "evaluation_budget_exhausted"}})
                 break
+            rejection_start = len(self.evaluation.rejections)
             candidate = self.evaluation.build_state(
                 proposal.equation, *arrays,
                 source=f"llm_proposal_{round_id}_{island}", origin="llm",
@@ -248,6 +252,8 @@ class ScientificDiscoveryRuntime:
             audit.append({
                 "candidate_id": proposal.candidate_id,
                 "expression": proposal.equation,
+                "refitted_expression": candidate.dag.expression if candidate else "",
+                "evaluation_rejections": list(self.evaluation.rejections[rejection_start:]),
                 "validated": candidate is not None, "accepted": bool(passed),
                 "score": score, "gate": json_safe(gate),
             })
@@ -397,6 +403,11 @@ class ScientificDiscoveryRuntime:
             "best_expression": final.dag.expression,
             "best_programs": [row["expression"] for row in topk],
             "final_topk": topk,
+            "evaluated_hypothesis_bank": [{
+                "expression": row.dag.expression, "source": row.source,
+                "origin": row.origin, "lineage_id": row.lineage_id,
+                "metrics": row.metrics.as_dict(),
+            } for row in (*seeds, *deterministic_states, *llm_states)],
             "best_train_nmse": final.metrics.train_nmse,
             "best_val_nmse": final.metrics.val_nmse,
             "best_complexity": final.metrics.complexity,

@@ -40,6 +40,32 @@ def _inline(function, args=(), kwargs=None, **limits):
     return function(*args, **(kwargs or {})), {"fixture_only": True}
 
 
+def test_complete_bank_preserves_engine_and_post_refit_rejections(tmp_path, monkeypatch):
+    from hypothesis_mvp.discovery.system_ablation import _run_variant
+    selection, config = _inputs()
+    result = _result(config)
+    bank = [
+        {"expression": "x0", "source": "engine:polynomial_lasso", "origin": "deterministic"},
+        {"expression": "x0**2", "source": "engine:mcts", "origin": "deterministic"},
+        {"expression": "tanh(0.01*x0)", "source": "llm_proposal", "origin": "llm"},
+    ]
+    result.discovery.report["evaluated_hypothesis_bank"] = bank
+    result.cycles[0].engine_report["all_results"] = [{"engine": "mcts", "expression": "x0**2"}]
+    result.discovery.report["rejected_candidates"] = [{"reason": "evaluation_budget_exhausted"}]
+    class Agent:
+        def __init__(self, *args): pass
+        def run(self, **kwargs): return result
+    monkeypatch.setattr("hypothesis_mvp.discovery.system_ablation.DiscoveryAgent", Agent)
+    summary = _run_variant(config, object(), selection, tmp_path, 100, 3, CONTEXT)
+    assert {row["source"] for row in summary["candidates"]} == {
+        "engine:polynomial_lasso", "engine:mcts"}
+    audit = summary["hypothesis_provenance"]
+    assert audit["pcpi_adapter_rejections"][0]["expression"] == "tanh(0.01*x0)"
+    assert audit["llm_retained_candidate_count"] == 0
+    assert audit["raw_engine_candidates"][0]["engine"] == "mcts"
+    assert audit["evaluation_rejections"][0]["reason"] == "evaluation_budget_exhausted"
+
+
 def test_equal_jobs_provider_free_and_completed_recovery(tmp_path, monkeypatch):
     selection, config = _inputs()
     seen = []

@@ -66,7 +66,7 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
     # the frozen PCPI closed basis.  The latter is a response-free protocol
     # compatibility check, not an efficacy/result filter; doing it here keeps
     # malformed LLM structures from failing much later during bank freezing.
-    topk = report.get("final_topk", [])
+    topk = report.get("evaluated_hypothesis_bank", report.get("final_topk", []))
     if any(not str(row.get("source", "")).strip() for row in topk):
         raise ExplorationProtocolError("retained-hypothesis-missing-source-provenance")
     candidates = []
@@ -101,6 +101,11 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
                                   if row["source"].startswith("engine:")}),
         "all_candidates_source_bound": bool(candidates),
         "pcpi_adapter_rejections": adapter_rejections,
+        "raw_engine_candidates": [record for cycle in result.cycles
+                                  for record in cycle.engine_report.get("all_results", [])],
+        "discovery_candidate_registry": report.get("candidate_registry", []),
+        "evaluation_rejections": report.get("rejected_candidates", []),
+        "llm_candidate_lifecycle": report.get("llm_rounds", []),
         "heldout_accessed": False,
     }
     return {"best_val_nmse": report["best_val_nmse"], "usage": usage,
@@ -193,6 +198,13 @@ def run_exploration_ablations(root, selection, *, dataset, config,
                 "error_type": type(error).__name__, "message": str(error),
                 "heldout_opened": False, "efficacy_demonstrated": False})
             raise
+    _complete_anchor_banks(rows, selection)
+    analysis = analyze_system_contract(rows)
+    _publish(root / "ANALYSIS.json", analysis)
+    return analysis
+
+
+def _complete_anchor_banks(rows, selection):
     # Every ablation inherits the same task-independent generic anchor bank.
     # Provider/evaluation budgeting may otherwise evict deterministic seeds
     # from an LLM-enabled top-k and leave a one-support bank.  Restoring these
@@ -222,6 +234,3 @@ def run_exploration_ablations(root, selection, *, dataset, config,
         provenance["origin_counts"] = {
             origin: sum(item["origin"] == origin for item in row["candidates"])
             for origin in sorted({item["origin"] for item in row["candidates"]})}
-    analysis = analyze_system_contract(rows)
-    _publish(root / "ANALYSIS.json", analysis)
-    return analysis

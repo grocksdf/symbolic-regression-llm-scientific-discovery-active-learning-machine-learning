@@ -1082,8 +1082,6 @@ class EvaluationRuntime:
     ) -> tuple[EquationState, list[EquationState]]:
         candidates: list[EquationState] = []
         for seed in base_candidates:
-            if self.budget.exhausted:
-                break
             if isinstance(seed, str):
                 expression, source = seed, "deterministic_seed"
             elif isinstance(seed, Mapping):
@@ -1093,6 +1091,11 @@ class EvaluationRuntime:
                 expression = str(getattr(seed, "expression", ""))
                 source = str(getattr(seed, "source", "deterministic_seed"))
             if not expression.strip():
+                continue
+            if self.budget.exhausted:
+                self._reject("evaluation_budget_exhausted", source=source,
+                    island="anchor", round_id=0, expression=expression,
+                    stage="seed_evaluation", budget=self.budget.snapshot())
                 continue
             state = self.build_state(expression, X_train, y_train, X_val, y_val, source=source, origin="deterministic", island="anchor", round_id=0)
             if state is not None:
