@@ -13,7 +13,8 @@
     "engine_retries": 0, "cycles": 1, "discovery_budget": 48,
     "random_seed": 2026080701, "search_iterations": 24,
     "acquisition_enabled": false, "use_knowledge": false,
-    "llm_evaluation_reserve": 16, "discovery_islands": ["balanced"]
+    "llm_evaluation_reserve": 16, "discovery_islands": ["balanced"],
+    "refit_policy": "pcpi-closed-basis-amplitudes"
   },
   "single_engine": "polynomial_lasso",
   "prior": {"coefficient_mean": 0.0, "coefficient_precision": 1.0, "noise_shape": 2.5, "noise_scale": 0.2},

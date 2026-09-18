@@ -390,6 +390,7 @@ class ScientificDiscoveryRuntime:
         topk = self._topk(final, (*seeds, *deterministic_states, *llm_states))
         return {
             "controller_id": DISCOVERY_RUNTIME_ID,
+            "refit_policy": self.config.refit_policy,
             "proposal_protocol_id": PROPOSAL_PROTOCOL_ID,
             "runtime_components": [
                 "EquationRuntime", "ExplorationRuntime", "ProposalRuntime",

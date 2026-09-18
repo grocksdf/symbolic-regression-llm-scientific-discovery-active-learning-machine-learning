@@ -18,6 +18,16 @@ scale or shift inside a nonlinear primitive. Such expressions are rejected,
 not silently rewritten to an unscaled basis. Future prevention requires a
 structure-preserving refit contract, independently validated before a real run.
 
+The opt-in `pcpi-closed-basis-amplitudes` refit policy now checks the input
+closed support, fits only external additive amplitudes using the existing
+amplitude solver, and checks the output support. The intercept is explicit;
+zero/constant columns can disappear, but no nonconstant support can be added.
+Internal nonlinear literals and exponents are not optimized. All evaluation,
+pruning and structure-ablation refits share this policy through EquationRuntime.
+Unknown policies and unsupported input expressions fail closed. Legacy global
+constant fitting remains the default for historical configurations. This repair
+does not guarantee retained LLM/engine composition or a positive real result.
+
 Existing negative outputs and freezes remain immutable. These code changes
 are correctness repairs only; they authorize no new real experiment and do
 not establish scientific superiority. All screening and system claims remain

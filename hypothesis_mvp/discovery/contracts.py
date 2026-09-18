@@ -104,6 +104,7 @@ class DiscoveryConfig:
     ood_stability_warning_cap: float = 1.25
     ridge_alpha: float = 1.0e-8
     max_numeric_parameters: int = 18
+    refit_policy: str = "global-constants"
     optimize_exponents: bool = False
     optimizer_maxiter: int = 220
     max_abs_coefficient: float = 1.0e4
@@ -156,6 +157,7 @@ class DiscoveryConfig:
                 or any(value not in {*ISLANDS, "balanced"} for value in islands)):
             raise ValueError("islands must be unique registered discovery objectives")
         return cls(
+            refit_policy=str(_pick(m, "refit_policy", "global-constants")),
             evaluation_budget=evaluation_budget,
             llm_evaluation_reserve=max(0, _env_int("HYPOTHESIS_DISCOVERY_LLM_EVALUATION_RESERVE", int(_pick(m, "llm_evaluation_reserve", 0)))),
             max_rounds=min(8, max(1, _env_int("HYPOTHESIS_DISCOVERY_MAX_ROUNDS", int(_pick(m, "max_rounds", 3))))),

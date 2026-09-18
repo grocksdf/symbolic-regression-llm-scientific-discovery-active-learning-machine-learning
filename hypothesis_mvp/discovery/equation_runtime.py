@@ -365,8 +365,12 @@ class EquationRuntime:
         max_abs_coefficient: float = 1.0e4,
         optimize_exponents: bool = False,
         variable_metadata: Optional[Mapping[str, Any]] = None,
+        refit_policy: str = "global-constants",
     ) -> None:
         self.n_features = int(n_features)
+        if refit_policy not in {"global-constants", "pcpi-closed-basis-amplitudes"}:
+            raise ValueError("unknown refit policy")
+        self.refit_policy = refit_policy
         self.registry = registry or PrimitiveRegistry()
         self.external_build_lambda = external_build_lambda
         self.max_numeric_parameters = max(0, int(max_numeric_parameters))
@@ -536,6 +540,8 @@ class EquationRuntime:
         """
         X, y = np.asarray(X, dtype=float), np.asarray(y, dtype=float).reshape(-1)
         raw = self.normalize(expression)
+        if self.refit_policy == "pcpi-closed-basis-amplitudes":
+            return self._refit_closed_amplitudes(raw, X, y, ridge)
         try:
             initial_loss = self.mse(y, self.predict(raw, X))
         except Exception:
@@ -602,6 +608,26 @@ class EquationRuntime:
             best_expr, "ridge-amplitudes+L-BFGS-B", initial_loss, best_loss,
             len(params), term_count, math.isfinite(best_loss), str(getattr(best_result, "message", "")),
         )
+
+    def _refit_closed_amplitudes(self, expression, X, y, ridge):
+        """Fit external amplitudes only; internal nonlinear literals stay fixed.
+
+        The existing amplitude fit includes an intercept and may delete zero or
+        constant columns. It cannot introduce new nonconstant basis supports.
+        Incompatible input is rejected, never projected to a different basis.
+        """
+        from .pcpi_adapter import structural_terms
+        before = set(structural_terms(expression, self.n_features))
+        initial_loss = self.mse(y, self.predict(expression, X))
+        fitted, count = self._fit_top_level_amplitudes(expression, X, y, ridge)
+        after = set(structural_terms(fitted, self.n_features))
+        if not after.issubset(before | {"intercept"}):
+            raise ValueError("closed-basis refit introduced a structural support")
+        loss = self.mse(y, self.predict(fitted, X))
+        if not math.isfinite(loss):
+            raise ValueError("closed-basis refit produced nonfinite loss")
+        return RefitResult(fitted, "pcpi-closed-basis-amplitudes", initial_loss,
+                           loss, 0, count, True, "")
 
     def intermediate_outputs(self, dag: EquationDAG, X: np.ndarray, max_nodes: int = 20) -> list[tuple[str, np.ndarray]]:
         expr = self.registry.parse(dag.expression, self.n_features, evaluate=False)

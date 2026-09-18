@@ -32,6 +32,7 @@ def build_scientific_discovery_runtime(
         max_abs_coefficient=resolved.max_abs_coefficient,
         optimize_exponents=resolved.optimize_exponents,
         variable_metadata=variable_metadata,
+        refit_policy=resolved.refit_policy,
     )
     return ScientificDiscoveryRuntime(
         equation=equation,
