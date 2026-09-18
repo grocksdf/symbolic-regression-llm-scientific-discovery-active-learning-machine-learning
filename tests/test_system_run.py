@@ -7,6 +7,7 @@ from hypothesis_mvp.pcpi.discovery_transaction import DiscoveryTransaction
 from hypothesis_mvp.data.oracle import PoolOracle
 from hypothesis_mvp.discovery.system_run import analyze_system_contract
 from hypothesis_mvp.discovery.system_run import run_frozen_system_comparison
+from hypothesis_mvp.discovery.system_run import audit_frozen_hypothesis_bank
 
 
 def _random(root, base, seed=17):
@@ -78,3 +79,24 @@ def test_coordinator_freezes_shared_target_and_exports(tmp_path, monkeypatch):
     def forbidden(*args): raise AssertionError("completed comparison must not reveal")
     monkeypatch.setattr(PoolOracle, "acquire_indices", forbidden)
     assert run_frozen_system_comparison(*args, **kwargs) == result
+
+
+@pytest.mark.parametrize("probabilities,passed", [((.5, .5), True),
+                                                    ((1.0 - 1e-12, 1e-12), False)])
+def test_response_free_hypothesis_bank_gate_is_resolution_derived(
+        monkeypatch, probabilities, passed):
+    from types import SimpleNamespace
+    from hypothesis_mvp.pcpi.acquisition import ClassPartition
+    partition = ClassPartition(("a", "b"), ((0,), (1,)), probabilities, (0, 1))
+    model = SimpleNamespace(stable_hash="model", candidate_bindings=(("a",), ("b",)),
+                            bank=SimpleNamespace(structures=(1, 2)))
+    target = SimpleNamespace(stable_hash="target", partition=partition)
+    monkeypatch.setattr("hypothesis_mvp.discovery.system_run._freeze_comparison",
+                        lambda *args, **kwargs: (model, target))
+    audit = audit_frozen_hypothesis_bank(
+        [{}, {}], object(), np.zeros((4, 1)), n_features=1, prior=object(),
+        exploration_identity="fixture", coefficient_policy="fixture",
+        measurement_budget=2, exact_eig_epsabs=1e-10)
+    assert audit["passed"] is passed
+    assert audit["candidate_response_accessed"] is False
+    assert audit["familywise_utility_resolution_nats"] == 4e-10

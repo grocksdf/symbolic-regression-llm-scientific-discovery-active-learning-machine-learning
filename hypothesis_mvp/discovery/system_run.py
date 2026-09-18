@@ -11,6 +11,7 @@ from hypothesis_mvp.data.oracle import PoolOracle
 from hypothesis_mvp.pcpi.discovery_transaction import (
     DiscoveryTransaction, DiscoveryScoringControls, _publish,
 )
+from hypothesis_mvp.pcpi.acquisition import EXACT_CLASS_EIG_EPSABS
 from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target
 from .system_evidence import validate_system_pairs
 from .resource_limits import run_bounded
@@ -26,6 +27,49 @@ def _freeze_comparison(candidates, n_features, prior, exploration_identity,
         measurement_budget=measurement_budget,
         expected_model_identity=model.stable_hash)
     return model, target
+
+
+def audit_frozen_hypothesis_bank(candidates, initial_data, actions, *, n_features,
+                                 prior, exploration_identity, coefficient_policy,
+                                 measurement_budget, exact_eig_epsabs):
+    """Response-free capacity Gate before any candidate response is revealed."""
+    if exact_eig_epsabs != EXACT_CLASS_EIG_EPSABS:
+        raise ValueError("hypothesis-bank Gate must match exact EIG absolute tolerance")
+    model, target = _freeze_comparison(
+        candidates, n_features, prior, exploration_identity, coefficient_policy,
+        initial_data, actions, measurement_budget,
+    )
+    probabilities = np.asarray(target.partition.class_probabilities, dtype=float)
+    entropy = float(target.partition.entropy)
+    bayes_risk = float(1.0 - np.max(probabilities))
+    familywise_resolution = float(len(actions) * exact_eig_epsabs)
+    decisions = {
+        "multiple_operational_classes": len(probabilities) >= 2,
+        "class_entropy_exceeds_familywise_exact_eig_resolution": (
+            entropy > familywise_resolution
+        ),
+        "class_bayes_risk_exceeds_single_action_exact_eig_resolution": (
+            bayes_risk > exact_eig_epsabs
+        ),
+    }
+    return {
+        "schema": "scientific-hypothesis-bank-viability-v1",
+        "model": model.stable_hash,
+        "target": target.stable_hash,
+        "candidate_binding_count": len(model.candidate_bindings),
+        "distinct_structural_support_count": len(model.bank.structures),
+        "operational_class_count": len(probabilities),
+        "class_entropy_nats": entropy,
+        "effective_class_count": float(np.exp(entropy)),
+        "class_bayes_risk": bayes_risk,
+        "exact_eig_epsabs": float(exact_eig_epsabs),
+        "candidate_action_count": int(len(actions)),
+        "familywise_utility_resolution_nats": familywise_resolution,
+        "decisions": decisions,
+        "passed": all(decisions.values()),
+        "candidate_response_accessed": False,
+        "heldout_opened": False,
+    }
 
 
 def _execute_policy(root, model, target, actions, controls, source_identity,

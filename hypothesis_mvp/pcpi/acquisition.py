@@ -16,6 +16,10 @@ from scipy.stats import t as student_t
 from .reference import ExactPosterior, OperationalClassPosterior, SequentialReferencePosterior
 
 
+EXACT_CLASS_EIG_EPSABS = 1e-10
+EXACT_CLASS_EIG_EPSREL = 1e-9
+
+
 def _frozen_matrix(values: np.ndarray) -> np.ndarray:
     array = np.ascontiguousarray(values, dtype=float)
     if array.ndim != 2 or not np.all(np.isfinite(array)):
@@ -408,8 +412,8 @@ def _exact_action_eig(
 def exact_class_eig(
     components: PredictiveComponents,
     *,
-    epsabs: float = 1e-10,
-    epsrel: float = 1e-9,
+    epsabs: float = EXACT_CLASS_EIG_EPSABS,
+    epsrel: float = EXACT_CLASS_EIG_EPSREL,
 ) -> ExactEIGResult:
     """Numerically integrate the exact finite-bank class information gain."""
 
@@ -424,8 +428,8 @@ def exact_class_eig(
 def exact_class_eig_shared_actions(
     components: PredictiveComponents,
     *,
-    epsabs: float = 1e-10,
-    epsrel: float = 1e-9,
+    epsabs: float = EXACT_CLASS_EIG_EPSABS,
+    epsrel: float = EXACT_CLASS_EIG_EPSREL,
 ) -> ExactEIGResult:
     """Integrate every action on one shared adaptive mesh per class.
 
@@ -1373,6 +1377,8 @@ __all__ = [
     "AdaptiveEIGEstimate",
     "EIGEstimate",
     "ExactEIGResult",
+    "EXACT_CLASS_EIG_EPSABS",
+    "EXACT_CLASS_EIG_EPSREL",
     "GAUSS_JACOBI_INTEGRATION",
     "GAUSSIAN_CLASS_CONDITIONAL_EPIG",
     "PredictiveComponents",

@@ -228,6 +228,13 @@ class ProposalRuntime:
         self._disabled: set[tuple[str, str]] = set()
         self._last_request = 0.0
         self._lock = threading.RLock()
+        names = self.variable_metadata.get("feature_names")
+        units = self.variable_metadata.get("feature_units")
+        if ((names is not None and (not isinstance(names, (list, tuple))
+                                    or len(names) != self.n_features))
+                or (units is not None and (not isinstance(units, (list, tuple))
+                                           or len(units) != self.n_features))):
+            raise ValueError("registered variable semantics do not match feature dimension")
 
     @property
     def enabled(self) -> bool:
@@ -397,6 +404,8 @@ class ProposalRuntime:
                 "instruction": (
                     "Each equation is only an executable right-hand-side expression. "
                     "Never emit y=, f(x)=, y_hat, or any symbol outside allowed_symbols. "
+                    "Use scientific_context.registered_task_context to reason scientifically, "
+                    "but keep x0, x1, ... symbols in every equation. "
                     "Diagnostic y_hat text describes the current predictor, not an output variable."
                 ),
             },

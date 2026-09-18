@@ -9,6 +9,11 @@ from hypothesis_mvp.discovery.system_ablation import run_exploration_ablations, 
 from hypothesis_mvp.data.roles import SelectionData, RoleDataset, DataRole
 
 
+CONTEXT = {"task_name": "fixture_law", "task_description": "fixture description",
+           "feature_names": ["fixture_feature"], "feature_units": ["unit"],
+           "target_name": "fixture_target", "target_unit": "unit"}
+
+
 def _inputs():
     selection = SelectionData(
         RoleDataset(DataRole.DEVELOPMENT, np.array([[0.], [1.]]), np.array([0., 1.])),
@@ -47,12 +52,15 @@ def test_equal_jobs_provider_free_and_completed_recovery(tmp_path, monkeypatch):
     kwargs = dict(dataset="opaque", config=config, provider_settings=ProviderSettings(
         routes=(ProviderRoute("https://fixture.invalid", "fixture-model", "fixture-key"),)),
         single_engine="polynomial_lasso", compute_ceiling=100,
-        provider_attempt_ceiling=3, source_identity="correctness-fixture")
+        provider_attempt_ceiling=3, source_identity="correctness-fixture",
+        scientific_context=CONTEXT)
     result = run_exploration_ablations(tmp_path, selection, **kwargs)
     assert result["pair_gate"]["passed"] and not result["superiority_demonstrated"]
     assert seen[1][1] is None
     assert seen[2][0].engine_repeats == 4
     assert all(row["hypothesis_provenance"]["all_candidates_source_bound"]
+               for row in result["rows"])
+    assert all("llm_retained_candidate_count" in row["hypothesis_provenance"]
                for row in result["rows"])
     assert run_exploration_ablations(tmp_path, selection, **kwargs) == result
     assert len(seen) == 3
@@ -97,7 +105,8 @@ def test_failed_exploration_cannot_repeat_calls(tmp_path, monkeypatch):
     kwargs = dict(dataset="opaque", config=config, provider_settings=ProviderSettings(
         routes=(ProviderRoute("https://fixture.invalid", "fixture-model", "fixture-key"),)),
         single_engine="polynomial_lasso", compute_ceiling=100,
-        provider_attempt_ceiling=3, source_identity="correctness-fixture")
+        provider_attempt_ceiling=3, source_identity="correctness-fixture",
+        scientific_context=CONTEXT)
     with pytest.raises(RuntimeError): run_exploration_ablations(tmp_path, selection, **kwargs)
     assert (tmp_path / "full" / "FAILURE.json").is_file()
     with pytest.raises(ValueError): run_exploration_ablations(tmp_path, selection, **kwargs)
@@ -120,4 +129,4 @@ def test_earlier_cycle_provider_failure_blocks_even_if_final_report_clean(tmp_pa
         def run(self, **kwargs): return result
     monkeypatch.setattr("hypothesis_mvp.discovery.system_ablation.DiscoveryAgent", Agent)
     with pytest.raises(ValueError, match="provider-infrastructure"):
-        _run_variant(config, None, selection, tmp_path, 100, 3)
+        _run_variant(config, None, selection, tmp_path, 100, 3, CONTEXT)

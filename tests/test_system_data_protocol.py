@@ -31,6 +31,9 @@ def test_gas_only_opens_registered_years_and_disjoint_roles(monkeypatch):
         data.selection.validation, data.initial, data.evaluation)] + [set(data.pool.X_pool[:, 0])]
     assert all(not left & right for i, left in enumerate(rows) for right in rows[i + 1:])
     assert not data.manifest["heldout_opened"]
+    assert data.manifest["scientific_context"]["task_name"]
+    assert len(data.manifest["scientific_context"]["feature_names"]) == data.initial.X.shape[1]
+    assert data.manifest["scientific_context_role"] == "public-source-metadata-no-observed-values"
     assert not hasattr(data.selection, "untouched_heldout")
 
 

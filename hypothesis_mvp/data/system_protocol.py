@@ -23,6 +23,57 @@ from .oracle import PoolOracle
 ROLE_NAMES = ("exploration_development", "exploration_validation", "inference_initial",
               "development_evaluation", "acquisition_pool")
 
+# Public, source-documented semantics only.  No observed values, ranges,
+# validation summaries, candidate responses, or held-out metadata enter this
+# registry.  Symbols remain x0..xd in executable equations; this map gives the
+# scientist-facing meaning of each symbol to proposal engines.
+PUBLIC_SCIENTIFIC_CONTEXT = {
+    "uci_ccpp": {
+        "task_name": "combined_cycle_power_plant_energy_law",
+        "task_description": (
+            "Propose falsifiable structural laws for net hourly electrical energy "
+            "output of a full-load combined-cycle power plant from ambient and "
+            "steam-turbine operating measurements."
+        ),
+        "feature_names": ["ambient_temperature", "exhaust_vacuum",
+                          "ambient_pressure", "relative_humidity"],
+        "feature_units": ["degree_C", "cm_Hg", "mbar", "percent"],
+        "target_name": "net_hourly_electrical_energy_output",
+        "target_unit": "MW",
+        "source_url": REAL_DATASET_SPECS["uci_ccpp"].source_url,
+    },
+    "uci_gas_turbine_co": {
+        "task_name": "gas_turbine_carbon_monoxide_law",
+        "task_description": (
+            "Propose falsifiable structural laws for hourly gas-turbine carbon "
+            "monoxide emissions from registered ambient and turbine sensors."
+        ),
+        "feature_names": ["ambient_temperature", "ambient_pressure", "ambient_humidity",
+                          "air_filter_difference_pressure", "gas_turbine_exhaust_pressure",
+                          "turbine_inlet_temperature", "turbine_after_temperature",
+                          "turbine_energy_yield", "compressor_discharge_pressure"],
+        "feature_units": ["degree_C", "mbar", "percent", "mbar", "mbar",
+                          "degree_C", "degree_C", "MWh", "mbar"],
+        "target_name": "carbon_monoxide_emission", "target_unit": "mg_per_m3",
+        "source_url": REAL_DATASET_SPECS["uci_gas_turbine_co"].source_url,
+    },
+    "uci_gas_turbine_nox": {
+        "task_name": "gas_turbine_nitrogen_oxides_law",
+        "task_description": (
+            "Propose falsifiable structural laws for hourly gas-turbine nitrogen "
+            "oxides emissions from registered ambient and turbine sensors."
+        ),
+        "feature_names": ["ambient_temperature", "ambient_pressure", "ambient_humidity",
+                          "air_filter_difference_pressure", "gas_turbine_exhaust_pressure",
+                          "turbine_inlet_temperature", "turbine_after_temperature",
+                          "turbine_energy_yield", "compressor_discharge_pressure"],
+        "feature_units": ["degree_C", "mbar", "percent", "mbar", "mbar",
+                          "degree_C", "degree_C", "MWh", "mbar"],
+        "target_name": "nitrogen_oxides_emission", "target_unit": "mg_per_m3",
+        "source_url": REAL_DATASET_SPECS["uci_gas_turbine_nox"].source_url,
+    },
+}
+
 
 @dataclass(frozen=True)
 class OpenSystemData:
@@ -148,6 +199,8 @@ def load_registered_system_data(registration):
         "family": "gas_turbine" if dataset.startswith("uci_gas") else "ccpp",
         "official_hashes": hashes, "split_seed": seed, "registered_counts": registration["counts"],
         "role_row_id_hashes": {role: sha256(json.dumps(rows).encode()).hexdigest() for role, rows in assigned.items()},
+        "scientific_context": PUBLIC_SCIENTIFIC_CONTEXT[dataset],
+        "scientific_context_role": "public-source-metadata-no-observed-values",
         "heldout_opened": False, "formula_generated": False, "noise_added": False}
     pool_values = arrays["acquisition_pool"]
     return OpenSystemData(SelectionData(development, validation, None, ()), initial,

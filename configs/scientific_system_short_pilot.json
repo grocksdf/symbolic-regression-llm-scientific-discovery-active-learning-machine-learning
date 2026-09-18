@@ -45,6 +45,11 @@
     "growth_factor": 2
   },
   "measurement_budget": 4,
+  "hypothesis_bank_gate": {
+    "schema": "scientific-hypothesis-bank-gate-v1",
+    "exact_eig_epsabs": 1e-10,
+    "require_all_variants": true
+  },
   "exploration_seconds": 240,
   "policy_seconds": 60,
   "data_loading_seconds": 30,

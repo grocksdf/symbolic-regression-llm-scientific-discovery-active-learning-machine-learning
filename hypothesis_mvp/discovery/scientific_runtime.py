@@ -26,6 +26,7 @@ from .proposal_runtime import (
     ProposalBatch,
     ProposalRuntime,
 )
+from .task_context import DiscoveryTaskContext
 
 
 class ScientificDiscoveryRuntime:
@@ -36,6 +37,7 @@ class ScientificDiscoveryRuntime:
         proposal: ProposalRuntime, evaluation: EvaluationRuntime,
         knowledge: KnowledgeRuntime, config: DiscoveryConfig,
         event_callback: Callable[[RuntimeEvent], None] | None = None,
+        task_context: DiscoveryTaskContext | None = None,
     ) -> None:
         self.equation = equation
         self.exploration = exploration
@@ -44,6 +46,7 @@ class ScientificDiscoveryRuntime:
         self.knowledge = knowledge
         self.config = config
         self.event_callback = event_callback
+        self.task_context = task_context or DiscoveryTaskContext()
         self._events: list[RuntimeEvent] = []
 
     def _emit(
@@ -198,12 +201,14 @@ class ScientificDiscoveryRuntime:
             current = islands[island]
             failure = self.evaluation.failure_signature(current, explorations[island])
             library = self.knowledge.retrieve(failure, self.config.structure_library_topk)
+            task = self.task_context.prompt_payload(self.proposal.n_features)
             return island, self.proposal.propose(
-                task_name="opaque_structure_search",
-                task_desc="generic measured system",
+                task_name=task["name"],
+                task_desc=task["description"],
                 round_id=round_id, island=island,
                 parent_hash=current.dag.canonical_hash,
-                island_context=self._proposal_context(current, explorations[island], island),
+                island_context={**self._proposal_context(current, explorations[island], island),
+                                "registered_task_context": task},
                 library_rows=library, ephemeral_refinements=refinements[-12:],
             )
 
@@ -291,7 +296,7 @@ class ScientificDiscoveryRuntime:
             if self.evaluation.budget.exhausted:
                 break
             islands, additions, record = self._llm_round(
-                islands, round_id, arrays, refinements
+                islands, round_id, arrays, refinements,
             )
             accepted.extend(additions)
             records.append(record)
@@ -386,6 +391,7 @@ class ScientificDiscoveryRuntime:
                 row.get("provider_all_attempts_preserved") is True
                 for row in self.proposal.telemetry
             ),
+            "task_context_audit": self.task_context.audit(self.proposal.n_features),
             "knowledge_stage_status": staged.get("status", "not_staged"),
             "knowledge_stage_id": staged.get("stage_id", ""),
             "rejected_candidate_count": len(self.evaluation.rejections),

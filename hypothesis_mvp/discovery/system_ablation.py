@@ -43,12 +43,14 @@ def audit_usage(config, result, elapsed, compute_ceiling, provider_attempt_ceili
             "provider_attempts_used": attempts, "elapsed_seconds": elapsed}
 
 
-def _run_variant(config, provider_settings, selection, workspace, compute_ceiling, provider_attempt_ceiling):
+def _run_variant(config, provider_settings, selection, workspace, compute_ceiling,
+                 provider_attempt_ceiling, scientific_context):
     start = time.monotonic()
     agent = DiscoveryAgent(config, provider_settings)
-    result = agent.run(selection=selection, task_name="registered-development",
-        task_description="", output_dir=workspace,
-        knowledge_dir=workspace / "knowledge", variable_metadata={})
+    context = dict(scientific_context)
+    result = agent.run(selection=selection, task_name=context["task_name"],
+        task_description=context["task_description"], output_dir=workspace,
+        knowledge_dir=workspace / "knowledge", variable_metadata=context)
     usage = audit_usage(config, result, time.monotonic() - start,
                         compute_ceiling, provider_attempt_ceiling)
     report = result.discovery.report
@@ -73,6 +75,9 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
         "distinct_sources": sorted({row["source"] for row in candidates}),
         "origin_counts": {origin: sum(row["origin"] == origin for row in candidates)
                           for origin in sorted({row["origin"] for row in candidates})},
+        "llm_retained_candidate_count": sum(row["origin"] == "llm" for row in candidates),
+        "engine_sources": sorted({row["source"] for row in candidates
+                                  if row["source"].startswith("engine:")}),
         "all_candidates_source_bound": bool(candidates),
         "heldout_accessed": False,
     }
@@ -85,7 +90,8 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
 
 def run_exploration_ablations(root, selection, *, dataset, config,
                              provider_settings, single_engine, compute_ceiling,
-                             provider_attempt_ceiling, source_identity):
+                             provider_attempt_ceiling, source_identity,
+                             scientific_context):
     if (not isinstance(config, DiscoveryAgentConfig) or config.cycles < 1
             or len(config.engines) < 2 or len(set(config.engines)) != len(config.engines)
             or single_engine not in config.engines or config.engine_repeats < 1
@@ -93,6 +99,9 @@ def run_exploration_ablations(root, selection, *, dataset, config,
             or config.acquisition_enabled or config.engine_workers != 1
             or any(engine not in {"polynomial_lasso", "mcts"} for engine in config.engines)
             or provider_settings is None or not provider_settings.routes or not source_identity
+            or not isinstance(scientific_context, dict)
+            or not scientific_context.get("task_name")
+            or not scientific_context.get("task_description")
             or not math.isfinite(compute_ceiling) or compute_ceiling <= 0
             or type(provider_attempt_ceiling) is not int or provider_attempt_ceiling < 1):
         raise ValueError("invalid matched exploration contract")
@@ -114,6 +123,7 @@ def run_exploration_ablations(root, selection, *, dataset, config,
         "validation": selection.validation.fingerprint,
         "compute_ceiling": compute_ceiling, "provider_attempt_ceiling": provider_attempt_ceiling,
         "source": source_identity, "heldout_opened": False,
+        "scientific_context": scientific_context,
         "provider_settings_identity": sha256(json.dumps(public_provider,
             sort_keys=True, default=str).encode()).hexdigest(),
         "formal_experiment_authorized": False}
@@ -134,7 +144,8 @@ def run_exploration_ablations(root, selection, *, dataset, config,
         try:
             summary, enforcement = run_bounded(_run_variant,
                 args=(variant_config, None if variant == "no_llm" else provider_settings,
-                      selection, workspace, compute_ceiling, provider_attempt_ceiling),
+                      selection, workspace, compute_ceiling, provider_attempt_ceiling,
+                      scientific_context),
                 seconds=compute_ceiling,
                 provider_attempts=0 if variant == "no_llm" else provider_attempt_ceiling)
             usage = summary["usage"]

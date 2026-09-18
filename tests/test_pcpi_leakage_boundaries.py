@@ -21,11 +21,16 @@ from hypothesis_mvp.discovery.plugins import DiscoveryContext
 from hypothesis_mvp.discovery.proposal_runtime import ProposalContext, ProposalRuntime
 
 
-def test_task_and_dataset_semantics_are_absent_from_structure_surfaces() -> None:
-    runtime = ProposalRuntime(EquationRuntime(2), 2, None, candidates_per_island=2)
+def test_registered_public_semantics_reach_prompt_without_response_values() -> None:
+    from hypothesis_mvp.discovery.task_context import DiscoveryTaskContext
+    metadata = {"feature_names": ["temperature", "pressure"],
+                "feature_units": ["C", "mbar"], "target_name": "power",
+                "target_unit": "MW"}
+    runtime = ProposalRuntime(EquationRuntime(2, variable_metadata=metadata),
+                              2, None, candidates_per_island=2)
     payload = runtime._proposal_payload(
-        "opaque_structure_search",
-        "generic measured system",
+        "power_law",
+        "discover a falsifiable power law",
         ProposalContext(1, "balanced", "parent", 2, 2),
         {"current_equation_state": {"expression": "x0"}},
         [],
@@ -33,12 +38,18 @@ def test_task_and_dataset_semantics_are_absent_from_structure_surfaces() -> None
     )
     encoded = json.dumps(payload, sort_keys=True)
     assert payload["task"] == {
-        "name": "opaque_structure_search",
-        "description": "generic measured system",
+        "name": "power_law",
+        "description": "discover a falsifiable power law",
         "n_features": 2,
     }
-    assert "dataset" not in encoded.lower()
-    assert "target_name" not in encoded
+    context = DiscoveryTaskContext(
+        description="discover a falsifiable power law", variable_descriptions={
+            "x0": "temperature [C]", "x1": "pressure [mbar]"}, domain="power")
+    scientific = context.prompt_payload(2)
+    assert scientific["variables"]["x0"] == "temperature [C]"
+    assert "temperature" in json.dumps(scientific) and "power" in json.dumps(scientific)
+    assert "registered_variable_semantics" not in encoded
+    assert "observed_values" not in encoded and "pool_y" not in encoded
     context_fields = {field.name for field in fields(DiscoveryContext)}
     assert not {"task_name", "task_description", "variable_metadata"} & context_fields
 

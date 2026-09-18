@@ -27,6 +27,9 @@ def _config():
         "single_engine": "polynomial_lasso", "prior": {},
         "scoring": {"minimum_samples": 8, "maximum_samples": 16, "error_safety_factor": 2.},
         "measurement_budget": 2, "exploration_seconds": 30, "policy_seconds": 30,
+        "hypothesis_bank_gate": {"schema": "scientific-hypothesis-bank-gate-v1",
+                                 "exact_eig_epsabs": 1e-10,
+                                 "require_all_variants": True},
         "data_loading_seconds": 30, "provider_attempt_ceiling": 2,
         "provider_public_identity": executor.public_provider_identity(_settings()),
         "coefficient_policy": "discard-fitted-coefficients-refit-closed-basis",
@@ -39,7 +42,12 @@ def _data():
         role(DataRole.VALIDATION, [2, 3]), None, ()),
         role(DataRole.DEVELOPMENT, [4, 5]), role(DataRole.VALIDATION, [8, 9]),
         PoolOracle(np.array([[6.], [7.]]), np.array([6., 7.])),
-        {"family": "gas_turbine", "heldout_opened": False, "fixture_only": True})
+        {"family": "gas_turbine", "heldout_opened": False, "fixture_only": True,
+         "scientific_context": {"task_name": "fixture_law",
+                                "task_description": "fixture description",
+                                "feature_names": ["fixture_feature"],
+                                "feature_units": ["unit"],
+                                "target_name": "fixture_target", "target_unit": "unit"}})
 
 
 def _inline(function, args=(), kwargs=None, **limits):
@@ -52,6 +60,9 @@ def _patch(monkeypatch, supported=True):
     monkeypatch.setattr(executor, "load_registered_system_data", lambda registration: _data())
     monkeypatch.setattr(executor, "run_bounded", _inline)
     monkeypatch.setattr("hypothesis_mvp.discovery.system_run.run_bounded", _inline)
+    monkeypatch.setattr(executor, "audit_frozen_hypothesis_bank", lambda *args, **kwargs: {
+        "schema": "scientific-hypothesis-bank-viability-v1", "passed": True,
+        "candidate_response_accessed": False, "heldout_opened": False})
     monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.estimate_class_eig_until_ranked",
         lambda components, *args, **kwargs: SimpleNamespace(ranking_certified=True,
             estimate=SimpleNamespace(scores=np.arange(components.locations.shape[1], dtype=float),
@@ -63,9 +74,16 @@ def _patch(monkeypatch, supported=True):
             if not registry.events():
                 registry.append(hypothesis_id="fixture-hypothesis",
                     event_type=EvidenceEventType.EVIDENCE_ATTACHED, payload={"fixture_only": True})
-            rows.append({"variant": variant, "candidates": [
-                {"expression": "x0", "source": "fixture-engine"},
-                {"expression": "x0**2" if supported else "tan(x0)", "source": "fixture-llm"}]})
+            candidates = [
+                {"expression": "x0", "source": "engine:a", "origin": "deterministic"},
+                {"expression": "x0**2" if supported else "tan(x0)",
+                 "source": "engine:b" if variant == "full" else "engine:a",
+                 "origin": "deterministic"},
+            ]
+            if variant != "no_llm":
+                candidates.append({"expression": "x0**3", "source": "llm_proposal",
+                                   "origin": "llm"})
+            rows.append({"variant": variant, "candidates": candidates})
         return {"rows": rows, "fixture_only": True}
     monkeypatch.setattr(executor, "run_exploration_ablations", exploration)
 
@@ -94,6 +112,22 @@ def test_unsupported_hypothesis_terminally_blocks_without_filtering(tmp_path, mo
     root = tmp_path / "output"
     with pytest.raises(ValueError):
         executor.execute_registered_system(tmp_path / "source", root, _config(), {}, execution_role="user")
+
+
+def test_degenerate_bank_stops_before_any_pool_response(tmp_path, monkeypatch):
+    _patch(monkeypatch)
+    monkeypatch.setattr(executor, "audit_frozen_hypothesis_bank", lambda *args, **kwargs: {
+        "schema": "scientific-hypothesis-bank-viability-v1", "passed": False,
+        "candidate_response_accessed": False, "heldout_opened": False})
+    def forbidden(*args): raise AssertionError("degenerate bank must not reveal a response")
+    monkeypatch.setattr(PoolOracle, "acquire_indices", forbidden)
+    root = tmp_path / "output"
+    with pytest.raises(executor.HypothesisBankNotViable):
+        executor.execute_registered_system(
+            tmp_path / "source", root, _config(), {}, execution_role="user")
+    gate = root / "uci_gas_turbine_co" / "11" / "HYPOTHESIS_BANK_VIABILITY.json"
+    assert gate.is_file()
+    assert not (root / "uci_gas_turbine_co" / "11" / "measured").exists()
     assert (root / "TERMINAL_FAILURE.json").exists()
     assert not (root / "SYSTEM_MANIFEST.json").exists()
     with pytest.raises(ValueError, match="terminally failed"):

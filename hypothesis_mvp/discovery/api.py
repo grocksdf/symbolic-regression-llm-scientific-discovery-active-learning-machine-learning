@@ -24,10 +24,16 @@ from .hypothesis_output import (
 from .initializer import generic_deterministic_candidates, normalize_candidates
 from .plugins import DiscoveryContext, DiscoveryPlugin, plugin_candidates
 from .proposal_runtime import ProviderSettings
+from .task_context import DiscoveryTaskContext
 
 
 _STRUCTURE_METADATA_KEYS = frozenset({
     "feature_units",
+    "feature_names",
+    "target_name",
+    "target_unit",
+    "observation_type",
+    "source_url",
     "feature_dimensions",
     "dimensional_constraints",
     "domain_constraints",
@@ -88,7 +94,7 @@ def _vector(values: np.ndarray, name: str) -> np.ndarray:
 
 
 def _structure_metadata(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
-    """Remove names and provenance fields from every structure-generation surface."""
+    """Expose only registered public semantics, never observations or split metadata."""
     values = dict(metadata or {})
     return {key: values[key] for key in sorted(_STRUCTURE_METADATA_KEYS & values.keys())}
 
@@ -115,6 +121,25 @@ def _fingerprints(
     return (
         array_fingerprint(np.column_stack((train, train_y))),
         array_fingerprint(np.column_stack((validation, validation_y))),
+    )
+
+
+def _registered_task_context(task_description, metadata, feature_count):
+    names = metadata.get("feature_names", [])
+    units = metadata.get("feature_units", [])
+    descriptions = {}
+    for index in range(feature_count):
+        parts = []
+        if index < len(names):
+            parts.append(str(names[index]))
+        if index < len(units):
+            parts.append("[" + str(units[index]) + "]")
+        descriptions[f"x{index}"] = " ".join(parts)
+    return DiscoveryTaskContext(
+        description=task_description,
+        variable_descriptions=descriptions,
+        domain=str(metadata.get("target_name", "general_scientific_system")),
+        source="registered-public-selection-context",
     )
 
 
@@ -179,6 +204,7 @@ def _discover_from_arrays(
         ledger_path=root / "runtime_ledger.jsonl",
         provider_settings=provider_settings,
         variable_metadata=structure_metadata,
+        task_context=_registered_task_context(task_description, structure_metadata, train.shape[1]),
         primitive_registry=registry, event_callback=event_callback,
     )
     expression, raw_report = runtime.run(

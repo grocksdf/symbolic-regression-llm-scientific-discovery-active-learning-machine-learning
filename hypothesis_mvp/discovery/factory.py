@@ -12,6 +12,7 @@ from .exploration_runtime import ExplorationRuntime
 from .knowledge_runtime import KnowledgeRuntime
 from .proposal_runtime import ProposalRuntime, ProviderSettings
 from .scientific_runtime import ScientificDiscoveryRuntime
+from .task_context import DiscoveryTaskContext
 
 
 def build_scientific_discovery_runtime(
@@ -21,6 +22,7 @@ def build_scientific_discovery_runtime(
     variable_metadata: Mapping[str, Any] | None = None,
     primitive_registry: PrimitiveRegistry | None = None,
     event_callback: Callable[[RuntimeEvent], None] | None = None,
+    task_context: DiscoveryTaskContext | None = None,
 ) -> ScientificDiscoveryRuntime:
     resolved = config if isinstance(config, DiscoveryConfig) else DiscoveryConfig.from_mapping(config)
     registry = primitive_registry or PrimitiveRegistry()
@@ -42,6 +44,7 @@ def build_scientific_discovery_runtime(
             library_path, ledger_path, resolved.structure_library_max_entries
         ),
         config=resolved, event_callback=event_callback,
+        task_context=task_context or DiscoveryTaskContext(),
     )
 
 

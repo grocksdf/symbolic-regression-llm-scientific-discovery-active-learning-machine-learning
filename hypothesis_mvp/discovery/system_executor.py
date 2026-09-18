@@ -21,7 +21,13 @@ from .proposal_runtime import ProviderSettings
 from .resource_limits import run_bounded
 from .system_ablation import run_exploration_ablations
 from .system_freeze import verify_system_freeze
-from .system_run import run_frozen_system_comparison
+from .system_run import run_frozen_system_comparison, audit_frozen_hypothesis_bank
+
+
+class HypothesisBankNotViable(RuntimeError):
+    def __init__(self):
+        super().__init__("response-free-hypothesis-bank-not-viable-no-measurement-authorized")
+        self.public_diagnostic = str(self)
 
 
 def _digest(value):
@@ -33,7 +39,7 @@ def validate_system_registration(config):
     required = {"schema", "data", "seeds", "agent", "single_engine", "prior", "scoring",
         "measurement_budget", "exploration_seconds", "policy_seconds", "data_loading_seconds",
         "provider_attempt_ceiling", "provider_public_identity", "coefficient_policy",
-        "user_execution_authorized"}
+        "user_execution_authorized", "hypothesis_bank_gate"}
     if set(config) != required or config["schema"] != "scientific-system-development-registration-v1":
         raise ValueError("unknown or incomplete scientific system registration")
     if (not config["data"] or not config["seeds"] or len(set(config["seeds"])) != len(config["seeds"])
@@ -72,6 +78,12 @@ def validate_system_registration(config):
         raise ValueError("invalid registered discovery objectives")
     NormalInverseGammaPrior(**config["prior"])
     DiscoveryScoringControls(**config["scoring"])
+    gate = config["hypothesis_bank_gate"]
+    if (set(gate) != {"schema", "exact_eig_epsabs", "require_all_variants"}
+            or gate["schema"] != "scientific-hypothesis-bank-gate-v1"
+            or gate["exact_eig_epsabs"] != 1e-10
+            or gate["require_all_variants"] is not True):
+        raise ValueError("invalid hypothesis-bank viability registration")
     identity = config["provider_public_identity"]
     if identity is None and config["user_execution_authorized"] is False:
         return config
@@ -113,6 +125,79 @@ def verify_registered_provider(project_root, config):
     return provider
 
 
+def _variant_composition(variant, candidates):
+    origins = [str(candidate.get("origin", "")) for candidate in candidates]
+    engines = {str(candidate.get("source", "")) for candidate in candidates
+               if str(candidate.get("source", "")).startswith("engine:")}
+    return {
+        "llm_enabled_variant_retains_llm_hypothesis": (
+            "llm" in origins if variant != "no_llm" else "llm" not in origins
+        ),
+        "full_variant_retains_multiple_engine_sources": (
+            len(engines) >= 2 if variant == "full" else True
+        ),
+        "no_llm_variant_retains_no_llm_hypothesis": (
+            "llm" not in origins if variant == "no_llm" else True
+        ),
+    }
+
+
+def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
+    viability = {}
+    for row in exploration["rows"]:
+        variant = row["variant"]
+        audit = audit_frozen_hypothesis_bank(
+            row["candidates"], data.initial, data.pool.X_pool,
+            n_features=data.initial.X.shape[1],
+            prior=NormalInverseGammaPrior(**config["prior"]),
+            exploration_identity=_digest(row),
+            coefficient_policy=config["coefficient_policy"],
+            measurement_budget=config["measurement_budget"],
+            exact_eig_epsabs=config["hypothesis_bank_gate"]["exact_eig_epsabs"],
+        )
+        composition = _variant_composition(variant, row["candidates"])
+        audit["composition_decisions"] = composition
+        audit["passed"] = bool(audit["passed"] and all(composition.values()))
+        viability[variant] = audit
+    _publish(workspace / "HYPOTHESIS_BANK_VIABILITY.json", {
+        "schema": "scientific-hypothesis-bank-family-gate-v1",
+        "variants": viability, "passed": all(row["passed"] for row in viability.values()),
+        "candidate_response_accessed": False, "heldout_opened": False,
+    })
+    if not all(row["passed"] for row in viability.values()):
+        raise HypothesisBankNotViable()
+
+
+def _run_comparison_variant(project_root, workspace, row, data, config, provider,
+                            source_identity, seed, expected_freeze, coordinate):
+    variant = row["variant"]
+    verify_system_freeze(project_root, config, expected_freeze)
+    if not row["candidates"]:
+        raise ValueError("discovery retained no registered hypotheses")
+    print(f"system measured comparison: {coordinate}:{variant}", flush=True)
+    comparison = run_frozen_system_comparison(
+        workspace / "measured" / variant, row["candidates"], data.initial, data.pool,
+        np.arange(len(data.pool.X_pool)), n_features=data.initial.X.shape[1],
+        prior=NormalInverseGammaPrior(**config["prior"]),
+        exploration_identity=_digest(row), coefficient_policy=config["coefficient_policy"],
+        measurement_budget=config["measurement_budget"],
+        controls=DiscoveryScoringControls(**config["scoring"]),
+        source_identity=source_identity, random_seed=seed,
+        policy_wall_time_seconds=config["policy_seconds"], evaluation_data=data.evaluation)
+    registry = EvidenceRegistry(workspace / "exploration" / variant / "evidence_registry.jsonl")
+    if not registry.verify().valid or not registry.events():
+        raise ValueError("missing or invalid discovery evidence chain")
+    payload = {"stage": "system_measured_development", "comparison": comparison,
+        "freeze_identity": source_identity, "data_manifest_identity": _digest(data.manifest),
+        "heldout_opened": False, "independent_confirmation": False}
+    if not any(event.to_dict()["payload"] == payload for event in registry.events()):
+        registry.append(hypothesis_id=registry.events()[-1].hypothesis_id,
+            event_type=EvidenceEventType.EVIDENCE_ATTACHED, payload=payload)
+    if not registry.verify().valid:
+        raise ValueError("system evidence export verification failed")
+    return comparison
+
+
 def execute_registered_system(project_root, root, config, expected_freeze, *, execution_role):
     config = json.loads(json.dumps(config, allow_nan=False))
     validate_system_registration(config)
@@ -150,35 +235,13 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
                 exploration = run_exploration_ablations(workspace / "exploration", data.selection,
                     dataset=dataset, config=agent_config, provider_settings=provider,
                     single_engine=config["single_engine"], compute_ceiling=config["exploration_seconds"],
-                    provider_attempt_ceiling=config["provider_attempt_ceiling"], source_identity=source_identity)
-                comparisons = {}
-                for row in exploration["rows"]:
-                    verify_system_freeze(project_root, config, expected_freeze)
-                    variant = row["variant"]
-                    if not row["candidates"]:
-                        raise ValueError("discovery retained no registered hypotheses")
-                    print(f"system measured comparison: {coordinate}:{variant}", flush=True)
-                    comparisons[variant] = run_frozen_system_comparison(workspace / "measured" / variant,
-                        row["candidates"], data.initial, data.pool, np.arange(len(data.pool.X_pool)),
-                        n_features=data.initial.X.shape[1], prior=NormalInverseGammaPrior(**config["prior"]),
-                        exploration_identity=_digest(row), coefficient_policy=config["coefficient_policy"],
-                        measurement_budget=config["measurement_budget"],
-                        controls=DiscoveryScoringControls(**config["scoring"]), source_identity=source_identity,
-                        random_seed=seed, policy_wall_time_seconds=config["policy_seconds"],
-                        evaluation_data=data.evaluation)
-                    registry_path = workspace / "exploration" / variant / "evidence_registry.jsonl"
-                    registry = EvidenceRegistry(registry_path)
-                    if not registry.verify().valid or not registry.events():
-                        raise ValueError("missing or invalid discovery evidence chain")
-                    payload = {"stage": "system_measured_development", "comparison": comparisons[variant],
-                        "freeze_identity": source_identity, "data_manifest_identity": _digest(data.manifest),
-                        "heldout_opened": False, "independent_confirmation": False}
-                    # Deterministic complete recovery does not append a duplicate.
-                    if not any(event.to_dict()["payload"] == payload for event in registry.events()):
-                        registry.append(hypothesis_id=registry.events()[-1].hypothesis_id,
-                            event_type=EvidenceEventType.EVIDENCE_ATTACHED, payload=payload)
-                    if not registry.verify().valid:
-                        raise ValueError("system evidence export verification failed")
+                    provider_attempt_ceiling=config["provider_attempt_ceiling"], source_identity=source_identity,
+                    scientific_context=data.manifest["scientific_context"])
+                _prepare_hypothesis_bank_viability(workspace, exploration, data, config)
+                comparisons = {row["variant"]: _run_comparison_variant(
+                    project_root, workspace, row, data, config, provider,
+                    source_identity, seed, expected_freeze, coordinate
+                ) for row in exploration["rows"]}
                 results.append({"dataset": dataset, "seed": seed, "family": data.manifest["family"],
                     "exploration": exploration, "comparisons": comparisons})
         verify_system_freeze(project_root, config, expected_freeze)
