@@ -269,10 +269,15 @@ class ExplorationRuntime:
         out.append(GrammarTerm(expression, safe, family, depth, parents, operator))
 
     def _base_terms(self, X: np.ndarray, y_hat: np.ndarray, dag: EquationDAG) -> list[GrammarTerm]:
-        out: list[GrammarTerm] = []
-        seen_expr: set[str] = set()
-        seen_values: set[tuple[int, ...]] = set()
-        self._add_term(out, seen_expr, seen_values, "y_hat", y_hat, "current_prediction", 0)
+        # The mandatory baseline is not an optional search primitive. A finite
+        # constant prediction is legal: its centered design column is zero and
+        # the fitted intercept supplies the baseline. Never filter or clip it.
+        prediction = np.asarray(y_hat, dtype=float).reshape(-1)
+        if not len(prediction) or len(prediction) != len(X) or not np.all(np.isfinite(prediction)):
+            raise ValueError("exploration requires finite aligned current predictions")
+        out = [GrammarTerm("y_hat", prediction.copy(), "current_prediction", 0)]
+        seen_expr = {"y_hat"}
+        seen_values = {self._fingerprint(prediction)}
         for i in range(X.shape[1]):
             self._add_term(out, seen_expr, seen_values, f"x{i}", X[:, i], "raw_variable", 0)
         for text, values in self.runtime.intermediate_outputs(

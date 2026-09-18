@@ -42,3 +42,12 @@ reserve is identical with and without a provider in this opt-in protocol;
 unused no-LLM reserve is not reassigned to extra deterministic work. Legacy
 protocols retain their historical allocation. Canonical aliases remain in the
 registry but do not count as distinct retained engine contributions.
+
+Exploration always retains the finite, aligned current prediction as its
+mandatory `y_hat` baseline, including constant and near-constant predictions.
+Only optional grammar primitives are subject to low-variance filtering.
+The baseline values are copied exactly, never clipped or replaced; an exactly
+constant centered column contributes zero and the existing fitted intercept
+supplies its baseline. Invalid predictions fail explicitly before grammar
+construction. This handles a legal incumbent state rather than forcing a
+nonconstant hypothesis or bypassing bank viability/composition requirements.

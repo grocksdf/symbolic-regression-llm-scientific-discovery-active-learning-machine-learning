@@ -14,6 +14,7 @@ def main() -> int:
                "tests/test_system_ablation.py", "tests/test_pcpi_leakage_boundaries.py", "tests/test_integrity.py"]
     command.extend(["tests/test_system_resource_limits.py", "tests/test_system_data_protocol.py",
                     "tests/test_closed_basis_refit.py", "tests/test_seed_budget_contract.py",
+                    "tests/test_exploration_prediction_baseline.py",
                     "tests/test_system_executor.py",
                     "tests/test_pcpi_p3d2_reference_acquisition.py"])
     result = subprocess.run(command, cwd=root, check=False)
