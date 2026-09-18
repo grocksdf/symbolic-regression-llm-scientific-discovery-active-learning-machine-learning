@@ -24,7 +24,8 @@ def _result(config, provider=True):
             (len(config.engines) * config.engine_repeats), "failures": []},
         candidate_evaluations=2, provider_attempts=(1 if provider else 0), provider_calls=(1 if provider else 0))],
         discovery=SimpleNamespace(report={"best_val_nmse": 1.,
-            "final_topk": [{"expression": "x0", "source": "fixture"}],
+            "final_topk": [{"expression": "x0", "source": "fixture",
+                            "origin": "deterministic", "lineage_id": ""}],
             "llm_call_count": (1 if provider else 0), "llm_attempt_count": (1 if provider else 0), "llm_error_count": 0}))
 
 
@@ -51,6 +52,8 @@ def test_equal_jobs_provider_free_and_completed_recovery(tmp_path, monkeypatch):
     assert result["pair_gate"]["passed"] and not result["superiority_demonstrated"]
     assert seen[1][1] is None
     assert seen[2][0].engine_repeats == 4
+    assert all(row["hypothesis_provenance"]["all_candidates_source_bound"]
+               for row in result["rows"])
     assert run_exploration_ablations(tmp_path, selection, **kwargs) == result
     assert len(seen) == 3
     with pytest.raises(ValueError):

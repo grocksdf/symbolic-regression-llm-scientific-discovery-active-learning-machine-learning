@@ -23,6 +23,15 @@ def _session(tmp_path, source="source-frozen-correctness-fixture"):
                                 DiscoveryScoringControls(8, 16, 2.), source_identity=source)
 
 
+def _broad_analytic(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.analytic_class_eig_bounds",
+        lambda components: SimpleNamespace(
+            lower_bounds=np.zeros(components.locations.shape[1]),
+            upper_bounds=np.ones(components.locations.shape[1]),
+            numerical_outward_tolerance=1e-12))
+
+
 def test_decision_before_response_and_reconstruction(tmp_path):
     session = _session(tmp_path)
     with pytest.raises(FileNotFoundError): session.admit(10, np.array([3.]), 3.)
@@ -64,9 +73,10 @@ def test_tampered_receipt_and_cross_source_are_rejected(tmp_path):
 
 def test_overlapping_exact_intervals_publish_minimax_regret_certificate(monkeypatch, tmp_path):
     from types import SimpleNamespace
+    _broad_analytic(monkeypatch)
     monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.estimate_class_eig_until_ranked",
                         lambda *args, **kwargs: SimpleNamespace(ranking_certified=False))
-    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.exact_class_eig",
+    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.exact_class_eig_shared_actions",
         lambda components: SimpleNamespace(scores=np.array([.5, .5]),
             quadrature_errors=np.array([1e-4, 1e-4])))
     session = _session(tmp_path)
@@ -80,15 +90,16 @@ def test_overlapping_exact_intervals_publish_minimax_regret_certificate(monkeypa
 
 def test_uncertified_fast_rule_uses_independent_exact_interval_certificate(monkeypatch, tmp_path):
     from types import SimpleNamespace
+    _broad_analytic(monkeypatch)
     monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.estimate_class_eig_until_ranked",
         lambda *args, **kwargs: SimpleNamespace(ranking_certified=False))
-    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.exact_class_eig",
+    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.exact_class_eig_shared_actions",
         lambda components: SimpleNamespace(scores=np.array([.2, .7]),
             quadrature_errors=np.array([1e-8, 1e-8])))
     decision = _session(tmp_path).plan(np.array([10, 11]), np.array([[3.], [4.]]))
     assert decision["candidate_id"] == 11
     assert decision["integration_method"] == (
-        "adaptive-scipy-quad-exact-finite-mixture-interval-ranking")
+        "shared-action-adaptive-scipy-quad-exact-finite-mixture-interval-ranking")
     assert decision["certified"] is True
     assert decision["selection_certificate"] == "strict-interval-maximizer"
     assert decision["utility_regret_upper_bound"] == 0.0
@@ -96,9 +107,10 @@ def test_uncertified_fast_rule_uses_independent_exact_interval_certificate(monke
 
 def test_minimax_regret_uses_lower_bound_not_point_estimate(monkeypatch, tmp_path):
     from types import SimpleNamespace
+    _broad_analytic(monkeypatch)
     monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.estimate_class_eig_until_ranked",
                         lambda *args, **kwargs: SimpleNamespace(ranking_certified=False))
-    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.exact_class_eig",
+    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.exact_class_eig_shared_actions",
         lambda components: SimpleNamespace(scores=np.array([.55, .50]),
             quadrature_errors=np.array([.20, .01])))
     decision = _session(tmp_path).plan(np.array([10, 11]), np.array([[3.], [4.]]))
@@ -108,9 +120,10 @@ def test_minimax_regret_uses_lower_bound_not_point_estimate(monkeypatch, tmp_pat
 
 def test_invalid_exact_certificate_is_public_and_response_free(monkeypatch, tmp_path):
     from types import SimpleNamespace
+    _broad_analytic(monkeypatch)
     monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.estimate_class_eig_until_ranked",
                         lambda *args, **kwargs: SimpleNamespace(ranking_certified=False))
-    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.exact_class_eig",
+    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.exact_class_eig_shared_actions",
         lambda components: SimpleNamespace(scores=np.array([np.nan, .5]),
             quadrature_errors=np.array([1e-4, 1e-4])))
     session = _session(tmp_path)
@@ -118,6 +131,32 @@ def test_invalid_exact_certificate_is_public_and_response_free(monkeypatch, tmp_
         session.plan(np.array([10, 11]), np.array([[3.], [4.]]))
     assert caught.value.public_diagnostic == "invalid-exact-class-eig-certificate"
     assert not (tmp_path / "DECISION-001.json").exists()
+
+
+def test_analytic_dominance_prunes_only_impossible_maximizers(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.analytic_class_eig_bounds",
+        lambda components: SimpleNamespace(
+            lower_bounds=np.array([.40, .00]),
+            upper_bounds=np.array([.50, .20]),
+            numerical_outward_tolerance=1e-12))
+    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.estimate_class_eig_until_ranked",
+        lambda *args, **kwargs: SimpleNamespace(ranking_certified=False))
+    seen = []
+    def shared(components):
+        seen.append(components.locations.shape[1])
+        return SimpleNamespace(scores=np.array([.42]),
+                               quadrature_errors=np.array([.01]))
+    monkeypatch.setattr(
+        "hypothesis_mvp.pcpi.discovery_transaction.exact_class_eig_shared_actions", shared)
+    session = _session(tmp_path)
+    decision = session.plan(np.array([10, 11]), np.array([[3.], [4.]]))
+    assert decision["candidate_id"] == 10
+    assert seen == [1]
+    assert decision["errors"][1] is None
+    assert decision["information_audit"]["analytic_frontier_count"] == 1
+    assert decision["information_audit"]["analytically_dominated_count"] == 1
+    assert decision["information_audit"]["candidate_response_accessed"] is False
 
 
 def test_historical_workspace_cannot_be_reused(tmp_path):

@@ -99,6 +99,15 @@ def run_frozen_system_comparison(root, candidates, initial_data, pool,
         "policy_wall_time_seconds": policy_wall_time_seconds,
         "evaluation_identity": None if evaluation_data is None else evaluation_data.fingerprint,
         "policies": ["class_eig", "random"], "heldout_opened": False,
+        "hypothesis_audit": {
+            "candidate_binding_count": len(model.candidate_bindings),
+            "distinct_structural_support_count": len(model.bank.structures),
+            "distinct_source_count": len({row[0] for row in model.candidate_bindings}),
+            "operational_class_count": len(target.partition.class_ids),
+            "initial_class_entropy_nats": float(target.partition.entropy),
+            "initial_effective_class_count": float(np.exp(target.partition.entropy)),
+            "candidate_response_accessed": False,
+        },
         "formal_experiment_authorized": False}
     root.mkdir(parents=True, exist_ok=True)
     _publish(root / "COMPARISON_CONTRACT.json", contract)

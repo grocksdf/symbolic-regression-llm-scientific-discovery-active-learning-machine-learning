@@ -8,7 +8,7 @@ import json
 import math
 
 import numpy as np
-from scipy.integrate import quad
+from scipy.integrate import quad, quad_vec
 from scipy.special import betaln, digamma, logsumexp, ndtri
 from scipy.special import roots_jacobi
 from scipy.stats import t as student_t
@@ -419,6 +419,65 @@ def exact_class_eig(
         scores.append(score)
         errors.append(error)
     return ExactEIGResult(np.asarray(scores), np.asarray(errors))
+
+
+def exact_class_eig_shared_actions(
+    components: PredictiveComponents,
+    *,
+    epsabs: float = 1e-10,
+    epsrel: float = 1e-9,
+) -> ExactEIGResult:
+    """Integrate every action on one shared adaptive mesh per class.
+
+    This is algebraically the same finite-mixture class EIG integral as
+    :func:`exact_class_eig`.  ``quad_vec`` refines a vector-valued integrand,
+    so density evaluations and interval subdivision are shared across actions.
+    Its max-norm error bound applies to every returned coordinate and is
+    therefore conservatively repeated for each action.  No response value is
+    accepted by this function.
+    """
+
+    if (not np.isfinite(epsabs) or not np.isfinite(epsrel)
+            or epsabs <= 0.0 or epsrel <= 0.0):
+        raise ValueError("shared exact EIG tolerances must be positive and finite")
+    probabilities = components.structure_probabilities
+    log_probabilities = np.log(probabilities)
+    locations = components.locations
+    scales = components.scales
+    degrees = components.degrees_freedom
+    action_count = locations.shape[1]
+    total = np.zeros(action_count, dtype=float)
+    total_error = 0.0
+    for class_probability, members in zip(
+        components.partition.class_probabilities,
+        components.partition.member_indices,
+        strict=True,
+    ):
+        indices = np.asarray(members, dtype=int)
+        conditional_logs = log_probabilities[indices] - math.log(class_probability)
+
+        def integrand(value: float) -> np.ndarray:
+            log_density = student_t.logpdf(
+                value,
+                df=degrees[:, None],
+                loc=locations,
+                scale=scales,
+            )
+            log_total = logsumexp(log_probabilities[:, None] + log_density, axis=0)
+            log_class = logsumexp(
+                conditional_logs[:, None] + log_density[indices], axis=0
+            )
+            return np.exp(log_class) * (log_class - log_total)
+
+        integral, error = quad_vec(
+            integrand, -np.inf, np.inf, epsabs=epsabs, epsrel=epsrel,
+            norm="max", limit=250,
+        )
+        total += class_probability * np.asarray(integral, dtype=float)
+        total_error += class_probability * float(error)
+    scores = np.maximum(0.0, total)
+    errors = np.full(action_count, total_error, dtype=float)
+    return ExactEIGResult(scores, errors)
 
 
 def _validated_quantization_levels(
@@ -1327,6 +1386,7 @@ __all__ = [
     "class_partition",
     "estimate_class_eig",
     "exact_class_eig",
+    "exact_class_eig_shared_actions",
     "fixed_partition_probabilities",
     "inflate_predictive_components",
     "posterior_predictive_mean",

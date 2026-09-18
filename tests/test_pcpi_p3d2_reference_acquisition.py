@@ -18,6 +18,7 @@ from hypothesis_mvp.pcpi import (
     analytic_class_eig_bounds,
     class_partition,
     exact_class_eig,
+    exact_class_eig_shared_actions,
     score_reference_dominance_actions,
     stable_reference_policy_seed,
 )
@@ -63,6 +64,23 @@ def test_analytic_class_eig_bounds_contain_independent_exact_quadrature() -> Non
     assert np.all(exact.scores - exact.quadrature_errors <= bounds.upper_bounds)
     assert np.all(bounds.lower_bounds >= 0.0)
     assert np.all(bounds.upper_bounds <= components.partition.entropy)
+
+
+def test_shared_action_exact_eig_matches_independent_scalar_reference(monkeypatch) -> None:
+    import hypothesis_mvp.pcpi.acquisition as acquisition
+    components = _continuous_fixture()
+    scalar = exact_class_eig(components, epsabs=1e-11, epsrel=1e-10)
+    calls = []
+    original = acquisition.quad_vec
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(acquisition, "quad_vec", counted)
+    shared = exact_class_eig_shared_actions(components, epsabs=1e-11, epsrel=1e-10)
+    assert np.all(np.abs(shared.scores - scalar.scores)
+                  <= shared.quadrature_errors + scalar.quadrature_errors)
+    assert len(calls) == len(components.partition.class_ids)
+    assert np.all(shared.quadrature_errors >= 0.0)
 
 
 def test_analytic_bounds_are_positive_affine_response_invariant() -> None:

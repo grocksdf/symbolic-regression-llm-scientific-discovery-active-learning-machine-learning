@@ -331,7 +331,8 @@ class ScientificDiscoveryRuntime:
         ordered = [final, *(row for row in ordered if row is not final)]
         return [{
             "rank": index, "expression": row.dag.expression,
-            "origin": row.origin, "lineage_id": row.lineage_id,
+            "source": row.source, "origin": row.origin,
+            "lineage_id": row.lineage_id,
             "metrics": row.metrics.as_dict(),
         } for index, row in enumerate(ordered[:self.config.final_topk], 1)]
 

@@ -16,15 +16,18 @@ from hypothesis_mvp.discovery.pcpi_adapter import FrozenDiscoveryModel, FrozenDi
 from hypothesis_mvp.data.oracle import PoolOracle
 from .acquisition import (
     predictive_components_for_partition, estimate_class_eig_until_ranked,
-    exact_class_eig,
+    analytic_class_eig_bounds, exact_class_eig_shared_actions,
+    PredictiveComponents,
 )
 from .p3j_run_identity import _publish_no_overwrite
 
 
 FAST_EIG_METHOD = "adaptive-gauss-jacobi-fine-coarse-interval-ranking"
-EXACT_EIG_METHOD = "adaptive-scipy-quad-exact-finite-mixture-interval-ranking"
 MINIMAX_REGRET_EIG_METHOD = (
-    "adaptive-scipy-quad-exact-finite-mixture-interval-minimax-regret"
+    "shared-action-adaptive-scipy-quad-exact-finite-mixture-interval-minimax-regret"
+)
+EXACT_EIG_METHOD = (
+    "shared-action-adaptive-scipy-quad-exact-finite-mixture-interval-ranking"
 )
 
 
@@ -141,6 +144,14 @@ class DiscoveryTransaction:
               or not np.isfinite(payload.get("utility_regret_upper_bound", np.nan))
               or payload["utility_regret_upper_bound"] < 0.0):
             raise ValueError("invalid class-EIG discovery decision certificate")
+        if self.query_policy == "class_eig":
+            audit = payload.get("information_audit")
+            if (not isinstance(audit, dict)
+                    or audit.get("schema") != "discovery-class-eig-identifiability-v1"
+                    or audit.get("candidate_response_accessed") is not False
+                    or audit.get("candidate_count") != len(payload["errors"])
+                    or audit.get("strict_prefix_response_count") != payload["query"] - 1):
+                raise ValueError("invalid response-free class-EIG audit")
         return payload
 
     def plan(self, candidate_ids: np.ndarray, actions: np.ndarray) -> dict:
@@ -171,9 +182,10 @@ class DiscoveryTransaction:
             integration_method = "query-indexed-uniform-random"
             selection_certificate = "registered-uniform-random"
             utility_regret_upper_bound = None
+            information_audit = None
         else:
             (leader, score, errors, integration_method, selection_certificate,
-             utility_regret_upper_bound) = self._rank(values, ids)
+             utility_regret_upper_bound, information_audit) = self._rank(values, ids)
             certified = True
         decision = {"identity": self.identity, "prefix": self.prefix_hash, "query": index,
                     "candidates": candidates_hash, "candidate_id": int(ids[leader]),
@@ -182,6 +194,7 @@ class DiscoveryTransaction:
                     "integration_method": integration_method,
                     "selection_certificate": selection_certificate,
                     "utility_regret_upper_bound": utility_regret_upper_bound,
+                    "information_audit": information_audit,
                     "selection_valid": True, "query_policy": self.query_policy}
         decision["hash"] = _hash(decision)
         _publish(path, decision)
@@ -190,38 +203,97 @@ class DiscoveryTransaction:
     def _rank(self, values, ids):
         components = predictive_components_for_partition(self.engine, self.posterior,
                                                          self.target.partition, values)
+        analytic = analytic_class_eig_bounds(components)
+        analytic_lower = np.asarray(analytic.lower_bounds, dtype=float)
+        analytic_upper = np.asarray(analytic.upper_bounds, dtype=float)
+        outward = float(analytic.numerical_outward_tolerance)
+        eligible = analytic_upper + outward >= float(np.max(analytic_lower))
+        if not np.any(eligible):
+            raise DiscoverySelectionError("empty-analytic-class-eig-frontier")
+        active = np.flatnonzero(eligible)
         c = self.controls
         ranked = estimate_class_eig_until_ranked(components, c.minimum_samples, c.maximum_samples,
-            error_safety_factor=c.error_safety_factor, growth_factor=c.growth_factor)
+            error_safety_factor=c.error_safety_factor, growth_factor=c.growth_factor,
+            eligible_mask=eligible)
         if ranked.ranking_certified:
             scores = ranked.estimate.scores
-            leader = min(range(len(ids)), key=lambda i: (-float(scores[i]), int(ids[i])))
+            leader = min(active, key=lambda i: (-float(scores[i]), int(ids[i])))
+            audit = self._information_audit(
+                analytic_lower, analytic_upper, active, leader,
+                exact_shared_actions=False,
+            )
             return (leader, float(scores[leader]),
                     ranked.estimate.error_bounds.tolist(), FAST_EIG_METHOD,
-                    "strict-interval-maximizer", 0.0)
-        exact = exact_class_eig(components)
-        scores = np.asarray(exact.scores, dtype=float)
-        errors = np.asarray(exact.quadrature_errors, dtype=float)
-        if (scores.shape != (len(ids),) or errors.shape != scores.shape
-                or not np.all(np.isfinite(scores)) or not np.all(np.isfinite(errors))
-                or np.any(errors < 0.0)):
+                    "strict-interval-maximizer", 0.0, audit)
+        subset = PredictiveComponents(
+            components.structure_probabilities,
+            components.degrees_freedom,
+            components.locations[:, active],
+            components.scales[:, active],
+            components.partition,
+        )
+        exact = exact_class_eig_shared_actions(subset)
+        active_scores = np.asarray(exact.scores, dtype=float)
+        active_errors = np.asarray(exact.quadrature_errors, dtype=float)
+        if (active_scores.shape != (len(active),)
+                or active_errors.shape != active_scores.shape
+                or not np.all(np.isfinite(active_scores))
+                or not np.all(np.isfinite(active_errors))
+                or np.any(active_errors < 0.0)):
             raise DiscoverySelectionError("invalid-exact-class-eig-certificate")
-        lower = np.maximum(0.0, scores - errors)
-        upper = scores + errors
+        exact_lower = np.maximum(0.0, active_scores - active_errors)
+        exact_upper = active_scores + active_errors
+        lower = analytic_lower.copy()
+        upper = analytic_upper.copy()
+        lower[active] = np.maximum(lower[active], exact_lower)
+        upper[active] = np.minimum(upper[active], exact_upper)
+        if np.any(lower > upper + outward):
+            raise DiscoverySelectionError("inconsistent-analytic-exact-class-eig-intervals")
+        lower = np.minimum(lower, upper)
         # Maximising the lower endpoint is exactly the minimax-regret action
-        # for independently certified utility intervals: max_j U_j - L_i.
+        # for the certified utility intervals: max_j U_j - L_i.
         # Candidate ID is only a deterministic tie-break over equal bounds.
-        leader = min(range(len(ids)), key=lambda i: (-float(lower[i]), int(ids[i])))
+        leader = min(active, key=lambda i: (-float(lower[i]), int(ids[i])))
         competitors = [i for i in range(len(ids)) if i != leader]
         strictly_best = (not competitors or float(lower[leader])
                          > max(float(upper[i]) for i in competitors))
+        errors = [None] * len(ids)
+        for position, index in enumerate(active):
+            errors[int(index)] = float(active_errors[position])
+        score = float(active_scores[int(np.flatnonzero(active == leader)[0])])
+        audit = self._information_audit(
+            analytic_lower, analytic_upper, active, leader,
+            exact_shared_actions=True,
+        )
         if strictly_best:
-            return (leader, float(scores[leader]), errors.tolist(), EXACT_EIG_METHOD,
-                    "strict-interval-maximizer", 0.0)
+            return (leader, score, errors, EXACT_EIG_METHOD,
+                    "strict-interval-maximizer", 0.0, audit)
         regret_bound = max(0.0, float(np.max(upper) - lower[leader]))
-        return (leader, float(scores[leader]), errors.tolist(),
+        return (leader, score, errors,
                 MINIMAX_REGRET_EIG_METHOD, "exact-interval-minimax-regret",
-                regret_bound)
+                regret_bound, audit)
+
+    def _information_audit(self, lower, upper, active, leader, *, exact_shared_actions):
+        entropy = float(self.target.partition.entropy)
+        maximum_upper = float(np.max(upper))
+        return {
+            "schema": "discovery-class-eig-identifiability-v1",
+            "candidate_response_accessed": False,
+            "strict_prefix_response_count": len(self.receipts),
+            "class_count": len(self.target.partition.class_ids),
+            "class_entropy_nats": entropy,
+            "posterior_effective_class_count": float(np.exp(entropy)),
+            "candidate_count": int(len(lower)),
+            "analytic_frontier_count": int(len(active)),
+            "analytically_dominated_count": int(len(lower) - len(active)),
+            "maximum_information_upper_bound_nats": maximum_upper,
+            "capacity_fraction_upper_bound": (
+                0.0 if entropy == 0.0 else min(1.0, maximum_upper / entropy)
+            ),
+            "selected_analytic_lower_bound_nats": float(lower[leader]),
+            "selected_analytic_upper_bound_nats": float(upper[leader]),
+            "shared_action_exact_integration": bool(exact_shared_actions),
+        }
 
     def _receipt(self, decision: dict, candidate_id: int, action, response: float) -> dict:
         if (isinstance(candidate_id, bool) or candidate_id in {r["candidate_id"] for r in self.receipts}

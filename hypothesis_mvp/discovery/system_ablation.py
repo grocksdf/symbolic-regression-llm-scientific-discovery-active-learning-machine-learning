@@ -60,11 +60,26 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
         raise ExplorationProtocolError("llm-enabled-exploration-had-zero-provider-attempts")
     # All retained top-k proposals are passed, including LLM descendants.
     # No outcome-conditioned filtering for adapter compatibility is permitted.
-    candidates = [{"expression": row["expression"], "source": str(row.get("source", "runtime-retained"))}
-                  for row in report.get("final_topk", [])]
+    topk = report.get("final_topk", [])
+    if any(not str(row.get("source", "")).strip() for row in topk):
+        raise ExplorationProtocolError("retained-hypothesis-missing-source-provenance")
+    candidates = [{"expression": row["expression"], "source": str(row["source"]),
+                   "origin": str(row.get("origin", "unknown")),
+                   "lineage_id": str(row.get("lineage_id", ""))}
+                  for row in topk]
+    provenance = {
+        "schema": "scientific-hypothesis-provenance-audit-v1",
+        "candidate_count": len(candidates),
+        "distinct_sources": sorted({row["source"] for row in candidates}),
+        "origin_counts": {origin: sum(row["origin"] == origin for row in candidates)
+                          for origin in sorted({row["origin"] for row in candidates})},
+        "all_candidates_source_bound": bool(candidates),
+        "heldout_accessed": False,
+    }
     return {"best_val_nmse": report["best_val_nmse"], "usage": usage,
         "provider_calls": sum(c.provider_calls for c in result.cycles),
         "candidates": candidates,
+        "hypothesis_provenance": provenance,
         "evidence_registry_path": str(workspace / "evidence_registry.jsonl")}
 
 
@@ -134,6 +149,7 @@ def run_exploration_ablations(root, selection, *, dataset, config,
                 "provider_calls": summary["provider_calls"], **usage,
                 "resource_enforcement": enforcement,
                 "candidates": summary["candidates"],
+                "hypothesis_provenance": summary["hypothesis_provenance"],
                 "evidence_registry_path": summary["evidence_registry_path"]}
             if variant == "no_llm" and (row["provider_calls"] or usage["provider_attempts_used"]):
                 raise ValueError("provider-free ablation attempted provider calls")
