@@ -222,8 +222,15 @@ class ScientificDiscoveryRuntime:
     def _evaluate_batch(
         self, batch: ProposalBatch, current: EquationState,
         arrays: tuple[np.ndarray, ...], island: str, round_id: int,
-    ) -> tuple[EquationState | None, list[dict[str, Any]]]:
+    ) -> tuple[EquationState | None, list[EquationState], list[dict[str, Any]]]:
         candidates: list[tuple[float, EquationState]] = []
+        # Keep structurally valid LLM hypotheses even when the conservative
+        # transition gate rejects them as the next incumbent.  A hypothesis
+        # being scientifically testable is a different claim from already
+        # dominating the current development incumbent.  The former must be
+        # visible to the downstream hypothesis bank; the latter remains the
+        # sole criterion for replacing the incumbent.
+        exploratory: list[EquationState] = []
         audit: list[dict[str, Any]] = []
         for proposal in batch.candidates:
             if self.evaluation.budget.exhausted:
@@ -244,25 +251,28 @@ class ScientificDiscoveryRuntime:
                 "validated": candidate is not None, "accepted": bool(passed),
                 "score": score, "gate": json_safe(gate),
             })
+            if candidate is not None:
+                exploratory.append(candidate)
             if passed and candidate is not None:
                 candidates.append((score, candidate))
         winner = min(candidates, key=lambda row: row[0])[1] if candidates else None
-        return winner, audit
+        return winner, exploratory, audit
 
     def _llm_round(
         self, islands: Mapping[str, EquationState], round_id: int,
         arrays: tuple[np.ndarray, ...],
         refinements: list[dict[str, Any]],
-    ) -> tuple[dict[str, EquationState], list[EquationState], dict[str, Any]]:
+    ) -> tuple[dict[str, EquationState], list[EquationState], list[EquationState], dict[str, Any]]:
         batches, explorations = self._request_batches(
             islands, round_id, arrays, refinements
         )
-        next_islands, accepted, records = dict(islands), [], []
+        next_islands, accepted, exploratory, records = dict(islands), [], [], []
         for island, current in islands.items():
             batch = batches[island]
-            winner, audit = self._evaluate_batch(
+            winner, proposals, audit = self._evaluate_batch(
                 batch, current, arrays, island, round_id
             )
+            exploratory.extend(proposals)
             if winner is not None:
                 next_islands[island] = winner
                 accepted.append(winner)
@@ -277,7 +287,7 @@ class ScientificDiscoveryRuntime:
                 "candidate_audit": audit,
                 "exploration": explorations[island].as_audit_dict(),
             })
-        return next_islands, accepted, {
+        return next_islands, accepted, exploratory, {
             "round_id": round_id, "accepted_transition_count": len(accepted),
             "islands": records,
         }
@@ -290,15 +300,19 @@ class ScientificDiscoveryRuntime:
             for name in self.config.islands
         }
         accepted: list[EquationState] = []
+        llm_states: list[EquationState] = []
         records: list[dict[str, Any]] = []
         refinements: list[dict[str, Any]] = []
         for round_id in range(1, self.config.max_rounds + 1):
             if self.evaluation.budget.exhausted:
                 break
-            islands, additions, record = self._llm_round(
+            islands, additions, explored, record = self._llm_round(
                 islands, round_id, arrays, refinements,
             )
             accepted.extend(additions)
+            # Preserve every structurally valid LLM proposal for scientific
+            # comparison, even if it did not pass incumbent replacement.
+            llm_states.extend(explored)
             records.append(record)
             state = self._transition(
                 state, DiscoveryPhase.LLM_EXPLORE, "llm_round_completed",
@@ -307,7 +321,7 @@ class ScientificDiscoveryRuntime:
             )
             if not additions:
                 break
-        return state, accepted, records
+        return state, llm_states, records
 
     def _select_final(
         self, deterministic: EquationState, candidates: Sequence[EquationState]
@@ -334,6 +348,16 @@ class ScientificDiscoveryRuntime:
             unique.values(), key=lambda row: self.evaluation.policy.score(row)
         )
         ordered = [final, *(row for row in ordered if row is not final)]
+        # The top-k bank is a comparison bank, not only an incumbent leaderboard.
+        # Reserve one slot for a validated LLM hypothesis whenever one exists;
+        # otherwise score-based truncation silently collapses the multi-engine
+        # system back to deterministic-only proposals.
+        limit = self.config.final_topk
+        if any(row.is_llm for row in ordered) and not any(
+            row.is_llm for row in ordered[:limit]
+        ) and limit > 1:
+            llm = next(row for row in ordered if row.is_llm)
+            ordered = [*ordered[: limit - 1], llm, *ordered[limit - 1 :]]
         return [{
             "rank": index, "expression": row.dag.expression,
             "source": row.source, "origin": row.origin,
