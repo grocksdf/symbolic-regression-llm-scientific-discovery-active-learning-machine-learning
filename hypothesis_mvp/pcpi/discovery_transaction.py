@@ -23,6 +23,9 @@ from .p3j_run_identity import _publish_no_overwrite
 
 FAST_EIG_METHOD = "adaptive-gauss-jacobi-fine-coarse-interval-ranking"
 EXACT_EIG_METHOD = "adaptive-scipy-quad-exact-finite-mixture-interval-ranking"
+MINIMAX_REGRET_EIG_METHOD = (
+    "adaptive-scipy-quad-exact-finite-mixture-interval-minimax-regret"
+)
 
 
 def _hash(payload: dict) -> str:
@@ -50,6 +53,14 @@ class DiscoveryScoringControls:
             or not np.isfinite(self.error_safety_factor) or self.error_safety_factor < 1
             or type(self.growth_factor) is not int or self.growth_factor < 2):
             raise ValueError("invalid discovery scoring controls")
+
+
+class DiscoverySelectionError(RuntimeError):
+    """Response-free selection failure safe to expose across isolation."""
+
+    def __init__(self, diagnostic: str) -> None:
+        super().__init__(diagnostic)
+        self.public_diagnostic = diagnostic
 
 
 class DiscoveryTransaction:
@@ -82,7 +93,12 @@ class DiscoveryTransaction:
                     "controls": vars(controls), "source": source_identity,
                     "query_policy": query_policy, "random_seed": random_seed,
                     "likelihood": "homoscedastic-gaussian-nig", "coordinates": "raw",
-                    "class_eig_ranking_methods": [FAST_EIG_METHOD, EXACT_EIG_METHOD]}
+                    "class_eig_ranking_methods": [
+                        FAST_EIG_METHOD, EXACT_EIG_METHOD, MINIMAX_REGRET_EIG_METHOD
+                    ],
+                    "class_eig_decision_rule": (
+                        "strict-interval-maximizer-else-exact-interval-minimax-regret"
+                    )}
         _publish(self.root / "IDENTITY.json", identity)
         self.identity = _hash(identity)
         self.posterior = target.initial_posterior
@@ -112,9 +128,19 @@ class DiscoveryTransaction:
             or payload["selection_valid"] is not True
             or payload["query_policy"] != self.query_policy
             or payload.get("integration_method") not in {
-                "query-indexed-uniform-random", FAST_EIG_METHOD, EXACT_EIG_METHOD}
+                "query-indexed-uniform-random", FAST_EIG_METHOD, EXACT_EIG_METHOD,
+                MINIMAX_REGRET_EIG_METHOD}
             or payload["certified"] is not (self.query_policy == "class_eig")):
             raise ValueError("invalid durable discovery decision")
+        if self.query_policy == "random":
+            if (payload.get("selection_certificate") != "registered-uniform-random"
+                    or payload.get("utility_regret_upper_bound") is not None):
+                raise ValueError("invalid random discovery decision certificate")
+        elif (payload.get("selection_certificate") not in {
+                "strict-interval-maximizer", "exact-interval-minimax-regret"}
+              or not np.isfinite(payload.get("utility_regret_upper_bound", np.nan))
+              or payload["utility_regret_upper_bound"] < 0.0):
+            raise ValueError("invalid class-EIG discovery decision certificate")
         return payload
 
     def plan(self, candidate_ids: np.ndarray, actions: np.ndarray) -> dict:
@@ -143,14 +169,19 @@ class DiscoveryTransaction:
             leader = int(rng.integers(len(ids)))
             score, errors, certified = None, [], False
             integration_method = "query-indexed-uniform-random"
+            selection_certificate = "registered-uniform-random"
+            utility_regret_upper_bound = None
         else:
-            leader, score, errors, integration_method = self._rank(values, ids)
+            (leader, score, errors, integration_method, selection_certificate,
+             utility_regret_upper_bound) = self._rank(values, ids)
             certified = True
         decision = {"identity": self.identity, "prefix": self.prefix_hash, "query": index,
                     "candidates": candidates_hash, "candidate_id": int(ids[leader]),
                     "action": values[leader].tolist(), "score": score,
                     "errors": errors, "certified": certified,
                     "integration_method": integration_method,
+                    "selection_certificate": selection_certificate,
+                    "utility_regret_upper_bound": utility_regret_upper_bound,
                     "selection_valid": True, "query_policy": self.query_policy}
         decision["hash"] = _hash(decision)
         _publish(path, decision)
@@ -166,22 +197,31 @@ class DiscoveryTransaction:
             scores = ranked.estimate.scores
             leader = min(range(len(ids)), key=lambda i: (-float(scores[i]), int(ids[i])))
             return (leader, float(scores[leader]),
-                    ranked.estimate.error_bounds.tolist(), FAST_EIG_METHOD)
+                    ranked.estimate.error_bounds.tolist(), FAST_EIG_METHOD,
+                    "strict-interval-maximizer", 0.0)
         exact = exact_class_eig(components)
         scores = np.asarray(exact.scores, dtype=float)
         errors = np.asarray(exact.quadrature_errors, dtype=float)
         if (scores.shape != (len(ids),) or errors.shape != scores.shape
                 or not np.all(np.isfinite(scores)) or not np.all(np.isfinite(errors))
                 or np.any(errors < 0.0)):
-            raise RuntimeError("invalid exact class EIG certificate")
-        leader = min(range(len(ids)), key=lambda i: (-float(scores[i]), int(ids[i])))
+            raise DiscoverySelectionError("invalid-exact-class-eig-certificate")
+        lower = np.maximum(0.0, scores - errors)
+        upper = scores + errors
+        # Maximising the lower endpoint is exactly the minimax-regret action
+        # for independently certified utility intervals: max_j U_j - L_i.
+        # Candidate ID is only a deterministic tie-break over equal bounds.
+        leader = min(range(len(ids)), key=lambda i: (-float(lower[i]), int(ids[i])))
         competitors = [i for i in range(len(ids)) if i != leader]
-        certified = (not competitors or
-            float(scores[leader] - errors[leader])
-            > max(float(scores[i] + errors[i]) for i in competitors))
-        if not certified:
-            raise RuntimeError("uncertified exact class EIG; no response authorized")
-        return leader, float(scores[leader]), errors.tolist(), EXACT_EIG_METHOD
+        strictly_best = (not competitors or float(lower[leader])
+                         > max(float(upper[i]) for i in competitors))
+        if strictly_best:
+            return (leader, float(scores[leader]), errors.tolist(), EXACT_EIG_METHOD,
+                    "strict-interval-maximizer", 0.0)
+        regret_bound = max(0.0, float(np.max(upper) - lower[leader]))
+        return (leader, float(scores[leader]), errors.tolist(),
+                MINIMAX_REGRET_EIG_METHOD, "exact-interval-minimax-regret",
+                regret_bound)
 
     def _receipt(self, decision: dict, candidate_id: int, action, response: float) -> dict:
         if (isinstance(candidate_id, bool) or candidate_id in {r["candidate_id"] for r in self.receipts}

@@ -62,7 +62,7 @@ def test_tampered_receipt_and_cross_source_are_rejected(tmp_path):
     with pytest.raises(ValueError): _session(tmp_path)
 
 
-def test_uncertified_ranking_does_not_publish_selection(monkeypatch, tmp_path):
+def test_overlapping_exact_intervals_publish_minimax_regret_certificate(monkeypatch, tmp_path):
     from types import SimpleNamespace
     monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.estimate_class_eig_until_ranked",
                         lambda *args, **kwargs: SimpleNamespace(ranking_certified=False))
@@ -70,9 +70,12 @@ def test_uncertified_ranking_does_not_publish_selection(monkeypatch, tmp_path):
         lambda components: SimpleNamespace(scores=np.array([.5, .5]),
             quadrature_errors=np.array([1e-4, 1e-4])))
     session = _session(tmp_path)
-    with pytest.raises(RuntimeError, match="uncertified"):
-        session.plan(np.array([10, 11]), np.array([[3.], [4.]]))
-    assert not (tmp_path / "DECISION-001.json").exists()
+    decision = session.plan(np.array([10, 11]), np.array([[3.], [4.]]))
+    assert decision["candidate_id"] == 10
+    assert decision["selection_certificate"] == "exact-interval-minimax-regret"
+    assert decision["integration_method"].endswith("interval-minimax-regret")
+    assert decision["utility_regret_upper_bound"] == pytest.approx(2e-4)
+    assert (tmp_path / "DECISION-001.json").is_file()
 
 
 def test_uncertified_fast_rule_uses_independent_exact_interval_certificate(monkeypatch, tmp_path):
@@ -87,6 +90,34 @@ def test_uncertified_fast_rule_uses_independent_exact_interval_certificate(monke
     assert decision["integration_method"] == (
         "adaptive-scipy-quad-exact-finite-mixture-interval-ranking")
     assert decision["certified"] is True
+    assert decision["selection_certificate"] == "strict-interval-maximizer"
+    assert decision["utility_regret_upper_bound"] == 0.0
+
+
+def test_minimax_regret_uses_lower_bound_not_point_estimate(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.estimate_class_eig_until_ranked",
+                        lambda *args, **kwargs: SimpleNamespace(ranking_certified=False))
+    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.exact_class_eig",
+        lambda components: SimpleNamespace(scores=np.array([.55, .50]),
+            quadrature_errors=np.array([.20, .01])))
+    decision = _session(tmp_path).plan(np.array([10, 11]), np.array([[3.], [4.]]))
+    assert decision["candidate_id"] == 11
+    assert decision["utility_regret_upper_bound"] == pytest.approx(.26)
+
+
+def test_invalid_exact_certificate_is_public_and_response_free(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.estimate_class_eig_until_ranked",
+                        lambda *args, **kwargs: SimpleNamespace(ranking_certified=False))
+    monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.exact_class_eig",
+        lambda components: SimpleNamespace(scores=np.array([np.nan, .5]),
+            quadrature_errors=np.array([1e-4, 1e-4])))
+    session = _session(tmp_path)
+    with pytest.raises(RuntimeError, match="invalid-exact") as caught:
+        session.plan(np.array([10, 11]), np.array([[3.], [4.]]))
+    assert caught.value.public_diagnostic == "invalid-exact-class-eig-certificate"
+    assert not (tmp_path / "DECISION-001.json").exists()
 
 
 def test_historical_workspace_cannot_be_reused(tmp_path):
