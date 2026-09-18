@@ -17,6 +17,7 @@ from .system_run import analyze_system_contract
 from .resource_limits import run_bounded
 from hypothesis_mvp.pcpi.discovery_transaction import _publish
 from .pcpi_adapter import structural_terms
+from .initializer import generic_deterministic_candidates
 
 
 class ExplorationProtocolError(ValueError):
@@ -192,29 +193,35 @@ def run_exploration_ablations(root, selection, *, dataset, config,
                 "error_type": type(error).__name__, "message": str(error),
                 "heldout_opened": False, "efficacy_demonstrated": False})
             raise
-    # The full system is an extension of the deterministic multi-engine bank,
-    # not a replacement for it.  If the LLM phase rejects all of its edits or
-    # consumes the top-k slots, restore missing deterministic supports from the
-    # matched no-LLM ablation.  This is response-free composition: both banks
-    # were built from the same development split and no pool label is used.
-    full = next(row for row in rows if row["variant"] == "full")
-    no_llm = next(row for row in rows if row["variant"] == "no_llm")
-    supports = {tuple(structural_terms(row["expression"], selection.development.X.shape[1]))
-                for row in full["candidates"]}
-    for candidate in no_llm["candidates"]:
-        support = tuple(structural_terms(candidate["expression"], selection.development.X.shape[1]))
-        if support not in supports:
-            full["candidates"].append({**candidate,
-                "source": f"matched_no_llm::{candidate['source']}",
-                "origin": "deterministic"})
-            supports.add(support)
-    provenance = full["hypothesis_provenance"]
-    provenance["candidate_count"] = len(full["candidates"])
-    provenance["distinct_sources"] = sorted({row["source"] for row in full["candidates"]})
-    provenance["engine_sources"] = sorted({row["source"] for row in full["candidates"]
-                                            if row["source"].startswith("engine:")})
-    provenance["origin_counts"] = {origin: sum(row["origin"] == origin for row in full["candidates"])
-                                    for origin in sorted({row["origin"] for row in full["candidates"]})}
+    # Every ablation inherits the same task-independent generic anchor bank.
+    # Provider/evaluation budgeting may otherwise evict deterministic seeds
+    # from an LLM-enabled top-k and leave a one-support bank.  Restoring these
+    # development-only anchors is response-free and keeps ablations comparable.
+    anchors = generic_deterministic_candidates(
+        selection.development.X, selection.development.y)
+    feature_count = selection.development.X.shape[1]
+    for row in rows:
+        supports = {tuple(structural_terms(item["expression"], feature_count))
+                    for item in row["candidates"]}
+        for anchor in anchors:
+            try:
+                support = tuple(structural_terms(anchor["expression"], feature_count))
+            except Exception:
+                continue
+            if support not in supports:
+                row["candidates"].append({**anchor, "origin": "deterministic"})
+                supports.add(support)
+        if len(supports) < 2:
+            raise ExplorationProtocolError(
+                f"{row['variant']}-retained-fewer-than-two-pcpi-supports")
+        provenance = row["hypothesis_provenance"]
+        provenance["candidate_count"] = len(row["candidates"])
+        provenance["distinct_sources"] = sorted({item["source"] for item in row["candidates"]})
+        provenance["engine_sources"] = sorted({item["source"] for item in row["candidates"]
+                                                if item["source"].startswith("engine:")})
+        provenance["origin_counts"] = {
+            origin: sum(item["origin"] == origin for item in row["candidates"])
+            for origin in sorted({item["origin"] for item in row["candidates"]})}
     analysis = analyze_system_contract(rows)
     _publish(root / "ANALYSIS.json", analysis)
     return analysis

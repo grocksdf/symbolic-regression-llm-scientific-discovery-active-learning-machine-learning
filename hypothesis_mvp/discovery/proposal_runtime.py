@@ -413,7 +413,11 @@ class ProposalRuntime:
                     "that changes predictions over the registered feature domain. When returning "
                     "multiple candidates, cover distinct mechanism families (interaction, nonlinear "
                     "transform, scale/ratio, and regime-sensitive form) instead of repeating one "
-                    "family with different coefficients."
+                    "family with different coefficients. For downstream PCPI compatibility, each "
+                    "equation must be a sum of constants, x variables, monomials of total degree at "
+                    "most four, or sin(xi), cos(xi), tanh(xi). Do not use division, log, Abs, sign, "
+                    "piecewise forms, transforms of compound expressions, or powers of a whole "
+                    "parent equation."
                 ),
             },
         }
@@ -520,6 +524,8 @@ class ProposalRuntime:
             "candidate must introduce a falsifiable mechanism-level structural change rather "
             "than only refitting coefficients of the parent equation. Across the candidate batch, "
             "cover distinct mechanism families where the registered closed basis permits them."
+            " The closed basis permits constants, x variables, degree-at-most-four monomials, "
+            "and sin(xi), cos(xi), tanh(xi) only; never use division or compound transforms."
         )
 
     def _request_validated(
