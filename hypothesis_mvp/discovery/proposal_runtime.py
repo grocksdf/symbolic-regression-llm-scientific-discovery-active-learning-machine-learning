@@ -410,7 +410,10 @@ class ProposalRuntime:
                     "At least one candidate must be a mechanism-level structural alternative, "
                     "not merely a coefficient refit or tiny additive correction to the parent. "
                     "Prefer a falsifiable interaction, ratio, monotone transform, or regime term "
-                    "that changes predictions over the registered feature domain."
+                    "that changes predictions over the registered feature domain. When returning "
+                    "multiple candidates, cover distinct mechanism families (interaction, nonlinear "
+                    "transform, scale/ratio, and regime-sensitive form) instead of repeating one "
+                    "family with different coefficients."
                 ),
             },
         }
@@ -515,7 +518,8 @@ class ProposalRuntime:
             f"use only {allowed}; never use '=', y, y_hat, or prose. Diagnostic y_hat is not an allowed "
             "variable: express every final candidate completely in x variables. At least one "
             "candidate must introduce a falsifiable mechanism-level structural change rather "
-            "than only refitting coefficients of the parent equation."
+            "than only refitting coefficients of the parent equation. Across the candidate batch, "
+            "cover distinct mechanism families where the registered closed basis permits them."
         )
 
     def _request_validated(
