@@ -64,6 +64,13 @@ def _term(power: tuple[int, ...]) -> str:
     raise DiscoveryAdapterError("monomial-outside-registered-degree-four-library")
 
 
+def _scalar_amplitude(node: ast.AST) -> bool:
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        return _scalar_amplitude(node.operand)
+    return (isinstance(node, ast.Constant) and type(node.value) in (int, float)
+            and math.isfinite(node.value) and node.value != 0)
+
+
 def _closed_term(node: ast.AST, n_features: int) -> str:
     """Map one additive term to a registered non-evaluating basis token."""
     # A fitted scalar amplitude carries no structural information and is
@@ -71,13 +78,9 @@ def _closed_term(node: ast.AST, n_features: int) -> str:
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
         return _closed_term(node.operand, n_features)
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
-        if (isinstance(node.left, ast.Constant)
-                and type(node.left.value) in (int, float)
-                and math.isfinite(node.left.value) and node.left.value != 0):
+        if _scalar_amplitude(node.left):
             return _closed_term(node.right, n_features)
-        if (isinstance(node.right, ast.Constant)
-                and type(node.right.value) in (int, float)
-                and math.isfinite(node.right.value) and node.right.value != 0):
+        if _scalar_amplitude(node.right):
             return _closed_term(node.left, n_features)
     if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
             and node.func.id in {"sin", "cos", "tanh"}

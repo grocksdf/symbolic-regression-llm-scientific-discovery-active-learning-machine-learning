@@ -59,3 +59,20 @@ with `not_evaluated_budget_exhausted`. Evaluated candidates require finite
 scores or fail closed. The strict publisher validates before opening staging,
 so invalid evidence creates neither a completed result nor a staging file.
 No historical failed output is changed by this reporting repair.
+
+The closed-basis refit protocol now derives the explicit symbolic generation
+contract `pcpi-closed-basis-v1` for both production engines. Legacy protocols
+remain unrestricted. MCTS applies the adapter validator during expansion,
+before accepted-generation slots and scoring, including explicit seeds.
+Unsupported candidates are rejected rather than projected. Polynomial-Lasso
+screens its polynomial feature library by absolute train-only standardized
+correlation and deterministic index ties before its single Lasso fit. Library
+admission uses the existing adapter AST and text caps with conservative signed
+scalar literals; every fitted nonzero coefficient is exported and the model's
+predictor uses exactly that same library. No post-fit formula trimming, extra
+Lasso fits, validation-based screening, or gate relaxation is permitted.
+The fixed search, engine-job, discovery, provider and wall-time ceilings remain
+unchanged. The composition gate still requires actual retained contributions;
+compatible generation does not establish diversity, efficacy or superiority.
+Signed external scalar amplitudes have the same basis token as positive ones,
+including `cos(x0)*(-2)`; changing a nonlinear argument remains unsupported.

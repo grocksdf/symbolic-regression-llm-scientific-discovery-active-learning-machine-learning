@@ -10,6 +10,7 @@ class SymbolicConfig:
     """Dataset-agnostic search limits shared by every symbolic backend."""
 
     engine: str = "mcts"
+    expression_contract: str = "unrestricted"
     niterations: int = 120
     population_size: int = 64
     loss: str = "loss(x, y) = (x - y)^2"

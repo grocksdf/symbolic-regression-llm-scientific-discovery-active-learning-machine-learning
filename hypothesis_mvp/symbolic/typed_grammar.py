@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import sympy as sp
@@ -208,6 +208,7 @@ def expand_ast(
     math_eps: float = 1e-6,
     math_max_exp: float = 20.0,
     math_max_pow_abs: int = 4,
+    candidate_validator: Optional[Callable[[str], bool]] = None,
 ) -> List[ExprNode]:
     """Generate new ASTs by applying a small set of typed rewrite rules."""
     paths = list(iter_paths(node))
@@ -235,7 +236,7 @@ def expand_ast(
                 math_eps=math_eps,
                 math_max_exp=math_max_exp,
                 math_max_pow_abs=math_max_pow_abs,
-            ):
+            ) and (candidate_validator is None or candidate_validator(cand.to_string())):
                 new_nodes.append(cand)
                 if len(new_nodes) >= max_new:
                     return _unique(new_nodes)
@@ -260,7 +261,7 @@ def expand_ast(
                     math_eps=math_eps,
                     math_max_exp=math_max_exp,
                     math_max_pow_abs=math_max_pow_abs,
-                ):
+                ) and (candidate_validator is None or candidate_validator(cand.to_string())):
                     new_nodes.append(cand)
                     if len(new_nodes) >= max_new:
                         return _unique(new_nodes)

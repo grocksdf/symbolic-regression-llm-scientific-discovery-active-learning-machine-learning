@@ -62,6 +62,9 @@ class MCTSSymbolicAgent(SymbolicRegressor):
         reward_fn: Optional[Callable[[float], float]] = None,
     ) -> None:
         config = cfg or SymbolicConfig(engine="mcts")
+        self.expression_contract = config.expression_contract
+        if self.expression_contract not in {"unrestricted", "pcpi-closed-basis-v1"}:
+            raise ValueError("unknown symbolic expression contract")
         self.max_iterations = max(
             1, int(getattr(config, "mcts_max_iterations", max_iterations))
         )
@@ -138,6 +141,7 @@ class MCTSSymbolicAgent(SymbolicRegressor):
         root = MCTSNode(root_ast.to_string(), root_ast)
         self.best_expr = ""
         self.best_score = float("inf")
+        self.contract_rejections = 0
         for _ in range(self.max_iterations):
             leaf = self._select(root)
             node = self._expand(leaf)
@@ -146,6 +150,17 @@ class MCTSSymbolicAgent(SymbolicRegressor):
         if not self.best_expr:
             self._evaluate(root, features, target)
         return self
+
+    def _contract_admits(self, expression: str) -> bool:
+        if self.expression_contract == "unrestricted":
+            return True
+        from hypothesis_mvp.discovery.pcpi_adapter import structural_terms
+        try:
+            structural_terms(expression, self._n_features)
+            return True
+        except ValueError:
+            self.contract_rejections += 1
+            return False
 
     def _select(self, root: MCTSNode) -> MCTSNode:
         node = root
@@ -175,6 +190,8 @@ class MCTSSymbolicAgent(SymbolicRegressor):
                 math_eps=self.math_eps,
                 math_max_exp=self.math_max_exp,
                 math_max_pow_abs=self.math_max_pow_abs,
+                candidate_validator=(self._contract_admits if
+                    self.expression_contract == "pcpi-closed-basis-v1" else None),
             )
         )
         if node.parent is None:
@@ -195,7 +212,8 @@ class MCTSSymbolicAgent(SymbolicRegressor):
                     math_max_exp=self.math_max_exp,
                     math_max_pow_abs=self.math_max_pow_abs,
                 ):
-                    unique[canonical.to_string()] = canonical
+                    if self._contract_admits(canonical.to_string()):
+                        unique[canonical.to_string()] = canonical
             except Exception:
                 continue
         choices = list(unique.items())
@@ -212,6 +230,8 @@ class MCTSSymbolicAgent(SymbolicRegressor):
         if np.isfinite(node.score):
             return float(self.reward_fn(node.score))
         try:
+            if not self._contract_admits(node.expression):
+                return 0.0
             expression = node.ast.to_sympy()
             if float(sp.count_ops(expression, visual=False)) > self.max_ops:
                 return 0.0
@@ -276,6 +296,8 @@ class MCTSSymbolicAgent(SymbolicRegressor):
             "ucb_c": self.ucb_c,
             "complexity_penalty": self.complexity_penalty,
             "seed_count": len(self._seed_asts),
+            "expression_contract": self.expression_contract,
+            "contract_rejections": self.contract_rejections,
         }
 
 

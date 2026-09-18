@@ -104,6 +104,8 @@ class DiscoveryAgent:
             niterations=self.config.search_iterations,
             mcts_max_iterations=self.config.search_iterations,
             mcts_random_seed=self.config.random_seed + cycle,
+            expression_contract=("pcpi-closed-basis-v1" if
+                self.config.refit_policy == "pcpi-closed-basis-amplitudes" else "unrestricted"),
         )
         return self.scheduler.run(
             engines=self.config.engines, config=symbolic,
