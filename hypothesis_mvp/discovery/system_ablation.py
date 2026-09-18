@@ -16,6 +16,7 @@ from .agent import DiscoveryAgent, DiscoveryAgentConfig
 from .system_run import analyze_system_contract
 from .resource_limits import run_bounded
 from hypothesis_mvp.pcpi.discovery_transaction import _publish
+from .pcpi_adapter import structural_terms
 
 
 class ExplorationProtocolError(ValueError):
@@ -60,14 +61,34 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
             int(report.get("llm_call_count", 0)) < 1
             or int(report.get("llm_attempt_count", 0)) < 1):
         raise ExplorationProtocolError("llm-enabled-exploration-had-zero-provider-attempts")
-    # All retained top-k proposals are passed, including LLM descendants.
-    # No outcome-conditioned filtering for adapter compatibility is permitted.
+    # Retain every candidate that is both discovery-valid and representable by
+    # the frozen PCPI closed basis.  The latter is a response-free protocol
+    # compatibility check, not an efficacy/result filter; doing it here keeps
+    # malformed LLM structures from failing much later during bank freezing.
     topk = report.get("final_topk", [])
     if any(not str(row.get("source", "")).strip() for row in topk):
         raise ExplorationProtocolError("retained-hypothesis-missing-source-provenance")
-    candidates = [{"expression": row["expression"], "source": str(row["source"]),
+    candidates = []
+    adapter_rejections = []
+    n_features = int(selection.development.X.shape[1])
+    for row in topk:
+        candidate = {"expression": row["expression"], "source": str(row["source"]),
                    "origin": str(row.get("origin", "unknown")),
                    "lineage_id": str(row.get("lineage_id", ""))}
+        try:
+            structural_terms(candidate["expression"], n_features)
+        except Exception as error:
+            adapter_rejections.append({
+                "expression": candidate["expression"],
+                "source": candidate["source"],
+                "origin": candidate["origin"],
+                "error_type": type(error).__name__,
+                "error": str(error),
+            })
+            continue
+        candidates.append(candidate)
+    if not candidates:
+        raise ExplorationProtocolError("no-pcpi-adaptable-hypotheses-retained")
                   for row in topk]
     provenance = {
         "schema": "scientific-hypothesis-provenance-audit-v1",
@@ -79,6 +100,7 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
         "engine_sources": sorted({row["source"] for row in candidates
                                   if row["source"].startswith("engine:")}),
         "all_candidates_source_bound": bool(candidates),
+        "pcpi_adapter_rejections": adapter_rejections,
         "heldout_accessed": False,
     }
     return {"best_val_nmse": report["best_val_nmse"], "usage": usage,
