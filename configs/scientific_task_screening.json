@@ -1,0 +1,13 @@
+{
+  "schema": "scientific-task-response-free-screening-v1",
+  "data": [
+    {"dataset": "uci_ccpp", "source": "D:/01/666/hypothesis_mvp/data/combined+cycle+power+plant/CCPP/Folds5x2_pp.xlsx", "split_seed": 20260807, "counts": {"exploration_development": 64, "exploration_validation": 64, "inference_initial": 32, "development_evaluation": 128, "acquisition_pool": 16}},
+    {"dataset": "uci_gas_turbine_co", "source": "D:/01/666/hypothesis_mvp/data/gas+turbine+co+and+nox+emission+data+set", "split_seed": 20260807, "counts": {"exploration_development": 64, "exploration_validation": 64, "inference_initial": 32, "development_evaluation": 128, "acquisition_pool": 16}},
+    {"dataset": "uci_gas_turbine_nox", "source": "D:/01/666/hypothesis_mvp/data/gas+turbine+co+and+nox+emission+data+set", "split_seed": 20260807, "counts": {"exploration_development": 64, "exploration_validation": 64, "inference_initial": 32, "development_evaluation": 128, "acquisition_pool": 16}}
+  ],
+  "prior": {"coefficient_mean": 0.0, "coefficient_precision": 1.0, "noise_shape": 2.5, "noise_scale": 0.2},
+  "measurement_budget": 4,
+  "coefficient_policy": "discard-fitted-coefficients-refit-closed-basis",
+  "exact_eig_epsabs": 1e-10,
+  "user_execution_authorized": true
+}
