@@ -32,3 +32,13 @@ Existing negative outputs and freezes remain immutable. These code changes
 are correctness repairs only; they authorize no new real experiment and do
 not establish scientific superiority. All screening and system claims remain
 conditional on the registered development split and finite hypothesis bank.
+
+Closed-basis protocols reserve one first-evaluation slot for each canonical
+initial seed before auxiliary pruning can spend the deterministic budget.
+Oversized banks fail before evaluation instead of silently starving later
+engines. Every refit and pruning trial remains charged to the unchanged total
+cap; successful evaluation or source retention is never guaranteed. The LLM
+reserve is identical with and without a provider in this opt-in protocol;
+unused no-LLM reserve is not reassigned to extra deterministic work. Legacy
+protocols retain their historical allocation. Canonical aliases remain in the
+registry but do not count as distinct retained engine contributions.

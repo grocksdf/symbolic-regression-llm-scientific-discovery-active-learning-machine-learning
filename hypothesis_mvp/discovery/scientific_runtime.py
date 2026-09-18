@@ -447,7 +447,10 @@ class ScientificDiscoveryRuntime:
         self._events.clear()
         self.evaluation.reset()
         self.evaluation.budget.configure_llm_reserve(
-            self.config.llm_evaluation_reserve if self.proposal.enabled else 0
+            self.config.llm_evaluation_reserve if (
+                self.proposal.enabled
+                or self.config.refit_policy == "pcpi-closed-basis-amplitudes"
+            ) else 0
         )
         self.proposal.reset()
         arrays = (

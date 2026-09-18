@@ -30,6 +30,7 @@ class EvaluationBudget:
         self.counts: Counter[str] = Counter()
         self.llm_reserve = 0
         self.llm_phase = False
+        self.protected_seed_slots = 0
 
     def reset(self) -> None:
         self.used = 0
@@ -37,6 +38,14 @@ class EvaluationBudget:
         self.counts.clear()
         self.llm_reserve = 0
         self.llm_phase = False
+        self.protected_seed_slots = 0
+
+    def protect_seed_evaluations(self, count: int) -> None:
+        """Reserve first evaluations, not success or retained provenance."""
+        cap = None if self.limit is None else self.limit - self.llm_reserve
+        if count < 0 or (cap is not None and self.used + count > cap):
+            raise ValueError("initial seed bank exceeds registered deterministic budget")
+        self.protected_seed_slots = count
 
     def configure_llm_reserve(self, reserve: int) -> None:
         reserve = int(reserve)
@@ -51,6 +60,8 @@ class EvaluationBudget:
         cap = self.limit
         if cap is not None and not self.llm_phase:
             cap = cap - self.llm_reserve
+        if cap is not None and category in {"post_refit_pruning_trial", "structure_ablation_trial"}:
+            cap -= self.protected_seed_slots
         if cap is not None and self.used >= cap:
             self.denied += 1
             self.counts[f"denied:{category}"] += 1
@@ -83,6 +94,7 @@ class EvaluationBudget:
             "exhausted": self.exhausted,
             "llm_reserve": self.llm_reserve,
             "llm_phase": self.llm_phase,
+            "protected_seed_slots": self.protected_seed_slots,
             "denied": self.denied,
             "counts": dict(sorted(self.counts.items())),
         }
@@ -1081,7 +1093,12 @@ class EvaluationRuntime:
         X_val: np.ndarray, y_val: np.ndarray,
     ) -> tuple[EquationState, list[EquationState]]:
         candidates: list[EquationState] = []
+        protect_seeds = self.config.refit_policy == "pcpi-closed-basis-amplitudes"
+        if protect_seeds:
+            self.budget.protect_seed_evaluations(len(base_candidates))
         for seed in base_candidates:
+            if protect_seeds:
+                self.budget.protected_seed_slots -= 1
             if isinstance(seed, str):
                 expression, source = seed, "deterministic_seed"
             elif isinstance(seed, Mapping):
