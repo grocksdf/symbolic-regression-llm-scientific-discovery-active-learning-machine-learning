@@ -406,7 +406,11 @@ class ProposalRuntime:
                     "Never emit y=, f(x)=, y_hat, or any symbol outside allowed_symbols. "
                     "Use scientific_context.registered_task_context to reason scientifically, "
                     "but keep x0, x1, ... symbols in every equation. "
-                    "Diagnostic y_hat text describes the current predictor, not an output variable."
+                    "Diagnostic y_hat text describes the current predictor, not an output variable. "
+                    "At least one candidate must be a mechanism-level structural alternative, "
+                    "not merely a coefficient refit or tiny additive correction to the parent. "
+                    "Prefer a falsifiable interaction, ratio, monotone transform, or regime term "
+                    "that changes predictions over the registered feature domain."
                 ),
             },
         }
@@ -509,7 +513,9 @@ class ProposalRuntime:
             "and preserve the requested round_id, island, and parent_hash. Every candidate needs "
             "candidate_id, parent_hash, action, equation, and rationale. The equation field is RHS only: "
             f"use only {allowed}; never use '=', y, y_hat, or prose. Diagnostic y_hat is not an allowed "
-            "variable: express every final candidate completely in x variables."
+            "variable: express every final candidate completely in x variables. At least one "
+            "candidate must introduce a falsifiable mechanism-level structural change rather "
+            "than only refitting coefficients of the parent equation."
         )
 
     def _request_validated(
