@@ -192,6 +192,29 @@ def run_exploration_ablations(root, selection, *, dataset, config,
                 "error_type": type(error).__name__, "message": str(error),
                 "heldout_opened": False, "efficacy_demonstrated": False})
             raise
+    # The full system is an extension of the deterministic multi-engine bank,
+    # not a replacement for it.  If the LLM phase rejects all of its edits or
+    # consumes the top-k slots, restore missing deterministic supports from the
+    # matched no-LLM ablation.  This is response-free composition: both banks
+    # were built from the same development split and no pool label is used.
+    full = next(row for row in rows if row["variant"] == "full")
+    no_llm = next(row for row in rows if row["variant"] == "no_llm")
+    supports = {tuple(structural_terms(row["expression"], selection.development.X.shape[1]))
+                for row in full["candidates"]}
+    for candidate in no_llm["candidates"]:
+        support = tuple(structural_terms(candidate["expression"], selection.development.X.shape[1]))
+        if support not in supports:
+            full["candidates"].append({**candidate,
+                "source": f"matched_no_llm::{candidate['source']}",
+                "origin": "deterministic"})
+            supports.add(support)
+    provenance = full["hypothesis_provenance"]
+    provenance["candidate_count"] = len(full["candidates"])
+    provenance["distinct_sources"] = sorted({row["source"] for row in full["candidates"]})
+    provenance["engine_sources"] = sorted({row["source"] for row in full["candidates"]
+                                            if row["source"].startswith("engine:")})
+    provenance["origin_counts"] = {origin: sum(row["origin"] == origin for row in full["candidates"])
+                                    for origin in sorted({row["origin"] for row in full["candidates"]})}
     analysis = analyze_system_contract(rows)
     _publish(root / "ANALYSIS.json", analysis)
     return analysis
