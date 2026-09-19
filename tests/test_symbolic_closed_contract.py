@@ -7,7 +7,7 @@ import pytest
 from hypothesis_mvp.config import SymbolicConfig
 from hypothesis_mvp.discovery.agent import DiscoveryAgent, DiscoveryAgentConfig
 from hypothesis_mvp.discovery.equation_runtime import EquationRuntime
-from hypothesis_mvp.discovery.pcpi_adapter import structural_terms
+from hypothesis_mvp.discovery.pcpi_adapter import additive_closed_form, structural_terms
 from hypothesis_mvp.symbolic.mcts_agent import MCTSSymbolicAgent
 from hypothesis_mvp.symbolic.pysr_wrapper import PolynomialLassoRegressor, get_symbolic_regressor
 from hypothesis_mvp.symbolic.typed_grammar import Var, Unary, expand_ast
@@ -94,6 +94,34 @@ def test_unknown_or_unimplemented_contract_does_not_fall_back():
         get_symbolic_regressor(SymbolicConfig(engine="pysr", expression_contract="pcpi-closed-basis-v1"))
     with pytest.raises(ValueError, match="degree"):
         PolynomialLassoRegressor(degree=5, expression_contract="pcpi-closed-basis-v1")
+
+
+@pytest.mark.parametrize("expression", [
+    "0.333333333333333*(x8 + sin(x0))",
+    "(x8 + sin(x0))*(-2)",
+    "-2*(x8 - sin(x0))",
+    "-(-2)*(x8 + sin(x0))",
+])
+def test_outer_scalar_sum_has_same_additive_closed_support(expression):
+    assert structural_terms(expression, 9) == ("sin_x0", "x8")
+    form = additive_closed_form(expression, 9)
+    assert structural_terms(form, 9) == ("sin_x0", "x8")
+    X, y = _fixture()
+    runtime = EquationRuntime(9, refit_policy="pcpi-closed-basis-amplitudes")
+    before = runtime.predict(expression, X)
+    after = runtime.predict(form, X)
+    np.testing.assert_allclose(before, after, rtol=1e-14, atol=1e-14)
+    fitted = runtime.refit_global_constants(expression, X, y)
+    assert set(structural_terms(fitted.expression, 9)) <= {"sin_x0", "x8", "intercept"}
+
+
+@pytest.mark.parametrize("expression", [
+    "x0*(x1 + 1)", "(x0 + 1)*x1", "2*(sin(2*x0) + x1)",
+    "0.5*(x0 + x0)", "0*(x0 + x1)",
+])
+def test_scalar_distribution_does_not_admit_symbolic_or_invalid_structures(expression):
+    with pytest.raises(ValueError):
+        structural_terms(expression, 2)
 
 
 def test_both_production_engine_outputs_survive_initial_discovery_validation(tmp_path):

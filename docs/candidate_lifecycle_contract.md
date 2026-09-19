@@ -76,3 +76,10 @@ unchanged. The composition gate still requires actual retained contributions;
 compatible generation does not establish diversity, efficacy or superiority.
 Signed external scalar amplitudes have the same basis token as positive ones,
 including `cos(x0)*(-2)`; changing a nonlinear argument remains unsupported.
+At the closed adapter boundary, finite nonzero numeric amplitudes multiplying
+an additive group are distributed into an equivalent additive form before
+amplitude refit and support extraction. This covers factored canonical forms
+such as `c*(x8+sin(x0))` without distributing symbolic products, changing
+nonlinear arguments, merging duplicate supports, or exceeding the existing
+expression/AST caps. Prediction equivalence and before/after supports are
+checked algebraically; invalid or duplicate structures still fail closed.

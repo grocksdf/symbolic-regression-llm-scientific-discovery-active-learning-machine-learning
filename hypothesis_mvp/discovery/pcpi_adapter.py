@@ -33,6 +33,44 @@ class DiscoveryAdapterError(ValueError):
         self.public_diagnostic = code
 
 
+def _scaled_sum(scale: ast.AST, node: ast.AST) -> ast.AST:
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub)):
+        return ast.BinOp(_scaled_sum(scale, node.left), node.op,
+                         _scaled_sum(scale, node.right))
+    return ast.BinOp(scale, ast.Mult(), node)
+
+
+class _ExternalScalarDistributor(ast.NodeTransformer):
+    """Distribute numeric outer amplitudes only; never symbolic products."""
+
+    def visit_BinOp(self, node: ast.BinOp) -> ast.AST:
+        node = self.generic_visit(node)
+        if isinstance(node.op, ast.Mult):
+            if _scalar_amplitude(node.left) and isinstance(node.right, ast.BinOp) \
+                    and isinstance(node.right.op, (ast.Add, ast.Sub)):
+                return self.visit(_scaled_sum(node.left, node.right))
+            if _scalar_amplitude(node.right) and isinstance(node.left, ast.BinOp) \
+                    and isinstance(node.left.op, (ast.Add, ast.Sub)):
+                return self.visit(_scaled_sum(node.right, node.left))
+        return node
+
+
+def additive_closed_form(expression: str, n_features: int) -> str:
+    """Canonical additive boundary form for the registered closed basis."""
+    if type(n_features) is not int or n_features < 1 or len(expression) > 4096:
+        raise ValueError("invalid adapter feature/expression controls")
+    root = ast.parse(expression, mode="eval")
+    if len(list(ast.walk(root))) > 256:
+        raise ValueError("adapter AST budget exceeded")
+    transformed = ast.fix_missing_locations(_ExternalScalarDistributor().visit(root))
+    if len(list(ast.walk(transformed))) > 256:
+        raise ValueError("adapter AST budget exceeded after scalar distribution")
+    text = ast.unparse(transformed.body)
+    if len(text) > 4096:
+        raise ValueError("adapter expression budget exceeded after scalar distribution")
+    return text
+
+
 def _monomial(node: ast.AST, n_features: int) -> tuple[int, ...]:
     if isinstance(node, ast.Constant) and type(node.value) in (int, float):
         if not math.isfinite(node.value) or node.value == 0:
@@ -92,9 +130,7 @@ def _closed_term(node: ast.AST, n_features: int) -> str:
 
 
 def structural_terms(expression: str, n_features: int) -> tuple[str, ...]:
-    if type(n_features) is not int or n_features < 1 or len(expression) > 4096:
-        raise ValueError("invalid adapter feature/expression controls")
-    root = ast.parse(expression, mode="eval").body
+    root = ast.parse(additive_closed_form(expression, n_features), mode="eval").body
     nodes = list(ast.walk(root))
     if len(nodes) > 256:
         raise ValueError("adapter AST budget exceeded")

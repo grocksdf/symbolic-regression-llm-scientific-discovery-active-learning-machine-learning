@@ -616,7 +616,8 @@ class EquationRuntime:
         constant columns. It cannot introduce new nonconstant basis supports.
         Incompatible input is rejected, never projected to a different basis.
         """
-        from .pcpi_adapter import structural_terms
+        from .pcpi_adapter import additive_closed_form, structural_terms
+        expression = additive_closed_form(expression, self.n_features)
         before = set(structural_terms(expression, self.n_features))
         initial_loss = self.mse(y, self.predict(expression, X))
         fitted, count = self._fit_top_level_amplitudes(expression, X, y, ridge)
