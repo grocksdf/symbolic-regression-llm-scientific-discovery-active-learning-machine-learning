@@ -31,10 +31,11 @@ def _config():
                                  "exact_eig_epsabs": 1e-10,
                                  "require_all_variants": True},
         "marginal_influence_gate": {
-            "schema": "scientific-marginal-decision-influence-gate-v1",
+            "schema": "scientific-source-marginal-decision-influence-gate-v2",
             "exact_eig_epsabs": 1e-10,
-            "comparators": ["no_llm", "single_engine"],
-            "require_all_comparators": True},
+            "required_contributions": ["llm", "engine:mcts"],
+            "decision_rule": "full-target-certified-regret-v1",
+            "require_all_contributions": True},
         "data_loading_seconds": 30, "provider_attempt_ceiling": 2,
         "provider_public_identity": executor.public_provider_identity(_settings()),
         "coefficient_policy": "discard-fitted-coefficients-refit-closed-basis",
@@ -70,6 +71,8 @@ def _patch(monkeypatch, supported=True):
         "candidate_response_accessed": False, "heldout_opened": False})
     monkeypatch.setattr(executor, "freeze_initial_eig_interval_profile",
                         lambda variant, *args, **kwargs: variant)
+    monkeypatch.setattr(executor, "leave_one_source_out_candidates",
+                        lambda candidates, contribution: candidates[:-1])
     monkeypatch.setattr(executor, "audit_marginal_influence",
         lambda profiles, **kwargs: {
             "schema": "scientific-marginal-decision-influence-family-gate-v1",

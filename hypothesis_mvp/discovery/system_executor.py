@@ -24,6 +24,7 @@ from .system_freeze import verify_system_freeze
 from .system_run import run_frozen_system_comparison, audit_frozen_hypothesis_bank
 from .marginal_influence import (
     audit_marginal_influence, freeze_initial_eig_interval_profile,
+    leave_one_source_out_candidates,
 )
 
 
@@ -96,12 +97,13 @@ def validate_system_registration(config):
             or gate["require_all_variants"] is not True):
         raise ValueError("invalid hypothesis-bank viability registration")
     influence = config["marginal_influence_gate"]
-    if (set(influence) != {"schema", "exact_eig_epsabs", "comparators",
-                           "require_all_comparators"}
-            or influence["schema"] != "scientific-marginal-decision-influence-gate-v1"
+    if (set(influence) != {"schema", "exact_eig_epsabs", "required_contributions",
+                           "decision_rule", "require_all_contributions"}
+            or influence["schema"] != "scientific-source-marginal-decision-influence-gate-v2"
             or influence["exact_eig_epsabs"] != gate["exact_eig_epsabs"]
-            or influence["comparators"] != ["no_llm", "single_engine"]
-            or influence["require_all_comparators"] is not True):
+            or influence["required_contributions"] != ["llm", "engine:mcts"]
+            or influence["decision_rule"] != "full-target-certified-regret-v1"
+            or influence["require_all_contributions"] is not True):
         raise ValueError("invalid marginal decision influence registration")
     identity = config["provider_public_identity"]
     if identity is None and config["user_execution_authorized"] is False:
@@ -190,19 +192,25 @@ def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
 def _prepare_marginal_decision_influence(workspace, exploration, data, config):
     gate = config["marginal_influence_gate"]
     prior = NormalInverseGammaPrior(**config["prior"])
-    profiles = {}
-    for row in exploration["rows"]:
-        variant = row["variant"]
-        profiles[variant] = freeze_initial_eig_interval_profile(
-            variant, row["candidates"], data.initial, data.pool.X_pool,
+    rows = {row["variant"]: row for row in exploration["rows"]}
+    if set(rows) != {"full", "no_llm", "single_engine"}:
+        raise ValueError("unexpected exploration variants for marginal influence")
+    full = rows["full"]
+    common = dict(
             n_features=data.initial.X.shape[1], prior=prior,
-            exploration_identity=_digest(row),
+            exploration_identity=_digest(full),
             coefficient_policy=config["coefficient_policy"],
             measurement_budget=config["measurement_budget"],
-            exact_eig_epsabs=gate["exact_eig_epsabs"],
-        )
+            exact_eig_epsabs=gate["exact_eig_epsabs"])
+    profiles = {"full": freeze_initial_eig_interval_profile(
+        "full", full["candidates"], data.initial, data.pool.X_pool, **common)}
+    for contribution in gate["required_contributions"]:
+        variant = f"full_without_{contribution.replace(':', '_')}"
+        ablated = leave_one_source_out_candidates(full["candidates"], contribution)
+        profiles[variant] = freeze_initial_eig_interval_profile(
+            variant, ablated, data.initial, data.pool.X_pool, **common)
     report = audit_marginal_influence(
-        profiles, require_comparators=tuple(gate["comparators"]))
+        profiles, required_contributions=tuple(gate["required_contributions"]))
     _publish(workspace / "MARGINAL_DECISION_INFLUENCE.json", report)
     if report["passed"] is not True:
         raise MarginalDecisionInfluenceNotCertified()

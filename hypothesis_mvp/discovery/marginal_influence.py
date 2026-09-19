@@ -155,10 +155,19 @@ def freeze_initial_eig_interval_profile(variant, candidates, initial_data, actio
 
 
 def compare_marginal_influence(full: InitialEIGIntervalProfile,
-                               baseline: InitialEIGIntervalProfile) -> dict:
-    """Certify whether full-only supports influence one matched H0 decision."""
-    if full.variant != "full" or baseline.variant not in {"no_llm", "single_engine"}:
-        raise ValueError("invalid marginal influence variant pairing")
+                               baseline: InitialEIGIntervalProfile,
+                               *, contribution: str) -> dict:
+    """Certify a leave-one-source-out decision under the full-bank utility.
+
+    Cross-bank utility magnitudes target different operational class variables
+    and are not treated as comparable scientific values.  The ablated bank may
+    nominate an action, but its cost is certified only with the full bank's
+    class-EIG intervals: ``L_full(a_full) - U_full(a_ablated)``.  This is a
+    lower bound on the full-target regret avoided by retaining the source.
+    """
+    expected_variant = f"full_without_{contribution.replace(':', '_')}"
+    if full.variant != "full" or baseline.variant != expected_variant:
+        raise ValueError("invalid leave-one-source-out influence pairing")
     if (full.action_identity != baseline.action_identity
             or len(full.lower) != len(baseline.lower)
             or full.exact_eig_epsabs != baseline.exact_eig_epsabs):
@@ -171,30 +180,24 @@ def compare_marginal_influence(full: InitialEIGIntervalProfile,
 
     added = tuple(sorted(set(full.support_keys) - set(baseline.support_keys)))
     full_lower, full_upper = np.asarray(full.lower), np.asarray(full.upper)
-    base_lower, base_upper = np.asarray(baseline.lower), np.asarray(baseline.upper)
     full_leader, base_leader = full.certified_leader, baseline.certified_leader
     resolution = float(len(full_lower) * full.exact_eig_epsabs)
-    separated_difference = np.maximum.reduce((
-        np.zeros(len(full_lower)), full_lower - base_upper, base_lower - full_upper))
-    maximum_difference = float(np.max(separated_difference))
     ranking_changed = (full_leader is not None and base_leader is not None
                        and full_leader != base_leader)
-    full_regret_reduction = (0.0 if not ranking_changed else max(
-        0.0, float(full_lower[full_leader] - full_upper[base_leader])))
+    full_regret_reduction = (0.0 if not ranking_changed else max(0.0, float(
+        full_lower[full_leader] - full_upper[base_leader])))
     intervals_resolved = full_leader is not None and base_leader is not None
     decisions = {
         "full_has_unique_structural_support": bool(added),
         "both_top_actions_certified": intervals_resolved,
-        "certified_ranking_change_or_marginal_utility_effect": bool(
-            ranking_changed or maximum_difference > resolution
-        ),
-        "effect_exceeds_familywise_numerical_resolution": bool(
-            max(maximum_difference, full_regret_reduction) > resolution
-        ),
+        "certified_top_action_changes": ranking_changed,
+        "full_target_regret_reduction_exceeds_familywise_resolution": bool(
+            full_regret_reduction > resolution),
     }
     return {
         "schema": SCHEMA,
-        "baseline": baseline.variant,
+        "contribution": contribution,
+        "ablation": baseline.variant,
         "full_profile_identity": full.identity,
         "baseline_profile_identity": baseline.identity,
         "added_supports": [list(value) for value in added],
@@ -203,8 +206,8 @@ def compare_marginal_influence(full: InitialEIGIntervalProfile,
         "full_certified_top_action": full_leader,
         "baseline_certified_top_action": base_leader,
         "certified_top_action_changed": ranking_changed,
-        "maximum_certified_utility_difference_lower_bound_nats": maximum_difference,
         "full_target_regret_reduction_lower_bound_nats": full_regret_reduction,
+        "utility_comparison_identity": "full-target-certified-regret-v1",
         "decisions": decisions,
         "passed": all(decisions.values()),
         "candidate_response_accessed": False,
@@ -214,14 +217,18 @@ def compare_marginal_influence(full: InitialEIGIntervalProfile,
 
 
 def audit_marginal_influence(profiles: dict[str, InitialEIGIntervalProfile],
-                             *, require_comparators: tuple[str, ...]) -> dict:
-    if set(profiles) != {"full", "no_llm", "single_engine"}:
-        raise ValueError("marginal influence requires exactly three system variants")
-    if require_comparators != ("no_llm", "single_engine"):
-        raise ValueError("unknown marginal influence comparator registration")
+                             *, required_contributions: tuple[str, ...]) -> dict:
+    if required_contributions != ("llm", "engine:mcts"):
+        raise ValueError("unknown marginal influence contribution registration")
+    expected = {"full", *(f"full_without_{name.replace(':', '_')}"
+                          for name in required_contributions)}
+    if set(profiles) != expected:
+        raise ValueError("marginal influence profiles do not match source ablations")
     comparisons = {
-        name: compare_marginal_influence(profiles["full"], profiles[name])
-        for name in require_comparators
+        name: compare_marginal_influence(
+            profiles["full"], profiles[f"full_without_{name.replace(':', '_')}"],
+            contribution=name)
+        for name in required_contributions
     }
     return {
         "schema": "scientific-marginal-decision-influence-family-gate-v1",
@@ -236,7 +243,21 @@ def audit_marginal_influence(profiles: dict[str, InitialEIGIntervalProfile],
         "heldout_opened": False,
         "efficacy_demonstrated": False,
         "claim_boundary": (
-            "response-free frozen-H0 decision-influence screening only; "
+            "response-free matched-bank leave-one-source-out frozen-H0 "
+            "full-target decision-regret screening only; "
             "not real-data efficacy or superiority evidence"
         ),
     }
+
+
+def leave_one_source_out_candidates(candidates, contribution: str):
+    """Return a source-matched ablation without inspecting any response."""
+    if contribution == "llm":
+        kept = [row for row in candidates if str(row.get("origin", "")) != "llm"]
+    elif contribution == "engine:mcts":
+        kept = [row for row in candidates if str(row.get("source", "")) != contribution]
+    else:
+        raise ValueError("unknown source contribution")
+    if len(kept) == len(candidates):
+        raise ValueError(f"registered contribution absent from full bank: {contribution}")
+    return kept
