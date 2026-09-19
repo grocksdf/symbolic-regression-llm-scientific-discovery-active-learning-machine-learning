@@ -51,10 +51,12 @@
     "require_all_variants": true
   },
   "marginal_influence_gate": {
-    "schema": "scientific-source-marginal-decision-influence-gate-v2",
+    "schema": "scientific-dual-channel-source-contribution-gate-v3",
     "exact_eig_epsabs": 1e-10,
     "required_contributions": ["llm", "engine:mcts"],
     "decision_rule": "full-target-certified-regret-v1",
+    "quality_rule": "positive-paired-cumulative-log-predictive-ratio-v1",
+    "arbitration_fraction": 0.5,
     "require_all_contributions": true
   },
   "exploration_seconds": 240,

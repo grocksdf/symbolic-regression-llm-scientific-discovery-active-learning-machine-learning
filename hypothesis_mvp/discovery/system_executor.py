@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from hypothesis_mvp.data.system_protocol import load_registered_system_data, validate_data_registration
+from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.hypotheses import EvidenceRegistry, EvidenceEventType
 from hypothesis_mvp.pcpi.discovery_transaction import DiscoveryScoringControls, _publish
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
@@ -23,9 +24,10 @@ from .system_ablation import run_exploration_ablations
 from .system_freeze import verify_system_freeze
 from .system_run import run_frozen_system_comparison, audit_frozen_hypothesis_bank
 from .marginal_influence import (
-    audit_marginal_influence, freeze_initial_eig_interval_profile,
-    leave_one_source_out_candidates,
+    audit_marginal_influence, initial_eig_interval_profile,
+    leave_one_source_out_candidates, predictive_quality_profile,
 )
+from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target
 
 
 class HypothesisBankNotViable(RuntimeError):
@@ -98,11 +100,14 @@ def validate_system_registration(config):
         raise ValueError("invalid hypothesis-bank viability registration")
     influence = config["marginal_influence_gate"]
     if (set(influence) != {"schema", "exact_eig_epsabs", "required_contributions",
-                           "decision_rule", "require_all_contributions"}
-            or influence["schema"] != "scientific-source-marginal-decision-influence-gate-v2"
+                           "decision_rule", "quality_rule", "arbitration_fraction",
+                           "require_all_contributions"}
+            or influence["schema"] != "scientific-dual-channel-source-contribution-gate-v3"
             or influence["exact_eig_epsabs"] != gate["exact_eig_epsabs"]
             or influence["required_contributions"] != ["llm", "engine:mcts"]
             or influence["decision_rule"] != "full-target-certified-regret-v1"
+            or influence["quality_rule"] != "positive-paired-cumulative-log-predictive-ratio-v1"
+            or influence["arbitration_fraction"] != 0.5
             or influence["require_all_contributions"] is not True):
         raise ValueError("invalid marginal decision influence registration")
     identity = config["provider_public_identity"]
@@ -189,28 +194,48 @@ def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
         raise HypothesisBankNotViable()
 
 
-def _prepare_marginal_decision_influence(workspace, exploration, data, config):
+def _split_source_arbitration(evaluation, fraction):
+    if (evaluation.role is not DataRole.VALIDATION or fraction != 0.5
+            or len(evaluation.X) < 4 or len(evaluation.X) % 2):
+        raise ValueError("invalid registered source-arbitration split")
+    cut = len(evaluation.X) // 2
+    arbitration = RoleDataset(DataRole.VALIDATION,
+                              evaluation.X[:cut], evaluation.y[:cut])
+    reporting = RoleDataset(DataRole.VALIDATION,
+                            evaluation.X[cut:], evaluation.y[cut:])
+    if arbitration.row_fingerprints & reporting.row_fingerprints:
+        raise ValueError("source arbitration and reporting evaluation overlap")
+    return arbitration, reporting
+
+
+def _prepare_marginal_decision_influence(workspace, exploration, data, config,
+                                         arbitration):
     gate = config["marginal_influence_gate"]
     prior = NormalInverseGammaPrior(**config["prior"])
     rows = {row["variant"]: row for row in exploration["rows"]}
     if set(rows) != {"full", "no_llm", "single_engine"}:
         raise ValueError("unexpected exploration variants for marginal influence")
     full = rows["full"]
-    common = dict(
-            n_features=data.initial.X.shape[1], prior=prior,
-            exploration_identity=_digest(full),
-            coefficient_policy=config["coefficient_policy"],
-            measurement_budget=config["measurement_budget"],
-            exact_eig_epsabs=gate["exact_eig_epsabs"])
-    profiles = {"full": freeze_initial_eig_interval_profile(
-        "full", full["candidates"], data.initial, data.pool.X_pool, **common)}
+    candidates = {"full": full["candidates"]}
     for contribution in gate["required_contributions"]:
-        variant = f"full_without_{contribution.replace(':', '_')}"
-        ablated = leave_one_source_out_candidates(full["candidates"], contribution)
-        profiles[variant] = freeze_initial_eig_interval_profile(
-            variant, ablated, data.initial, data.pool.X_pool, **common)
+        candidates[f"full_without_{contribution.replace(':', '_')}"] = (
+            leave_one_source_out_candidates(full["candidates"], contribution))
+    profiles, quality_profiles = {}, {}
+    for variant, bank in candidates.items():
+        model = freeze_discovery_model(bank, n_features=data.initial.X.shape[1],
+            prior=prior, exploration_identity=_digest(full),
+            coefficient_policy=config["coefficient_policy"])
+        target = freeze_discovery_target(model, data.initial, data.pool.X_pool,
+            measurement_budget=config["measurement_budget"],
+            expected_model_identity=model.stable_hash)
+        profiles[variant] = initial_eig_interval_profile(
+            variant, model, target, data.pool.X_pool,
+            exact_eig_epsabs=gate["exact_eig_epsabs"])
+        quality_profiles[variant] = predictive_quality_profile(
+            variant, model, target, arbitration)
     report = audit_marginal_influence(
-        profiles, required_contributions=tuple(gate["required_contributions"]))
+        profiles, quality_profiles=quality_profiles,
+        required_contributions=tuple(gate["required_contributions"]))
     _publish(workspace / "MARGINAL_DECISION_INFLUENCE.json", report)
     if report["passed"] is not True:
         raise MarginalDecisionInfluenceNotCertified()
@@ -218,7 +243,8 @@ def _prepare_marginal_decision_influence(workspace, exploration, data, config):
 
 
 def _run_comparison_variant(project_root, workspace, row, data, config, provider,
-                            source_identity, seed, expected_freeze, coordinate):
+                            source_identity, seed, expected_freeze, coordinate,
+                            evaluation_data):
     variant = row["variant"]
     verify_system_freeze(project_root, config, expected_freeze)
     if not row["candidates"]:
@@ -232,7 +258,7 @@ def _run_comparison_variant(project_root, workspace, row, data, config, provider
         measurement_budget=config["measurement_budget"],
         controls=DiscoveryScoringControls(**config["scoring"]),
         source_identity=source_identity, random_seed=seed,
-        policy_wall_time_seconds=config["policy_seconds"], evaluation_data=data.evaluation)
+        policy_wall_time_seconds=config["policy_seconds"], evaluation_data=evaluation_data)
     registry = EvidenceRegistry(workspace / "exploration" / variant / "evidence_registry.jsonl")
     if not registry.verify().valid or not registry.events():
         raise ValueError("missing or invalid discovery evidence chain")
@@ -287,10 +313,14 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
                     provider_attempt_ceiling=config["provider_attempt_ceiling"], source_identity=source_identity,
                     scientific_context=data.manifest["scientific_context"])
                 _prepare_hypothesis_bank_viability(workspace, exploration, data, config)
-                _prepare_marginal_decision_influence(workspace, exploration, data, config)
+                arbitration, reporting_evaluation = _split_source_arbitration(
+                    data.evaluation, config["marginal_influence_gate"]["arbitration_fraction"])
+                _prepare_marginal_decision_influence(
+                    workspace, exploration, data, config, arbitration)
                 comparisons = {row["variant"]: _run_comparison_variant(
                     project_root, workspace, row, data, config, provider,
-                    source_identity, seed, expected_freeze, coordinate
+                    source_identity, seed, expected_freeze, coordinate,
+                    reporting_evaluation
                 ) for row in exploration["rows"]}
                 results.append({"dataset": dataset, "seed": seed, "family": data.manifest["family"],
                     "exploration": exploration, "comparisons": comparisons})

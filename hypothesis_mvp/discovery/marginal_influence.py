@@ -13,6 +13,7 @@ import json
 
 import numpy as np
 
+from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.pcpi.acquisition import (
     EXACT_CLASS_EIG_EPSABS,
     analytic_class_eig_bounds,
@@ -27,6 +28,7 @@ from .pcpi_adapter import (
 
 SCHEMA = "scientific-marginal-decision-influence-v1"
 PROFILE_SCHEMA = "scientific-initial-class-eig-interval-profile-v1"
+QUALITY_SCHEMA = "scientific-source-predictive-quality-profile-v1"
 
 
 def _digest(value) -> str:
@@ -92,6 +94,29 @@ class InitialEIGIntervalProfile:
         })
 
 
+@dataclass(frozen=True)
+class PredictiveQualityProfile:
+    variant: str
+    model_identity: str
+    target_identity: str
+    arbitration_identity: str
+    pointwise_log_predictive_density: tuple[float, ...]
+
+    def __post_init__(self):
+        values = np.asarray(self.pointwise_log_predictive_density, dtype=float)
+        if (not self.variant or not self.model_identity or not self.target_identity
+                or not self.arbitration_identity or values.ndim != 1
+                or not len(values) or not np.all(np.isfinite(values))):
+            raise ValueError("invalid predictive quality profile")
+
+    @property
+    def identity(self):
+        return _digest({"schema": QUALITY_SCHEMA, "variant": self.variant,
+            "model": self.model_identity, "target": self.target_identity,
+            "arbitration": self.arbitration_identity,
+            "log_predictive_density": self.pointwise_log_predictive_density})
+
+
 def initial_eig_interval_profile(variant: str, model: FrozenDiscoveryModel,
                                  target: FrozenDiscoveryTarget,
                                  actions: np.ndarray, *,
@@ -134,6 +159,19 @@ def initial_eig_interval_profile(variant: str, model: FrozenDiscoveryModel,
         numerical_outward_tolerance=outward,
         exact_eig_epsabs=float(exact_eig_epsabs),
     )
+
+
+def predictive_quality_profile(variant: str, model: FrozenDiscoveryModel,
+                               target: FrozenDiscoveryTarget,
+                               arbitration: RoleDataset) -> PredictiveQualityProfile:
+    """Proper log score on a registered source-arbitration validation split."""
+    if arbitration.role is not DataRole.VALIDATION:
+        raise ValueError("source arbitration requires validation-role data")
+    values = model.engine(target.model_identity).predictive_logpdf(
+        target.initial_posterior, arbitration.X, arbitration.y)
+    return PredictiveQualityProfile(
+        variant, model.stable_hash, target.stable_hash, arbitration.fingerprint,
+        tuple(float(value) for value in values))
 
 
 def freeze_initial_eig_interval_profile(variant, candidates, initial_data, actions,
@@ -217,21 +255,57 @@ def compare_marginal_influence(full: InitialEIGIntervalProfile,
 
 
 def audit_marginal_influence(profiles: dict[str, InitialEIGIntervalProfile],
-                             *, required_contributions: tuple[str, ...]) -> dict:
+                             *, quality_profiles: dict[str, PredictiveQualityProfile],
+                             required_contributions: tuple[str, ...]) -> dict:
     if required_contributions != ("llm", "engine:mcts"):
         raise ValueError("unknown marginal influence contribution registration")
     expected = {"full", *(f"full_without_{name.replace(':', '_')}"
                           for name in required_contributions)}
     if set(profiles) != expected:
         raise ValueError("marginal influence profiles do not match source ablations")
-    comparisons = {
-        name: compare_marginal_influence(
+    if set(quality_profiles) != expected:
+        raise ValueError("predictive quality profiles do not match source ablations")
+    comparisons = {}
+    for name in required_contributions:
+        ablation = f"full_without_{name.replace(':', '_')}"
+        decision = compare_marginal_influence(
             profiles["full"], profiles[f"full_without_{name.replace(':', '_')}"],
             contribution=name)
-        for name in required_contributions
-    }
+        full_quality, ablated_quality = quality_profiles["full"], quality_profiles[ablation]
+        if full_quality.arbitration_identity != ablated_quality.arbitration_identity:
+            raise ValueError("source quality profiles crossed arbitration split")
+        full_values = np.asarray(full_quality.pointwise_log_predictive_density)
+        ablated_values = np.asarray(ablated_quality.pointwise_log_predictive_density)
+        if full_values.shape != ablated_values.shape:
+            raise ValueError("source quality profiles are not paired")
+        log_ratio = float(np.sum(full_values - ablated_values))
+        scale = max(1.0, float(np.sum(np.abs(full_values))),
+                    float(np.sum(np.abs(ablated_values))))
+        tolerance = float(1024.0 * np.finfo(float).eps * scale)
+        quality_passed = log_ratio > tolerance
+        comparisons[name] = {**decision,
+            "predictive_quality": {
+                "schema": "scientific-source-predictive-log-score-contribution-v1",
+                "full_profile_identity": full_quality.identity,
+                "ablated_profile_identity": ablated_quality.identity,
+                "arbitration_identity": full_quality.arbitration_identity,
+                "arbitration_observation_count": len(full_values),
+                "cumulative_log_predictive_ratio_nats": log_ratio,
+                "numerical_tolerance_nats": tolerance,
+                "proper_scoring_rule": "posterior-predictive-log-density",
+                "passed": quality_passed,
+                "acquisition_pool_response_accessed": False,
+                "heldout_opened": False},
+            "decision_contribution_passed": decision["passed"],
+            "hypothesis_quality_contribution_passed": quality_passed,
+            "accepted_contribution_role": (
+                "decision-and-hypothesis-quality" if decision["passed"] and quality_passed
+                else "decision" if decision["passed"] else "hypothesis-quality"
+                if quality_passed else None),
+            "passed": bool(decision["decisions"]["full_has_unique_structural_support"]
+                           and (decision["passed"] or quality_passed))}
     return {
-        "schema": "scientific-marginal-decision-influence-family-gate-v1",
+        "schema": "scientific-dual-channel-source-contribution-family-gate-v1",
         "profiles": {name: {"identity": profile.identity,
                              "model": profile.model_identity,
                              "target": profile.target_identity,
@@ -240,11 +314,14 @@ def audit_marginal_influence(profiles: dict[str, InitialEIGIntervalProfile],
         "comparisons": comparisons,
         "passed": all(row["passed"] for row in comparisons.values()),
         "candidate_response_accessed": False,
+        "acquisition_pool_response_accessed": False,
+        "source_arbitration_validation_responses_accessed": True,
         "heldout_opened": False,
         "efficacy_demonstrated": False,
         "claim_boundary": (
-            "response-free matched-bank leave-one-source-out frozen-H0 "
-            "full-target decision-regret screening only; "
+            "matched-bank leave-one-source-out source arbitration: acquisition-"
+            "pool-response-free decision regret plus opened independent validation "
+            "posterior-predictive log score; "
             "not real-data efficacy or superiority evidence"
         ),
     }

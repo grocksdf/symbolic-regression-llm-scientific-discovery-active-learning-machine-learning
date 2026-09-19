@@ -31,10 +31,12 @@ def _config():
                                  "exact_eig_epsabs": 1e-10,
                                  "require_all_variants": True},
         "marginal_influence_gate": {
-            "schema": "scientific-source-marginal-decision-influence-gate-v2",
+            "schema": "scientific-dual-channel-source-contribution-gate-v3",
             "exact_eig_epsabs": 1e-10,
             "required_contributions": ["llm", "engine:mcts"],
             "decision_rule": "full-target-certified-regret-v1",
+            "quality_rule": "positive-paired-cumulative-log-predictive-ratio-v1",
+            "arbitration_fraction": 0.5,
             "require_all_contributions": True},
         "data_loading_seconds": 30, "provider_attempt_ceiling": 2,
         "provider_public_identity": executor.public_provider_identity(_settings()),
@@ -46,7 +48,7 @@ def _data():
     def role(kind, x): return RoleDataset(kind, np.array(x, dtype=float)[:, None], np.array(x, dtype=float))
     return OpenSystemData(SelectionData(role(DataRole.DEVELOPMENT, [0, 1]),
         role(DataRole.VALIDATION, [2, 3]), None, ()),
-        role(DataRole.DEVELOPMENT, [4, 5]), role(DataRole.VALIDATION, [8, 9]),
+        role(DataRole.DEVELOPMENT, [4, 5]), role(DataRole.VALIDATION, [8, 9, 10, 11]),
         PoolOracle(np.array([[6.], [7.]]), np.array([6., 7.])),
         {"family": "gas_turbine", "heldout_opened": False, "fixture_only": True,
          "scientific_context": {"task_name": "fixture_law",
@@ -69,7 +71,13 @@ def _patch(monkeypatch, supported=True):
     monkeypatch.setattr(executor, "audit_frozen_hypothesis_bank", lambda *args, **kwargs: {
         "schema": "scientific-hypothesis-bank-viability-v1", "passed": True,
         "candidate_response_accessed": False, "heldout_opened": False})
-    monkeypatch.setattr(executor, "freeze_initial_eig_interval_profile",
+    monkeypatch.setattr(executor, "freeze_discovery_model",
+        lambda candidates, **kwargs: SimpleNamespace(stable_hash="model"))
+    monkeypatch.setattr(executor, "freeze_discovery_target",
+        lambda *args, **kwargs: SimpleNamespace(stable_hash="target"))
+    monkeypatch.setattr(executor, "initial_eig_interval_profile",
+                        lambda variant, *args, **kwargs: variant)
+    monkeypatch.setattr(executor, "predictive_quality_profile",
                         lambda variant, *args, **kwargs: variant)
     monkeypatch.setattr(executor, "leave_one_source_out_candidates",
                         lambda candidates, contribution: candidates[:-1])

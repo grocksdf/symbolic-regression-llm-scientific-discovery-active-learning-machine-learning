@@ -6,7 +6,7 @@ import pytest
 
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.discovery.marginal_influence import (
-    InitialEIGIntervalProfile, audit_marginal_influence,
+    InitialEIGIntervalProfile, PredictiveQualityProfile, audit_marginal_influence,
     compare_marginal_influence, freeze_initial_eig_interval_profile,
     leave_one_source_out_candidates,
 )
@@ -23,6 +23,11 @@ def _profile(variant, lower, upper, *, supports=None, action_identity="actions")
         support_keys=tuple(supports or (("x0",),)), lower=tuple(lower),
         upper=tuple(upper), exact_scores=midpoint, exact_errors=errors,
         numerical_outward_tolerance=0.0, exact_eig_epsabs=1e-10)
+
+
+def _quality(variant, values):
+    return PredictiveQualityProfile(
+        variant, f"model-{variant}", f"target-{variant}", "arbitration", tuple(values))
 
 
 def test_source_ablation_certifiably_changes_full_target_decision():
@@ -90,11 +95,37 @@ def test_family_gate_requires_llm_and_mcts_source_ablations():
                        supports=(("x0",), ("x1",)))
     profiles = {"full": full, "full_without_llm": no_llm,
                 "full_without_engine_mcts": no_mcts}
+    quality = {"full": _quality("full", (-1., -1.)),
+               "full_without_llm": _quality("full_without_llm", (-2., -2.)),
+               "full_without_engine_mcts": _quality(
+                   "full_without_engine_mcts", (-2., -2.))}
     report = audit_marginal_influence(
-        profiles, required_contributions=("llm", "engine:mcts"))
+        profiles, quality_profiles=quality,
+        required_contributions=("llm", "engine:mcts"))
     assert report["passed"] and not report["efficacy_demonstrated"]
     with pytest.raises(ValueError, match="contribution"):
-        audit_marginal_influence(profiles, required_contributions=("llm",))
+        audit_marginal_influence(profiles, quality_profiles=quality,
+                                 required_contributions=("llm",))
+
+
+def test_quality_channel_accepts_unique_source_when_decision_is_unchanged():
+    full = _profile("full", (.8, .1), (.81, .11), supports=(("x0",), ("x1",)))
+    ablated = _profile("full_without_llm", (.7, .2), (.71, .21), supports=(("x0",),))
+    mcts = _profile("full_without_engine_mcts", (.6, .2), (.61, .21),
+                    supports=(("x0",),))
+    profiles = {"full": full, "full_without_llm": ablated,
+                "full_without_engine_mcts": mcts}
+    quality = {"full": _quality("full", (-1., -1.)),
+               "full_without_llm": _quality("full_without_llm", (-2., -2.)),
+               "full_without_engine_mcts": _quality(
+                   "full_without_engine_mcts", (-1., -1.))}
+    report = audit_marginal_influence(
+        profiles, quality_profiles=quality,
+        required_contributions=("llm", "engine:mcts"))
+    assert report["comparisons"]["llm"]["accepted_contribution_role"] == "hypothesis-quality"
+    assert report["comparisons"]["llm"]["passed"]
+    assert not report["comparisons"]["engine:mcts"]["passed"]
+    assert not report["passed"]
 
 
 def test_leave_one_source_out_keeps_all_other_candidates_byte_identical():
