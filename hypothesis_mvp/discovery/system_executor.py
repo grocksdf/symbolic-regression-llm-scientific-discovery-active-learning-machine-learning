@@ -400,8 +400,14 @@ def _verify_zero_response_continuation(source_root, config, continuation):
         if (not path.is_file() or _sha256_file(path) != expected_hash):
             raise ValueError("continuation source artifact identity changed")
     contract = json.loads((source_root / "SYSTEM_CONTRACT.json").read_text(encoding="utf-8"))
-    if contract.get("registration") != config:
-        raise ValueError("continuation source registration changed")
+    source_registration = contract.get("registration")
+    continuation_mode = "identity-preserving"
+    if source_registration != config:
+        compatible = json.loads(json.dumps(config))
+        compatible.get("hypothesis_bank_gate", {}).pop("maximum_candidates", None)
+        if source_registration != compatible:
+            raise ValueError("continuation source registration changed beyond bank capacity")
+        continuation_mode = "response-free-capacity-rebank"
     terminal = json.loads((source_root / "TERMINAL_FAILURE.json").read_text(encoding="utf-8"))
     comparison_failure = json.loads((source_root /
         coordinate_root / "measured/full/TERMINAL_FAILURE.json").read_text(
@@ -441,7 +447,7 @@ def _verify_zero_response_continuation(source_root, config, continuation):
             workspace / "exploration" / row["variant"] / "evidence_registry.jsonl")
         if not registry.verify().valid or not registry.events():
             raise ValueError("continuation source evidence registry is invalid")
-    return source_root, workspace, analysis
+    return source_root, workspace, analysis, continuation_mode
 
 
 def execute_registered_system_continuation(project_root, root, source_root, config,
@@ -455,7 +461,7 @@ def execute_registered_system_continuation(project_root, root, source_root, conf
     if root == project_root or project_root in root.parents or root.exists():
         raise ValueError("continuation output must be a new path outside source")
     verify_system_freeze(project_root, config, expected_freeze)
-    source_root, source_workspace, exploration = _verify_zero_response_continuation(
+    source_root, source_workspace, exploration, continuation_mode = _verify_zero_response_continuation(
         source_root, config, continuation)
     if root == source_root or root in source_root.parents or source_root in root.parents:
         raise ValueError("continuation output and immutable source must be disjoint")
@@ -477,8 +483,9 @@ def execute_registered_system_continuation(project_root, root, source_root, conf
         if data.manifest != source_manifest:
             raise ValueError("continuation data manifest changed")
         _publish(workspace / "DATA_MANIFEST.json", data.manifest)
-        for name in ("HYPOTHESIS_BANK_VIABILITY.json", "MARGINAL_DECISION_INFLUENCE.json"):
-            shutil.copyfile(source_workspace / name, workspace / name)
+        if continuation_mode == "identity-preserving":
+            for name in ("HYPOTHESIS_BANK_VIABILITY.json", "MARGINAL_DECISION_INFLUENCE.json"):
+                shutil.copyfile(source_workspace / name, workspace / name)
         (workspace / "exploration").mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source_workspace / "exploration/ANALYSIS.json",
                         workspace / "exploration/ANALYSIS.json")
@@ -494,20 +501,26 @@ def execute_registered_system_continuation(project_root, root, source_root, conf
             result_payload["evidence_registry_path"] = str(target_registry)
             result_payload["zero_response_continuation_source"] = str(source_variant)
             _publish(target_variant / "RESULT.json", result_payload)
-        _, reporting_evaluation = _split_source_arbitration(
+        arbitration, reporting_evaluation = _split_source_arbitration(
             data.evaluation, config["marginal_influence_gate"]["arbitration_fraction"])
+        if continuation_mode == "response-free-capacity-rebank":
+            _prepare_hypothesis_bank_viability(workspace, exploration, data, config)
+            _prepare_marginal_decision_influence(
+                workspace, exploration, data, config, arbitration)
         comparisons = {row["variant"]: _run_comparison_variant(
             project_root, workspace, row, data, config, None, source_identity, seed,
             expected_freeze, coordinate, reporting_evaluation)
             for row in exploration["rows"]}
         results.append({"dataset": dataset, "seed": seed, "family": data.manifest["family"],
             "exploration": exploration, "comparisons": comparisons,
-            "continuation_source": str(source_root)})
+            "continuation_source": str(source_root),
+            "continuation_mode": continuation_mode})
         verify_system_freeze(project_root, config, expected_freeze)
         result = {"schema": "scientific-system-development-terminal-v1", "results": results,
             "protocol_complete": True, "heldout_opened": False,
             "superiority_demonstrated": False,
             "zero_response_continuation": True,
+            "continuation_mode": continuation_mode,
             "claim_boundary": "conditional opened-development evidence; no confirmatory claim"}
         _publish(root / "SYSTEM_MANIFEST.json", result)
         return result

@@ -137,3 +137,9 @@ bank and its capacity audit are published separately from raw exploration, so
 all rejected proposals remain available for provenance.  This changes neither
 the posterior model nor the class definition; it prevents redundant proposals
 from consuming finite-bank probability mass and quadrature budget.
+When an immutable zero-response source predates only this capacity field, the
+continuation may reuse its hash-bound raw exploration.  It applies the new bank
+selection, recomputes viability and both source-contribution channels, and
+enters measurement only if those new reports pass.  Any other configuration
+difference fails closed.  Engines and the LLM are not rerun, and the source
+output remains unchanged.
