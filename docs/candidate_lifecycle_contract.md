@@ -161,3 +161,15 @@ floating-point error bound. If no such bank exists, the best diagnostic bank
 is published but viability fails before source-arbitration, acquisition-pool,
 reporting-validation or held-out access. The folds, positivity rule, capacity
 and entropy tie-break are frozen independently of observed efficacy.
+
+The first predictive-safe continuation is retained as a zero-measurement Gate
+failure.  The full bank passed both registered H0 safety checks (MCTS
+`+0.6891` nats and LLM `+0.00121` nats), while the `no_llm` negative-control
+bank showed an MCTS contribution of `-0.1911` nats.  The implementation had
+incorrectly extended the full-bank leave-source-out admission rule to every
+ablation.  The registration defines source admission only for the full
+production bank; `no_llm` and `single_engine` are negative controls whose
+purpose is precisely to expose lost contribution or negative transfer.  They
+retain identical capacity and viability checks, but do not have to outperform
+additional unregistered within-control ablations.  This scope correction does
+not change any score, threshold, candidate, budget or observed artifact.

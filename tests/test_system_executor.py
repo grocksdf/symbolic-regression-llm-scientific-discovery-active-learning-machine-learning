@@ -105,9 +105,9 @@ def _patch(monkeypatch, supported=True):
                 registry.append(hypothesis_id="fixture-hypothesis",
                     event_type=EvidenceEventType.EVIDENCE_ATTACHED, payload={"fixture_only": True})
             candidates = [
-                {"expression": "x0", "source": "engine:a", "origin": "deterministic"},
+                {"expression": "x0", "source": "engine:polynomial_lasso", "origin": "deterministic"},
                 {"expression": "x0**2" if supported else "tan(x0)",
-                 "source": "engine:b" if variant == "full" else "engine:a",
+                 "source": "engine:mcts" if variant == "full" else "engine:polynomial_lasso",
                  "origin": "deterministic"},
             ]
             if variant != "no_llm":
@@ -207,6 +207,22 @@ def test_source_safety_failure_stops_before_validation_or_pool_response(tmp_path
     assert (coordinate / "HYPOTHESIS_BANK_VIABILITY.json").is_file()
     assert not (coordinate / "MARGINAL_DECISION_INFLUENCE.json").exists()
     assert not (root / "uci_gas_turbine_co" / "11" / "measured").exists()
+
+
+def test_predictive_safety_is_scoped_to_full_not_negative_controls():
+    candidates = [
+        {"source": "engine:polynomial_lasso", "origin": "deterministic"},
+        {"source": "engine:mcts", "origin": "deterministic"},
+        {"source": "llm_proposal", "origin": "llm"},
+    ]
+    registered = ("origin:llm", "engine:mcts")
+    assert executor._selection_safety_roles("full", candidates, registered) == registered
+    assert executor._selection_safety_roles("no_llm", candidates[:2], registered) == ()
+    assert executor._selection_safety_roles("single_engine", candidates[::2], registered) == ()
+    with pytest.raises(ValueError, match="lost"):
+        executor._selection_safety_roles("full", candidates[:2], registered)
+    with pytest.raises(ValueError, match="unknown"):
+        executor._selection_safety_roles("unregistered", candidates, registered)
 
 
 def test_authorization_and_dirty_source_block_before_data(tmp_path, monkeypatch):

@@ -185,8 +185,8 @@ def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
         for value in config["marginal_influence_gate"]["required_contributions"])
     for row in exploration["rows"]:
         variant = row["variant"]
-        available_roles = _required_selection_roles(row["candidates"])
-        safety_roles = tuple(role for role in registered_safety if role in available_roles)
+        safety_roles = _selection_safety_roles(
+            variant, row["candidates"], registered_safety)
         selected, selection = select_operational_capacity_bank(
             row["candidates"], data.initial, data.pool.X_pool,
             n_features=data.initial.X.shape[1],
@@ -241,6 +241,19 @@ def _required_selection_roles(candidates):
     if any(str(row.get("origin", "")) == "llm" for row in candidates):
         roles.add("origin:llm")
     return roles
+
+
+def _selection_safety_roles(variant, candidates, registered_safety):
+    """Apply registered leave-source-out safety only to the full production bank."""
+    if variant not in {"full", "no_llm", "single_engine"}:
+        raise ValueError("unknown scientific-system ablation variant")
+    if variant != "full":
+        return ()
+    available = _required_selection_roles(candidates)
+    selected = tuple(role for role in registered_safety if role in available)
+    if selected != tuple(registered_safety):
+        raise ValueError("full bank lost a registered source-safety role")
+    return selected
 
 
 def _split_source_arbitration(evaluation, fraction):
