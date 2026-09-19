@@ -2,7 +2,11 @@
 import numpy as np
 import pytest
 
-from hypothesis_mvp.discovery.source_stacking import safe_source_stacking, source_family
+from hypothesis_mvp.data.roles import DataRole, RoleDataset
+from hypothesis_mvp.discovery.source_stacking import (
+    calibrate_source_admission, safe_source_stacking, source_family,
+)
+from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
 
 
 def test_helpful_sources_are_stacked_deterministically_and_fold_safe():
@@ -17,6 +21,8 @@ def test_helpful_sources_are_stacked_deterministically_and_fold_safe():
         ("core", "engine:mcts", "llm"), baseline_source="core")
     assert first == second and first.passed
     assert first.dyadic_alpha > 0.0 and not first.fallback_to_baseline
+    assert first.maximum_optional_mass == 0.5
+    assert first.source_weights["core"] >= 0.5 - 2e-12
     assert first.source_weights["engine:mcts"] > 0.0
     assert first.source_weights["llm"] > 0.0
     assert min(first.fold_log_score_gains) >= -max(first.fold_numerical_tolerances)
@@ -55,3 +61,36 @@ def test_source_families_are_task_independent_and_explicit():
     assert source_family({"source": "llm_anything", "origin": "llm"}) == "llm"
     assert source_family({"source": "engine:polynomial_lasso", "origin": "deterministic"}) == "core"
     assert source_family({"source": "deterministic_anchor", "origin": "deterministic"}) == "core"
+
+
+def test_independent_admission_rejects_harmful_engine_with_certificate():
+    x = np.arange(12.0)[:, None]
+    initial = RoleDataset(DataRole.DEVELOPMENT, x[:6], 2.0 * x[:6, 0] + .1)
+    arbitration = RoleDataset(DataRole.VALIDATION, x[6:], 2.0 * x[6:, 0] + .1)
+    candidates = [
+        {"expression": "x0", "source": "anchor", "origin": "deterministic"},
+        {"expression": "x0**2", "source": "engine:mcts", "origin": "deterministic"},
+    ]
+    certificate, sources = calibrate_source_admission(
+        candidates, initial, arbitration, n_features=1,
+        prior=NormalInverseGammaPrior(), exploration_identity="a" * 64,
+        coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
+        measurement_budget=2, action_domain=x)
+    assert certificate.source_weights == {"core": 1.0, "engine:mcts": 0.0}
+    assert sources["engine:mcts"]["admitted"] is False
+    assert sources["engine:mcts"]["negative_transfer_certified"] is True
+    assert max(sources["engine:mcts"]["fold_log_score_gains_vs_core"]) < 0.0
+
+
+def test_source_admission_rejects_reporting_role_at_interface():
+    x = np.arange(8.0)[:, None]
+    initial = RoleDataset(DataRole.DEVELOPMENT, x[:4], x[:4, 0])
+    reporting = RoleDataset(DataRole.DEVELOPMENT, x[4:], x[4:, 0])
+    with pytest.raises(ValueError, match="arbitration"):
+        calibrate_source_admission([
+            {"expression": "x0", "source": "anchor", "origin": "deterministic"},
+            {"expression": "x0**2", "source": "engine:mcts", "origin": "deterministic"},
+        ], initial, reporting, n_features=1, prior=NormalInverseGammaPrior(),
+            exploration_identity="a" * 64,
+            coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
+            measurement_budget=2, action_domain=x)

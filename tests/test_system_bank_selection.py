@@ -34,7 +34,7 @@ def test_capacity_bank_is_deterministic_bounded_and_preserves_sources():
     assert report["candidate_response_accessed"] is False
     assert report["heldout_opened"] is False
     assert report["maximum_candidates"] == 4
-    assert report["selection_method"] == "two-fold-safe-hierarchical-source-stacking-operational-entropy-v2"
+    assert report["selection_method"] == "two-fold-safe-half-core-source-stacking-operational-entropy-v3"
     assert report["source_arbitration_validation_response_accessed"] is False
     assert set(report["source_safety"]) == {"engine:mcts", "origin:llm"}
     assert report["source_safety_passed"] is False

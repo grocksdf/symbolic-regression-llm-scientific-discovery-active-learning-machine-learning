@@ -27,18 +27,22 @@ def _config():
         "single_engine": "polynomial_lasso", "prior": {},
         "scoring": {"minimum_samples": 8, "maximum_samples": 16, "error_safety_factor": 2.},
         "measurement_budget": 2, "exploration_seconds": 30, "policy_seconds": 30,
-        "hypothesis_bank_gate": {"schema": "scientific-hypothesis-bank-gate-v3",
+        "hypothesis_bank_gate": {"schema": "scientific-hypothesis-bank-gate-v4",
                                  "exact_eig_epsabs": 1e-10,
                                  "maximum_candidates": 4,
-                                 "selection_rule": "two-fold-safe-hierarchical-source-stacking-operational-entropy-v2",
+                                 "selection_rule": "two-fold-safe-half-core-source-stacking-operational-entropy-v3",
                                  "source_safety_folds": 2,
                                  "source_stacking_baseline": "core",
                                  "source_stacking_dyadic_depth": 8,
+                                 "source_stacking_max_optional_mass": 0.5,
                                  "require_all_variants": True},
         "marginal_influence_gate": {
-            "schema": "scientific-dual-channel-source-contribution-gate-v3",
+            "schema": "scientific-source-admission-influence-gate-v4",
             "exact_eig_epsabs": 1e-10,
             "required_contributions": ["llm", "engine:mcts"],
+            "required_active_contributions": ["llm"],
+            "rejectable_contributions": ["engine:mcts"],
+            "source_admission_rule": "independent-fold-safe-half-core-log-score-stacking-v1",
             "decision_rule": "full-target-certified-regret-v1",
             "quality_rule": "positive-paired-cumulative-log-predictive-ratio-v1",
             "arbitration_fraction": 0.5,
@@ -83,6 +87,25 @@ def _patch(monkeypatch, supported=True):
             "candidate_response_accessed": False, "source_safety_passed": True,
             "source_prior_weights": weights, "heldout_opened": False}
     monkeypatch.setattr(executor, "select_operational_capacity_bank", select_fixture)
+    def admission_fixture(candidates, *args, **kwargs):
+        families = sorted({executor.source_family(row) for row in candidates})
+        core = families.index("core")
+        weights = np.zeros(len(families))
+        optional = [index for index in range(len(families)) if index != core]
+        if optional:
+            weights[core] = .5
+            weights[optional] = .5 / len(optional)
+        else:
+            weights[core] = 1.0
+        certificate = SimpleNamespace(source_weights=dict(zip(families, weights)),
+            stable_hash="admission", to_dict=lambda: {"fixture_only": True})
+        sources = {family: {"weight": float(weights[index]), "admitted": True,
+            "negative_transfer_certified": False,
+            "fold_log_score_gains_vs_core": [1., 1.],
+            "fold_numerical_tolerances": [0., 0.]}
+            for index, family in enumerate(families)}
+        return certificate, sources
+    monkeypatch.setattr(executor, "calibrate_source_admission", admission_fixture)
     monkeypatch.setattr(executor, "freeze_discovery_model",
         lambda candidates, **kwargs: SimpleNamespace(stable_hash="model"))
     monkeypatch.setattr(executor, "freeze_discovery_target",
@@ -98,6 +121,8 @@ def _patch(monkeypatch, supported=True):
             "schema": "scientific-marginal-decision-influence-family-gate-v1",
             "passed": True, "candidate_response_accessed": False,
             "heldout_opened": False, "efficacy_demonstrated": False})
+    monkeypatch.setattr(executor, "_bind_source_admission_to_influence",
+                        lambda report, admission: report)
     monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.estimate_class_eig_until_ranked",
         lambda components, *args, **kwargs: SimpleNamespace(ranking_certified=True,
             estimate=SimpleNamespace(scores=np.arange(components.locations.shape[1], dtype=float),
@@ -166,7 +191,7 @@ def test_degenerate_bank_stops_before_any_pool_response(tmp_path, monkeypatch):
     with pytest.raises(executor.HypothesisBankNotViable):
         executor.execute_registered_system(
             tmp_path / "source", root, _config(), {}, execution_role="user")
-    gate = root / "uci_gas_turbine_co" / "11" / "HYPOTHESIS_BANK_VIABILITY.json"
+    gate = root / "uci_gas_turbine_co" / "11" / "H0_HYPOTHESIS_BANK_VIABILITY.json"
     assert gate.is_file()
     assert not (root / "uci_gas_turbine_co" / "11" / "measured").exists()
     assert (root / "TERMINAL_FAILURE.json").exists()
@@ -213,7 +238,7 @@ def test_source_safety_failure_stops_before_validation_or_pool_response(tmp_path
         executor.execute_registered_system(
             tmp_path / "source", root, _config(), {}, execution_role="user")
     coordinate = root / "uci_gas_turbine_co" / "11"
-    assert (coordinate / "HYPOTHESIS_BANK_VIABILITY.json").is_file()
+    assert (coordinate / "H0_HYPOTHESIS_BANK_VIABILITY.json").is_file()
     assert not (coordinate / "MARGINAL_DECISION_INFLUENCE.json").exists()
     assert not (root / "uci_gas_turbine_co" / "11" / "measured").exists()
 

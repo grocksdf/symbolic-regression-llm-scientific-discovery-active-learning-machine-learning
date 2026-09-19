@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT))
 from hypothesis_mvp.data.system_protocol import load_registered_system_data
 from hypothesis_mvp.discovery.system_executor import (
     MarginalDecisionInfluenceNotCertified,
+    _prepare_source_admission,
     _prepare_marginal_decision_influence,
     _split_source_arbitration,
     validate_system_registration,
@@ -83,8 +84,10 @@ def main() -> int:
     try:
         arbitration, _ = _split_source_arbitration(
             data.evaluation, config["marginal_influence_gate"]["arbitration_fraction"])
-        report = _prepare_marginal_decision_influence(
+        admission = _prepare_source_admission(
             output, {"rows": rows}, data, config, arbitration)
+        report = _prepare_marginal_decision_influence(
+            output, {"rows": rows}, data, config, arbitration, admission)
     except MarginalDecisionInfluenceNotCertified:
         report = json.loads((output / "MARGINAL_DECISION_INFLUENCE.json").read_text(
             encoding="utf-8"))

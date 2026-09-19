@@ -30,7 +30,7 @@ from .marginal_influence import (
 )
 from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target
 from .bank_selection import select_operational_capacity_bank
-from .source_stacking import source_family
+from .source_stacking import calibrate_source_admission, source_family
 
 
 class HypothesisBankNotViable(RuntimeError):
@@ -101,27 +101,34 @@ def validate_system_registration(config):
     gate = config["hypothesis_bank_gate"]
     if (set(gate) != {"schema", "exact_eig_epsabs", "require_all_variants",
                       "maximum_candidates", "selection_rule", "source_safety_folds",
-                      "source_stacking_baseline", "source_stacking_dyadic_depth"}
-            or gate["schema"] != "scientific-hypothesis-bank-gate-v3"
+                      "source_stacking_baseline", "source_stacking_dyadic_depth",
+                      "source_stacking_max_optional_mass"}
+            or gate["schema"] != "scientific-hypothesis-bank-gate-v4"
             or gate["exact_eig_epsabs"] != 1e-10
             or gate["maximum_candidates"] != 2 * config["measurement_budget"]
             or gate["selection_rule"] !=
-                "two-fold-safe-hierarchical-source-stacking-operational-entropy-v2"
+                "two-fold-safe-half-core-source-stacking-operational-entropy-v3"
             or gate["source_safety_folds"] != 2
             or gate["source_stacking_baseline"] != "core"
             or gate["source_stacking_dyadic_depth"] != 8
+            or gate["source_stacking_max_optional_mass"] != 0.5
             or gate["require_all_variants"] is not True):
         raise ValueError("invalid hypothesis-bank viability registration")
     influence = config["marginal_influence_gate"]
     if (set(influence) != {"schema", "exact_eig_epsabs", "required_contributions",
                            "decision_rule", "quality_rule", "arbitration_fraction",
-                           "require_all_contributions"}
-            or influence["schema"] != "scientific-dual-channel-source-contribution-gate-v3"
+                           "require_all_contributions", "source_admission_rule",
+                           "required_active_contributions", "rejectable_contributions"}
+            or influence["schema"] != "scientific-source-admission-influence-gate-v4"
             or influence["exact_eig_epsabs"] != gate["exact_eig_epsabs"]
             or influence["required_contributions"] != ["llm", "engine:mcts"]
             or influence["decision_rule"] != "full-target-certified-regret-v1"
             or influence["quality_rule"] != "positive-paired-cumulative-log-predictive-ratio-v1"
             or influence["arbitration_fraction"] != 0.5
+            or influence["source_admission_rule"] !=
+                "independent-fold-safe-half-core-log-score-stacking-v1"
+            or influence["required_active_contributions"] != ["llm"]
+            or influence["rejectable_contributions"] != ["engine:mcts"]
             or influence["require_all_contributions"] is not True):
         raise ValueError("invalid marginal decision influence registration")
     identity = config["provider_public_identity"]
@@ -184,13 +191,8 @@ def _variant_composition(variant, candidates):
 
 def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
     viability = {}
-    registered_safety = tuple(
-        "origin:llm" if value == "llm" else value
-        for value in config["marginal_influence_gate"]["required_contributions"])
     for row in exploration["rows"]:
         variant = row["variant"]
-        safety_roles = _selection_safety_roles(
-            variant, row["candidates"], registered_safety)
         selected, selection = select_operational_capacity_bank(
             row["candidates"], data.initial, data.pool.X_pool,
             n_features=data.initial.X.shape[1],
@@ -199,7 +201,7 @@ def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
             coefficient_policy=config["coefficient_policy"],
             measurement_budget=config["measurement_budget"],
             maximum_candidates=config["hypothesis_bank_gate"]["maximum_candidates"],
-            source_safety_roles=safety_roles,
+            source_safety_roles=(),
             source_safety_folds=config["hypothesis_bank_gate"]["source_safety_folds"])
         row["candidates"] = list(selected)
         row["source_prior_weights"] = selection["source_prior_weights"]
@@ -213,7 +215,7 @@ def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
                 item.get("origin") == "llm" for item in selected),
             "operational_capacity_selection": selection,
         }
-        _publish(workspace / "exploration" / variant / "FROZEN_BANK.json", {
+        _publish(workspace / "exploration" / variant / "H0_CAPACITY_BANK.json", {
             "variant": variant, "candidates": list(selected),
             "hypothesis_provenance": row["hypothesis_provenance"],
             "selection": selection})
@@ -232,8 +234,8 @@ def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
         audit["passed"] = bool(audit["passed"] and all(composition.values())
                                and selection["source_safety_passed"])
         viability[variant] = audit
-    _publish(workspace / "HYPOTHESIS_BANK_VIABILITY.json", {
-        "schema": "scientific-hypothesis-bank-family-gate-v1",
+    _publish(workspace / "H0_HYPOTHESIS_BANK_VIABILITY.json", {
+        "schema": "scientific-h0-hypothesis-bank-family-gate-v1",
         "variants": viability, "passed": all(row["passed"] for row in viability.values()),
         "candidate_response_accessed": False, "heldout_opened": False,
     })
@@ -286,8 +288,91 @@ def _renormalized_source_weights(weights, candidates):
     return {key: value / total for key, value in selected.items()}
 
 
+def _prepare_source_admission(workspace, exploration, data, config, arbitration):
+    """Calibrate production source mass without reporting or pool responses."""
+    prior = NormalInverseGammaPrior(**config["prior"])
+    reports, viability = {}, {}
+    gate = config["marginal_influence_gate"]
+    for row in exploration["rows"]:
+        certificate, sources = calibrate_source_admission(
+            row["candidates"], data.initial, arbitration,
+            n_features=data.initial.X.shape[1], prior=prior,
+            exploration_identity=_digest(row),
+            coefficient_policy=config["coefficient_policy"],
+            measurement_budget=config["measurement_budget"],
+            action_domain=data.pool.X_pool)
+        row["source_prior_weights"] = certificate.source_weights
+        variant = row["variant"]
+        required = set(gate["required_active_contributions"]) if variant == "full" else set()
+        rejected = set(gate["rejectable_contributions"]) if variant == "full" else set()
+        decisions = {
+            "core_reserve_satisfied": bool(
+                certificate.source_weights.get("core", 0.0) >= 0.5 - 2e-12),
+            "required_sources_admitted": all(sources.get(name, {}).get("admitted")
+                                               for name in required),
+            "rejectable_sources_admitted_or_negative_transfer_certified": all(
+                sources.get(name, {}).get("admitted")
+                or sources.get(name, {}).get("negative_transfer_certified")
+                for name in rejected),
+        }
+        report = {"schema": "scientific-independent-source-admission-v1",
+            "variant": variant, "stacking": certificate.to_dict(),
+            "stacking_identity": certificate.stable_hash, "sources": sources,
+            "decisions": decisions, "passed": all(decisions.values()),
+            "initial_development_response_accessed": True,
+            "source_arbitration_validation_responses_accessed": True,
+            "reporting_validation_response_accessed": False,
+            "candidate_response_accessed": False, "heldout_opened": False}
+        reports[variant] = report
+        _publish(workspace / "exploration" / variant / "FROZEN_BANK.json", {
+            "variant": variant, "candidates": row["candidates"],
+            "hypothesis_provenance": row["hypothesis_provenance"],
+            "source_admission": report,
+            "source_prior_weights": row["source_prior_weights"]})
+        audit = audit_frozen_hypothesis_bank(
+            row["candidates"], data.initial, data.pool.X_pool,
+            n_features=data.initial.X.shape[1], prior=prior,
+            exploration_identity=_digest(row),
+            coefficient_policy=config["coefficient_policy"],
+            measurement_budget=config["measurement_budget"],
+            exact_eig_epsabs=config["hypothesis_bank_gate"]["exact_eig_epsabs"],
+            source_prior_weights=row["source_prior_weights"])
+        audit["source_admission_identity"] = report["stacking_identity"]
+        audit["passed"] = bool(audit["passed"] and report["passed"])
+        viability[variant] = audit
+    family = {"schema": "scientific-independent-source-admission-family-v1",
+        "variants": reports, "passed": all(row["passed"] for row in reports.values()),
+        "reporting_validation_response_accessed": False,
+        "candidate_response_accessed": False, "heldout_opened": False}
+    _publish(workspace / "SOURCE_ADMISSION.json", family)
+    _publish(workspace / "HYPOTHESIS_BANK_VIABILITY.json", {
+        "schema": "scientific-admitted-hypothesis-bank-family-gate-v1",
+        "variants": viability,
+        "passed": all(row["passed"] for row in viability.values()),
+        "candidate_response_accessed": False, "heldout_opened": False})
+    if not family["passed"] or not all(row["passed"] for row in viability.values()):
+        raise HypothesisBankNotViable()
+    return family
+
+
+def _bind_source_admission_to_influence(report, admission):
+    full = admission["variants"]["full"]
+    for name, comparison in report["comparisons"].items():
+        source = full["sources"][name]
+        comparison["source_admission"] = source
+        if not source["admitted"]:
+            comparison["pre_admission_influence_passed"] = comparison["passed"]
+            comparison["accepted_contribution_role"] = "rejected-negative-transfer"
+            comparison["passed"] = bool(source["weight"] <= 2e-12
+                                         and source["negative_transfer_certified"])
+    report["schema"] = "scientific-source-admission-and-influence-family-gate-v1"
+    report["passed"] = all(row["passed"] for row in report["comparisons"].values())
+    report["source_admission_identity"] = _digest(full)
+    return report
+
+
 def _prepare_marginal_decision_influence(workspace, exploration, data, config,
-                                         arbitration):
+                                         arbitration, admission):
     gate = config["marginal_influence_gate"]
     prior = NormalInverseGammaPrior(**config["prior"])
     rows = {row["variant"]: row for row in exploration["rows"]}
@@ -324,10 +409,18 @@ def _prepare_marginal_decision_influence(workspace, exploration, data, config,
     report = audit_marginal_influence(
         profiles, quality_profiles=quality_profiles,
         required_contributions=tuple(gate["required_contributions"]))
+    report = _bind_source_admission_to_influence(report, admission)
     _publish(workspace / "MARGINAL_DECISION_INFLUENCE.json", report)
     if report["passed"] is not True:
         raise MarginalDecisionInfluenceNotCertified()
     return report
+
+
+def _prepare_source_gates(workspace, exploration, data, config, arbitration):
+    admission = _prepare_source_admission(
+        workspace, exploration, data, config, arbitration)
+    return _prepare_marginal_decision_influence(
+        workspace, exploration, data, config, arbitration, admission)
 
 
 def _run_comparison_variant(project_root, workspace, row, data, config, provider,
@@ -404,8 +497,7 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
                 _prepare_hypothesis_bank_viability(workspace, exploration, data, config)
                 arbitration, reporting_evaluation = _split_source_arbitration(
                     data.evaluation, config["marginal_influence_gate"]["arbitration_fraction"])
-                _prepare_marginal_decision_influence(
-                    workspace, exploration, data, config, arbitration)
+                _prepare_source_gates(workspace, exploration, data, config, arbitration)
                 comparisons = {row["variant"]: _run_comparison_variant(
                     project_root, workspace, row, data, config, provider,
                     source_identity, seed, expected_freeze, coordinate,
@@ -469,8 +561,17 @@ def _verify_zero_response_continuation(source_root, config, continuation):
         capacity.pop("source_safety_folds", None)
         capacity.pop("source_stacking_baseline", None)
         capacity.pop("source_stacking_dyadic_depth", None)
-        if capacity.get("schema") == "scientific-hypothesis-bank-gate-v3":
+        capacity.pop("source_stacking_max_optional_mass", None)
+        if capacity.get("schema") in {
+                "scientific-hypothesis-bank-gate-v3",
+                "scientific-hypothesis-bank-gate-v4"}:
             capacity["schema"] = "scientific-hypothesis-bank-gate-v1"
+        influence = compatible.get("marginal_influence_gate", {})
+        influence.pop("source_admission_rule", None)
+        influence.pop("required_active_contributions", None)
+        influence.pop("rejectable_contributions", None)
+        if influence.get("schema") == "scientific-source-admission-influence-gate-v4":
+            influence["schema"] = "scientific-dual-channel-source-contribution-gate-v3"
         if source_registration != compatible:
             raise ValueError("continuation source registration changed beyond bank capacity")
         continuation_mode = "response-free-capacity-rebank"
@@ -574,14 +675,15 @@ def execute_registered_system_continuation(project_root, root, source_root, conf
             data.evaluation, config["marginal_influence_gate"]["arbitration_fraction"])
         if continuation_mode == "response-free-capacity-rebank":
             _prepare_hypothesis_bank_viability(workspace, exploration, data, config)
-            _prepare_marginal_decision_influence(
-                workspace, exploration, data, config, arbitration)
+            _prepare_source_gates(workspace, exploration, data, config, arbitration)
         if measurement_authorized is not True:
             screen = {"schema": "scientific-system-source-stacking-screen-v1",
                 "coordinate": coordinate, "continuation_source": str(source_root),
                 "continuation_mode": continuation_mode,
                 "hypothesis_bank_viability": _digest(json.loads((workspace /
                     "HYPOTHESIS_BANK_VIABILITY.json").read_text(encoding="utf-8"))),
+                "source_admission": _digest(json.loads((workspace /
+                    "SOURCE_ADMISSION.json").read_text(encoding="utf-8"))),
                 "marginal_decision_influence": _digest(json.loads((workspace /
                     "MARGINAL_DECISION_INFLUENCE.json").read_text(encoding="utf-8"))),
                 "protocol_complete": True, "measurement_authorized": False,

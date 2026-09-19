@@ -17,7 +17,7 @@ from scipy.special import logsumexp
 
 
 SCHEMA = "scientific-safe-source-stacking-v1"
-METHOD = "oof-log-score-stacking-dyadic-fold-safe-v1"
+METHOD = "oof-log-score-stacking-half-core-reserve-dyadic-fold-safe-v2"
 
 
 def source_family(candidate) -> str:
@@ -39,6 +39,7 @@ class SafeSourceStackingCertificate:
     fold_numerical_tolerances: tuple[float, ...]
     passed: bool
     fallback_to_baseline: bool
+    maximum_optional_mass: float = 0.5
     method: str = METHOD
 
     def __post_init__(self):
@@ -55,7 +56,8 @@ class SafeSourceStackingCertificate:
                 or not np.isclose(np.sum(arrays[0]), 1.0, atol=2e-12, rtol=0.0)
                 or not np.isclose(np.sum(arrays[1]), 1.0, atol=2e-12, rtol=0.0)
                 or np.any(arrays[3] < 0.0)
-                or self.dyadic_alpha not in {0.0, *(2.0 ** -k for k in range(9))}
+                or self.dyadic_alpha not in {0.0, *(2.0 ** -k for k in range(1, 9))}
+                or self.maximum_optional_mass != 0.5
                 or self.method != METHOD):
             raise ValueError("invalid safe source-stacking certificate")
         safe = bool(np.all(arrays[2] + arrays[3] >= 0.0))
@@ -81,6 +83,7 @@ class SafeSourceStackingCertificate:
             "weights": list(self.weights), "dyadic_alpha": self.dyadic_alpha,
             "fold_log_score_gains": list(self.fold_log_score_gains),
             "fold_numerical_tolerances": list(self.fold_numerical_tolerances),
+            "maximum_optional_mass": self.maximum_optional_mass,
             "passed": self.passed, "fallback_to_baseline": self.fallback_to_baseline}
 
 
@@ -115,7 +118,11 @@ def safe_source_stacking(log_predictive_density, fold_ids, sources, *, baseline_
     unconstrained = _stacking_weights(values)
     baseline = np.zeros(len(names)); baseline[names.index(baseline_source)] = 1.0
     chosen = baseline.copy(); chosen_alpha = 0.0; chosen_gains = None; chosen_tolerances = None
-    for alpha in (1.0, *(2.0 ** -k for k in range(1, 9)), 0.0):
+    # At least half of the production prior remains on the registered core.
+    # This fixed safeguard prevents a finite calibration sample from replacing
+    # the baseline family wholesale while retaining data-adaptive allocation
+    # within the optional half.
+    for alpha in (*(2.0 ** -k for k in range(1, 9)), 0.0):
         weights = alpha * unconstrained + (1.0 - alpha) * baseline
         mixture = logsumexp(values + np.log(np.maximum(
             weights, np.finfo(float).tiny))[None, :], axis=1)
@@ -138,7 +145,81 @@ def safe_source_stacking(log_predictive_density, fold_ids, sources, *, baseline_
         tuple(float(value) for value in unconstrained),
         tuple(float(value) for value in chosen), chosen_alpha,
         tuple(chosen_gains), tuple(chosen_tolerances), True,
-        bool(np.allclose(chosen, baseline, rtol=0.0, atol=2e-12)))
+        bool(np.allclose(chosen, baseline, rtol=0.0, atol=2e-12)), 0.5)
+
+
+def arbitration_source_log_predictive(candidates, initial_data, arbitration, *,
+                                      n_features, prior, exploration_identity,
+                                      coefficient_policy, measurement_budget,
+                                      action_domain):
+    """Score frozen source families on an independent calibration split."""
+    from dataclasses import replace
+    from hypothesis_mvp.data.roles import DataRole
+    from hypothesis_mvp.pcpi.reference import ExactPosterior
+    from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target
+
+    if (initial_data.role is not DataRole.DEVELOPMENT
+            or arbitration.role is not DataRole.VALIDATION
+            or len(arbitration.X) < 4 or len(arbitration.X) % 2):
+        raise ValueError("source admission requires registered H0 and even arbitration data")
+    families = tuple(sorted({source_family(row) for row in candidates}))
+    if "core" not in families:
+        raise ValueError("source admission requires the registered core baseline")
+    expression_family = {(str(row["source"]), str(row["expression"])): source_family(row)
+                         for row in candidates}
+    model = freeze_discovery_model(candidates, n_features=n_features, prior=prior,
+        exploration_identity=exploration_identity, coefficient_policy=coefficient_policy)
+    target = freeze_discovery_target(model, initial_data, action_domain,
+        measurement_budget=measurement_budget, expected_model_identity=model.stable_hash)
+    identifier_family = {}
+    for source, expression, identifier in model.candidate_bindings:
+        family = expression_family[(source, expression)]
+        previous = identifier_family.setdefault(identifier, family)
+        if previous != family:
+            raise ValueError("one structural support crossed source families")
+    profile = np.empty((len(arbitration.X), len(families)), dtype=float)
+    for column, family in enumerate(families):
+        members = [member for member in target.initial_posterior.members
+                   if identifier_family[member.structure.structure_id] == family]
+        mass = float(sum(member.probability for member in members))
+        if not members or mass <= 0.0:
+            raise ValueError("source family has no calibration predictive mass")
+        normalized = tuple(replace(member, probability=member.probability / mass)
+                           for member in members)
+        posterior = ExactPosterior(normalized, 0.0,
+            target.initial_posterior.bank_hash,
+            target.initial_posterior.likelihood_power)
+        profile[:, column] = model.engine(model.stable_hash).predictive_logpdf(
+            posterior, arbitration.X, arbitration.y)
+    return profile, np.arange(len(arbitration.X)) % 2, families
+
+
+def calibrate_source_admission(candidates, initial_data, arbitration, **kwargs):
+    """Return a fold-safe source prior and per-source admission certificates."""
+    values, folds, families = arbitration_source_log_predictive(
+        candidates, initial_data, arbitration, **kwargs)
+    certificate = safe_source_stacking(
+        values, folds, families, baseline_source="core")
+    baseline = values[:, families.index("core")]
+    sources = {}
+    for column, family in enumerate(families):
+        gains, tolerances = [], []
+        for fold in np.unique(folds):
+            active = folds == fold
+            gain = float(np.sum(values[active, column] - baseline[active]))
+            scale = max(1.0, float(np.sum(np.abs(values[active, column]))),
+                        float(np.sum(np.abs(baseline[active]))))
+            gains.append(gain)
+            tolerances.append(float(1024.0 * np.finfo(float).eps * scale))
+        weight = certificate.source_weights[family]
+        admitted = family == "core" or weight > 2e-12
+        harmful = family != "core" and any(
+            gain < -tolerance for gain, tolerance in zip(gains, tolerances))
+        sources[family] = {"weight": weight, "admitted": admitted,
+            "fold_log_score_gains_vs_core": gains,
+            "fold_numerical_tolerances": tolerances,
+            "negative_transfer_certified": bool(not admitted and harmful)}
+    return certificate, sources
 
 
 def crossfit_source_log_predictive(candidates, initial_data, action_domain, *,
@@ -191,5 +272,6 @@ def crossfit_source_log_predictive(candidates, initial_data, action_domain, *,
     return profile, fold_ids, families
 
 
-__all__ = ["SafeSourceStackingCertificate", "crossfit_source_log_predictive",
+__all__ = ["SafeSourceStackingCertificate", "arbitration_source_log_predictive",
+           "calibrate_source_admission", "crossfit_source_log_predictive",
            "safe_source_stacking", "source_family"]

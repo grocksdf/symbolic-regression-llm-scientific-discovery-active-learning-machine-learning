@@ -17,7 +17,7 @@ from .source_stacking import (
 
 
 SCHEMA = "scientific-predictive-safe-operational-capacity-bank-v2"
-METHOD = "two-fold-safe-hierarchical-source-stacking-operational-entropy-v2"
+METHOD = "two-fold-safe-half-core-source-stacking-operational-entropy-v3"
 
 
 def _identity(candidate):

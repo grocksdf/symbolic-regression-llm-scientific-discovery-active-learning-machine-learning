@@ -205,3 +205,19 @@ leave-one-source-out audit may freeze a singleton; it reports no certified EIG
 leader while retaining its proper predictive log score.  The audit never
 duplicates a support, injects prior mass, relaxes a threshold, or authorizes
 measurement.  The support floor is model-identity-bound.
+
+The completed response-free R1 source screen validated that boundary and then
+returned a substantive NO-GO: LLM hypotheses improved the independent source-
+arbitration log score by `+19.7394` nats, whereas the MCTS family reduced it by
+`-24.0078` nats.  No acquisition response or held-out object was opened.  The
+next production rule therefore separates proposal generation from posterior
+admission.  Every configured engine still runs and every candidate remains in
+provenance, but a source receives production prior mass only through an
+independent, two-fold, proper-log-score admission layer.  At least half of the
+prior remains on the task-independent core family; the optional half follows a
+fixed dyadic path.  The LLM is required to be admitted for the full intelligent-
+scientist system, while MCTS may be rejected only with an explicit fold-level
+negative-transfer certificate.  Rejected sources receive exactly zero mass and
+cannot affect acquisition.  The reporting half, acquisition-pool responses and
+held-out data are unavailable to admission.  This is a general source-safety
+contract, not a claim that the observed Gas-CO result will improve.
