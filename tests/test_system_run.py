@@ -67,13 +67,15 @@ def test_coordinator_freezes_shared_target_and_exports(tmp_path, monkeypatch):
     kwargs = dict(n_features=1, prior=NormalInverseGammaPrior(), exploration_identity="a"*64,
         coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
         measurement_budget=2, controls=_session(tmp_path / "fixture").controls,
-        source_identity="correctness-fixture", random_seed=17)
+        source_identity="correctness-fixture", random_seed=17,
+        source_prior_weights={"core": 1.0})
     args = (tmp_path / "comparison", [{"expression": "x0", "source": "a"},
         {"expression": "x0**2", "source": "b"}],
         RoleDataset(DataRole.DEVELOPMENT, np.array([[0.], [1.], [2.]]), np.array([.1, 1., 2.])),
         oracle, np.array([0, 1]))
     result = run_frozen_system_comparison(*args, **kwargs)
     assert result["protocol_complete"] and not result["formal_experiment_authorized"]
+    assert result["source_prior_weights"] == {"core": 1.0}
     assert {m["target"] for m in result["manifests"].values()} == {result["target"]}
     assert all(m["completed_queries"] == 2 for m in result["manifests"].values())
     def forbidden(*args): raise AssertionError("completed comparison must not reveal")

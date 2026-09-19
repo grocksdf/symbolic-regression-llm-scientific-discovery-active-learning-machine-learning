@@ -112,3 +112,83 @@ def test_adapter_has_no_pool_or_heldout_capability():
     assert "heldout" not in inspect.signature(freeze_discovery_model).parameters
     assert "oracle" not in inspect.signature(freeze_discovery_target).parameters
     assert "candidate_ids" not in inspect.signature(freeze_discovery_target).parameters
+
+
+def test_hierarchical_source_prior_is_exactly_bound_to_model_identity():
+    candidates = [
+        {"expression": "x0", "source": "engine:polynomial_lasso", "origin": "deterministic"},
+        {"expression": "x0**2", "source": "anchor", "origin": "deterministic"},
+        {"expression": "x0**3", "source": "engine:mcts", "origin": "deterministic"},
+        {"expression": "sin(x0)", "source": "engine:mcts", "origin": "deterministic"},
+        {"expression": "cos(x0)", "source": "llm_proposal", "origin": "llm"},
+        {"expression": "tanh(x0)", "source": "llm_proposal", "origin": "llm"},
+    ]
+    weights = {"core": .6, "engine:mcts": .3, "llm": .1}
+    weighted = freeze_discovery_model(candidates, n_features=1,
+        prior=NormalInverseGammaPrior(), exploration_identity="a" * 64,
+        coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
+        source_prior_weights=weights)
+    identifier_family = {}
+    for source, expression, identifier in weighted.candidate_bindings:
+        row = next(row for row in candidates
+                   if row["source"] == source and row["expression"] == expression)
+        identifier_family[identifier] = (
+            "llm" if row["origin"] == "llm" else
+            "engine:mcts" if row["source"] == "engine:mcts" else "core")
+    mass = {family: 0.0 for family in weights}
+    for structure in weighted.bank.structures:
+        mass[identifier_family[structure.structure_id]] += structure.prior_probability
+    assert mass == pytest.approx(weights)
+    assert weighted.stable_hash != freeze_discovery_model(candidates, n_features=1,
+        prior=NormalInverseGammaPrior(), exploration_identity="a" * 64,
+        coefficient_policy="discard-fitted-coefficients-refit-closed-basis").stable_hash
+
+
+def test_exact_source_fallback_removes_harmful_family_publicly():
+    candidates = [
+        {"expression": "x0", "source": "engine:polynomial_lasso", "origin": "deterministic"},
+        {"expression": "x0**2", "source": "anchor", "origin": "deterministic"},
+        {"expression": "x0**3", "source": "engine:mcts", "origin": "deterministic"},
+    ]
+    model = freeze_discovery_model(candidates, n_features=1,
+        prior=NormalInverseGammaPrior(), exploration_identity="a" * 64,
+        coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
+        source_prior_weights={"core": 1.0, "engine:mcts": 0.0})
+    assert len(model.bank.structures) == 2
+    assert all(source != "engine:mcts" for source, _, _ in model.candidate_bindings)
+
+
+def test_strict_prefix_response_updates_source_mass_by_bayes_rule():
+    from dataclasses import replace
+    from hypothesis_mvp.pcpi.reference import ExactPosterior
+    candidates = [
+        {"expression": "x0", "source": "anchor", "origin": "deterministic"},
+        {"expression": "x0**2", "source": "anchor", "origin": "deterministic"},
+        {"expression": "sin(x0)", "source": "engine:mcts", "origin": "deterministic"},
+        {"expression": "cos(x0)", "source": "engine:mcts", "origin": "deterministic"},
+    ]
+    model = freeze_discovery_model(candidates, n_features=1,
+        prior=NormalInverseGammaPrior(), exploration_identity="a" * 64,
+        coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
+        source_prior_weights={"core": .7, "engine:mcts": .3})
+    engine = model.engine(model.stable_hash); prior = engine.prior_posterior()
+    family_by_id = {identifier: ("engine:mcts" if source == "engine:mcts" else "core")
+                    for source, _, identifier in model.candidate_bindings}
+    action, response = np.array([[.4]]), np.array([.8])
+    likelihood, prior_mass = {}, {}
+    for family in ("core", "engine:mcts"):
+        members = [member for member in prior.members
+                   if family_by_id[member.structure.structure_id] == family]
+        mass = sum(member.probability for member in members); prior_mass[family] = mass
+        normalized = tuple(replace(member, probability=member.probability / mass)
+                           for member in members)
+        family_posterior = ExactPosterior(normalized, 0.0, prior.bank_hash, prior.likelihood_power)
+        likelihood[family] = float(np.exp(engine.predictive_logpdf(
+            family_posterior, action, response)[0]))
+    denominator = sum(prior_mass[key] * likelihood[key] for key in likelihood)
+    expected = {key: prior_mass[key] * likelihood[key] / denominator for key in likelihood}
+    updated = engine.update_one(prior, action[0], float(response[0]))
+    actual = {key: sum(member.probability for member in updated.members
+                       if family_by_id[member.structure.structure_id] == key)
+              for key in likelihood}
+    assert actual == pytest.approx(expected, abs=1e-12)

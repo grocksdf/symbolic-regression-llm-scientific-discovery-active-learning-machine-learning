@@ -19,10 +19,12 @@ from hypothesis_mvp.data.roles import DataRole
 
 
 def _freeze_comparison(candidates, n_features, prior, exploration_identity,
-                       coefficient_policy, initial_data, actions, measurement_budget):
+                       coefficient_policy, initial_data, actions, measurement_budget,
+                       source_prior_weights=None):
     model = freeze_discovery_model(candidates, n_features=n_features,
         prior=prior, exploration_identity=exploration_identity,
-        coefficient_policy=coefficient_policy)
+        coefficient_policy=coefficient_policy,
+        source_prior_weights=source_prior_weights)
     target = freeze_discovery_target(model, initial_data, actions,
         measurement_budget=measurement_budget,
         expected_model_identity=model.stable_hash)
@@ -31,13 +33,14 @@ def _freeze_comparison(candidates, n_features, prior, exploration_identity,
 
 def audit_frozen_hypothesis_bank(candidates, initial_data, actions, *, n_features,
                                  prior, exploration_identity, coefficient_policy,
-                                 measurement_budget, exact_eig_epsabs):
+                                 measurement_budget, exact_eig_epsabs,
+                                 source_prior_weights=None):
     """Response-free capacity Gate before any candidate response is revealed."""
     if exact_eig_epsabs != EXACT_CLASS_EIG_EPSABS:
         raise ValueError("hypothesis-bank Gate must match exact EIG absolute tolerance")
     model, target = _freeze_comparison(
         candidates, n_features, prior, exploration_identity, coefficient_policy,
-        initial_data, actions, measurement_budget,
+        initial_data, actions, measurement_budget, source_prior_weights,
     )
     probabilities = np.asarray(target.partition.class_probabilities, dtype=float)
     entropy = float(target.partition.entropy)
@@ -109,7 +112,7 @@ def run_frozen_system_comparison(root, candidates, initial_data, pool,
                                  exploration_identity, coefficient_policy,
                                  measurement_budget, controls, source_identity,
                                  random_seed, policy_wall_time_seconds=None,
-                                 evaluation_data=None):
+                                 evaluation_data=None, source_prior_weights=None):
     """Share one conditional model/H0/class map between EIG and random queries.
 
     Unsupported proposals abort the entire freeze. No retry, fallback, efficacy
@@ -130,7 +133,8 @@ def run_frozen_system_comparison(root, candidates, initial_data, pool,
         raise ValueError("invalid registered pool IDs")
     actions = pool.X_pool[ids]
     freeze_arguments = (candidates, n_features, prior, exploration_identity,
-                        coefficient_policy, initial_data, actions, measurement_budget)
+                        coefficient_policy, initial_data, actions, measurement_budget,
+                        source_prior_weights)
     if policy_wall_time_seconds is None:
         model, target = _freeze_comparison(*freeze_arguments)
     else:
@@ -142,6 +146,7 @@ def run_frozen_system_comparison(root, candidates, initial_data, pool,
         "measurement_budget": measurement_budget, "random_seed": random_seed,
         "policy_wall_time_seconds": policy_wall_time_seconds,
         "evaluation_identity": None if evaluation_data is None else evaluation_data.fingerprint,
+        "source_prior_weights": source_prior_weights,
         "policies": ["class_eig", "random"], "heldout_opened": False,
         "hypothesis_audit": {
             "candidate_binding_count": len(model.candidate_bindings),

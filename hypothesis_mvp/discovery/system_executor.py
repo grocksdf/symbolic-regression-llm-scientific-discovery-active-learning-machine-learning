@@ -30,6 +30,7 @@ from .marginal_influence import (
 )
 from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target
 from .bank_selection import select_operational_capacity_bank
+from .source_stacking import source_family
 
 
 class HypothesisBankNotViable(RuntimeError):
@@ -99,13 +100,16 @@ def validate_system_registration(config):
     DiscoveryScoringControls(**config["scoring"])
     gate = config["hypothesis_bank_gate"]
     if (set(gate) != {"schema", "exact_eig_epsabs", "require_all_variants",
-                      "maximum_candidates", "selection_rule", "source_safety_folds"}
-            or gate["schema"] != "scientific-hypothesis-bank-gate-v2"
+                      "maximum_candidates", "selection_rule", "source_safety_folds",
+                      "source_stacking_baseline", "source_stacking_dyadic_depth"}
+            or gate["schema"] != "scientific-hypothesis-bank-gate-v3"
             or gate["exact_eig_epsabs"] != 1e-10
             or gate["maximum_candidates"] != 2 * config["measurement_budget"]
             or gate["selection_rule"] !=
-                "two-fold-initial-predictive-safe-operational-entropy-v1"
+                "two-fold-safe-hierarchical-source-stacking-operational-entropy-v2"
             or gate["source_safety_folds"] != 2
+            or gate["source_stacking_baseline"] != "core"
+            or gate["source_stacking_dyadic_depth"] != 8
             or gate["require_all_variants"] is not True):
         raise ValueError("invalid hypothesis-bank viability registration")
     influence = config["marginal_influence_gate"]
@@ -198,6 +202,7 @@ def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
             source_safety_roles=safety_roles,
             source_safety_folds=config["hypothesis_bank_gate"]["source_safety_folds"])
         row["candidates"] = list(selected)
+        row["source_prior_weights"] = selection["source_prior_weights"]
         row["hypothesis_provenance"] = {
             **row["hypothesis_provenance"],
             "candidate_count": len(selected),
@@ -220,6 +225,7 @@ def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
             coefficient_policy=config["coefficient_policy"],
             measurement_budget=config["measurement_budget"],
             exact_eig_epsabs=config["hypothesis_bank_gate"]["exact_eig_epsabs"],
+            source_prior_weights=row["source_prior_weights"],
         )
         composition = _variant_composition(variant, row["candidates"])
         audit["composition_decisions"] = composition
@@ -270,6 +276,16 @@ def _split_source_arbitration(evaluation, fraction):
     return arbitration, reporting
 
 
+def _renormalized_source_weights(weights, candidates):
+    """Condition one frozen hierarchical prior on sources retained by an ablation."""
+    available = {source_family(row) for row in candidates}
+    selected = {family: float(weights.get(family, 0.0)) for family in available}
+    total = float(sum(selected.values()))
+    if total <= 0.0:
+        raise ValueError("source ablation removed all hierarchical prior mass")
+    return {key: value / total for key, value in selected.items()}
+
+
 def _prepare_marginal_decision_influence(workspace, exploration, data, config,
                                          arbitration):
     gate = config["marginal_influence_gate"]
@@ -284,9 +300,12 @@ def _prepare_marginal_decision_influence(workspace, exploration, data, config,
             leave_one_source_out_candidates(full["candidates"], contribution))
     profiles, quality_profiles = {}, {}
     for variant, bank in candidates.items():
+        source_weights = _renormalized_source_weights(
+            full["source_prior_weights"], bank)
         model = freeze_discovery_model(bank, n_features=data.initial.X.shape[1],
             prior=prior, exploration_identity=_digest(full),
-            coefficient_policy=config["coefficient_policy"])
+            coefficient_policy=config["coefficient_policy"],
+            source_prior_weights=source_weights)
         target = freeze_discovery_target(model, data.initial, data.pool.X_pool,
             measurement_budget=config["measurement_budget"],
             expected_model_identity=model.stable_hash)
@@ -320,7 +339,8 @@ def _run_comparison_variant(project_root, workspace, row, data, config, provider
         measurement_budget=config["measurement_budget"],
         controls=DiscoveryScoringControls(**config["scoring"]),
         source_identity=source_identity, random_seed=seed,
-        policy_wall_time_seconds=config["policy_seconds"], evaluation_data=evaluation_data)
+        policy_wall_time_seconds=config["policy_seconds"], evaluation_data=evaluation_data,
+        source_prior_weights=row["source_prior_weights"])
     registry = EvidenceRegistry(workspace / "exploration" / variant / "evidence_registry.jsonl")
     if not registry.verify().valid or not registry.events():
         raise ValueError("missing or invalid discovery evidence chain")
@@ -440,7 +460,9 @@ def _verify_zero_response_continuation(source_root, config, continuation):
         capacity.pop("maximum_candidates", None)
         capacity.pop("selection_rule", None)
         capacity.pop("source_safety_folds", None)
-        if capacity.get("schema") == "scientific-hypothesis-bank-gate-v2":
+        capacity.pop("source_stacking_baseline", None)
+        capacity.pop("source_stacking_dyadic_depth", None)
+        if capacity.get("schema") == "scientific-hypothesis-bank-gate-v3":
             capacity["schema"] = "scientific-hypothesis-bank-gate-v1"
         if source_registration != compatible:
             raise ValueError("continuation source registration changed beyond bank capacity")
@@ -488,10 +510,13 @@ def _verify_zero_response_continuation(source_root, config, continuation):
 
 
 def execute_registered_system_continuation(project_root, root, source_root, config,
-                                           expected_freeze, continuation, *, execution_role):
+                                           expected_freeze, continuation, *, execution_role,
+                                           measurement_authorized=True):
     """Continue an immutable zero-response screen without rerunning discovery."""
     config = json.loads(json.dumps(config, allow_nan=False))
     validate_system_registration(config)
+    if type(measurement_authorized) is not bool:
+        raise TypeError("continuation measurement authorization must be boolean")
     if execution_role != "user" or config["user_execution_authorized"] is not True:
         raise PermissionError("real development continuation requires user authorization")
     project_root, root = Path(project_root).resolve(), Path(root).resolve()
@@ -544,6 +569,20 @@ def execute_registered_system_continuation(project_root, root, source_root, conf
             _prepare_hypothesis_bank_viability(workspace, exploration, data, config)
             _prepare_marginal_decision_influence(
                 workspace, exploration, data, config, arbitration)
+        if measurement_authorized is not True:
+            screen = {"schema": "scientific-system-source-stacking-screen-v1",
+                "coordinate": coordinate, "continuation_source": str(source_root),
+                "continuation_mode": continuation_mode,
+                "hypothesis_bank_viability": _digest(json.loads((workspace /
+                    "HYPOTHESIS_BANK_VIABILITY.json").read_text(encoding="utf-8"))),
+                "marginal_decision_influence": _digest(json.loads((workspace /
+                    "MARGINAL_DECISION_INFLUENCE.json").read_text(encoding="utf-8"))),
+                "protocol_complete": True, "measurement_authorized": False,
+                "candidate_response_accessed": False, "heldout_opened": False,
+                "superiority_demonstrated": False,
+                "claim_boundary": "H0 and source-arbitration screen only; no acquisition response"}
+            _publish(root / "SCREEN_MANIFEST.json", screen)
+            return screen
         comparisons = {row["variant"]: _run_comparison_variant(
             project_root, workspace, row, data, config, None, source_identity, seed,
             expected_freeze, coordinate, reporting_evaluation)

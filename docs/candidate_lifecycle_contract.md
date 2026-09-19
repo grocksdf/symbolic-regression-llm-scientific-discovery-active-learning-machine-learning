@@ -173,3 +173,25 @@ purpose is precisely to expose lost contribution or negative transfer.  They
 retain identical capacity and viability checks, but do not have to outperform
 additional unregistered within-control ablations.  This scope correction does
 not change any score, threshold, candidate, budget or observed artifact.
+
+The completed predictive-safe pilot remains immutable development evidence:
+PCPI class-EIG improved the full bank over matched random acquisition, but the
+full system was worse than both `no_llm` and `single_engine`; its four-query
+EIG/realized-RMSE Spearman statistic was `-0.8`. The failure is therefore
+source-level negative transfer and utility misalignment, not a runner error.
+
+The next method replaces the flat equal-structure prior with conservative
+hierarchical source stacking. `core` contains the registered polynomial engine
+and deterministic anchors, while MCTS and LLM form explicit optional source
+families. Two-fold H0 posterior-predictive log densities determine ordinary
+log-score stacking weights. Those weights are then shrunk toward `core` along
+the fixed path `1, 1/2, ..., 1/256, 0` until the mixture is no worse than core
+on every fold. A harmful source therefore receives exactly zero prior mass;
+one favourable fold cannot hide negative transfer in the other. Within each
+admitted source, its frozen prior mass is divided equally across structures and
+the original conjugate posterior remains unchanged. Subsequent authorized
+responses update source mass through the same ordinary Bayesian marginal
+likelihood, so no second optimizer, evaluation response or post-hoc fallback
+enters the measured path. The source weights are bound into the bank, model,
+target, transaction and comparison identities. Full-system admission still
+requires positive MCTS and LLM mass; ablations may publicly fall back to core.

@@ -48,11 +48,13 @@
   },
   "measurement_budget": 4,
   "hypothesis_bank_gate": {
-    "schema": "scientific-hypothesis-bank-gate-v2",
+    "schema": "scientific-hypothesis-bank-gate-v3",
     "exact_eig_epsabs": 1e-10,
     "maximum_candidates": 8,
-    "selection_rule": "two-fold-initial-predictive-safe-operational-entropy-v1",
+    "selection_rule": "two-fold-safe-hierarchical-source-stacking-operational-entropy-v2",
     "source_safety_folds": 2,
+    "source_stacking_baseline": "core",
+    "source_stacking_dyadic_depth": 8,
     "require_all_variants": true
   },
   "marginal_influence_gate": {

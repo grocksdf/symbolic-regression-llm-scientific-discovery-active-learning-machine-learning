@@ -27,11 +27,13 @@ def _config():
         "single_engine": "polynomial_lasso", "prior": {},
         "scoring": {"minimum_samples": 8, "maximum_samples": 16, "error_safety_factor": 2.},
         "measurement_budget": 2, "exploration_seconds": 30, "policy_seconds": 30,
-        "hypothesis_bank_gate": {"schema": "scientific-hypothesis-bank-gate-v2",
+        "hypothesis_bank_gate": {"schema": "scientific-hypothesis-bank-gate-v3",
                                  "exact_eig_epsabs": 1e-10,
                                  "maximum_candidates": 4,
-                                 "selection_rule": "two-fold-initial-predictive-safe-operational-entropy-v1",
+                                 "selection_rule": "two-fold-safe-hierarchical-source-stacking-operational-entropy-v2",
                                  "source_safety_folds": 2,
+                                 "source_stacking_baseline": "core",
+                                 "source_stacking_dyadic_depth": 8,
                                  "require_all_variants": True},
         "marginal_influence_gate": {
             "schema": "scientific-dual-channel-source-contribution-gate-v3",
@@ -74,10 +76,13 @@ def _patch(monkeypatch, supported=True):
     monkeypatch.setattr(executor, "audit_frozen_hypothesis_bank", lambda *args, **kwargs: {
         "schema": "scientific-hypothesis-bank-viability-v1", "passed": True,
         "candidate_response_accessed": False, "heldout_opened": False})
-    monkeypatch.setattr(executor, "select_operational_capacity_bank",
-        lambda candidates, *args, **kwargs: (tuple(candidates), {
-            "schema": "fixture-capacity-bank", "candidate_response_accessed": False,
-            "source_safety_passed": True, "heldout_opened": False}))
+    def select_fixture(candidates, *args, **kwargs):
+        families = sorted({executor.source_family(row) for row in candidates})
+        weights = {family: 1.0 / len(families) for family in families}
+        return tuple(candidates), {"schema": "fixture-capacity-bank",
+            "candidate_response_accessed": False, "source_safety_passed": True,
+            "source_prior_weights": weights, "heldout_opened": False}
+    monkeypatch.setattr(executor, "select_operational_capacity_bank", select_fixture)
     monkeypatch.setattr(executor, "freeze_discovery_model",
         lambda candidates, **kwargs: SimpleNamespace(stable_hash="model"))
     monkeypatch.setattr(executor, "freeze_discovery_target",
@@ -190,11 +195,15 @@ def test_marginal_influence_failure_stops_before_any_pool_response(tmp_path, mon
 
 def test_source_safety_failure_stops_before_validation_or_pool_response(tmp_path, monkeypatch):
     _patch(monkeypatch)
-    monkeypatch.setattr(executor, "select_operational_capacity_bank",
-        lambda candidates, *args, **kwargs: (tuple(candidates), {
-            "schema": "fixture-capacity-bank", "candidate_response_accessed": False,
+    def failed_selection(candidates, *args, **kwargs):
+        families = sorted({executor.source_family(row) for row in candidates})
+        return tuple(candidates), {"schema": "fixture-capacity-bank",
+            "candidate_response_accessed": False,
             "source_arbitration_validation_response_accessed": False,
-            "source_safety_passed": False, "heldout_opened": False}))
+            "source_safety_passed": False,
+            "source_prior_weights": {family: 1.0 / len(families) for family in families},
+            "heldout_opened": False}
+    monkeypatch.setattr(executor, "select_operational_capacity_bank", failed_selection)
     def forbidden(*args, **kwargs):
         raise AssertionError("source-safety failure must precede validation and pool responses")
     monkeypatch.setattr(executor, "predictive_quality_profile", forbidden)
@@ -223,6 +232,15 @@ def test_predictive_safety_is_scoped_to_full_not_negative_controls():
         executor._selection_safety_roles("full", candidates[:2], registered)
     with pytest.raises(ValueError, match="unknown"):
         executor._selection_safety_roles("unregistered", candidates, registered)
+
+
+def test_continuation_screen_branch_precedes_measured_comparisons():
+    import inspect
+    source = inspect.getsource(executor.execute_registered_system_continuation)
+    assert source.index("if measurement_authorized is not True") < source.index(
+        "comparisons = {row[\"variant\"]: _run_comparison_variant")
+    assert '"candidate_response_accessed": False' in source
+    assert '"measurement_authorized": False' in source
 
 
 def test_authorization_and_dirty_source_block_before_data(tmp_path, monkeypatch):

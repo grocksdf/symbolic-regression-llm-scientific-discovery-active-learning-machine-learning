@@ -23,6 +23,7 @@ from hypothesis_mvp.pcpi.reference import (
     ExactPosterior, aggregate_decision_equivalent_classes,
     budget_resolved_distance_threshold,
 )
+from .source_stacking import source_family
 
 
 class DiscoveryAdapterError(ValueError):
@@ -209,13 +210,13 @@ def freeze_discovery_target(
 def freeze_discovery_model(
     candidates: Sequence[Mapping[str, str]], *, n_features: int,
     prior: NormalInverseGammaPrior, exploration_identity: str,
-    coefficient_policy: str,
+    coefficient_policy: str, source_prior_weights: Mapping[str, float] | None = None,
 ) -> FrozenDiscoveryModel:
     if coefficient_policy != "discard-fitted-coefficients-refit-closed-basis":
         raise ValueError("explicit structural-refit authorization required")
     if len(exploration_identity) != 64 or any(c not in "0123456789abcdef" for c in exploration_identity):
         raise ValueError("exploration identity must be SHA-256")
-    supports: dict[tuple[str, ...], str] = {}
+    supports: dict[tuple[str, ...], tuple[str, str]] = {}
     bindings = []
     for candidate in candidates:
         expression = str(candidate["expression"])
@@ -228,11 +229,32 @@ def freeze_discovery_model(
                 f"candidate-not-adaptable:{digest}:{code}"
             ) from error
         identifier = "discovery-" + sha256(json.dumps(terms).encode()).hexdigest()[:24]
-        supports[terms] = identifier
+        family = source_family(candidate)
+        existing = supports.setdefault(terms, (identifier, family))
+        if existing[1] != family:
+            raise DiscoveryAdapterError("duplicate-support-crosses-source-families")
         bindings.append((str(candidate["source"]), expression, identifier))
     if len(supports) < 2:
         raise ValueError("at least two distinct model supports required")
-    structures = tuple(ReferenceStructure(identifier, " + ".join(terms), terms, 1.0 / len(supports))
-                       for terms, identifier in sorted(supports.items()))
+    families = {family for _, family in supports.values()}
+    if source_prior_weights is None:
+        weights = {family: sum(value[1] == family for value in supports.values()) / len(supports)
+                   for family in families}
+    else:
+        weights = {str(key): float(value) for key, value in source_prior_weights.items()}
+        if (set(weights) != families or any(not math.isfinite(value) or value < 0.0
+                for value in weights.values())
+                or not math.isclose(sum(weights.values()), 1.0, rel_tol=0.0, abs_tol=2e-12)):
+            raise ValueError("invalid hierarchical source prior weights")
+    active = {family for family, weight in weights.items() if weight > 2e-12}
+    counts = {family: sum(value[1] == family for value in supports.values())
+              for family in active}
+    structures = tuple(ReferenceStructure(identifier, " + ".join(terms), terms,
+        weights[family] / counts[family])
+        for terms, (identifier, family) in sorted(supports.items()) if family in active)
+    bindings = [binding for binding in bindings
+                if any(binding[2] == structure.structure_id for structure in structures)]
+    if len(structures) < 2:
+        raise ValueError("source fallback leaves fewer than two model supports")
     return FrozenDiscoveryModel(ReferenceBank(structures, prior), n_features,
                                 tuple(sorted(bindings)), exploration_identity)

@@ -11,10 +11,13 @@ import numpy as np
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
 
 from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target, structural_terms
+from .source_stacking import (
+    crossfit_source_log_predictive, safe_source_stacking, source_family,
+)
 
 
 SCHEMA = "scientific-predictive-safe-operational-capacity-bank-v2"
-METHOD = "two-fold-initial-predictive-safe-operational-entropy-v1"
+METHOD = "two-fold-safe-hierarchical-source-stacking-operational-entropy-v2"
 
 
 def _identity(candidate):
@@ -58,20 +61,22 @@ class _CapacityEvaluator:
     target_cache: dict = field(default_factory=dict)
     profile_cache: dict = field(default_factory=dict)
 
-    def target(self, rows, initial):
-        key = (tuple(sorted(_identity(row) for row in rows)), initial.fingerprint)
+    def target(self, rows, initial, source_weights=None):
+        weight_key = None if source_weights is None else tuple(sorted(source_weights.items()))
+        key = (tuple(sorted(_identity(row) for row in rows)), initial.fingerprint, weight_key)
         if key not in self.target_cache:
             model = freeze_discovery_model(rows, n_features=self.n_features,
                 prior=self.prior, exploration_identity=self.exploration_identity,
-                coefficient_policy=self.coefficient_policy)
+                coefficient_policy=self.coefficient_policy,
+                source_prior_weights=source_weights)
             frozen = freeze_discovery_target(model, initial, self.action_domain,
                 measurement_budget=self.measurement_budget,
                 expected_model_identity=model.stable_hash)
             self.target_cache[key] = (model, frozen)
         return self.target_cache[key]
 
-    def capacity(self, rows):
-        model, frozen = self.target(rows, self.initial_data)
+    def capacity(self, rows, source_weights):
+        model, frozen = self.target(rows, self.initial_data, source_weights)
         return (float(frozen.partition.entropy), len(frozen.partition.class_ids),
                 model.stable_hash, frozen.stable_hash)
 
@@ -93,21 +98,21 @@ class _CapacityEvaluator:
         return self.profile_cache[key]
 
     def safety(self, rows):
-        full = self.crossfit_profile(rows)
+        profile, folds, sources = crossfit_source_log_predictive(
+            rows, self.initial_data, self.action_domain,
+            n_features=self.n_features, prior=self.prior,
+            exploration_identity=self.exploration_identity,
+            coefficient_policy=self.coefficient_policy,
+            measurement_budget=self.measurement_budget)
+        certificate = safe_source_stacking(
+            profile, folds, sources, baseline_source="core")
         audits = {}
         for role in self.safety_roles:
-            ablated_rows = _without_role(rows, role)
-            if len(ablated_rows) < 2 or len(ablated_rows) == len(rows):
-                raise ValueError("source-safety ablation is empty or absent")
-            ablated = self.crossfit_profile(ablated_rows)
-            delta = float(np.sum(full - ablated))
-            scale = max(1.0, float(np.sum(np.abs(full))),
-                        float(np.sum(np.abs(ablated))))
-            tolerance = float(1024.0 * np.finfo(float).eps * scale)
-            audits[role] = {"paired_cumulative_log_predictive_ratio_nats": delta,
-                            "numerical_tolerance_nats": tolerance,
-                            "passed": bool(delta > tolerance)}
-        return audits
+            family = "llm" if role == "origin:llm" else role
+            weight = certificate.source_weights.get(family, 0.0)
+            audits[role] = {"source_family": family, "stacking_weight": weight,
+                            "passed": bool(weight > 2e-12)}
+        return audits, certificate
 
 
 def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
@@ -151,19 +156,21 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
 
     evaluated = []
     for rows in candidate_sets:
-        audits = evaluator.safety(rows)
+        audits, certificate = evaluator.safety(rows)
         passed = all(audit["passed"] for audit in audits.values())
-        cap = evaluator.capacity(rows)
-        minimum_margin = min((audit["paired_cumulative_log_predictive_ratio_nats"]
-                              - audit["numerical_tolerance_nats"]
+        # A rejected set may collapse to one support family.  Its capacity is
+        # diagnostic under the unchanged finite-bank prior; only admitted sets
+        # are scored under the hierarchical source prior used in production.
+        cap = evaluator.capacity(rows, certificate.source_weights if passed else None)
+        minimum_margin = min((audit["stacking_weight"]
                               for audit in audits.values()), default=float("inf"))
         identity = tuple(sorted(_identity(row) for row in rows))
-        evaluated.append((passed, cap, minimum_margin, identity, rows, audits))
+        evaluated.append((passed, cap, minimum_margin, identity, rows, audits, certificate))
     feasible = [item for item in evaluated if item[0]]
     ranked = feasible if feasible else evaluated
     chosen = min(ranked, key=lambda item: (
         -item[1][0] if feasible else -item[2], -item[1][1], item[3]))
-    passed, final_score, _, _, selected, audits = chosen
+    passed, final_score, _, _, selected, audits, certificate = chosen
     return tuple(selected), {
         "schema": SCHEMA,
         "selection_method": METHOD,
@@ -172,6 +179,9 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
         "maximum_candidates": maximum_candidates, "required_roles": list(required),
         "source_safety_roles": list(safety_roles), "source_safety_folds": 2,
         "source_safety": audits, "source_safety_passed": passed,
+        "source_stacking": certificate.to_dict(),
+        "source_stacking_identity": certificate.stable_hash,
+        "source_prior_weights": certificate.source_weights,
         "class_entropy_nats": final_score[0], "operational_class_count": final_score[1],
         "model": final_score[2], "target": final_score[3],
         "initial_development_response_accessed": True,
