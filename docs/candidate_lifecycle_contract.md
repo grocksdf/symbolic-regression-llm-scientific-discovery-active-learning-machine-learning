@@ -215,7 +215,9 @@ admission.  Every configured engine still runs and every candidate remains in
 provenance, but a source receives production prior mass only through an
 independent, two-fold, proper-log-score admission layer.  At least half of the
 prior remains on the task-independent core family; the optional half follows a
-fixed dyadic path.  The LLM is required to be admitted for the full intelligent-
+fixed dyadic path.  Eligibility is tested source by source on every arbitration
+fold before mixture optimization, so one helpful source cannot conceal another
+source's negative-transfer fold.  The LLM is required to be admitted for the full intelligent-
 scientist system, while MCTS may be rejected only with an explicit fold-level
 negative-transfer certificate.  Rejected sources receive exactly zero mass and
 cannot affect acquisition.  The reporting half, acquisition-pool responses and

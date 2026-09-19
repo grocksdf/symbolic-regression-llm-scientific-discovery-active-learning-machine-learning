@@ -119,14 +119,14 @@ def validate_system_registration(config):
                            "decision_rule", "quality_rule", "arbitration_fraction",
                            "require_all_contributions", "source_admission_rule",
                            "required_active_contributions", "rejectable_contributions"}
-            or influence["schema"] != "scientific-source-admission-influence-gate-v4"
+            or influence["schema"] != "scientific-source-admission-influence-gate-v5"
             or influence["exact_eig_epsabs"] != gate["exact_eig_epsabs"]
             or influence["required_contributions"] != ["llm", "engine:mcts"]
             or influence["decision_rule"] != "full-target-certified-regret-v1"
             or influence["quality_rule"] != "positive-paired-cumulative-log-predictive-ratio-v1"
             or influence["arbitration_fraction"] != 0.5
             or influence["source_admission_rule"] !=
-                "independent-fold-safe-half-core-log-score-stacking-v1"
+                "independent-sourcewise-fold-safe-half-core-log-score-stacking-v2"
             or influence["required_active_contributions"] != ["llm"]
             or influence["rejectable_contributions"] != ["engine:mcts"]
             or influence["require_all_contributions"] is not True):
@@ -315,7 +315,7 @@ def _prepare_source_admission(workspace, exploration, data, config, arbitration)
                 or sources.get(name, {}).get("negative_transfer_certified")
                 for name in rejected),
         }
-        report = {"schema": "scientific-independent-source-admission-v1",
+        report = {"schema": "scientific-independent-sourcewise-admission-v2",
             "variant": variant, "stacking": certificate.to_dict(),
             "stacking_identity": certificate.stable_hash, "sources": sources,
             "decisions": decisions, "passed": all(decisions.values()),
@@ -340,7 +340,7 @@ def _prepare_source_admission(workspace, exploration, data, config, arbitration)
         audit["source_admission_identity"] = report["stacking_identity"]
         audit["passed"] = bool(audit["passed"] and report["passed"])
         viability[variant] = audit
-    family = {"schema": "scientific-independent-source-admission-family-v1",
+    family = {"schema": "scientific-independent-sourcewise-admission-family-v2",
         "variants": reports, "passed": all(row["passed"] for row in reports.values()),
         "reporting_validation_response_accessed": False,
         "candidate_response_accessed": False, "heldout_opened": False}
@@ -570,7 +570,9 @@ def _verify_zero_response_continuation(source_root, config, continuation):
         influence.pop("source_admission_rule", None)
         influence.pop("required_active_contributions", None)
         influence.pop("rejectable_contributions", None)
-        if influence.get("schema") == "scientific-source-admission-influence-gate-v4":
+        if influence.get("schema") in {
+                "scientific-source-admission-influence-gate-v4",
+                "scientific-source-admission-influence-gate-v5"}:
             influence["schema"] = "scientific-dual-channel-source-contribution-gate-v3"
         if source_registration != compatible:
             raise ValueError("continuation source registration changed beyond bank capacity")
@@ -677,7 +679,7 @@ def execute_registered_system_continuation(project_root, root, source_root, conf
             _prepare_hypothesis_bank_viability(workspace, exploration, data, config)
             _prepare_source_gates(workspace, exploration, data, config, arbitration)
         if measurement_authorized is not True:
-            screen = {"schema": "scientific-system-source-stacking-screen-v1",
+            screen = {"schema": "scientific-system-source-admission-screen-v2",
                 "coordinate": coordinate, "continuation_source": str(source_root),
                 "continuation_mode": continuation_mode,
                 "hypothesis_bank_viability": _digest(json.loads((workspace /

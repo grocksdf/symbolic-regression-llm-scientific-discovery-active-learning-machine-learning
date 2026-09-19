@@ -24,6 +24,7 @@ def main():
         "negative_transfer_fallback_verified": True,
         "singleton_counterfactual_isolated_from_production": True,
         "independent_source_admission_verified": True,
+        "individual_fold_admission_verified": True,
         "core_prior_reserve_verified": True,
         "rejected_source_certificate_verified": True,
         "reporting_response_excluded": True,

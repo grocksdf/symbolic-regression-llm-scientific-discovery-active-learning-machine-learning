@@ -89,6 +89,8 @@ class SafeSourceStackingCertificate:
 
 def _stacking_weights(log_density: np.ndarray) -> np.ndarray:
     rows, columns = log_density.shape
+    if columns == 1:
+        return np.ones(1, dtype=float)
     start = np.full(columns, 1.0 / columns)
 
     def objective(weights):
@@ -198,10 +200,8 @@ def calibrate_source_admission(candidates, initial_data, arbitration, **kwargs):
     """Return a fold-safe source prior and per-source admission certificates."""
     values, folds, families = arbitration_source_log_predictive(
         candidates, initial_data, arbitration, **kwargs)
-    certificate = safe_source_stacking(
-        values, folds, families, baseline_source="core")
     baseline = values[:, families.index("core")]
-    sources = {}
+    diagnostics = {}
     for column, family in enumerate(families):
         gains, tolerances = [], []
         for fold in np.unique(folds):
@@ -211,8 +211,31 @@ def calibrate_source_admission(candidates, initial_data, arbitration, **kwargs):
                         float(np.sum(np.abs(baseline[active]))))
             gains.append(gain)
             tolerances.append(float(1024.0 * np.finfo(float).eps * scale))
+        diagnostics[family] = (gains, tolerances)
+    eligible = tuple(family for family in families if family == "core" or all(
+        gain + tolerance >= 0.0
+        for gain, tolerance in zip(*diagnostics[family])))
+    indices = [families.index(family) for family in eligible]
+    admitted_certificate = safe_source_stacking(
+        values[:, indices], folds, eligible, baseline_source="core")
+    admitted_weights = admitted_certificate.source_weights
+    weights = tuple(float(admitted_weights.get(family, 0.0)) for family in families)
+    unconstrained_map = dict(zip(admitted_certificate.sources,
+                                 admitted_certificate.unconstrained_weights, strict=True))
+    unconstrained = tuple(float(unconstrained_map.get(family, 0.0)) for family in families)
+    certificate = SafeSourceStackingCertificate(
+        families, "core", unconstrained, weights,
+        admitted_certificate.dyadic_alpha,
+        admitted_certificate.fold_log_score_gains,
+        admitted_certificate.fold_numerical_tolerances,
+        admitted_certificate.passed,
+        admitted_certificate.fallback_to_baseline,
+        admitted_certificate.maximum_optional_mass)
+    sources = {}
+    for family in families:
+        gains, tolerances = diagnostics[family]
         weight = certificate.source_weights[family]
-        admitted = family == "core" or weight > 2e-12
+        admitted = family == "core" or (family in eligible and weight > 2e-12)
         harmful = family != "core" and any(
             gain < -tolerance for gain, tolerance in zip(gains, tolerances))
         sources[family] = {"weight": weight, "admitted": admitted,

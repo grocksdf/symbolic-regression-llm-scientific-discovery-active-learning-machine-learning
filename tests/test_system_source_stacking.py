@@ -94,3 +94,19 @@ def test_source_admission_rejects_reporting_role_at_interface():
             exploration_identity="a" * 64,
             coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
             measurement_budget=2, action_domain=x)
+
+
+def test_helpful_source_cannot_mask_another_sources_bad_fold(monkeypatch):
+    baseline = np.full(8, -2.0)
+    harmful = baseline + np.array([-2., .2, -2., .2, -2., .2, -2., .2])
+    helpful = baseline + 3.0
+    values = np.column_stack((baseline, harmful, helpful))
+    monkeypatch.setattr(
+        "hypothesis_mvp.discovery.source_stacking.arbitration_source_log_predictive",
+        lambda *args, **kwargs: (
+            values, np.arange(len(values)) % 2, ("core", "engine:mcts", "llm")))
+    certificate, sources = calibrate_source_admission(None, None, None)
+    assert certificate.source_weights["engine:mcts"] == 0.0
+    assert sources["engine:mcts"]["negative_transfer_certified"] is True
+    assert sources["llm"]["admitted"] is True
+    assert certificate.source_weights["core"] >= 0.5
