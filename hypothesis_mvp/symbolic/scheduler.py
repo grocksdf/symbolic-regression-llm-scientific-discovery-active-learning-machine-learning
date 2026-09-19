@@ -103,7 +103,7 @@ def _score(expression: str, prediction: np.ndarray, target: np.ndarray, penalty:
 def _execute(
     job: _Job, config_values: Mapping[str, Any], X_train: np.ndarray,
     y_train: np.ndarray, X_val: np.ndarray, y_val: np.ndarray,
-) -> tuple[EngineResult | None, EngineRunRecord]:
+) -> tuple[tuple[EngineResult, ...], EngineRunRecord]:
     started = time.monotonic()
     try:
         config = SymbolicConfig(**dict(config_values))
@@ -111,29 +111,46 @@ def _execute(
         config.mcts_random_seed = job.seed
         backend = get_symbolic_regressor(config)
         backend.fit(X_train, y_train)
-        expression = _normalize_expression(backend.best_expression())
-        if not expression:
+        primary = _normalize_expression(backend.best_expression())
+        raw_candidates = (backend.candidate_expressions()
+                          if hasattr(backend, "candidate_expressions") else (primary,))
+        expressions = tuple(dict.fromkeys(
+            _normalize_expression(value) for value in raw_candidates if str(value).strip()))
+        if not primary or not expressions or expressions[0] != primary:
             raise ValueError("engine returned an empty expression")
-        prediction = np.asarray(backend.predict(X_val), dtype=float).reshape(-1)
-        mse, complexity, score = _score(
-            expression, prediction, np.asarray(y_val).reshape(-1), config.complexity_penalty
-        )
-        lineage = _lineage(job, expression, X_train)
+        base_diagnostics = dict(backend.info() if hasattr(backend, "info") else {})
+        results = []
+        symbols = tuple(sp.Symbol(f"x{i}") for i in range(X_val.shape[1]))
+        for rank, expression in enumerate(expressions):
+            function = sp.lambdify(symbols, sp.sympify(expression), "numpy")
+            with np.errstate(all="ignore"):
+                prediction = function(*X_val.T)
+            if np.isscalar(prediction):
+                prediction = np.full(len(y_val), float(prediction), dtype=float)
+            prediction = np.asarray(prediction, dtype=float).reshape(-1)
+            if prediction.shape != np.asarray(y_val).reshape(-1).shape \
+                    or not np.all(np.isfinite(prediction)):
+                raise ValueError("engine candidate produced invalid validation predictions")
+            mse, complexity, score = _score(
+                expression, prediction, np.asarray(y_val).reshape(-1),
+                config.complexity_penalty)
+            lineage = _lineage(job, expression, X_train)
+            diagnostics = {**base_diagnostics, "seed": job.seed,
+                "provider": "symbolic_engine", "candidate_rank": rank,
+                "candidate_count": len(expressions)}
+            results.append(EngineResult(
+                job.engine, expression, mse, complexity, score, diagnostics,
+                lineage_id=lineage))
+        lineage = results[0].lineage_id
         elapsed = time.monotonic() - started
-        diagnostics = dict(backend.info() if hasattr(backend, "info") else {})
-        diagnostics.update({"seed": job.seed, "provider": "symbolic_engine"})
-        result = EngineResult(
-            job.engine, expression, mse, complexity, score, diagnostics,
-            lineage_id=lineage,
-        )
-        return result, EngineRunRecord(
+        return tuple(results), EngineRunRecord(
             job.engine, job.repeat, job.attempt, job.seed,
-            "succeeded", elapsed, lineage, expression,
+            "succeeded", elapsed, lineage, primary,
         )
     except Exception as error:
         elapsed = time.monotonic() - started
         lineage = sha256(f"{job}|failed".encode()).hexdigest()
-        return None, EngineRunRecord(
+        return (), EngineRunRecord(
             job.engine, job.repeat, job.attempt, job.seed,
             "failed", elapsed, lineage,
             error_type=type(error).__name__, error_message=str(error),
@@ -143,11 +160,11 @@ def _execute(
 def _run_jobs(
     jobs: Sequence[_Job], config: SymbolicConfig, arrays: tuple[np.ndarray, ...],
     *, parallel: bool, workers: int, timeout_s: float,
-) -> list[tuple[EngineResult | None, EngineRunRecord]]:
+) -> list[tuple[tuple[EngineResult, ...], EngineRunRecord]]:
     values = asdict(config)
     if not parallel or len(jobs) == 1:
         return [_execute(job, values, *arrays) for job in jobs]
-    output: list[tuple[EngineResult | None, EngineRunRecord]] = []
+    output: list[tuple[tuple[EngineResult, ...], EngineRunRecord]] = []
     with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
         futures = [(job, executor.submit(_execute, job, values, *arrays)) for job in jobs]
         for job, future in futures:
@@ -156,7 +173,7 @@ def _run_jobs(
             except TimeoutError:
                 future.cancel()
                 lineage = sha256(f"{job}|timeout".encode()).hexdigest()
-                output.append((None, EngineRunRecord(
+                output.append(((), EngineRunRecord(
                     job.engine, job.repeat, job.attempt, job.seed,
                     "timeout", timeout_s, lineage,
                     error_type="TimeoutError", error_message="engine timeout exceeded",
@@ -170,18 +187,26 @@ def _aggregate(results: Sequence[EngineResult], budget: int, used: int) -> tuple
         grouped.setdefault(result.engine, []).append(result)
     aggregated: list[EngineResult] = []
     for engine, rows in grouped.items():
-        ordered = sorted(rows, key=lambda item: (item.score, item.complexity, item.expression))
-        best = ordered[0]
-        diagnostics = {**dict(best.diagnostics), "budget": budget, "evaluations_used": used}
-        repeats = tuple({
-            "score": row.score, "mse_val": row.mse_val,
-            "complexity": row.complexity, "lineage_id": row.lineage_id,
-        } for row in ordered)
-        aggregated.append(EngineResult(
-            engine, best.expression, best.mse_val, best.complexity,
-            float(np.median([row.score for row in ordered])), diagnostics,
-            repeats, best.lineage_id,
-        ))
+        by_expression: dict[str, list[EngineResult]] = {}
+        for row in rows:
+            by_expression.setdefault(row.expression, []).append(row)
+        candidates = []
+        for expression, matches in by_expression.items():
+            ordered = sorted(matches, key=lambda item: (item.score, item.lineage_id))
+            best = ordered[0]
+            diagnostics = {**dict(best.diagnostics), "budget": budget,
+                           "evaluations_used": used}
+            repeats = tuple({"score": row.score, "mse_val": row.mse_val,
+                "complexity": row.complexity, "lineage_id": row.lineage_id}
+                for row in ordered)
+            candidates.append(EngineResult(
+                engine, expression, best.mse_val, best.complexity,
+                float(np.median([row.score for row in ordered])), diagnostics,
+                repeats, best.lineage_id))
+        candidates.sort(key=lambda item: (item.score, item.complexity, item.expression))
+        limit = (max(int(row.diagnostics.get("frontier_size_limit", 1)) for row in rows)
+                 if engine == "mcts" else 1)
+        aggregated.extend(candidates[:limit])
     return tuple(sorted(aggregated, key=lambda item: (item.score, item.engine)))
 
 
@@ -210,13 +235,13 @@ class EngineScheduler:
         records: list[EngineRunRecord] = []
         while pending and len(records) < budget:
             batch, pending = pending[: budget - len(records)], pending[budget - len(records):]
-            for result, record in _run_jobs(
+            for job_results, record in _run_jobs(
                 batch, config, arrays, parallel=parallel,
                 workers=max_workers, timeout_s=timeout_s,
             ):
                 records.append(record)
-                if result is not None:
-                    results.append(result)
+                if job_results:
+                    results.extend(job_results)
                 elif record.attempt < retry_count and len(records) + len(pending) < budget:
                     attempt = record.attempt + 1
                     pending.append(_Job(

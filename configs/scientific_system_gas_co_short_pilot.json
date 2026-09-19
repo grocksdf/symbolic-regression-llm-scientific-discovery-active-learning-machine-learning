@@ -11,7 +11,7 @@
     "engines": ["polynomial_lasso", "mcts"], "engine_repeats": 1,
     "engine_budget": 2, "engine_workers": 1, "engine_timeout_s": 120.0,
     "engine_retries": 0, "cycles": 1, "discovery_budget": 48,
-    "random_seed": 2026080701, "search_iterations": 24,
+    "random_seed": 2026080701, "search_iterations": 24, "mcts_frontier_size": 4,
     "acquisition_enabled": false, "use_knowledge": false,
     "llm_evaluation_reserve": 16, "discovery_islands": ["balanced"],
     "refit_policy": "pcpi-closed-basis-amplitudes"

@@ -94,3 +94,15 @@ but its `information_audit` repeated the frozen initial class entropy. New
 decisions report entropy from the same current partition used by EIG scoring.
 Historical decisions and curves remain immutable; their correction scope is
 metadata-only and cannot upgrade the efficacy or superiority claim.
+
+MCTS now preserves a fixed-size candidate bank from one unchanged search job.
+Every valid evaluated AST enters a train-only archive.  The exported bank is a
+deterministic Pareto/max-min selection over penalized training error,
+complexity, and centered predictive nonredundancy; the best-error expression is
+always retained.  The scheduler validates every exported expression and binds
+separate lineage, but engine attempts, iterations, discovery evaluation budget,
+provider budget and wall-time remain unchanged.  Downstream source arbitration
+uses a strict leave-MCTS-out bank and accepts MCTS only through the preregistered
+decision-regret or independent predictive-log-score contribution channels.
+This is a proposal-diversity repair, not efficacy evidence, and it does not
+authorize measured or held-out execution.

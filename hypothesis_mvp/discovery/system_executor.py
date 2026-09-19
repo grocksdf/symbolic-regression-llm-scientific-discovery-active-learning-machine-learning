@@ -82,6 +82,8 @@ def validate_system_registration(config):
             or config["single_engine"] not in agent.engines
             or agent.engine_budget != len(agent.engines) * agent.engine_repeats
             or agent.discovery_budget < 1
+            or type(agent.mcts_frontier_size) is not int
+            or not 2 <= agent.mcts_frontier_size <= 8
             or type(agent.llm_evaluation_reserve) is not int
             or agent.llm_evaluation_reserve < 0
             or agent.llm_evaluation_reserve >= agent.discovery_budget):

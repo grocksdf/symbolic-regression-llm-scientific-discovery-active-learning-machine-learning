@@ -81,6 +81,7 @@ class MCTSSymbolicAgent(SymbolicRegressor):
         self.candidate_sample_k = max(
             0, int(getattr(config, "mcts_candidate_sample_k", 0))
         )
+        self.frontier_size = max(1, int(getattr(config, "mcts_frontier_size", 1)))
         self.constants = tuple(
             float(value) for value in getattr(config, "mcts_constants", [1.0, 2.0, 3.0])
         )
@@ -102,6 +103,8 @@ class MCTSSymbolicAgent(SymbolicRegressor):
         self.reward_fn = reward_fn or (lambda mse: 1.0 / (1.0 + max(0.0, mse)))
         self.best_expr = ""
         self.best_score = float("inf")
+        self._archive: dict[str, tuple[float, float, np.ndarray]] = {}
+        self._frontier: tuple[str, ...] = ()
         self._seed_asts = self._load_source_only_seeds(config, seed_expressions)
 
     def _load_source_only_seeds(
@@ -141,6 +144,8 @@ class MCTSSymbolicAgent(SymbolicRegressor):
         root = MCTSNode(root_ast.to_string(), root_ast)
         self.best_expr = ""
         self.best_score = float("inf")
+        self._archive = {}
+        self._frontier = ()
         self.contract_rejections = 0
         for _ in range(self.max_iterations):
             leaf = self._select(root)
@@ -149,6 +154,7 @@ class MCTSSymbolicAgent(SymbolicRegressor):
             self._backpropagate(node, reward)
         if not self.best_expr:
             self._evaluate(root, features, target)
+        self._frontier = self._select_predictive_pareto_frontier()
         return self
 
     def _contract_admits(self, expression: str) -> bool:
@@ -252,12 +258,48 @@ class MCTSSymbolicAgent(SymbolicRegressor):
                 if score >= 0.98 * baseline:
                     score += 1.0e6 + baseline
             node.score = score
+            centered = prediction - float(np.mean(prediction))
+            norm = float(np.linalg.norm(centered))
+            signature = (centered / norm if norm > 0.0
+                         else np.zeros_like(centered))
+            self._archive[node.expression] = (score, complexity, signature)
             if score < self.best_score:
                 self.best_score = score
                 self.best_expr = node.expression
             return float(self.reward_fn(score))
         except Exception:
             return 0.0
+
+    def _select_predictive_pareto_frontier(self) -> tuple[str, ...]:
+        """Return a deterministic train-only accuracy/complexity/diversity front."""
+        if not self._archive:
+            return (self.best_expr,) if self.best_expr else ()
+        best_signature = self._archive[self.best_expr][2]
+        rows = []
+        for expression, (score, complexity, signature) in self._archive.items():
+            similarity = abs(float(signature @ best_signature))
+            novelty = max(0.0, 1.0 - min(1.0, similarity))
+            rows.append((expression, score, complexity, novelty, signature))
+        pareto = []
+        for row in rows:
+            _, score, complexity, novelty, _ = row
+            dominated = any(
+                (other[1] <= score and other[2] <= complexity and other[3] >= novelty)
+                and (other[1] < score or other[2] < complexity or other[3] > novelty)
+                for other in rows)
+            if not dominated:
+                pareto.append(row)
+        ordered = sorted(pareto, key=lambda row: (row[1], row[2], row[0]))
+        selected = [next(row for row in rows if row[0] == self.best_expr)]
+        remaining = [row for row in ordered if row[0] != self.best_expr]
+        while remaining and len(selected) < self.frontier_size:
+            def key(row):
+                minimum_distance = min(
+                    1.0 - abs(float(row[4] @ chosen[4])) for chosen in selected)
+                return (-minimum_distance, row[1], row[2], row[0])
+            chosen = min(remaining, key=key)
+            selected.append(chosen); remaining.remove(chosen)
+        return tuple(row[0] for row in selected)
 
     @staticmethod
     def _backpropagate(node: MCTSNode, reward: float) -> None:
@@ -285,6 +327,9 @@ class MCTSSymbolicAgent(SymbolicRegressor):
     def best_expression(self) -> str:
         return self.best_expr
 
+    def candidate_expressions(self) -> tuple[str, ...]:
+        return self._frontier or ((self.best_expr,) if self.best_expr else ())
+
     def info(self) -> dict[str, Any]:
         return {
             "engine": "mcts",
@@ -293,6 +338,10 @@ class MCTSSymbolicAgent(SymbolicRegressor):
             "expansion_factor": self.expansion_factor,
             "best_expression": self.best_expr,
             "best_score": self.best_score,
+            "candidate_set_method": "train-pareto-error-complexity-predictive-nonredundancy-v1",
+            "frontier_size_limit": self.frontier_size,
+            "frontier_expressions": list(self.candidate_expressions()),
+            "archive_size": len(self._archive),
             "ucb_c": self.ucb_c,
             "complexity_penalty": self.complexity_penalty,
             "seed_count": len(self._seed_asts),
