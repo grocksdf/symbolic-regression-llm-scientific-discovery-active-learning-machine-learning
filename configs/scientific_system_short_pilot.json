@@ -50,6 +50,7 @@
   "hypothesis_bank_gate": {
     "schema": "scientific-hypothesis-bank-gate-v1",
     "exact_eig_epsabs": 1e-10,
+    "maximum_candidates": 8,
     "require_all_variants": true
   },
   "marginal_influence_gate": {

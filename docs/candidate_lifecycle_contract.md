@@ -125,3 +125,15 @@ as `max(registered_minimum, 4 * predictive_structure_count)`, because its
 fine/coarse allocation requires four nodes per structure.  This adjustment
 cannot exceed the registered maximum or wall-time ceiling; an infeasible
 maximum is a public response-free terminal failure.
+
+Before bank viability and source arbitration, the scientific system now
+compresses each finite proposal bank to exactly twice the registered
+measurement budget.  It uses only registered H0 and acquisition covariates,
+never acquisition responses, reporting-validation responses or held-out data.
+A deterministic greedy objective maximizes frozen operational-class entropy
+while preserving at least one retained hypothesis from every executed engine
+and, when present, the LLM.  Candidate identity breaks exact ties.  The frozen
+bank and its capacity audit are published separately from raw exploration, so
+all rejected proposals remain available for provenance.  This changes neither
+the posterior model nor the class definition; it prevents redundant proposals
+from consuming finite-bank probability mass and quadrature budget.

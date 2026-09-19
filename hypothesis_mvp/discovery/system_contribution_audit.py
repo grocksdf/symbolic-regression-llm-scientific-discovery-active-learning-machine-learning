@@ -89,9 +89,13 @@ def audit_system_contribution(root: str | Path) -> dict[str, Any]:
     summaries, supports = {}, {}
     for variant in VARIANTS:
         variant_root = coordinate / "exploration" / variant
-        result_path = variant_root / "RESULT.json"
+        frozen_path = variant_root / "FROZEN_BANK.json"
+        result_path = frozen_path if frozen_path.is_file() else variant_root / "RESULT.json"
         observed.append(result_path)
-        result = _read(result_path)
+        published = _read(result_path)
+        result = (published if "evidence_registry_path" in published else {
+            **published,
+            "evidence_registry_path": str(variant_root / "evidence_registry.jsonl")})
         registry = Path(result["evidence_registry_path"]); observed.append(registry)
         if not EvidenceRegistry(registry).verify().valid:
             raise ValueError("invalid exploration evidence chain")

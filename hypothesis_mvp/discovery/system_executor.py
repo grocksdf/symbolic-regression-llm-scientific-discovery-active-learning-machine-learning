@@ -29,6 +29,7 @@ from .marginal_influence import (
     leave_one_source_out_candidates, predictive_quality_profile,
 )
 from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target
+from .bank_selection import select_operational_capacity_bank
 
 
 class HypothesisBankNotViable(RuntimeError):
@@ -97,9 +98,11 @@ def validate_system_registration(config):
     NormalInverseGammaPrior(**config["prior"])
     DiscoveryScoringControls(**config["scoring"])
     gate = config["hypothesis_bank_gate"]
-    if (set(gate) != {"schema", "exact_eig_epsabs", "require_all_variants"}
+    if (set(gate) != {"schema", "exact_eig_epsabs", "require_all_variants",
+                      "maximum_candidates"}
             or gate["schema"] != "scientific-hypothesis-bank-gate-v1"
             or gate["exact_eig_epsabs"] != 1e-10
+            or gate["maximum_candidates"] != 2 * config["measurement_budget"]
             or gate["require_all_variants"] is not True):
         raise ValueError("invalid hypothesis-bank viability registration")
     influence = config["marginal_influence_gate"]
@@ -176,6 +179,29 @@ def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
     viability = {}
     for row in exploration["rows"]:
         variant = row["variant"]
+        selected, selection = select_operational_capacity_bank(
+            row["candidates"], data.initial, data.pool.X_pool,
+            n_features=data.initial.X.shape[1],
+            prior=NormalInverseGammaPrior(**config["prior"]),
+            exploration_identity=_digest(row),
+            coefficient_policy=config["coefficient_policy"],
+            measurement_budget=config["measurement_budget"],
+            maximum_candidates=config["hypothesis_bank_gate"]["maximum_candidates"])
+        row["candidates"] = list(selected)
+        row["hypothesis_provenance"] = {
+            **row["hypothesis_provenance"],
+            "candidate_count": len(selected),
+            "distinct_sources": sorted({item["source"] for item in selected}),
+            "engine_sources": sorted({item["source"] for item in selected
+                                      if item["source"].startswith("engine:")}),
+            "llm_retained_candidate_count": sum(
+                item.get("origin") == "llm" for item in selected),
+            "operational_capacity_selection": selection,
+        }
+        _publish(workspace / "exploration" / variant / "FROZEN_BANK.json", {
+            "variant": variant, "candidates": list(selected),
+            "hypothesis_provenance": row["hypothesis_provenance"],
+            "selection": selection})
         audit = audit_frozen_hypothesis_bank(
             row["candidates"], data.initial, data.pool.X_pool,
             n_features=data.initial.X.shape[1],

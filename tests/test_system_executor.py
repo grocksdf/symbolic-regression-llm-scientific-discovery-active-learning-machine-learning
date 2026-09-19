@@ -29,6 +29,7 @@ def _config():
         "measurement_budget": 2, "exploration_seconds": 30, "policy_seconds": 30,
         "hypothesis_bank_gate": {"schema": "scientific-hypothesis-bank-gate-v1",
                                  "exact_eig_epsabs": 1e-10,
+                                 "maximum_candidates": 4,
                                  "require_all_variants": True},
         "marginal_influence_gate": {
             "schema": "scientific-dual-channel-source-contribution-gate-v3",
@@ -71,6 +72,10 @@ def _patch(monkeypatch, supported=True):
     monkeypatch.setattr(executor, "audit_frozen_hypothesis_bank", lambda *args, **kwargs: {
         "schema": "scientific-hypothesis-bank-viability-v1", "passed": True,
         "candidate_response_accessed": False, "heldout_opened": False})
+    monkeypatch.setattr(executor, "select_operational_capacity_bank",
+        lambda candidates, *args, **kwargs: (tuple(candidates), {
+            "schema": "fixture-capacity-bank", "candidate_response_accessed": False,
+            "heldout_opened": False}))
     monkeypatch.setattr(executor, "freeze_discovery_model",
         lambda candidates, **kwargs: SimpleNamespace(stable_hash="model"))
     monkeypatch.setattr(executor, "freeze_discovery_target",
@@ -106,7 +111,13 @@ def _patch(monkeypatch, supported=True):
             if variant != "no_llm":
                 candidates.append({"expression": "x0**3", "source": "llm_proposal",
                                    "origin": "llm"})
-            rows.append({"variant": variant, "candidates": candidates})
+            rows.append({"variant": variant, "candidates": candidates,
+                "hypothesis_provenance": {"candidate_count": len(candidates),
+                    "distinct_sources": sorted({row["source"] for row in candidates}),
+                    "engine_sources": sorted({row["source"] for row in candidates
+                                              if row["source"].startswith("engine:")}),
+                    "llm_retained_candidate_count": sum(
+                        row["origin"] == "llm" for row in candidates)}})
         return {"rows": rows, "fixture_only": True}
     monkeypatch.setattr(executor, "run_exploration_ablations", exploration)
 
