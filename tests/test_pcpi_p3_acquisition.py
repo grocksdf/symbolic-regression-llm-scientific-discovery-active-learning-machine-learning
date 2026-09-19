@@ -37,7 +37,9 @@ from hypothesis_mvp.pcpi import (
     select_stable_argmax,
     stable_derived_seed,
 )
-from hypothesis_mvp.pcpi.acquisition import class_partition
+from hypothesis_mvp.pcpi.acquisition import (
+    ClassPartition, PredictiveComponents, class_partition,
+)
 from hypothesis_mvp.pcpi.real_acquisition import _validated_posterior_models
 from hypothesis_mvp.pcpi.reference.classes import _complete_link_clusters
 from hypothesis_mvp.pcpi.reference import (
@@ -348,6 +350,32 @@ def test_operational_class_eig_matches_exact_ranking_and_is_repeatable() -> None
     )
     assert first.estimate.integration_method == GAUSS_JACOBI_INTEGRATION
     assert sum(first.estimate.structure_allocations) == first.estimate.sample_count
+
+
+def test_adaptive_eig_raises_first_look_to_four_nodes_per_structure() -> None:
+    structure_count = 11
+    probabilities = np.full(structure_count, 1.0 / structure_count)
+    partition = ClassPartition(
+        ("lower", "upper"),
+        (tuple(range(5)), tuple(range(5, structure_count))),
+        (5.0 / structure_count, 6.0 / structure_count),
+        tuple([0] * 5 + [1] * 6),
+    )
+    base = np.linspace(-1.0, 1.0, structure_count)
+    components = PredictiveComponents(
+        probabilities,
+        np.full(structure_count, 7.0),
+        np.column_stack((base, base + np.linspace(-0.2, 0.2, structure_count))),
+        np.ones((structure_count, 2)),
+        partition,
+    )
+    result = estimate_class_eig_until_ranked(components, 32, 64)
+    assert result.estimate.sample_count in {44, 64}
+    assert result.estimate.sample_count % 4 == 0
+    assert result.planned_looks == 2
+    assert sum(result.estimate.structure_allocations) == result.estimate.sample_count
+    with pytest.raises(ValueError, match="four nodes per structure"):
+        estimate_class_eig_until_ranked(components, 32, 40)
 
 
 def test_budget_resolved_threshold_has_root_budget_identity() -> None:

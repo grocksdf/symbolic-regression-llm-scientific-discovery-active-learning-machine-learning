@@ -781,16 +781,24 @@ def estimate_class_eig_until_ranked(
     component so callers cannot silently relabel a composite score as EIG.
     """
 
-    if minimum_samples <= 0 or maximum_samples < minimum_samples:
+    if (minimum_samples <= 0 or maximum_samples < minimum_samples
+            or minimum_samples % 4 or maximum_samples % 4):
         raise ValueError("adaptive EIG sample bounds are invalid")
     if error_safety_factor < 1.0 or growth_factor < 2:
         raise ValueError("adaptive EIG ranking controls are invalid")
     offsets = _validated_score_offsets(components, additive_scores)
     eligible = _validated_eligible_mask(components, eligible_mask)
+    # The nested fine/coarse rule needs four nodes per predictive structure.
+    # A larger frozen bank therefore raises only the first feasible look; it
+    # never raises the registered maximum or changes the refinement factor.
+    feasible_minimum = max(
+        minimum_samples, 4 * len(components.structure_probabilities))
+    if feasible_minimum > maximum_samples:
+        raise ValueError("adaptive EIG maximum cannot allocate four nodes per structure")
     planned_looks = _planned_look_count(
-        minimum_samples, maximum_samples, growth_factor
+        feasible_minimum, maximum_samples, growth_factor
     )
-    sample_count = minimum_samples
+    sample_count = feasible_minimum
     looks_used = 0
     while True:
         looks_used += 1

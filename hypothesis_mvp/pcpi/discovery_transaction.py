@@ -53,6 +53,7 @@ class DiscoveryScoringControls:
     def __post_init__(self):
         if (type(self.minimum_samples) is not int or type(self.maximum_samples) is not int
             or self.minimum_samples < 1 or self.maximum_samples < self.minimum_samples
+            or self.minimum_samples % 4 or self.maximum_samples % 4
             or not np.isfinite(self.error_safety_factor) or self.error_safety_factor < 1
             or type(self.growth_factor) is not int or self.growth_factor < 2):
             raise ValueError("invalid discovery scoring controls")
@@ -212,6 +213,9 @@ class DiscoveryTransaction:
             raise DiscoverySelectionError("empty-analytic-class-eig-frontier")
         active = np.flatnonzero(eligible)
         c = self.controls
+        if c.maximum_samples < 4 * len(components.structure_probabilities):
+            raise DiscoverySelectionError(
+                "class-eig-maximum-below-four-nodes-per-predictive-structure")
         ranked = estimate_class_eig_until_ranked(components, c.minimum_samples, c.maximum_samples,
             error_safety_factor=c.error_safety_factor, growth_factor=c.growth_factor,
             eligible_mask=eligible)

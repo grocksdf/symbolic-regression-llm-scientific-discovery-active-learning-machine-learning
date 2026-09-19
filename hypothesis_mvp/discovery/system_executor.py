@@ -9,6 +9,7 @@ from hashlib import sha256
 import json
 import os
 from pathlib import Path
+import shutil
 
 import numpy as np
 
@@ -337,4 +338,156 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
         _publish(root / "TERMINAL_FAILURE.json", {"coordinate": coordinate,
             "error_type": type(error).__name__, "completed_coordinates": len(results),
             "protocol_complete": False, "heldout_opened": False, "superiority_demonstrated": False})
+        raise
+
+
+def _sha256_file(path):
+    return sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _verify_zero_response_continuation(source_root, config, continuation):
+    """Bind one terminal pre-decision failure without mutating its artifacts."""
+    source_root = Path(source_root).resolve()
+    required = {"schema", "source_output", "artifacts", "claim_boundary"}
+    if (set(continuation) != required
+            or continuation["schema"] != "scientific-zero-response-continuation-v1"
+            or Path(continuation["source_output"]).resolve() != source_root
+            or continuation["claim_boundary"] !=
+            "resume immutable passed source screen after pre-decision numerical failure only"):
+        raise ValueError("invalid scientific continuation registration")
+    artifacts = continuation["artifacts"]
+    if len(config["data"]) != 1 or len(config["seeds"]) != 1:
+        raise ValueError("continuation requires one registered coordinate")
+    dataset, seed = config["data"][0]["dataset"], config["seeds"][0]
+    coordinate_root = f"{dataset}/{seed}"
+    expected_names = {
+        "SYSTEM_CONTRACT.json", "TERMINAL_FAILURE.json",
+        f"{coordinate_root}/exploration/ANALYSIS.json",
+        f"{coordinate_root}/HYPOTHESIS_BANK_VIABILITY.json",
+        f"{coordinate_root}/MARGINAL_DECISION_INFLUENCE.json",
+        f"{coordinate_root}/measured/full/TERMINAL_FAILURE.json",
+    }
+    if set(artifacts) != expected_names:
+        raise ValueError("continuation artifact set changed")
+    for relative, expected_hash in artifacts.items():
+        path = source_root / Path(relative)
+        if (not path.is_file() or _sha256_file(path) != expected_hash):
+            raise ValueError("continuation source artifact identity changed")
+    contract = json.loads((source_root / "SYSTEM_CONTRACT.json").read_text(encoding="utf-8"))
+    if contract.get("registration") != config:
+        raise ValueError("continuation source registration changed")
+    terminal = json.loads((source_root / "TERMINAL_FAILURE.json").read_text(encoding="utf-8"))
+    comparison_failure = json.loads((source_root /
+        coordinate_root / "measured/full/TERMINAL_FAILURE.json").read_text(
+            encoding="utf-8"))
+    if (terminal != {"completed_coordinates": 0,
+            "coordinate": f"{dataset}:{seed}", "error_type": "RuntimeError",
+            "heldout_opened": False, "protocol_complete": False,
+            "superiority_demonstrated": False}
+            or comparison_failure.get("policy") != "class_eig"
+            or comparison_failure.get("completed_policies") != {}
+            or comparison_failure.get("heldout_opened") is not False):
+        raise ValueError("continuation is not the registered pre-decision failure")
+    forbidden = {"DECISION-001.json", "RECEIPT-001.json", "RUN_MANIFEST.json",
+                 "DEVELOPMENT_CURVE.json", "COMPARISON_MANIFEST.json", "SYSTEM_MANIFEST.json"}
+    found = sorted(path.name for path in source_root.rglob("*")
+                   if path.is_file() and path.name in forbidden)
+    if found:
+        raise ValueError("continuation source contains response or completed-run artifacts")
+    workspace = source_root / dataset / str(seed)
+    viability = json.loads((workspace / "HYPOTHESIS_BANK_VIABILITY.json").read_text(
+        encoding="utf-8"))
+    influence = json.loads((workspace / "MARGINAL_DECISION_INFLUENCE.json").read_text(
+        encoding="utf-8"))
+    analysis = json.loads((workspace / "exploration/ANALYSIS.json").read_text(
+        encoding="utf-8"))
+    if (viability.get("passed") is not True or influence.get("passed") is not True
+            or influence.get("candidate_response_accessed") is not False
+            or influence.get("acquisition_pool_response_accessed") is not False
+            or influence.get("heldout_opened") is not False
+            or analysis.get("heldout_opened") is not False
+            or {row.get("variant") for row in analysis.get("rows", [])}
+                != {"full", "no_llm", "single_engine"}
+            or any(row.get("status") != "succeeded" for row in analysis["rows"])):
+        raise ValueError("continuation source screen did not pass response-free gates")
+    for row in analysis["rows"]:
+        registry = EvidenceRegistry(
+            workspace / "exploration" / row["variant"] / "evidence_registry.jsonl")
+        if not registry.verify().valid or not registry.events():
+            raise ValueError("continuation source evidence registry is invalid")
+    return source_root, workspace, analysis
+
+
+def execute_registered_system_continuation(project_root, root, source_root, config,
+                                           expected_freeze, continuation, *, execution_role):
+    """Continue an immutable zero-response screen without rerunning discovery."""
+    config = json.loads(json.dumps(config, allow_nan=False))
+    validate_system_registration(config)
+    if execution_role != "user" or config["user_execution_authorized"] is not True:
+        raise PermissionError("real development continuation requires user authorization")
+    project_root, root = Path(project_root).resolve(), Path(root).resolve()
+    if root == project_root or project_root in root.parents or root.exists():
+        raise ValueError("continuation output must be a new path outside source")
+    verify_system_freeze(project_root, config, expected_freeze)
+    source_root, source_workspace, exploration = _verify_zero_response_continuation(
+        source_root, config, continuation)
+    if root == source_root or root in source_root.parents or source_root in root.parents:
+        raise ValueError("continuation output and immutable source must be disjoint")
+    source_identity = _digest(expected_freeze)
+    root.mkdir(parents=True)
+    _publish(root / "CONTINUATION_CONTRACT.json", continuation)
+    results, coordinate = [], None
+    try:
+        registration = config["data"][0]
+        dataset, seed = registration["dataset"], config["seeds"][0]
+        print(f"system continuation data loading: {dataset} (opened development only)", flush=True)
+        data, _ = run_bounded(load_registered_system_data, args=(registration,),
+            seconds=config["data_loading_seconds"], provider_attempts=0)
+        coordinate = f"{dataset}:{seed}"
+        workspace = root / dataset / str(seed)
+        workspace.mkdir(parents=True)
+        source_manifest = json.loads((source_workspace / "DATA_MANIFEST.json").read_text(
+            encoding="utf-8"))
+        if data.manifest != source_manifest:
+            raise ValueError("continuation data manifest changed")
+        _publish(workspace / "DATA_MANIFEST.json", data.manifest)
+        for name in ("HYPOTHESIS_BANK_VIABILITY.json", "MARGINAL_DECISION_INFLUENCE.json"):
+            shutil.copyfile(source_workspace / name, workspace / name)
+        (workspace / "exploration").mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_workspace / "exploration/ANALYSIS.json",
+                        workspace / "exploration/ANALYSIS.json")
+        for row in exploration["rows"]:
+            source_variant = source_workspace / "exploration" / row["variant"]
+            target_variant = workspace / "exploration" / row["variant"]
+            source_registry = source_variant / "evidence_registry.jsonl"
+            target_registry = target_variant / "evidence_registry.jsonl"
+            target_registry.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source_registry, target_registry)
+            result_payload = json.loads((source_variant / "RESULT.json").read_text(
+                encoding="utf-8"))
+            result_payload["evidence_registry_path"] = str(target_registry)
+            result_payload["zero_response_continuation_source"] = str(source_variant)
+            _publish(target_variant / "RESULT.json", result_payload)
+        _, reporting_evaluation = _split_source_arbitration(
+            data.evaluation, config["marginal_influence_gate"]["arbitration_fraction"])
+        comparisons = {row["variant"]: _run_comparison_variant(
+            project_root, workspace, row, data, config, None, source_identity, seed,
+            expected_freeze, coordinate, reporting_evaluation)
+            for row in exploration["rows"]}
+        results.append({"dataset": dataset, "seed": seed, "family": data.manifest["family"],
+            "exploration": exploration, "comparisons": comparisons,
+            "continuation_source": str(source_root)})
+        verify_system_freeze(project_root, config, expected_freeze)
+        result = {"schema": "scientific-system-development-terminal-v1", "results": results,
+            "protocol_complete": True, "heldout_opened": False,
+            "superiority_demonstrated": False,
+            "zero_response_continuation": True,
+            "claim_boundary": "conditional opened-development evidence; no confirmatory claim"}
+        _publish(root / "SYSTEM_MANIFEST.json", result)
+        return result
+    except BaseException as error:
+        _publish(root / "TERMINAL_FAILURE.json", {"coordinate": coordinate,
+            "error_type": type(error).__name__, "completed_coordinates": len(results),
+            "protocol_complete": False, "heldout_opened": False,
+            "superiority_demonstrated": False})
         raise

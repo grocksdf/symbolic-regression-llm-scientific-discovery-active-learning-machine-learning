@@ -112,3 +112,16 @@ arbitration still uses a strict leave-MCTS-out bank and accepts MCTS only
 through the preregistered decision-regret or independent predictive-log-score
 channels.  This objective-alignment repair is not efficacy evidence and does
 not authorize measured or held-out execution.
+
+An immutable source screen may continue after a pre-decision numerical
+failure only through the zero-response continuation contract.  The contract
+hash-binds the original system contract, terminal records, exploration bank,
+bank-viability report and dual-channel contribution report.  It rejects any
+source tree containing a decision, receipt, development curve or completed
+manifest.  Candidate expressions and their evidence registries are copied to
+a new non-overwriting workspace; discovery engines and the LLM are never
+called again.  The nested Gauss--Jacobi class-EIG rule chooses its first look
+as `max(registered_minimum, 4 * predictive_structure_count)`, because its
+fine/coarse allocation requires four nodes per structure.  This adjustment
+cannot exceed the registered maximum or wall-time ceiling; an infeasible
+maximum is a public response-free terminal failure.

@@ -150,6 +150,28 @@ def test_invalid_exact_certificate_is_public_and_response_free(monkeypatch, tmp_
     assert not (tmp_path / "DECISION-001.json").exists()
 
 
+def test_infeasible_structure_quadrature_budget_is_public_and_response_free(
+        monkeypatch, tmp_path):
+    from hypothesis_mvp.pcpi.acquisition import PredictiveComponents
+    session = _session(tmp_path)
+    _broad_analytic(monkeypatch)
+    structure_count = 11
+    components = PredictiveComponents(
+        np.full(structure_count, 1.0 / structure_count),
+        np.full(structure_count, 7.0),
+        np.zeros((structure_count, 2)),
+        np.ones((structure_count, 2)),
+        session.target.partition,
+    )
+    monkeypatch.setattr(
+        "hypothesis_mvp.pcpi.discovery_transaction.predictive_components_for_partition",
+        lambda *args: components)
+    with pytest.raises(RuntimeError, match="four-nodes-per-predictive-structure") as caught:
+        session.plan(np.array([10, 11]), np.array([[3.], [4.]]))
+    assert caught.value.public_diagnostic.endswith("four-nodes-per-predictive-structure")
+    assert not (tmp_path / "DECISION-001.json").exists()
+
+
 def test_analytic_dominance_prunes_only_impossible_maximizers(monkeypatch, tmp_path):
     from types import SimpleNamespace
     monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.analytic_class_eig_bounds",
