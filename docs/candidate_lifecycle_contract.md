@@ -223,3 +223,17 @@ negative-transfer certificate.  Rejected sources receive exactly zero mass and
 cannot affect acquisition.  The reporting half, acquisition-pool responses and
 held-out data are unavailable to admission.  This is a general source-safety
 contract, not a claim that the observed Gas-CO result will improve.
+
+The first sourcewise screen completed before a repeated invocation encountered
+the expected no-overwrite guard.  Its manifest is authoritative: full admitted
+core and LLM at `0.5/0.5`, rejected MCTS with a fold-level negative-transfer
+certificate, passed the response-free source-influence Gate, and opened no
+acquisition or held-out response.  Because that Gas-CO split participated in
+method development, it remains diagnostic rather than independent efficacy
+evidence.  The next registered coordinate uses the prospectively fixed split
+seed `20260920` and execution seed `2026092001`.  The production runner now has
+a fresh `--screen-only` boundary after exploration, H0 viability and source
+admission but before every measured comparison.  A passed screen can be hash-
+bound by `build_scientific_screen_continuation.py` and continued without
+rerunning engines or the LLM; the continuation rejects any decision, receipt,
+measured directory, changed artifact, configuration or data manifest.

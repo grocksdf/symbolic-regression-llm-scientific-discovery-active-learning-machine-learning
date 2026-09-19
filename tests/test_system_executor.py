@@ -173,6 +173,24 @@ def test_entire_pipeline_and_completed_recovery(tmp_path, monkeypatch):
     assert len(registry.events()) == count
 
 
+def test_fresh_screen_stops_before_all_pool_responses(tmp_path, monkeypatch):
+    _patch(monkeypatch)
+    def forbidden(*args):
+        raise AssertionError("fresh source screen must not reveal a pool response")
+    monkeypatch.setattr(PoolOracle, "acquire_indices", forbidden)
+    root = tmp_path / "fresh-screen"
+    result = executor.execute_registered_system(
+        tmp_path / "source", root, _config(), {}, execution_role="user",
+        measurement_authorized=False)
+    assert result["protocol_complete"] is True
+    assert result["measurement_authorized"] is False
+    assert result["candidate_response_accessed"] is False
+    assert (root / "SCREEN_MANIFEST.json").is_file()
+    assert not list(root.rglob("DECISION-*.json"))
+    assert not list(root.rglob("RECEIPT-*.json"))
+    assert not list(root.rglob("measured"))
+
+
 def test_unsupported_hypothesis_terminally_blocks_without_filtering(tmp_path, monkeypatch):
     _patch(monkeypatch, supported=False)
     root = tmp_path / "output"

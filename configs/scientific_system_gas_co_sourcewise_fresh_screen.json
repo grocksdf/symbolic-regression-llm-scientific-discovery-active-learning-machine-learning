@@ -1,0 +1,30 @@
+{
+  "schema": "scientific-system-development-registration-v1",
+  "data": [{
+    "dataset": "uci_gas_turbine_co",
+    "source": "D:/01/666/hypothesis_mvp/data/gas+turbine+co+and+nox+emission+data+set",
+    "split_seed": 20260920,
+    "counts": {"exploration_development": 64, "exploration_validation": 64, "inference_initial": 32, "development_evaluation": 128, "acquisition_pool": 16}
+  }],
+  "seeds": [2026092001],
+  "agent": {
+    "engines": ["polynomial_lasso", "mcts"], "engine_repeats": 1,
+    "engine_budget": 2, "engine_workers": 1, "engine_timeout_s": 120.0,
+    "engine_retries": 0, "cycles": 1, "discovery_budget": 48,
+    "random_seed": 2026092001, "search_iterations": 24, "mcts_frontier_size": 4,
+    "mcts_score_folds": 2, "acquisition_enabled": false, "use_knowledge": false,
+    "llm_evaluation_reserve": 16, "discovery_islands": ["balanced"],
+    "refit_policy": "pcpi-closed-basis-amplitudes"
+  },
+  "single_engine": "polynomial_lasso",
+  "prior": {"coefficient_mean": 0.0, "coefficient_precision": 1.0, "noise_shape": 2.5, "noise_scale": 0.2},
+  "scoring": {"minimum_samples": 32, "maximum_samples": 256, "error_safety_factor": 2.0, "growth_factor": 2},
+  "measurement_budget": 4,
+  "hypothesis_bank_gate": {"schema": "scientific-hypothesis-bank-gate-v4", "exact_eig_epsabs": 1e-10, "maximum_candidates": 8, "selection_rule": "two-fold-safe-half-core-source-stacking-operational-entropy-v3", "source_safety_folds": 2, "source_stacking_baseline": "core", "source_stacking_dyadic_depth": 8, "source_stacking_max_optional_mass": 0.5, "require_all_variants": true},
+  "marginal_influence_gate": {"schema": "scientific-source-admission-influence-gate-v5", "exact_eig_epsabs": 1e-10, "required_contributions": ["llm", "engine:mcts"], "required_active_contributions": ["llm"], "rejectable_contributions": ["engine:mcts"], "source_admission_rule": "independent-sourcewise-fold-safe-half-core-log-score-stacking-v2", "decision_rule": "full-target-certified-regret-v1", "quality_rule": "positive-paired-cumulative-log-predictive-ratio-v1", "arbitration_fraction": 0.5, "require_all_contributions": true},
+  "exploration_seconds": 240, "policy_seconds": 60, "data_loading_seconds": 30,
+  "provider_attempt_ceiling": 24,
+  "provider_public_identity": "8d136a7f8a310ebe6120a192e1d62dc598eefdad030dfbda0819dfcef5d040a0",
+  "coefficient_policy": "discard-fitted-coefficients-refit-closed-basis",
+  "user_execution_authorized": true
+}

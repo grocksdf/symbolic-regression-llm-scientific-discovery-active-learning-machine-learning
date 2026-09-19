@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--freeze", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--preflight-only", action="store_true")
+    parser.add_argument("--screen-only", action="store_true")
     args = parser.parse_args()
     config = json.loads(args.config.read_text(encoding="utf-8"))
     freeze = json.loads(args.freeze.read_text(encoding="utf-8"))
@@ -31,7 +32,8 @@ def main():
         return 0
     if args.output_dir is None:
         parser.error("--output-dir is required for user execution")
-    execute_registered_system(ROOT, args.output_dir, config, freeze, execution_role="user")
+    execute_registered_system(ROOT, args.output_dir, config, freeze, execution_role="user",
+                              measurement_authorized=not args.screen_only)
     return 0
 
 

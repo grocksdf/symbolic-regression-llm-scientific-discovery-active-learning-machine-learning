@@ -455,9 +455,12 @@ def _run_comparison_variant(project_root, workspace, row, data, config, provider
     return comparison
 
 
-def execute_registered_system(project_root, root, config, expected_freeze, *, execution_role):
+def execute_registered_system(project_root, root, config, expected_freeze, *, execution_role,
+                              measurement_authorized=True):
     config = json.loads(json.dumps(config, allow_nan=False))
     validate_system_registration(config)
+    if type(measurement_authorized) is not bool:
+        raise TypeError("system measurement authorization must be boolean")
     if execution_role != "user" or config["user_execution_authorized"] is not True:
         raise PermissionError("real development execution requires registered user authorization")
     project_root, root = Path(project_root).resolve(), Path(root).resolve()
@@ -498,6 +501,17 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
                 arbitration, reporting_evaluation = _split_source_arbitration(
                     data.evaluation, config["marginal_influence_gate"]["arbitration_fraction"])
                 _prepare_source_gates(workspace, exploration, data, config, arbitration)
+                if measurement_authorized is not True:
+                    results.append({"dataset": dataset, "seed": seed,
+                        "family": data.manifest["family"],
+                        "data_manifest": _digest(data.manifest),
+                        "h0_bank_viability": _digest(json.loads((workspace /
+                            "H0_HYPOTHESIS_BANK_VIABILITY.json").read_text(encoding="utf-8"))),
+                        "source_admission": _digest(json.loads((workspace /
+                            "SOURCE_ADMISSION.json").read_text(encoding="utf-8"))),
+                        "marginal_influence": _digest(json.loads((workspace /
+                            "MARGINAL_DECISION_INFLUENCE.json").read_text(encoding="utf-8")))})
+                    continue
                 comparisons = {row["variant"]: _run_comparison_variant(
                     project_root, workspace, row, data, config, provider,
                     source_identity, seed, expected_freeze, coordinate,
@@ -506,6 +520,15 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
                 results.append({"dataset": dataset, "seed": seed, "family": data.manifest["family"],
                     "exploration": exploration, "comparisons": comparisons})
         verify_system_freeze(project_root, config, expected_freeze)
+        if measurement_authorized is not True:
+            result = {"schema": "scientific-system-fresh-source-screen-v1",
+                "results": results, "protocol_complete": True,
+                "measurement_authorized": False, "candidate_response_accessed": False,
+                "reporting_validation_response_accessed": False,
+                "heldout_opened": False, "superiority_demonstrated": False,
+                "claim_boundary": "fresh development source screen only; no acquisition response"}
+            _publish(root / "SCREEN_MANIFEST.json", result)
+            return result
         result = {"schema": "scientific-system-development-terminal-v1", "results": results,
             "protocol_complete": True, "heldout_opened": False, "superiority_demonstrated": False,
             "claim_boundary": "conditional opened-development evidence; no confirmatory claim"}
@@ -522,8 +545,65 @@ def _sha256_file(path):
     return sha256(Path(path).read_bytes()).hexdigest()
 
 
+def _passed_screen_artifact_names(config):
+    if len(config["data"]) != 1 or len(config["seeds"]) != 1:
+        raise ValueError("passed-screen continuation requires one coordinate")
+    coordinate = f'{config["data"][0]["dataset"]}/{config["seeds"][0]}'
+    names = {"SYSTEM_CONTRACT.json", "SCREEN_MANIFEST.json",
+        f"{coordinate}/DATA_MANIFEST.json",
+        f"{coordinate}/H0_HYPOTHESIS_BANK_VIABILITY.json",
+        f"{coordinate}/HYPOTHESIS_BANK_VIABILITY.json",
+        f"{coordinate}/SOURCE_ADMISSION.json",
+        f"{coordinate}/MARGINAL_DECISION_INFLUENCE.json",
+        f"{coordinate}/exploration/ANALYSIS.json"}
+    for variant in ("full", "no_llm", "single_engine"):
+        base = f"{coordinate}/exploration/{variant}"
+        names.update({f"{base}/RESULT.json", f"{base}/evidence_registry.jsonl",
+                      f"{base}/H0_CAPACITY_BANK.json", f"{base}/FROZEN_BANK.json"})
+    return names
+
+
+def _verify_passed_source_screen(source_root, config, continuation):
+    source_root = Path(source_root).resolve()
+    if (set(continuation) != {"schema", "source_output", "artifacts", "claim_boundary"}
+            or continuation["schema"] != "scientific-passed-source-screen-continuation-v2"
+            or Path(continuation["source_output"]).resolve() != source_root
+            or continuation["claim_boundary"] !=
+            "continue immutable passed sourcewise screen without rerunning exploration"):
+        raise ValueError("invalid passed-screen continuation registration")
+    if set(continuation["artifacts"]) != _passed_screen_artifact_names(config):
+        raise ValueError("passed-screen continuation artifact set changed")
+    for relative, expected in continuation["artifacts"].items():
+        path = source_root / Path(relative)
+        if not path.is_file() or _sha256_file(path) != expected:
+            raise ValueError("passed-screen continuation artifact identity changed")
+    contract = json.loads((source_root / "SYSTEM_CONTRACT.json").read_text(encoding="utf-8"))
+    screen = json.loads((source_root / "SCREEN_MANIFEST.json").read_text(encoding="utf-8"))
+    if (contract.get("registration") != config
+            or screen.get("schema") != "scientific-system-fresh-source-screen-v1"
+            or screen.get("protocol_complete") is not True
+            or screen.get("measurement_authorized") is not False
+            or screen.get("candidate_response_accessed") is not False
+            or screen.get("heldout_opened") is not False):
+        raise ValueError("source is not a passed measurement-free system screen")
+    dataset, seed = config["data"][0]["dataset"], config["seeds"][0]
+    workspace = source_root / dataset / str(seed)
+    analysis = json.loads((workspace / "exploration/ANALYSIS.json").read_text(encoding="utf-8"))
+    for name in ("H0_HYPOTHESIS_BANK_VIABILITY.json", "HYPOTHESIS_BANK_VIABILITY.json",
+                 "SOURCE_ADMISSION.json", "MARGINAL_DECISION_INFLUENCE.json"):
+        if json.loads((workspace / name).read_text(encoding="utf-8")).get("passed") is not True:
+            raise ValueError("passed-screen source Gate is not passed")
+    forbidden = {"DECISION-001.json", "RECEIPT-001.json", "SYSTEM_MANIFEST.json"}
+    if any(path.name in forbidden or "measured" in path.parts
+           for path in source_root.rglob("*") if path.is_file()):
+        raise ValueError("passed source screen contains measurement artifacts")
+    return source_root, workspace, analysis, "passed-sourcewise-screen"
+
+
 def _verify_zero_response_continuation(source_root, config, continuation):
     """Bind one terminal pre-decision failure without mutating its artifacts."""
+    if continuation.get("schema") == "scientific-passed-source-screen-continuation-v2":
+        return _verify_passed_source_screen(source_root, config, continuation)
     source_root = Path(source_root).resolve()
     required = {"schema", "source_output", "artifacts", "claim_boundary"}
     if (set(continuation) != required
@@ -619,6 +699,35 @@ def _verify_zero_response_continuation(source_root, config, continuation):
     return source_root, workspace, analysis, continuation_mode
 
 
+def _copy_continuation_artifacts(source_workspace, workspace, exploration, mode):
+    if mode in {"identity-preserving", "passed-sourcewise-screen"}:
+        names = ("HYPOTHESIS_BANK_VIABILITY.json", "MARGINAL_DECISION_INFLUENCE.json")
+        if mode == "passed-sourcewise-screen":
+            names += ("H0_HYPOTHESIS_BANK_VIABILITY.json", "SOURCE_ADMISSION.json")
+        for name in names:
+            shutil.copyfile(source_workspace / name, workspace / name)
+    (workspace / "exploration").mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source_workspace / "exploration/ANALYSIS.json",
+                    workspace / "exploration/ANALYSIS.json")
+    for row in exploration["rows"]:
+        source_variant = source_workspace / "exploration" / row["variant"]
+        target_variant = workspace / "exploration" / row["variant"]
+        target_registry = target_variant / "evidence_registry.jsonl"
+        target_registry.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_variant / "evidence_registry.jsonl", target_registry)
+        result = json.loads((source_variant / "RESULT.json").read_text(encoding="utf-8"))
+        result["evidence_registry_path"] = str(target_registry)
+        result["zero_response_continuation_source"] = str(source_variant)
+        _publish(target_variant / "RESULT.json", result)
+        if mode == "passed-sourcewise-screen":
+            for name in ("H0_CAPACITY_BANK.json", "FROZEN_BANK.json"):
+                shutil.copyfile(source_variant / name, target_variant / name)
+            frozen = json.loads((source_variant / "FROZEN_BANK.json").read_text(
+                encoding="utf-8"))
+            row["candidates"] = frozen["candidates"]
+            row["source_prior_weights"] = frozen["source_prior_weights"]
+
+
 def execute_registered_system_continuation(project_root, root, source_root, config,
                                            expected_freeze, continuation, *, execution_role,
                                            measurement_authorized=True):
@@ -655,24 +764,8 @@ def execute_registered_system_continuation(project_root, root, source_root, conf
         if data.manifest != source_manifest:
             raise ValueError("continuation data manifest changed")
         _publish(workspace / "DATA_MANIFEST.json", data.manifest)
-        if continuation_mode == "identity-preserving":
-            for name in ("HYPOTHESIS_BANK_VIABILITY.json", "MARGINAL_DECISION_INFLUENCE.json"):
-                shutil.copyfile(source_workspace / name, workspace / name)
-        (workspace / "exploration").mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source_workspace / "exploration/ANALYSIS.json",
-                        workspace / "exploration/ANALYSIS.json")
-        for row in exploration["rows"]:
-            source_variant = source_workspace / "exploration" / row["variant"]
-            target_variant = workspace / "exploration" / row["variant"]
-            source_registry = source_variant / "evidence_registry.jsonl"
-            target_registry = target_variant / "evidence_registry.jsonl"
-            target_registry.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source_registry, target_registry)
-            result_payload = json.loads((source_variant / "RESULT.json").read_text(
-                encoding="utf-8"))
-            result_payload["evidence_registry_path"] = str(target_registry)
-            result_payload["zero_response_continuation_source"] = str(source_variant)
-            _publish(target_variant / "RESULT.json", result_payload)
+        _copy_continuation_artifacts(
+            source_workspace, workspace, exploration, continuation_mode)
         arbitration, reporting_evaluation = _split_source_arbitration(
             data.evaluation, config["marginal_influence_gate"]["arbitration_fraction"])
         if continuation_mode == "response-free-capacity-rebank":
