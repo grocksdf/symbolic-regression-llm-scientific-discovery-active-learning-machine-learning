@@ -35,6 +35,8 @@ def main() -> int:
         "registered_scientific_context_verified": result.returncode == 0,
         "premeasurement_viability_gate_verified": result.returncode == 0,
         "marginal_decision_influence_gate_verified": result.returncode == 0,
+        "offline_source_influence_screen_registered": (
+            root / "scripts/run_scientific_source_influence_screen.py").is_file(),
         "clean_source_formal_freeze_passed": False,
         "plan_admit_recovery_verified": result.returncode == 0,
         "static_measured_pool_order_verified": result.returncode == 0,
