@@ -83,8 +83,12 @@ class ReferenceBank:
     prior: NormalInverseGammaPrior
 
     def __post_init__(self) -> None:
-        if len(self.structures) < 2:
-            raise ValueError("reference bank requires at least two structures")
+        # A normalized singleton bank is a valid Bayesian predictive model.
+        # Production discovery adapters impose their own two-support floor;
+        # allowing one structure here is needed only for explicit diagnostic
+        # counterfactuals whose source ablation can remove all uncertainty.
+        if len(self.structures) < 1:
+            raise ValueError("reference bank requires at least one structure")
         identifiers = [item.structure_id for item in self.structures]
         if len(identifiers) != len(set(identifiers)):
             raise ValueError("reference structure identifiers must be unique")

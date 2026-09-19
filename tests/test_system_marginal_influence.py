@@ -8,7 +8,11 @@ from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.discovery.marginal_influence import (
     InitialEIGIntervalProfile, PredictiveQualityProfile, audit_marginal_influence,
     compare_marginal_influence, freeze_initial_eig_interval_profile,
+    initial_eig_interval_profile,
     leave_one_source_out_candidates,
+)
+from hypothesis_mvp.discovery.pcpi_adapter import (
+    freeze_discovery_model, freeze_discovery_target,
 )
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
 
@@ -156,3 +160,22 @@ def test_real_interval_builder_uses_only_frozen_h0_and_action_covariates():
     assert profile.strict_prefix_response_count == 0
     assert len(profile.lower) == len(actions)
     assert all(a <= b for a, b in zip(profile.lower, profile.upper))
+
+
+def test_singleton_ablation_is_zero_capacity_instead_of_adapter_failure():
+    initial = RoleDataset(DataRole.DEVELOPMENT,
+        np.array([[0.], [1.], [2.]]), np.array([0.1, 1.0, 2.2]))
+    actions = np.array([[0.25], [1.25], [2.25]])
+    model = freeze_discovery_model(
+        [{"expression": "x0", "source": "llm_proposal", "origin": "llm"}],
+        n_features=1, prior=NormalInverseGammaPrior(),
+        exploration_identity="a" * 64,
+        coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
+        source_prior_weights={"llm": 1.0}, minimum_supports=1)
+    target = freeze_discovery_target(model, initial, actions,
+        measurement_budget=2, expected_model_identity=model.stable_hash)
+    profile = initial_eig_interval_profile(
+        "full_without_engine_mcts", model, target, actions,
+        exact_eig_epsabs=1e-10)
+    assert profile.certified_leader is None
+    np.testing.assert_allclose(profile.exact_scores, 0.0, atol=1e-12)

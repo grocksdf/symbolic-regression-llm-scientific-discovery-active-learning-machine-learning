@@ -158,6 +158,42 @@ def test_exact_source_fallback_removes_harmful_family_publicly():
     assert all(source != "engine:mcts" for source, _, _ in model.candidate_bindings)
 
 
+def test_singleton_is_explicitly_diagnostic_and_production_still_fails_closed():
+    candidates = [
+        {"expression": "x0", "source": "anchor", "origin": "deterministic"},
+        {"expression": "x0**2", "source": "engine:mcts", "origin": "deterministic"},
+    ]
+    weights = {"core": 0.0, "engine:mcts": 1.0}
+    with pytest.raises(ValueError, match="fewer than 2"):
+        freeze_discovery_model(candidates, n_features=1,
+            prior=NormalInverseGammaPrior(), exploration_identity="a" * 64,
+            coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
+            source_prior_weights=weights)
+    diagnostic = freeze_discovery_model(candidates, n_features=1,
+        prior=NormalInverseGammaPrior(), exploration_identity="a" * 64,
+        coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
+        source_prior_weights=weights, minimum_supports=1)
+    assert diagnostic.minimum_supports == 1
+    assert len(diagnostic.bank.structures) == 1
+    assert diagnostic.bank.structures[0].prior_probability == 1.0
+    assert len(diagnostic.candidate_bindings) == 1
+
+
+def test_singleton_diagnostic_target_has_one_operational_class():
+    model = freeze_discovery_model(
+        [{"expression": "x0", "source": "anchor", "origin": "deterministic"}],
+        n_features=1, prior=NormalInverseGammaPrior(),
+        exploration_identity="a" * 64,
+        coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
+        minimum_supports=1)
+    initial = RoleDataset(DataRole.DEVELOPMENT,
+        np.array([[0.], [1.], [2.]]), np.array([0., 1., 2.]))
+    target = freeze_discovery_target(model, initial, np.array([[0.], [1.]]),
+        measurement_budget=2, expected_model_identity=model.stable_hash)
+    assert len(target.initial_posterior.members) == 1
+    assert len(target.partition.class_ids) == 1
+
+
 def test_strict_prefix_response_updates_source_mass_by_bayes_rule():
     from dataclasses import replace
     from hypothesis_mvp.pcpi.reference import ExactPosterior

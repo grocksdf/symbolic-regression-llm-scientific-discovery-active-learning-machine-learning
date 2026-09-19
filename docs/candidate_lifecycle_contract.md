@@ -195,3 +195,13 @@ likelihood, so no second optimizer, evaluation response or post-hoc fallback
 enters the measured path. The source weights are bound into the bank, model,
 target, transaction and comparison identities. Full-system admission still
 requires positive MCTS and LLM mass; ablations may publicly fall back to core.
+
+The source-stacking screen exposed an adapter-only counterfactual boundary:
+conditioning the frozen full prior after deleting one source can leave exactly
+one positive-mass support.  A singleton is a valid posterior-predictive model
+but has zero hypothesis-discrimination capacity.  The production discovery
+adapter continues to require at least two supports.  Only the response-free
+leave-one-source-out audit may freeze a singleton; it reports no certified EIG
+leader while retaining its proper predictive log score.  The audit never
+duplicates a support, injects prior mass, relaxes a threshold, or authorizes
+measurement.  The support floor is model-identity-bound.

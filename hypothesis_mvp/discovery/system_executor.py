@@ -302,10 +302,17 @@ def _prepare_marginal_decision_influence(workspace, exploration, data, config,
     for variant, bank in candidates.items():
         source_weights = _renormalized_source_weights(
             full["source_prior_weights"], bank)
+        # A leave-one-source-out counterfactual may legitimately condition to
+        # one remaining support.  That is a zero-capacity diagnostic model,
+        # not a production hypothesis bank.  Keeping it explicit lets the
+        # dual-channel audit score predictive quality and report no certified
+        # EIG leader instead of crashing or inventing a second hypothesis.
+        minimum_supports = 2 if variant == "full" else 1
         model = freeze_discovery_model(bank, n_features=data.initial.X.shape[1],
             prior=prior, exploration_identity=_digest(full),
             coefficient_policy=config["coefficient_policy"],
-            source_prior_weights=source_weights)
+            source_prior_weights=source_weights,
+            minimum_supports=minimum_supports)
         target = freeze_discovery_target(model, data.initial, data.pool.X_pool,
             measurement_budget=config["measurement_budget"],
             expected_model_identity=model.stable_hash)

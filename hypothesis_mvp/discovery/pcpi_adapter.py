@@ -152,12 +152,20 @@ class FrozenDiscoveryModel:
     candidate_bindings: tuple[tuple[str, str, str], ...]
     exploration_identity: str
     refit_policy: str = "discard-fitted-coefficients-refit-closed-basis"
+    minimum_supports: int = 2
+
+    def __post_init__(self) -> None:
+        if (type(self.minimum_supports) is not int
+                or self.minimum_supports not in {1, 2}
+                or len(self.bank.structures) < self.minimum_supports):
+            raise ValueError("frozen discovery model violates its support floor")
 
     @property
     def stable_hash(self) -> str:
         return sha256(json.dumps({"bank": self.bank.stable_hash, "features": self.n_features,
             "bindings": self.candidate_bindings, "exploration": self.exploration_identity,
-            "policy": self.refit_policy}, sort_keys=True).encode()).hexdigest()
+            "policy": self.refit_policy, "minimum_supports": self.minimum_supports},
+            sort_keys=True).encode()).hexdigest()
 
     def engine(self, expected_identity: str) -> SequentialReferencePosterior:
         if expected_identity != self.stable_hash:
@@ -211,11 +219,14 @@ def freeze_discovery_model(
     candidates: Sequence[Mapping[str, str]], *, n_features: int,
     prior: NormalInverseGammaPrior, exploration_identity: str,
     coefficient_policy: str, source_prior_weights: Mapping[str, float] | None = None,
+    minimum_supports: int = 2,
 ) -> FrozenDiscoveryModel:
     if coefficient_policy != "discard-fitted-coefficients-refit-closed-basis":
         raise ValueError("explicit structural-refit authorization required")
     if len(exploration_identity) != 64 or any(c not in "0123456789abcdef" for c in exploration_identity):
         raise ValueError("exploration identity must be SHA-256")
+    if type(minimum_supports) is not int or minimum_supports not in {1, 2}:
+        raise ValueError("discovery model support floor must be one or two")
     supports: dict[tuple[str, ...], tuple[str, str]] = {}
     bindings = []
     for candidate in candidates:
@@ -234,8 +245,8 @@ def freeze_discovery_model(
         if existing[1] != family:
             raise DiscoveryAdapterError("duplicate-support-crosses-source-families")
         bindings.append((str(candidate["source"]), expression, identifier))
-    if len(supports) < 2:
-        raise ValueError("at least two distinct model supports required")
+    if len(supports) < minimum_supports:
+        raise ValueError(f"at least {minimum_supports} distinct model supports required")
     families = {family for _, family in supports.values()}
     if source_prior_weights is None:
         weights = {family: sum(value[1] == family for value in supports.values()) / len(supports)
@@ -254,7 +265,9 @@ def freeze_discovery_model(
         for terms, (identifier, family) in sorted(supports.items()) if family in active)
     bindings = [binding for binding in bindings
                 if any(binding[2] == structure.structure_id for structure in structures)]
-    if len(structures) < 2:
-        raise ValueError("source fallback leaves fewer than two model supports")
+    if len(structures) < minimum_supports:
+        raise ValueError(
+            f"source fallback leaves fewer than {minimum_supports} model supports")
     return FrozenDiscoveryModel(ReferenceBank(structures, prior), n_features,
-                                tuple(sorted(bindings)), exploration_identity)
+                                tuple(sorted(bindings)), exploration_identity,
+                                minimum_supports=minimum_supports)

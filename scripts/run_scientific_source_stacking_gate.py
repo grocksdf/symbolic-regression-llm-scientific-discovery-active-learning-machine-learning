@@ -15,13 +15,14 @@ def main():
         "tests/test_discovery_transaction.py",
         "tests/test_integrity.py::test_final_source_integrity"]
     completed = subprocess.run(command, cwd=ROOT, check=False)
-    result = {"schema": "scientific-source-stacking-correctness-gate-v1",
+    result = {"schema": "scientific-source-stacking-correctness-gate-v2",
         "passed": completed.returncode == 0, "real_data_access": False,
         "candidate_response_accessed": False, "heldout_opened": False,
         "production_runner_wired": True,
         "hierarchical_prior_identity_bound": True,
         "strict_prefix_source_update_verified": True,
         "negative_transfer_fallback_verified": True,
+        "singleton_counterfactual_isolated_from_production": True,
         "formal_experiment_authorized": False}
     print(json.dumps(result, indent=2))
     return completed.returncode
