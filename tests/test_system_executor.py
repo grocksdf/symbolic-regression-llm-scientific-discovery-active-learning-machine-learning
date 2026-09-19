@@ -30,6 +30,11 @@ def _config():
         "hypothesis_bank_gate": {"schema": "scientific-hypothesis-bank-gate-v1",
                                  "exact_eig_epsabs": 1e-10,
                                  "require_all_variants": True},
+        "marginal_influence_gate": {
+            "schema": "scientific-marginal-decision-influence-gate-v1",
+            "exact_eig_epsabs": 1e-10,
+            "comparators": ["no_llm", "single_engine"],
+            "require_all_comparators": True},
         "data_loading_seconds": 30, "provider_attempt_ceiling": 2,
         "provider_public_identity": executor.public_provider_identity(_settings()),
         "coefficient_policy": "discard-fitted-coefficients-refit-closed-basis",
@@ -63,6 +68,13 @@ def _patch(monkeypatch, supported=True):
     monkeypatch.setattr(executor, "audit_frozen_hypothesis_bank", lambda *args, **kwargs: {
         "schema": "scientific-hypothesis-bank-viability-v1", "passed": True,
         "candidate_response_accessed": False, "heldout_opened": False})
+    monkeypatch.setattr(executor, "freeze_initial_eig_interval_profile",
+                        lambda variant, *args, **kwargs: variant)
+    monkeypatch.setattr(executor, "audit_marginal_influence",
+        lambda profiles, **kwargs: {
+            "schema": "scientific-marginal-decision-influence-family-gate-v1",
+            "passed": True, "candidate_response_accessed": False,
+            "heldout_opened": False, "efficacy_demonstrated": False})
     monkeypatch.setattr("hypothesis_mvp.pcpi.discovery_transaction.estimate_class_eig_until_ranked",
         lambda components, *args, **kwargs: SimpleNamespace(ranking_certified=True,
             estimate=SimpleNamespace(scores=np.arange(components.locations.shape[1], dtype=float),
@@ -132,6 +144,24 @@ def test_degenerate_bank_stops_before_any_pool_response(tmp_path, monkeypatch):
     assert not (root / "SYSTEM_MANIFEST.json").exists()
     with pytest.raises(ValueError, match="terminally failed"):
         executor.execute_registered_system(tmp_path / "source", root, _config(), {}, execution_role="user")
+
+
+def test_marginal_influence_failure_stops_before_any_pool_response(tmp_path, monkeypatch):
+    _patch(monkeypatch)
+    monkeypatch.setattr(executor, "audit_marginal_influence",
+        lambda profiles, **kwargs: {
+            "schema": "scientific-marginal-decision-influence-family-gate-v1",
+            "passed": False, "candidate_response_accessed": False,
+            "heldout_opened": False, "efficacy_demonstrated": False})
+    def forbidden(*args): raise AssertionError("influence failure must not reveal a response")
+    monkeypatch.setattr(PoolOracle, "acquire_indices", forbidden)
+    root = tmp_path / "output"
+    with pytest.raises(executor.MarginalDecisionInfluenceNotCertified):
+        executor.execute_registered_system(
+            tmp_path / "source", root, _config(), {}, execution_role="user")
+    report = root / "uci_gas_turbine_co" / "11" / "MARGINAL_DECISION_INFLUENCE.json"
+    assert report.is_file()
+    assert not (root / "uci_gas_turbine_co" / "11" / "measured").exists()
 
 
 def test_authorization_and_dirty_source_block_before_data(tmp_path, monkeypatch):

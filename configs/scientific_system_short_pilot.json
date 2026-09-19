@@ -50,6 +50,12 @@
     "exact_eig_epsabs": 1e-10,
     "require_all_variants": true
   },
+  "marginal_influence_gate": {
+    "schema": "scientific-marginal-decision-influence-gate-v1",
+    "exact_eig_epsabs": 1e-10,
+    "comparators": ["no_llm", "single_engine"],
+    "require_all_comparators": true
+  },
   "exploration_seconds": 240,
   "policy_seconds": 60,
   "data_loading_seconds": 30,

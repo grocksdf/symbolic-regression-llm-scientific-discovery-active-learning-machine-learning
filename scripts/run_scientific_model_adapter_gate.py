@@ -17,6 +17,7 @@ def main() -> int:
                     "tests/test_exploration_prediction_baseline.py",
                     "tests/test_symbolic_closed_contract.py",
                     "tests/test_system_contribution_audit.py",
+                    "tests/test_system_marginal_influence.py",
                     "tests/test_system_executor.py",
                     "tests/test_pcpi_p3d2_reference_acquisition.py"])
     result = subprocess.run(command, cwd=root, check=False)
@@ -33,6 +34,7 @@ def main() -> int:
         "hypothesis_provenance_verified": result.returncode == 0,
         "registered_scientific_context_verified": result.returncode == 0,
         "premeasurement_viability_gate_verified": result.returncode == 0,
+        "marginal_decision_influence_gate_verified": result.returncode == 0,
         "clean_source_formal_freeze_passed": False,
         "plan_admit_recovery_verified": result.returncode == 0,
         "static_measured_pool_order_verified": result.returncode == 0,

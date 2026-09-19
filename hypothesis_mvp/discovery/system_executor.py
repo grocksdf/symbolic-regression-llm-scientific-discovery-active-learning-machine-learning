@@ -22,11 +22,22 @@ from .resource_limits import run_bounded
 from .system_ablation import run_exploration_ablations
 from .system_freeze import verify_system_freeze
 from .system_run import run_frozen_system_comparison, audit_frozen_hypothesis_bank
+from .marginal_influence import (
+    audit_marginal_influence, freeze_initial_eig_interval_profile,
+)
 
 
 class HypothesisBankNotViable(RuntimeError):
     def __init__(self):
         super().__init__("response-free-hypothesis-bank-not-viable-no-measurement-authorized")
+        self.public_diagnostic = str(self)
+
+
+class MarginalDecisionInfluenceNotCertified(RuntimeError):
+    def __init__(self):
+        super().__init__(
+            "response-free-marginal-decision-influence-not-certified-no-measurement-authorized"
+        )
         self.public_diagnostic = str(self)
 
 
@@ -39,7 +50,7 @@ def validate_system_registration(config):
     required = {"schema", "data", "seeds", "agent", "single_engine", "prior", "scoring",
         "measurement_budget", "exploration_seconds", "policy_seconds", "data_loading_seconds",
         "provider_attempt_ceiling", "provider_public_identity", "coefficient_policy",
-        "user_execution_authorized", "hypothesis_bank_gate"}
+        "user_execution_authorized", "hypothesis_bank_gate", "marginal_influence_gate"}
     if set(config) != required or config["schema"] != "scientific-system-development-registration-v1":
         raise ValueError("unknown or incomplete scientific system registration")
     if (not config["data"] or not config["seeds"] or len(set(config["seeds"])) != len(config["seeds"])
@@ -84,6 +95,14 @@ def validate_system_registration(config):
             or gate["exact_eig_epsabs"] != 1e-10
             or gate["require_all_variants"] is not True):
         raise ValueError("invalid hypothesis-bank viability registration")
+    influence = config["marginal_influence_gate"]
+    if (set(influence) != {"schema", "exact_eig_epsabs", "comparators",
+                           "require_all_comparators"}
+            or influence["schema"] != "scientific-marginal-decision-influence-gate-v1"
+            or influence["exact_eig_epsabs"] != gate["exact_eig_epsabs"]
+            or influence["comparators"] != ["no_llm", "single_engine"]
+            or influence["require_all_comparators"] is not True):
+        raise ValueError("invalid marginal decision influence registration")
     identity = config["provider_public_identity"]
     if identity is None and config["user_execution_authorized"] is False:
         return config
@@ -168,6 +187,28 @@ def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
         raise HypothesisBankNotViable()
 
 
+def _prepare_marginal_decision_influence(workspace, exploration, data, config):
+    gate = config["marginal_influence_gate"]
+    prior = NormalInverseGammaPrior(**config["prior"])
+    profiles = {}
+    for row in exploration["rows"]:
+        variant = row["variant"]
+        profiles[variant] = freeze_initial_eig_interval_profile(
+            variant, row["candidates"], data.initial, data.pool.X_pool,
+            n_features=data.initial.X.shape[1], prior=prior,
+            exploration_identity=_digest(row),
+            coefficient_policy=config["coefficient_policy"],
+            measurement_budget=config["measurement_budget"],
+            exact_eig_epsabs=gate["exact_eig_epsabs"],
+        )
+    report = audit_marginal_influence(
+        profiles, require_comparators=tuple(gate["comparators"]))
+    _publish(workspace / "MARGINAL_DECISION_INFLUENCE.json", report)
+    if report["passed"] is not True:
+        raise MarginalDecisionInfluenceNotCertified()
+    return report
+
+
 def _run_comparison_variant(project_root, workspace, row, data, config, provider,
                             source_identity, seed, expected_freeze, coordinate):
     variant = row["variant"]
@@ -238,6 +279,7 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
                     provider_attempt_ceiling=config["provider_attempt_ceiling"], source_identity=source_identity,
                     scientific_context=data.manifest["scientific_context"])
                 _prepare_hypothesis_bank_viability(workspace, exploration, data, config)
+                _prepare_marginal_decision_influence(workspace, exploration, data, config)
                 comparisons = {row["variant"]: _run_comparison_variant(
                     project_root, workspace, row, data, config, provider,
                     source_identity, seed, expected_freeze, coordinate
