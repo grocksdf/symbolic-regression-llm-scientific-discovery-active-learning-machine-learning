@@ -16,6 +16,7 @@ def main() -> int:
                     "tests/test_closed_basis_refit.py", "tests/test_seed_budget_contract.py",
                     "tests/test_exploration_prediction_baseline.py",
                     "tests/test_symbolic_closed_contract.py",
+                    "tests/test_system_contribution_audit.py",
                     "tests/test_system_executor.py",
                     "tests/test_pcpi_p3d2_reference_acquisition.py"])
     result = subprocess.run(command, cwd=root, check=False)

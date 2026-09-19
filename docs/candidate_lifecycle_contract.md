@@ -83,3 +83,14 @@ such as `c*(x8+sin(x0))` without distributing symbolic products, changing
 nonlinear arguments, merging duplicate supports, or exceeding the existing
 expression/AST caps. Prediction equivalence and before/after supports are
 checked algebraically; invalid or duplicate structures still fail closed.
+
+Post-run contribution auditing is artifact-only and immutable: it reads no
+receipt response values, pool labels or held-out object. It verifies completed
+policy manifests and exploration evidence chains, compares structural supports,
+query sequences and published development curves, and labels four-query score/
+RMSE correlations descriptive only. The completed additive-boundary pilot also
+exposed a reporting-only error: the selection path used the current posterior,
+but its `information_audit` repeated the frozen initial class entropy. New
+decisions report entropy from the same current partition used by EIG scoring.
+Historical decisions and curves remain immutable; their correction scope is
+metadata-only and cannot upgrade the efficacy or superiority claim.

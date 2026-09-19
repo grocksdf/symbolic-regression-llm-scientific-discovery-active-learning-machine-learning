@@ -51,6 +51,23 @@ def test_decision_before_response_and_reconstruction(tmp_path):
     with pytest.raises(ValueError, match="budget"): recovered.plan(np.array([12]), np.array([[3.]]))
 
 
+def test_information_audit_reports_current_not_frozen_class_entropy(tmp_path):
+    from hypothesis_mvp.pcpi.acquisition import predictive_components_for_partition
+    session = _session(tmp_path)
+    first = session.plan(np.array([10]), np.array([[3.]]))
+    assert first["information_audit"]["class_entropy_nats"] == pytest.approx(
+        session.target.partition.entropy)
+    session.admit(10, np.array([3.]), 20.)
+    current = predictive_components_for_partition(session.engine, session.posterior,
+        session.target.partition, np.array([[4.]])).partition
+    second = session.plan(np.array([11]), np.array([[4.]]))
+    assert second["information_audit"]["class_entropy_nats"] == pytest.approx(current.entropy)
+    assert second["information_audit"]["posterior_effective_class_count"] == pytest.approx(
+        np.exp(current.entropy))
+    assert second["information_audit"]["strict_prefix_response_count"] == 1
+    assert current.entropy != pytest.approx(session.target.partition.entropy)
+
+
 def test_response_and_candidate_identity_fail_closed(tmp_path):
     session = _session(tmp_path)
     session.plan(np.array([10]), np.array([[3.]]))

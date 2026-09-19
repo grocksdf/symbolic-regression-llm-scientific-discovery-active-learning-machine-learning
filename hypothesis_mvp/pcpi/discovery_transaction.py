@@ -220,6 +220,7 @@ class DiscoveryTransaction:
             leader = min(active, key=lambda i: (-float(scores[i]), int(ids[i])))
             audit = self._information_audit(
                 analytic_lower, analytic_upper, active, leader,
+                components.partition,
                 exact_shared_actions=False,
             )
             return (leader, float(scores[leader]),
@@ -263,6 +264,7 @@ class DiscoveryTransaction:
         score = float(active_scores[int(np.flatnonzero(active == leader)[0])])
         audit = self._information_audit(
             analytic_lower, analytic_upper, active, leader,
+            components.partition,
             exact_shared_actions=True,
         )
         if strictly_best:
@@ -273,14 +275,15 @@ class DiscoveryTransaction:
                 MINIMAX_REGRET_EIG_METHOD, "exact-interval-minimax-regret",
                 regret_bound, audit)
 
-    def _information_audit(self, lower, upper, active, leader, *, exact_shared_actions):
-        entropy = float(self.target.partition.entropy)
+    def _information_audit(self, lower, upper, active, leader, current_partition,
+                           *, exact_shared_actions):
+        entropy = float(current_partition.entropy)
         maximum_upper = float(np.max(upper))
         return {
             "schema": "discovery-class-eig-identifiability-v1",
             "candidate_response_accessed": False,
             "strict_prefix_response_count": len(self.receipts),
-            "class_count": len(self.target.partition.class_ids),
+            "class_count": len(current_partition.class_ids),
             "class_entropy_nats": entropy,
             "posterior_effective_class_count": float(np.exp(entropy)),
             "candidate_count": int(len(lower)),
