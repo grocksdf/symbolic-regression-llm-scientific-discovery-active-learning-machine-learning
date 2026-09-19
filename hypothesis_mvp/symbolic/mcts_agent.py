@@ -82,6 +82,7 @@ class MCTSSymbolicAgent(SymbolicRegressor):
             0, int(getattr(config, "mcts_candidate_sample_k", 0))
         )
         self.frontier_size = max(1, int(getattr(config, "mcts_frontier_size", 1)))
+        self.score_folds = max(2, int(getattr(config, "mcts_score_folds", 2)))
         self.constants = tuple(
             float(value) for value in getattr(config, "mcts_constants", [1.0, 2.0, 3.0])
         )
@@ -241,16 +242,21 @@ class MCTSSymbolicAgent(SymbolicRegressor):
             expression = node.ast.to_sympy()
             if float(sp.count_ops(expression, visual=False)) > self.max_ops:
                 return 0.0
-            symbols = sympy_symbols(X.shape[1])
-            function = sp.lambdify(symbols, expression, "numpy")
-            with np.errstate(all="ignore"):
-                prediction = function(*X.T)
-            if np.isscalar(prediction):
-                prediction = np.full(len(y), float(prediction), dtype=float)
-            prediction = np.asarray(prediction, dtype=float).reshape(-1)
-            if prediction.shape != y.shape or not np.all(np.isfinite(prediction)):
-                return 0.0
-            mse = float(np.mean((prediction - y) ** 2))
+            if self.expression_contract == "pcpi-closed-basis-v1":
+                archive_expression, mse, prediction = self._closed_basis_crossfit(
+                    node.expression, X, y)
+            else:
+                symbols = sympy_symbols(X.shape[1])
+                function = sp.lambdify(symbols, expression, "numpy")
+                with np.errstate(all="ignore"):
+                    prediction = function(*X.T)
+                if np.isscalar(prediction):
+                    prediction = np.full(len(y), float(prediction), dtype=float)
+                prediction = np.asarray(prediction, dtype=float).reshape(-1)
+                if prediction.shape != y.shape or not np.all(np.isfinite(prediction)):
+                    return 0.0
+                mse = float(np.mean((prediction - y) ** 2))
+                archive_expression = node.expression
             complexity = float(sp.count_ops(expression, visual=False))
             score = mse + self.complexity_penalty * complexity
             if not expression.free_symbols:
@@ -262,13 +268,51 @@ class MCTSSymbolicAgent(SymbolicRegressor):
             norm = float(np.linalg.norm(centered))
             signature = (centered / norm if norm > 0.0
                          else np.zeros_like(centered))
-            self._archive[node.expression] = (score, complexity, signature)
+            archived = self._archive.get(archive_expression)
+            if archived is None or score < archived[0]:
+                self._archive[archive_expression] = (score, complexity, signature)
             if score < self.best_score:
                 self.best_score = score
-                self.best_expr = node.expression
+                self.best_expr = archive_expression
             return float(self.reward_fn(score))
         except Exception:
             return 0.0
+
+    def _closed_basis_crossfit(
+        self, expression: str, X: np.ndarray, y: np.ndarray,
+    ) -> tuple[str, float, np.ndarray]:
+        """Score the same amplitude-refitted support consumed by PCPI.
+
+        Fold assignment is deterministic and uses only the engine's training
+        rows.  The final exported expression is refitted on all training rows,
+        while the search reward and diversity signature use out-of-fold
+        predictions so literal constants cannot win through in-sample fit.
+        """
+        from hypothesis_mvp.discovery.equation_runtime import EquationRuntime
+
+        runtime = EquationRuntime(
+            self._n_features, refit_policy="pcpi-closed-basis-amplitudes")
+        fold_count = min(self.score_folds, len(y))
+        if fold_count < 2:
+            raise ValueError("closed-basis crossfit requires at least two rows")
+        fold_ids = np.arange(len(y), dtype=int) % fold_count
+        prediction = np.empty(len(y), dtype=float)
+        for fold in range(fold_count):
+            validation = fold_ids == fold
+            training = ~validation
+            if not np.any(validation) or not np.any(training):
+                raise ValueError("closed-basis crossfit produced an empty fold")
+            refit = runtime.refit_global_constants(expression, X[training], y[training])
+            if not refit.success:
+                raise ValueError("closed-basis fold refit failed")
+            prediction[validation] = runtime.predict(refit.expression, X[validation])
+        if not np.all(np.isfinite(prediction)):
+            raise ValueError("closed-basis crossfit produced nonfinite predictions")
+        final = runtime.refit_global_constants(expression, X, y)
+        if not final.success:
+            raise ValueError("closed-basis full refit failed")
+        mse = float(np.mean((prediction - y) ** 2))
+        return final.expression, mse, prediction
 
     def _select_predictive_pareto_frontier(self) -> tuple[str, ...]:
         """Return a deterministic train-only accuracy/complexity/diversity front."""
@@ -292,13 +336,17 @@ class MCTSSymbolicAgent(SymbolicRegressor):
         ordered = sorted(pareto, key=lambda row: (row[1], row[2], row[0]))
         selected = [next(row for row in rows if row[0] == self.best_expr)]
         remaining = [row for row in ordered if row[0] != self.best_expr]
-        while remaining and len(selected) < self.frontier_size:
+        fallback = sorted(
+            (row for row in rows if row[0] not in {item[0] for item in ordered}),
+            key=lambda row: (row[1], row[2], row[0]))
+        while (remaining or fallback) and len(selected) < self.frontier_size:
+            pool = remaining if remaining else fallback
             def key(row):
                 minimum_distance = min(
                     1.0 - abs(float(row[4] @ chosen[4])) for chosen in selected)
                 return (-minimum_distance, row[1], row[2], row[0])
-            chosen = min(remaining, key=key)
-            selected.append(chosen); remaining.remove(chosen)
+            chosen = min(pool, key=key)
+            selected.append(chosen); pool.remove(chosen)
         return tuple(row[0] for row in selected)
 
     @staticmethod
@@ -338,7 +386,11 @@ class MCTSSymbolicAgent(SymbolicRegressor):
             "expansion_factor": self.expansion_factor,
             "best_expression": self.best_expr,
             "best_score": self.best_score,
-            "candidate_set_method": "train-pareto-error-complexity-predictive-nonredundancy-v1",
+            "candidate_set_method": "cross-fitted-closed-basis-pareto-predictive-nonredundancy-v1",
+            "search_score_method": ("closed-basis-amplitude-refit-crossfit-v1" if
+                self.expression_contract == "pcpi-closed-basis-v1" else
+                "literal-expression-training-mse-v1"),
+            "search_score_folds": self.score_folds,
             "frontier_size_limit": self.frontier_size,
             "frontier_expressions": list(self.candidate_expressions()),
             "archive_size": len(self._archive),

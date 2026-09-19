@@ -34,6 +34,7 @@ class DiscoveryAgentConfig:
     random_seed: int = 42
     search_iterations: int = 120
     mcts_frontier_size: int = 4
+    mcts_score_folds: int = 2
     acquisition_enabled: bool = False
     use_knowledge: bool = False
     llm_evaluation_reserve: int = 0
@@ -106,6 +107,7 @@ class DiscoveryAgent:
             mcts_max_iterations=self.config.search_iterations,
             mcts_random_seed=self.config.random_seed + cycle,
             mcts_frontier_size=self.config.mcts_frontier_size,
+            mcts_score_folds=self.config.mcts_score_folds,
             expression_contract=("pcpi-closed-basis-v1" if
                 self.config.refit_policy == "pcpi-closed-basis-amplitudes" else "unrestricted"),
         )

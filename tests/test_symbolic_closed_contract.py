@@ -66,10 +66,28 @@ def test_mcts_exports_deterministic_predictively_nonredundant_pareto_bank():
     candidates = first.candidate_expressions()
     assert candidates == second.candidate_expressions()
     assert candidates[0] == first.best_expression()
-    assert 2 <= len(candidates) <= 4 and len(set(candidates)) == len(candidates)
+    assert len(candidates) == 4 and len(set(candidates)) == len(candidates)
     assert all(structural_terms(expression, X.shape[1]) for expression in candidates)
-    assert first.info()["candidate_set_method"].startswith("train-pareto")
+    assert first.info()["candidate_set_method"].startswith("cross-fitted-closed-basis")
+    assert first.info()["search_score_method"] == "closed-basis-amplitude-refit-crossfit-v1"
+    assert first.info()["search_score_folds"] == 2
     assert first.info()["archive_size"] <= cfg.mcts_max_iterations
+
+
+def test_mcts_closed_basis_search_score_is_invariant_to_external_amplitudes():
+    X, y = _fixture()
+    model = MCTSSymbolicAgent(SymbolicConfig(
+        engine="mcts", expression_contract="pcpi-closed-basis-v1",
+        mcts_score_folds=2, mcts_random_seed=17))
+    model._n_features = X.shape[1]
+    first_expression, first_loss, first_prediction = model._closed_basis_crossfit(
+        "x0 + sin(x1)", X, y)
+    second_expression, second_loss, second_prediction = model._closed_basis_crossfit(
+        "7*x0 - 3*sin(x1)", X, y)
+    assert structural_terms(first_expression, X.shape[1]) == structural_terms(
+        second_expression, X.shape[1])
+    assert first_loss == pytest.approx(second_loss, abs=1e-12)
+    assert np.allclose(first_prediction, second_prediction, atol=1e-12, rtol=0.0)
 
 
 def test_scheduler_charges_one_mcts_job_while_exporting_fixed_frontier():

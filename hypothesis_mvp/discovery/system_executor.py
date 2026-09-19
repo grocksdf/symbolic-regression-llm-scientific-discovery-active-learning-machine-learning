@@ -84,6 +84,7 @@ def validate_system_registration(config):
             or agent.discovery_budget < 1
             or type(agent.mcts_frontier_size) is not int
             or not 2 <= agent.mcts_frontier_size <= 8
+            or agent.mcts_score_folds != 2
             or type(agent.llm_evaluation_reserve) is not int
             or agent.llm_evaluation_reserve < 0
             or agent.llm_evaluation_reserve >= agent.discovery_budget):

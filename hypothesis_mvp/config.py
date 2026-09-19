@@ -31,6 +31,7 @@ class SymbolicConfig:
     mcts_random_seed: int = 0
     mcts_candidate_sample_k: int = 0
     mcts_frontier_size: int = 1
+    mcts_score_folds: int = 2
     mcts_max_depth: int = 6
     mcts_max_nodes: int = 40
     mcts_constants: list[float] = field(default_factory=lambda: [1.0, 2.0, 3.0])
