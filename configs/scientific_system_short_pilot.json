@@ -48,9 +48,11 @@
   },
   "measurement_budget": 4,
   "hypothesis_bank_gate": {
-    "schema": "scientific-hypothesis-bank-gate-v1",
+    "schema": "scientific-hypothesis-bank-gate-v2",
     "exact_eig_epsabs": 1e-10,
     "maximum_candidates": 8,
+    "selection_rule": "two-fold-initial-predictive-safe-operational-entropy-v1",
+    "source_safety_folds": 2,
     "require_all_variants": true
   },
   "marginal_influence_gate": {

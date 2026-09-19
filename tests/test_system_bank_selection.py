@@ -22,7 +22,8 @@ def test_capacity_bank_is_deterministic_bounded_and_preserves_sources():
     kwargs = dict(n_features=2, prior=NormalInverseGammaPrior(),
         exploration_identity="a" * 64,
         coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
-        measurement_budget=2, maximum_candidates=4)
+        measurement_budget=2, maximum_candidates=4,
+        source_safety_roles=("engine:mcts", "origin:llm"), source_safety_folds=2)
     first, report = select_operational_capacity_bank(
         candidates, initial, actions, **kwargs)
     second, second_report = select_operational_capacity_bank(
@@ -33,6 +34,12 @@ def test_capacity_bank_is_deterministic_bounded_and_preserves_sources():
     assert report["candidate_response_accessed"] is False
     assert report["heldout_opened"] is False
     assert report["maximum_candidates"] == 4
+    assert report["selection_method"] == "two-fold-initial-predictive-safe-operational-entropy-v1"
+    assert report["source_arbitration_validation_response_accessed"] is False
+    assert set(report["source_safety"]) == {"engine:mcts", "origin:llm"}
+    assert report["source_safety_passed"] is False
+    assert report["source_safety"]["engine:mcts"]["passed"] is False
+    assert report["source_safety"]["origin:llm"]["passed"] is True
 
 
 def test_capacity_bank_rejects_unmatched_capacity():

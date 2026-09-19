@@ -99,10 +99,13 @@ def validate_system_registration(config):
     DiscoveryScoringControls(**config["scoring"])
     gate = config["hypothesis_bank_gate"]
     if (set(gate) != {"schema", "exact_eig_epsabs", "require_all_variants",
-                      "maximum_candidates"}
-            or gate["schema"] != "scientific-hypothesis-bank-gate-v1"
+                      "maximum_candidates", "selection_rule", "source_safety_folds"}
+            or gate["schema"] != "scientific-hypothesis-bank-gate-v2"
             or gate["exact_eig_epsabs"] != 1e-10
             or gate["maximum_candidates"] != 2 * config["measurement_budget"]
+            or gate["selection_rule"] !=
+                "two-fold-initial-predictive-safe-operational-entropy-v1"
+            or gate["source_safety_folds"] != 2
             or gate["require_all_variants"] is not True):
         raise ValueError("invalid hypothesis-bank viability registration")
     influence = config["marginal_influence_gate"]
@@ -177,8 +180,13 @@ def _variant_composition(variant, candidates):
 
 def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
     viability = {}
+    registered_safety = tuple(
+        "origin:llm" if value == "llm" else value
+        for value in config["marginal_influence_gate"]["required_contributions"])
     for row in exploration["rows"]:
         variant = row["variant"]
+        available_roles = _required_selection_roles(row["candidates"])
+        safety_roles = tuple(role for role in registered_safety if role in available_roles)
         selected, selection = select_operational_capacity_bank(
             row["candidates"], data.initial, data.pool.X_pool,
             n_features=data.initial.X.shape[1],
@@ -186,7 +194,9 @@ def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
             exploration_identity=_digest(row),
             coefficient_policy=config["coefficient_policy"],
             measurement_budget=config["measurement_budget"],
-            maximum_candidates=config["hypothesis_bank_gate"]["maximum_candidates"])
+            maximum_candidates=config["hypothesis_bank_gate"]["maximum_candidates"],
+            source_safety_roles=safety_roles,
+            source_safety_folds=config["hypothesis_bank_gate"]["source_safety_folds"])
         row["candidates"] = list(selected)
         row["hypothesis_provenance"] = {
             **row["hypothesis_provenance"],
@@ -213,7 +223,8 @@ def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
         )
         composition = _variant_composition(variant, row["candidates"])
         audit["composition_decisions"] = composition
-        audit["passed"] = bool(audit["passed"] and all(composition.values()))
+        audit["passed"] = bool(audit["passed"] and all(composition.values())
+                               and selection["source_safety_passed"])
         viability[variant] = audit
     _publish(workspace / "HYPOTHESIS_BANK_VIABILITY.json", {
         "schema": "scientific-hypothesis-bank-family-gate-v1",
@@ -222,6 +233,14 @@ def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
     })
     if not all(row["passed"] for row in viability.values()):
         raise HypothesisBankNotViable()
+
+
+def _required_selection_roles(candidates):
+    roles = {str(row["source"]) for row in candidates
+             if str(row["source"]).startswith("engine:")}
+    if any(str(row.get("origin", "")) == "llm" for row in candidates):
+        roles.add("origin:llm")
+    return roles
 
 
 def _split_source_arbitration(evaluation, fraction):
@@ -404,7 +423,12 @@ def _verify_zero_response_continuation(source_root, config, continuation):
     continuation_mode = "identity-preserving"
     if source_registration != config:
         compatible = json.loads(json.dumps(config))
-        compatible.get("hypothesis_bank_gate", {}).pop("maximum_candidates", None)
+        capacity = compatible.get("hypothesis_bank_gate", {})
+        capacity.pop("maximum_candidates", None)
+        capacity.pop("selection_rule", None)
+        capacity.pop("source_safety_folds", None)
+        if capacity.get("schema") == "scientific-hypothesis-bank-gate-v2":
+            capacity["schema"] = "scientific-hypothesis-bank-gate-v1"
         if source_registration != compatible:
             raise ValueError("continuation source registration changed beyond bank capacity")
         continuation_mode = "response-free-capacity-rebank"

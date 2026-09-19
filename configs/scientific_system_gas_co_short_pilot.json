@@ -21,7 +21,7 @@
   "prior": {"coefficient_mean": 0.0, "coefficient_precision": 1.0, "noise_shape": 2.5, "noise_scale": 0.2},
   "scoring": {"minimum_samples": 32, "maximum_samples": 256, "error_safety_factor": 2.0, "growth_factor": 2},
   "measurement_budget": 4,
-  "hypothesis_bank_gate": {"schema": "scientific-hypothesis-bank-gate-v1", "exact_eig_epsabs": 1e-10, "maximum_candidates": 8, "require_all_variants": true},
+  "hypothesis_bank_gate": {"schema": "scientific-hypothesis-bank-gate-v2", "exact_eig_epsabs": 1e-10, "maximum_candidates": 8, "selection_rule": "two-fold-initial-predictive-safe-operational-entropy-v1", "source_safety_folds": 2, "require_all_variants": true},
   "marginal_influence_gate": {"schema": "scientific-dual-channel-source-contribution-gate-v3", "exact_eig_epsabs": 1e-10, "required_contributions": ["llm", "engine:mcts"], "decision_rule": "full-target-certified-regret-v1", "quality_rule": "positive-paired-cumulative-log-predictive-ratio-v1", "arbitration_fraction": 0.5, "require_all_contributions": true},
   "exploration_seconds": 240, "policy_seconds": 60, "data_loading_seconds": 30,
   "provider_attempt_ceiling": 24,

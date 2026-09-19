@@ -143,3 +143,21 @@ selection, recomputes viability and both source-contribution channels, and
 enters measurement only if those new reports pass.  Any other configuration
 difference fails closed.  Engines and the LLM are not rerun, and the source
 output remains unchanged.
+
+The entropy-only capacity selector exposed a second, immutable negative screen:
+it increased the full Gas-CO operational-class entropy from approximately
+`0.00139` to `0.09336`, but it retained only two members of the four-member
+MCTS frontier and the resulting MCTS leave-source-out predictive contribution
+was `-5.3251` nats on the independently registered arbitration split. This is
+not a measurement result and does not authorize threshold relaxation.
+
+The replacement capacity selector aligns selection with the already registered
+proper-scoring source Gate without opening that Gate's validation responses. It
+enumerates the finite capacity banks, preserves all registered provenance roles,
+and uses a deterministic paired two-fold posterior-predictive log score on H0
+alone. A bank is eligible for entropy maximization only when every applicable
+registered source has strictly positive cross-fitted contribution beyond a
+floating-point error bound. If no such bank exists, the best diagnostic bank
+is published but viability fails before source-arbitration, acquisition-pool,
+reporting-validation or held-out access. The folds, positivity rule, capacity
+and entropy tie-break are frozen independently of observed efficacy.

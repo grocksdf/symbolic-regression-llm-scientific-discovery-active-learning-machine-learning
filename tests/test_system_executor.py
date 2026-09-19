@@ -27,9 +27,11 @@ def _config():
         "single_engine": "polynomial_lasso", "prior": {},
         "scoring": {"minimum_samples": 8, "maximum_samples": 16, "error_safety_factor": 2.},
         "measurement_budget": 2, "exploration_seconds": 30, "policy_seconds": 30,
-        "hypothesis_bank_gate": {"schema": "scientific-hypothesis-bank-gate-v1",
+        "hypothesis_bank_gate": {"schema": "scientific-hypothesis-bank-gate-v2",
                                  "exact_eig_epsabs": 1e-10,
                                  "maximum_candidates": 4,
+                                 "selection_rule": "two-fold-initial-predictive-safe-operational-entropy-v1",
+                                 "source_safety_folds": 2,
                                  "require_all_variants": True},
         "marginal_influence_gate": {
             "schema": "scientific-dual-channel-source-contribution-gate-v3",
@@ -75,7 +77,7 @@ def _patch(monkeypatch, supported=True):
     monkeypatch.setattr(executor, "select_operational_capacity_bank",
         lambda candidates, *args, **kwargs: (tuple(candidates), {
             "schema": "fixture-capacity-bank", "candidate_response_accessed": False,
-            "heldout_opened": False}))
+            "source_safety_passed": True, "heldout_opened": False}))
     monkeypatch.setattr(executor, "freeze_discovery_model",
         lambda candidates, **kwargs: SimpleNamespace(stable_hash="model"))
     monkeypatch.setattr(executor, "freeze_discovery_target",
@@ -183,6 +185,27 @@ def test_marginal_influence_failure_stops_before_any_pool_response(tmp_path, mon
             tmp_path / "source", root, _config(), {}, execution_role="user")
     report = root / "uci_gas_turbine_co" / "11" / "MARGINAL_DECISION_INFLUENCE.json"
     assert report.is_file()
+    assert not (root / "uci_gas_turbine_co" / "11" / "measured").exists()
+
+
+def test_source_safety_failure_stops_before_validation_or_pool_response(tmp_path, monkeypatch):
+    _patch(monkeypatch)
+    monkeypatch.setattr(executor, "select_operational_capacity_bank",
+        lambda candidates, *args, **kwargs: (tuple(candidates), {
+            "schema": "fixture-capacity-bank", "candidate_response_accessed": False,
+            "source_arbitration_validation_response_accessed": False,
+            "source_safety_passed": False, "heldout_opened": False}))
+    def forbidden(*args, **kwargs):
+        raise AssertionError("source-safety failure must precede validation and pool responses")
+    monkeypatch.setattr(executor, "predictive_quality_profile", forbidden)
+    monkeypatch.setattr(PoolOracle, "acquire_indices", forbidden)
+    root = tmp_path / "output"
+    with pytest.raises(executor.HypothesisBankNotViable):
+        executor.execute_registered_system(
+            tmp_path / "source", root, _config(), {}, execution_role="user")
+    coordinate = root / "uci_gas_turbine_co" / "11"
+    assert (coordinate / "HYPOTHESIS_BANK_VIABILITY.json").is_file()
+    assert not (coordinate / "MARGINAL_DECISION_INFLUENCE.json").exists()
     assert not (root / "uci_gas_turbine_co" / "11" / "measured").exists()
 
 
