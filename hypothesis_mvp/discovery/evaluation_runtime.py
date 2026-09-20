@@ -17,6 +17,7 @@ import sympy as sp
 
 from .contracts import DiscoveryConfig, EquationState, LineageStep, json_safe
 from .equation_runtime import EquationDAG, EquationRuntime, PrimitiveRegistry, RefitResult
+from .pcpi_adapter import structural_terms
 if TYPE_CHECKING:
     from .proposal_runtime import ProposalCandidate
 
@@ -956,9 +957,18 @@ class EvaluationRuntime:
                 round_id=round_id, candidate_id=candidate_id,
             )
             return None
-        dag, metrics, pruning = self._prune_refitted_candidate(
-            dag, metrics, X_train, y_train, X_val, y_val, round_id,
-        )
+        if (self.config.refit_policy == "pcpi-closed-basis-amplitudes"
+                and origin == "llm"):
+            # The downstream conjugate model discards fitted amplitudes and
+            # tests the complete proposed support. Validation-driven term
+            # deletion would both change that scientific hypothesis and let an
+            # early proposal consume the evaluation slots of later proposals.
+            pruning = {"applied": False,
+                       "reason": "closed-basis-structural-hypothesis-preserved"}
+        else:
+            dag, metrics, pruning = self._prune_refitted_candidate(
+                dag, metrics, X_train, y_train, X_val, y_val, round_id,
+            )
         if dag.complexity > self.config.max_complexity:
             self._reject(
                 "complexity_cap", source=source, island=island, round_id=round_id,
@@ -977,9 +987,22 @@ class EvaluationRuntime:
             )
             return None
         if origin == "llm" and proposal is not None:
-            retention = self._structure_retention_evidence(
-                parent, proposal_dag, dag, proposal_edit, metrics, X_train, y_train, X_val, y_val,
-            )
+            if self.config.refit_policy == "pcpi-closed-basis-amplitudes":
+                proposed_support = structural_terms(
+                    proposal_dag.expression, self.n_features)
+                refitted_support = structural_terms(dag.expression, self.n_features)
+                retention = {
+                    "pass": proposed_support == refitted_support,
+                    "method": "exact-pcpi-closed-support-identity-v1",
+                    "proposal_support": list(proposed_support),
+                    "refitted_support": list(refitted_support),
+                    "response_accessed": False,
+                }
+            else:
+                retention = self._structure_retention_evidence(
+                    parent, proposal_dag, dag, proposal_edit, metrics,
+                    X_train, y_train, X_val, y_val,
+                )
             if not retention.get("pass"):
                 self._reject(
                     "llm_structure_not_retained_after_global_refit", source=source,

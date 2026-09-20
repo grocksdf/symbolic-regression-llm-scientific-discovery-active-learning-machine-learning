@@ -262,7 +262,15 @@ class ScientificDiscoveryRuntime:
                 "score_status": "evaluated" if candidate is not None else "invalid_candidate_no_score",
                 "gate": json_safe(gate),
             })
-            if candidate is not None:
+            # Closed-basis production sources require two independent safety
+            # layers: this generation-split transition Gate and the later
+            # source-arbitration Gate.  A locally rejected proposal remains in
+            # the audit ledger but cannot acquire downstream prior mass merely
+            # because it was syntactically evaluable.  Legacy exploratory
+            # protocols retain their broader hypothesis-bank semantics.
+            if (candidate is not None and (passed
+                    or getattr(getattr(self, "config", None), "refit_policy",
+                               "global-constants") != "pcpi-closed-basis-amplitudes")):
                 exploratory.append(candidate)
             if passed and candidate is not None:
                 candidates.append((score, candidate))

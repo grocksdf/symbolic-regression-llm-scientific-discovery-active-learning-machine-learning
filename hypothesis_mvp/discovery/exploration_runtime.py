@@ -16,6 +16,7 @@ from typing import Any, Mapping, Optional, Sequence, TYPE_CHECKING
 import numpy as np
 
 from .equation_runtime import EquationDAG, EquationRuntime
+from .pcpi_adapter import structural_terms
 if TYPE_CHECKING:
     from .evaluation_runtime import MetricVector
 
@@ -97,6 +98,19 @@ class ExplorationRuntime:
 
     def for_island(self, island: str) -> "ExplorationRuntime":
         return ExplorationRuntime(self.runtime, self.config, objective_profile=str(island))
+
+    @property
+    def _closed_basis(self) -> bool:
+        return self.config.refit_policy == "pcpi-closed-basis-amplitudes"
+
+    def _admissible_grammar_expression(self, expression: str, n_features: int) -> bool:
+        if not self._closed_basis:
+            return True
+        try:
+            structural_terms(expression, n_features)
+        except Exception:
+            return False
+        return True
 
     @staticmethod
     def _nmse(y: np.ndarray, pred: np.ndarray) -> float:
@@ -280,13 +294,14 @@ class ExplorationRuntime:
         seen_values = {self._fingerprint(prediction)}
         for i in range(X.shape[1]):
             self._add_term(out, seen_expr, seen_values, f"x{i}", X[:, i], "raw_variable", 0)
-        for text, values in self.runtime.intermediate_outputs(
-            dag, X, int(getattr(self.config, "intermediate_node_limit", 20))
-        ):
-            self._add_term(
-                out, seen_expr, seen_values, f"({text})", values,
-                "current_dag_intermediate", 0,
-            )
+        if not self._closed_basis:
+            for text, values in self.runtime.intermediate_outputs(
+                dag, X, int(getattr(self.config, "intermediate_node_limit", 20))
+            ):
+                self._add_term(
+                    out, seen_expr, seen_values, f"({text})", values,
+                    "current_dag_intermediate", 0,
+                )
         return out
 
     def _expand_unary(self, seeds: Sequence[GrammarTerm]) -> list[tuple[str, np.ndarray, str, str]]:
@@ -339,12 +354,16 @@ class ExplorationRuntime:
         for depth in range(1, max_depth + 1):
             additions: list[GrammarTerm] = []
             for expr, values, family, op in self._expand_unary(beam):
+                if not self._admissible_grammar_expression(expr, X.shape[1]):
+                    continue
                 self._add_term(additions, seen_expr, seen_values, expr, values, family, depth, operator=op)
                 if len(terms) + len(additions) >= max_terms:
                     break
             if len(terms) + len(additions) < max_terms:
                 binary_seeds = beam[:max(2, min(len(beam), beam_width // 2))]
                 for expr, values, family, parents, op in self._expand_binary(binary_seeds):
+                    if not self._admissible_grammar_expression(expr, X.shape[1]):
+                        continue
                     self._add_term(additions, seen_expr, seen_values, expr, values, family, depth, parents, op)
                     if len(terms) + len(additions) >= max_terms:
                         break
@@ -548,10 +567,17 @@ class ExplorationRuntime:
             relative_cv_nmse_gain=observed["nmse_gain"], relative_cv_tail_gain=observed["tail_gain"],
             relative_cv_objective_gain=observed["objective_gain"], failure_summary=failure,
             grammar_summary={
+                "hypothesis_space_contract": (
+                    "pcpi-closed-basis-v1" if self._closed_basis else "unrestricted"),
                 "base_symbols": ["y_hat", *[f"x{i}" for i in range(X.shape[1])]],
-                "uses_current_dag_intermediates": bool(int(getattr(self.config, "intermediate_node_limit", 20))),
-                "unary_operators": ["square", "cube", "tanh", "sin", "cos", "signed_log", "saturate"],
-                "binary_operators": ["multiply", "safe_ratio"],
+                "uses_current_dag_intermediates": bool(
+                    not self._closed_basis
+                    and int(getattr(self.config, "intermediate_node_limit", 20))),
+                "unary_operators": (["square", "cube", "tanh", "sin", "cos"]
+                    if self._closed_basis else
+                    ["square", "cube", "tanh", "sin", "cos", "signed_log", "saturate"]),
+                "binary_operators": (["multiply"] if self._closed_basis else
+                                     ["multiply", "safe_ratio"]),
                 "max_depth": int(getattr(self.config, "exploration_max_depth", 2)),
                 "beam_width": int(getattr(self.config, "exploration_beam_width", 16)),
                 "candidate_count": len(terms), "selection_method": "cross_fold_complete-program-objective",

@@ -83,6 +83,25 @@ def test_budget_denied_candidates_each_have_explicit_missing_score():
                for row in audit)
 
 
+def test_closed_basis_rejected_llm_candidate_is_audited_but_not_retained():
+    from hypothesis_mvp.discovery.scientific_runtime import ScientificDiscoveryRuntime
+    controller = ScientificDiscoveryRuntime.__new__(ScientificDiscoveryRuntime)
+    controller.config = SimpleNamespace(refit_policy="pcpi-closed-basis-amplitudes")
+    candidate = SimpleNamespace(dag=SimpleNamespace(expression="x0**2"))
+    controller.evaluation = SimpleNamespace(
+        budget=SimpleNamespace(exhausted=False), rejections=[],
+        build_state=lambda *args, **kwargs: candidate,
+        policy=SimpleNamespace(
+            accept_transition=lambda *args: (False, {"pass": False}),
+            score=lambda *args: 1.0))
+    batch = SimpleNamespace(candidates=[SimpleNamespace(
+        candidate_id="rejected", equation="x0**2")])
+    winner, retained, audit = controller._evaluate_batch(
+        batch, object(), (), "balanced", 1)
+    assert winner is None and retained == []
+    assert audit[0]["validated"] is True and audit[0]["accepted"] is False
+
+
 def test_invalid_publication_leaves_neither_result_nor_staging(tmp_path):
     from hypothesis_mvp.pcpi.discovery_transaction import _publish
     path = tmp_path / "RESULT.json"

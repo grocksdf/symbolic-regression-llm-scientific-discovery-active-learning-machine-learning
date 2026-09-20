@@ -72,3 +72,29 @@ def test_all_constant_inputs_have_a_valid_intercept_only_baseline():
     selected, identity, _ = runtime._select_terms(terms, y)
     assert [terms[index].expression for index in selected] == ["y_hat"]
     assert all(np.isfinite(value) for value in identity.values())
+
+
+def test_closed_basis_exploration_never_ranks_unadaptable_terms():
+    from hypothesis_mvp.discovery.pcpi_adapter import structural_terms
+    equation = EquationRuntime(2)
+    runtime = ExplorationRuntime(equation, DiscoveryConfig.from_mapping({
+        "refit_policy": "pcpi-closed-basis-amplitudes",
+        "exploration_max_depth": 2, "exploration_max_primitives": 64}))
+    axis = np.linspace(-1., 1., 32)
+    X = np.column_stack((axis, axis[::-1] ** 2))
+    prediction = .3 + axis
+    terms, _ = runtime._build_grammar(
+        X, prediction + .2 * np.sin(axis), prediction,
+        equation.dag("0.3 + x0"))
+    assert terms[0].expression == "y_hat"
+    assert all("y_hat" not in term.expression for term in terms[1:])
+    assert all("Abs" not in term.expression and "/" not in term.expression
+               for term in terms[1:])
+    assert all(structural_terms(term.expression, 2) for term in terms[1:])
+    result = runtime.solve(X, prediction + .2 * np.sin(axis), prediction,
+        equation.dag("0.3 + x0"),
+        type("Metrics", (), {"val_nmse": 1., "val_p99": 1., "val_strict": 1.,
+                              "as_dict": lambda self: {}})())
+    assert result.grammar_summary["hypothesis_space_contract"] == "pcpi-closed-basis-v1"
+    assert result.grammar_summary["uses_current_dag_intermediates"] is False
+    assert "safe_ratio" not in result.grammar_summary["binary_operators"]

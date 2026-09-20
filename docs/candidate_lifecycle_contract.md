@@ -283,3 +283,29 @@ intervals, a lower bound above familywise numerical resolution, and an upper
 bound within the prior Bayes risk before any measurement can be authorized.
 The new utility remains a hypothesis-discrimination objective; predictive RMSE
 is an external development metric, not an input or tuned surrogate.
+
+The first decision-risk fresh screen at `20260922/2026092201` is retained as a
+pre-utility NO-GO.  H0 capacity passed, but LLM and MCTS were independently
+negative on both source-arbitration folds, so source admission correctly
+assigned both zero mass and blocked the decision-risk Gate before candidate
+responses.  Artifact inspection exposed a representation boundary rather than
+a reason to relax admission: the exploration diagnostic obtained its apparent
+cross-fold improvement from `y_hat` interactions, safe ratios and compound
+transforms that the frozen PCPI posterior cannot represent.  The final
+adaptable LLM support was itself rejected by the generation-split transition
+Gate, while post-refit pruning and semantic-ablation trials consumed the
+remaining LLM evaluation slots before later proposals could be evaluated.
+
+Closed-basis production discovery now uses one executable hypothesis-space
+contract end to end.  Grammar additions must pass the same non-evaluating
+`pcpi-closed-basis-v1` adapter as posterior freezing; current-DAG
+intermediates, `y_hat` interactions, safe ratios, signed logs, saturations and
+compound transforms cannot enter its diagnostic search.  The immutable
+`y_hat` column remains only as the baseline comparator.  Closed-basis LLM
+supports are preserved exactly through amplitude refit, so validation-driven
+term deletion and response-based semantic ablation neither alter a proposed
+scientific hypothesis nor starve later proposals.  A proposal rejected by the
+generation-split transition Gate remains in the audit ledger but cannot enter
+the downstream source bank; independent source-arbitration admission remains
+a second mandatory fold-safe Gate.  These are task-independent representation
+and budget-accounting repairs, not adjustments to observed efficacy.
