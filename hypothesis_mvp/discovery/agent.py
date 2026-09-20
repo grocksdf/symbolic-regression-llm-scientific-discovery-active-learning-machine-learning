@@ -20,6 +20,7 @@ from .contracts import DiscoveryConfig
 from .proposal_runtime import ProviderSettings
 from .proposal_runtime import ProposalRuntime
 from .equation_runtime import EquationRuntime
+from .initializer import generic_deterministic_candidates
 from .scientist_policy import (
     ResearchPlan, ScientistReview, ScientistState, deterministic_plan,
 )
@@ -112,6 +113,45 @@ def _engine_evidence(result: Any) -> list[dict[str, Any]]:
         }} for row in result.all_results]
 
 
+def _bounded_seed_bank(engine_result, previous, selection, config):
+    engine_rows = [{"expression": row.expression,
+        "source": f"engine:{row.engine}", "lineage_id": row.lineage_id}
+        for row in engine_result.all_results]
+    previous_rows = [{"expression": expression,
+        "source": "previous_cycle_survivor"} for expression in previous]
+    generic = generic_deterministic_candidates(
+        selection.development.X, selection.development.y)
+    limit = (config.discovery_budget - config.llm_evaluation_reserve
+             - len(config.discovery_islands))
+    if limit < len({row["source"] for row in engine_rows}) + 2:
+        raise ValueError("discovery budget cannot preserve required seed roles")
+    priority, seen_engines = [], set()
+    for row in engine_rows:
+        engine = row["source"]
+        if engine not in seen_engines:
+            priority.append(row); seen_engines.add(engine)
+    if previous_rows:
+        priority.append(previous_rows[0])
+    for marker in ("deterministic_linear_anchor", "deterministic_constant_anchor"):
+        match = next((row for row in generic if row["source"] == marker), None)
+        if match is not None:
+            priority.append(match)
+    ordered = [*priority, *engine_rows, *previous_rows, *generic]
+    selected, seen = [], set()
+    for row in ordered:
+        key = str(row["expression"]).replace(" ", "")
+        if key in seen:
+            continue
+        seen.add(key); selected.append(row)
+        if len(selected) == limit:
+            break
+    return selected, {"schema": "scientific-bounded-cross-round-seed-bank-v1",
+        "limit": limit, "input_engine_candidates": len(engine_rows),
+        "input_previous_survivors": len(previous_rows),
+        "input_generic_candidates": len(generic), "selected_count": len(selected),
+        "candidate_response_accessed": False, "heldout_opened": False}
+
+
 class DiscoveryAgent:
     def __init__(
         self, config: DiscoveryAgentConfig,
@@ -168,13 +208,10 @@ class DiscoveryAgent:
         output_dir: Path, knowledge_dir: Path, variable_metadata: Mapping[str, Any],
         cycle: int = 0, orchestration_context: Mapping[str, Any] | None = None,
     ) -> DiscoveryRunResult:
-        seeds = [{
-            "expression": row.expression, "source": f"engine:{row.engine}",
-            "lineage_id": row.lineage_id,
-        } for row in engine_result.all_results]
-        seeds.extend({
-            "expression": expression, "source": "previous_cycle_survivor"
-        } for expression in previous)
+        seeds, seed_audit = _bounded_seed_bank(
+            engine_result, previous, selection, self.config)
+        context = dict(orchestration_context or {})
+        context["seed_bank"] = seed_audit
         discovery = discover_from_selection(
             selection=selection,
             task_name=task_name, task_description=task_description,
@@ -191,8 +228,8 @@ class DiscoveryAgent:
             }),
             provider_settings=self.provider_settings,
             variable_metadata=dict(variable_metadata),
-            orchestration_context=dict(orchestration_context or {}),
-            refinement_enabled=True, include_generic_candidates=True,
+            orchestration_context=context,
+            refinement_enabled=True, include_generic_candidates=False,
         )
         attach_system_evidence(discovery, _engine_payload(engine_result), cycle)
         return discovery

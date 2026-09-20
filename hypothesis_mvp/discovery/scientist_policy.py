@@ -201,10 +201,10 @@ def plan_from_json(raw: Mapping[str, Any], engines: Sequence[str],
         str(row.get("objective", "")), str(row.get("expected_evidence", "")))
         for row in raw.get("engine_calls", ()) if isinstance(row, Mapping))
     plan = ResearchPlan(
-        tuple(str(value) for value in raw.get("mechanisms", ())),
-        calls, tuple(str(value) for value in raw.get("comparison_questions", ())),
+        _strings(raw.get("mechanisms")),
+        calls, _strings(raw.get("comparison_questions")),
         str(raw.get("synthesis_goal", "")),
-        tuple(str(value) for value in raw.get("stop_conditions", ())),
+        _strings(raw.get("stop_conditions")),
         str(raw.get("protocol_id", "")))
     plan.validate(engines, total_jobs)
     return plan
@@ -212,12 +212,26 @@ def plan_from_json(raw: Mapping[str, Any], engines: Sequence[str],
 
 def review_from_json(raw: Mapping[str, Any]) -> ScientistReview:
     return ScientistReview(
-        tuple(str(value) for value in raw.get("supported_mechanisms", ())),
-        tuple(str(value) for value in raw.get("contradicted_mechanisms", ())),
-        tuple(str(value) for value in raw.get("cross_engine_conflicts", ())),
-        tuple(str(value) for value in raw.get("synthesis_instructions", ())),
+        _strings(raw.get("supported_mechanisms"), allow_empty=True),
+        _strings(raw.get("contradicted_mechanisms"), allow_empty=True),
+        _strings(raw.get("cross_engine_conflicts"), allow_empty=True),
+        _strings(raw.get("synthesis_instructions")),
         bool(raw.get("stop", False)), str(raw.get("stop_reason", "")),
         str(raw.get("protocol_id", "")))
+
+
+def _strings(value: Any, *, allow_empty: bool = False) -> tuple[str, ...]:
+    if isinstance(value, str):
+        rows = (value.strip(),)
+    elif isinstance(value, (list, tuple)):
+        rows = tuple(str(item).strip() for item in value)
+    elif value is None and allow_empty:
+        rows = ()
+    else:
+        raise ValueError("scientist text collection must be a string or array")
+    if any(not row for row in rows) or (not rows and not allow_empty):
+        raise ValueError("scientist text collection contains empty values")
+    return rows
 
 
 __all__ = [

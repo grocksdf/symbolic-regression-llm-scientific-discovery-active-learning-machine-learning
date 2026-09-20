@@ -6,6 +6,9 @@ import pytest
 
 from hypothesis_mvp.config import SymbolicConfig
 from hypothesis_mvp.discovery.equation_runtime import EquationRuntime
+from hypothesis_mvp.discovery.agent import (
+    DiscoveryAgentConfig, _bounded_seed_bank,
+)
 from hypothesis_mvp.discovery.proposal_runtime import ProposalRuntime
 from hypothesis_mvp.discovery.scientist_policy import (
     ENGINE_REVIEW_PROTOCOL, RESEARCH_PLAN_PROTOCOL,
@@ -55,6 +58,14 @@ def test_scientist_review_schema_is_strict():
     assert review.stable_hash and not review.stop
     with pytest.raises(ValueError):
         review_from_json({"protocol_id": ENGINE_REVIEW_PROTOCOL})
+    scalar = review_from_json({
+        "protocol_id": ENGINE_REVIEW_PROTOCOL,
+        "supported_mechanisms": [], "contradicted_mechanisms": [],
+        "cross_engine_conflicts": [],
+        "synthesis_instructions": "retain the simpler falsifiable law",
+        "stop": False, "stop_reason": "continue"})
+    assert scalar.synthesis_instructions == (
+        "retain the simpler falsifiable law",)
 
 
 def test_proposal_runtime_uses_single_transport_for_plan_and_review(monkeypatch):
@@ -166,3 +177,25 @@ def test_leave_one_task_out_skill_gate_requires_cross_family_coverage():
     passed = leave_one_task_out_skill_policy(diverse)
     assert passed["passed"] is True
     assert passed["candidate_response_accessed"] is False
+
+
+def test_cross_round_seed_bank_respects_fixed_deterministic_budget():
+    engine = SimpleNamespace(all_results=tuple(
+        SimpleNamespace(expression=f"x0+{index}", engine=(
+            "polynomial_lasso" if index == 0 else "mcts"),
+            lineage_id=str(index)) for index in range(4)))
+    selection = SimpleNamespace(development=SimpleNamespace(
+        X=np.arange(64., dtype=float).reshape(32, 2),
+        y=np.arange(32., dtype=float)))
+    config = DiscoveryAgentConfig(
+        engines=("polynomial_lasso", "mcts"), engine_budget=2,
+        discovery_budget=24, llm_evaluation_reserve=8,
+        discovery_islands=("balanced",))
+    rows, audit = _bounded_seed_bank(
+        engine, tuple(f"x0+x1+{index}" for index in range(10)),
+        selection, config)
+    assert len(rows) == audit["limit"] == 15
+    assert {row["source"] for row in rows} >= {
+        "engine:polynomial_lasso", "engine:mcts",
+        "previous_cycle_survivor", "deterministic_linear_anchor",
+        "deterministic_constant_anchor"}
