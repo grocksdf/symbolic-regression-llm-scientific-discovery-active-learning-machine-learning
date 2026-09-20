@@ -309,3 +309,22 @@ generation-split transition Gate remains in the audit ledger but cannot enter
 the downstream source bank; independent source-arbitration admission remains
 a second mandatory fold-safe Gate.  These are task-independent representation
 and budget-accounting repairs, not adjustments to observed efficacy.
+
+The first representation-aligned screen at `20260923/2026092301` is retained
+as another response-free NO-GO.  The representation contract worked, but no
+LLM proposal passed the local incumbent Gate, so the old composition rule
+removed the entire LLM family before independent source arbitration.  This
+exposed a remaining hierarchy error: local incumbent selection, individual
+hypothesis safety, and source-family stacking are different decisions.
+
+Optional hypotheses are now admitted candidate by candidate before capacity
+selection or source stacking.  Each LLM or optional-engine support is paired
+with the unchanged complete core bank and must have strictly positive
+posterior-predictive log-score gain on every registered arbitration fold,
+beyond a floating numerical bound.  Rejected supports retain immutable
+fold-level negative-transfer certificates; admitted supports alone can enter
+capacity selection.  Family-level admission and the fixed 50% core reserve are
+then applied as a second layer.  The procedure never searches combinations of
+optional candidates, so a good support cannot hide a bad one and vice versa.
+It accesses source-arbitration validation responses only; acquisition-pool,
+reporting-validation and held-out responses remain unavailable.

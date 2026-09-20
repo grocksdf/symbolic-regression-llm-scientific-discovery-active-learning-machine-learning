@@ -83,7 +83,7 @@ def test_budget_denied_candidates_each_have_explicit_missing_score():
                for row in audit)
 
 
-def test_closed_basis_rejected_llm_candidate_is_audited_but_not_retained():
+def test_closed_basis_nonincumbent_candidate_is_retained_for_independent_admission():
     from hypothesis_mvp.discovery.scientific_runtime import ScientificDiscoveryRuntime
     controller = ScientificDiscoveryRuntime.__new__(ScientificDiscoveryRuntime)
     controller.config = SimpleNamespace(refit_policy="pcpi-closed-basis-amplitudes")
@@ -98,7 +98,7 @@ def test_closed_basis_rejected_llm_candidate_is_audited_but_not_retained():
         candidate_id="rejected", equation="x0**2")])
     winner, retained, audit = controller._evaluate_batch(
         batch, object(), (), "balanced", 1)
-    assert winner is None and retained == []
+    assert winner is None and retained == [candidate]
     assert audit[0]["validated"] is True and audit[0]["accepted"] is False
 
 

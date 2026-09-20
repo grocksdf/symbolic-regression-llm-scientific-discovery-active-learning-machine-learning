@@ -4,7 +4,8 @@ import pytest
 
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.discovery.source_stacking import (
-    calibrate_source_admission, safe_source_stacking, source_family,
+    calibrate_source_admission, filter_fold_safe_source_candidates,
+    safe_source_stacking, source_family,
 )
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
 
@@ -110,3 +111,31 @@ def test_helpful_source_cannot_mask_another_sources_bad_fold(monkeypatch):
     assert sources["engine:mcts"]["negative_transfer_certified"] is True
     assert sources["llm"]["admitted"] is True
     assert certificate.source_weights["core"] >= 0.5
+
+
+def test_candidatewise_admission_keeps_only_fold_safe_optional_supports(monkeypatch):
+    baseline = np.full(8, -2.0)
+    profiles = {
+        "good": baseline + np.array([.4, .2, .3, .1, .2, .3, .1, .4]),
+        "bad": baseline + np.array([.5, -.8, .5, -.8, .5, -.8, .5, -.8]),
+    }
+    def profile(candidates, *args, **kwargs):
+        name = candidates[-1]["expression"]
+        return (np.column_stack((baseline, profiles[name])),
+                np.arange(8) % 2, ("core", "llm"))
+    monkeypatch.setattr(
+        "hypothesis_mvp.discovery.source_stacking.arbitration_source_log_predictive",
+        profile)
+    rows = [
+        {"expression": "x0", "source": "anchor-a", "origin": "deterministic"},
+        {"expression": "x0**2", "source": "anchor-b", "origin": "deterministic"},
+        {"expression": "good", "source": "llm-good", "origin": "llm"},
+        {"expression": "bad", "source": "llm-bad", "origin": "llm"},
+    ]
+    retained, report = filter_fold_safe_source_candidates(rows, None, None)
+    assert {row["expression"] for row in retained} == {"x0", "x0**2", "good"}
+    certificates = {row["source"]: row for row in report["candidate_certificates"]}
+    assert certificates["llm-good"]["admitted"] is True
+    assert certificates["llm-bad"]["admitted"] is False
+    assert certificates["llm-bad"]["negative_transfer_certified"] is True
+    assert report["candidate_response_accessed"] is False

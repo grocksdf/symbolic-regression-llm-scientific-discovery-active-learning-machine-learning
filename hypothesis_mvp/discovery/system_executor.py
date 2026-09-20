@@ -33,7 +33,9 @@ from .marginal_influence import (
 )
 from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target
 from .bank_selection import select_operational_capacity_bank
-from .source_stacking import calibrate_source_admission, source_family
+from .source_stacking import (
+    calibrate_source_admission, filter_fold_safe_source_candidates, source_family,
+)
 
 
 class HypothesisBankNotViable(RuntimeError):
@@ -248,6 +250,28 @@ def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
     })
     if not all(row["passed"] for row in viability.values()):
         raise HypothesisBankNotViable()
+
+
+def _prepare_candidate_admission(workspace, exploration, data, config, arbitration):
+    reports = {}
+    prior = NormalInverseGammaPrior(**config["prior"])
+    for row in exploration["rows"]:
+        retained, report = filter_fold_safe_source_candidates(
+            row["candidates"], data.initial, arbitration,
+            n_features=data.initial.X.shape[1], prior=prior,
+            exploration_identity=_digest(row),
+            coefficient_policy=config["coefficient_policy"],
+            measurement_budget=config["measurement_budget"],
+            action_domain=data.pool.X_pool)
+        row["candidates"] = list(retained)
+        reports[row["variant"]] = report
+    family = {
+        "schema": "scientific-independent-candidatewise-admission-family-v1",
+        "variants": reports, "candidate_response_accessed": False,
+        "reporting_validation_response_accessed": False, "heldout_opened": False,
+    }
+    _publish(workspace / "CANDIDATE_ADMISSION.json", family)
+    return family
 
 
 def _required_selection_roles(candidates):
@@ -530,9 +554,11 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
                     single_engine=config["single_engine"], compute_ceiling=config["exploration_seconds"],
                     provider_attempt_ceiling=config["provider_attempt_ceiling"], source_identity=source_identity,
                     scientific_context=data.manifest["scientific_context"])
-                _prepare_hypothesis_bank_viability(workspace, exploration, data, config)
                 arbitration, reporting_evaluation = _split_source_arbitration(
                     data.evaluation, config["marginal_influence_gate"]["arbitration_fraction"])
+                candidate_admission = _prepare_candidate_admission(
+                    workspace, exploration, data, config, arbitration)
+                _prepare_hypothesis_bank_viability(workspace, exploration, data, config)
                 _prepare_source_gates(workspace, exploration, data, config, arbitration)
                 utility_gate = _prepare_decision_risk_utility_gate(
                     workspace, exploration, data, config)
@@ -540,6 +566,7 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
                     results.append({"dataset": dataset, "seed": seed,
                         "family": data.manifest["family"],
                         "data_manifest": _digest(data.manifest),
+                        "candidate_admission": _digest(candidate_admission),
                         "h0_bank_viability": _digest(json.loads((workspace /
                             "H0_HYPOTHESIS_BANK_VIABILITY.json").read_text(encoding="utf-8"))),
                         "source_admission": _digest(json.loads((workspace /
@@ -590,6 +617,7 @@ def _passed_screen_artifact_names(config):
         f"{coordinate}/DATA_MANIFEST.json",
         f"{coordinate}/H0_HYPOTHESIS_BANK_VIABILITY.json",
         f"{coordinate}/HYPOTHESIS_BANK_VIABILITY.json",
+        f"{coordinate}/CANDIDATE_ADMISSION.json",
         f"{coordinate}/SOURCE_ADMISSION.json",
         f"{coordinate}/MARGINAL_DECISION_INFLUENCE.json",
         f"{coordinate}/exploration/ANALYSIS.json"}
@@ -745,7 +773,8 @@ def _copy_continuation_artifacts(source_workspace, workspace, exploration, mode)
     if mode in {"identity-preserving", "passed-sourcewise-screen"}:
         names = ("HYPOTHESIS_BANK_VIABILITY.json", "MARGINAL_DECISION_INFLUENCE.json")
         if mode == "passed-sourcewise-screen":
-            names += ("H0_HYPOTHESIS_BANK_VIABILITY.json", "SOURCE_ADMISSION.json")
+            names += ("H0_HYPOTHESIS_BANK_VIABILITY.json", "SOURCE_ADMISSION.json",
+                      "CANDIDATE_ADMISSION.json")
             if (source_workspace / "DECISION_RISK_UTILITY_VIABILITY.json").is_file():
                 names += ("DECISION_RISK_UTILITY_VIABILITY.json",)
         for name in names:
@@ -813,6 +842,7 @@ def execute_registered_system_continuation(project_root, root, source_root, conf
         arbitration, reporting_evaluation = _split_source_arbitration(
             data.evaluation, config["marginal_influence_gate"]["arbitration_fraction"])
         if continuation_mode == "response-free-capacity-rebank":
+            _prepare_candidate_admission(workspace, exploration, data, config, arbitration)
             _prepare_hypothesis_bank_viability(workspace, exploration, data, config)
             _prepare_source_gates(workspace, exploration, data, config, arbitration)
         if (config.get("targeted_query_policy") == "decision_risk"

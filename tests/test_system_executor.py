@@ -87,6 +87,10 @@ def _patch(monkeypatch, supported=True):
             "candidate_response_accessed": False, "source_safety_passed": True,
             "source_prior_weights": weights, "heldout_opened": False}
     monkeypatch.setattr(executor, "select_operational_capacity_bank", select_fixture)
+    monkeypatch.setattr(executor, "filter_fold_safe_source_candidates",
+        lambda candidates, *args, **kwargs: (tuple(candidates), {
+            "schema": "fixture-candidate-admission", "candidate_certificates": [],
+            "candidate_response_accessed": False, "heldout_opened": False}))
     def admission_fixture(candidates, *args, **kwargs):
         families = sorted({executor.source_family(row) for row in candidates})
         core = families.index("core")

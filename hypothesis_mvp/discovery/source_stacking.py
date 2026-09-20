@@ -245,6 +245,59 @@ def calibrate_source_admission(candidates, initial_data, arbitration, **kwargs):
     return certificate, sources
 
 
+def filter_fold_safe_source_candidates(candidates, initial_data, arbitration, **kwargs):
+    """Admit optional supports individually before family-level stacking.
+
+    Each optional support is paired with the unchanged complete core bank and
+    must beat the core predictive density on every arbitration fold.  The
+    procedure never searches subsets jointly, so one candidate cannot mask
+    another and the result is deterministic in candidate identity order.
+    """
+    rows = tuple(dict(row) for row in candidates)
+    core = tuple(row for row in rows if source_family(row) == "core")
+    optional = tuple(row for row in rows if source_family(row) != "core")
+    if len(core) < 2:
+        raise ValueError("candidate admission requires at least two core supports")
+    retained, certificates = list(core), []
+    ordered = sorted(optional, key=lambda row: sha256(json.dumps(
+        row, sort_keys=True, default=str).encode()).hexdigest())
+    for candidate in ordered:
+        family = source_family(candidate)
+        values, folds, families = arbitration_source_log_predictive(
+            [*core, candidate], initial_data, arbitration, **kwargs)
+        baseline = values[:, families.index("core")]
+        proposed = values[:, families.index(family)]
+        gains, tolerances = [], []
+        for fold in np.unique(folds):
+            active = folds == fold
+            gain = float(np.sum(proposed[active] - baseline[active]))
+            scale = max(1.0, float(np.sum(np.abs(proposed[active]))),
+                        float(np.sum(np.abs(baseline[active]))))
+            gains.append(gain)
+            tolerances.append(float(1024.0 * np.finfo(float).eps * scale))
+        admitted = all(gain > tolerance
+                       for gain, tolerance in zip(gains, tolerances))
+        if admitted:
+            retained.append(candidate)
+        certificates.append({
+            "candidate_identity": sha256(json.dumps(candidate, sort_keys=True,
+                default=str).encode()).hexdigest(),
+            "source": str(candidate["source"]), "origin": str(candidate.get("origin", "")),
+            "family": family, "admitted": admitted,
+            "fold_log_score_gains_vs_core": gains,
+            "fold_numerical_tolerances": tolerances,
+            "negative_transfer_certified": bool(not admitted and any(
+                gain < -tolerance for gain, tolerance in zip(gains, tolerances))),
+            "candidate_response_accessed": False, "heldout_opened": False,
+        })
+    return tuple(retained), {
+        "schema": "scientific-independent-candidatewise-admission-v1",
+        "candidate_certificates": certificates,
+        "input_candidate_count": len(rows), "retained_candidate_count": len(retained),
+        "candidate_response_accessed": False, "heldout_opened": False,
+    }
+
+
 def crossfit_source_log_predictive(candidates, initial_data, action_domain, *,
                                    n_features, prior, exploration_identity,
                                    coefficient_policy, measurement_budget):
@@ -296,5 +349,6 @@ def crossfit_source_log_predictive(candidates, initial_data, action_domain, *,
 
 
 __all__ = ["SafeSourceStackingCertificate", "arbitration_source_log_predictive",
-           "calibrate_source_admission", "crossfit_source_log_predictive",
+           "calibrate_source_admission", "filter_fold_safe_source_candidates",
+           "crossfit_source_log_predictive",
            "safe_source_stacking", "source_family"]
