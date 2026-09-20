@@ -397,18 +397,28 @@ class ProposalRuntime:
         candidate, projection = dict(raw_plan), None
         if len(available) == 1:
             calls = candidate.get("engine_calls")
-            if (isinstance(calls, (list, tuple)) and len(calls) == 1
-                    and isinstance(calls[0], Mapping)):
-                original, fixed = dict(calls[0]), dict(calls[0])
-                fixed.update({"engine": available[0], "jobs": total_jobs})
-                candidate["engine_calls"] = [fixed]
-                projection = {"applied": True, "engine": available[0],
-                    "jobs": total_jobs,
-                    "original_engine": str(original.get("engine", "")),
-                    "original_jobs": original.get("jobs"),
-                    "reason": (
-                        "singleton-engine-identity-and-job-allocation-"
-                        "are-not-decision-variables")}
+            original = (dict(calls[0]) if isinstance(calls, (list, tuple))
+                        and calls and isinstance(calls[0], Mapping) else {})
+            skill = next(skill for skill in REGISTERED_ENGINE_SKILLS
+                         if skill.name == available[0])
+            candidate["engine_calls"] = [{
+                "engine": skill.name, "jobs": total_jobs,
+                "objective": (
+                    f"Execute the registered {skill.name} skill under its "
+                    f"inductive bias: {skill.inductive_bias}."),
+                "expected_evidence": (
+                    "Validated expressions, predictive scores, complexity, "
+                    "lineage, and registered engine diagnostics.")}]
+            projection = {"applied": True, "engine": available[0],
+                "jobs": total_jobs,
+                "original_engine": str(original.get("engine", "")),
+                "original_jobs": original.get("jobs"),
+                "scientist_objective": str(original.get("objective", "")),
+                "scientist_expected_evidence": str(
+                    original.get("expected_evidence", "")),
+                "reason": (
+                    "singleton-skill-dispatch-and-executable-contract-"
+                    "are-code-owned-not-policy-decision-variables")}
         return plan_from_json(candidate, available, total_jobs), projection
 
     @staticmethod

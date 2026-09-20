@@ -222,16 +222,17 @@ def test_single_engine_plan_projects_only_fixed_dispatch_fields(monkeypatch):
     assert len(plan.engine_calls) == 1
     assert plan.engine_calls[0].engine == "polynomial_lasso"
     assert plan.engine_calls[0].jobs == 2
-    assert plan.engine_calls[0].objective == "estimate sparse polynomial support"
-    assert plan.engine_calls[0].expected_evidence == "validated polynomial support"
+    assert "registered polynomial_lasso skill" in plan.engine_calls[0].objective
+    assert "Validated expressions" in plan.engine_calls[0].expected_evidence
     assert plan.mechanisms == ("sparse predictive structure",)
     projection = telemetry["singleton_dispatch_projection"]
     assert projection["applied"] is True
     assert projection["original_engine"] == "mcts"
     assert projection["original_jobs"] == 1
+    assert projection["scientist_objective"] == "estimate sparse polynomial support"
 
 
-def test_single_engine_projection_keeps_capability_validation_and_one_repair(monkeypatch):
+def test_single_engine_projection_replaces_unsupported_dispatch_without_retry(monkeypatch):
     runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
     responses = iter([
         {"protocol_id": RESEARCH_PLAN_PROTOCOL,
@@ -259,8 +260,8 @@ def test_single_engine_projection_keeps_capability_validation_and_one_repair(mon
     plan, telemetry = runtime.plan_research(
         task_context={"description": "fixture"},
         available_engines=("polynomial_lasso",), total_jobs=2)
-    assert len(calls) == 2
-    assert telemetry["protocol_repair_attempted"] is True
+    assert len(calls) == 1
+    assert "protocol_repair_attempted" not in telemetry
     assert plan.engine_calls[0].engine == "polynomial_lasso"
     assert plan.engine_calls[0].jobs == 2
     assert "logarithmic" not in plan.engine_calls[0].objective
