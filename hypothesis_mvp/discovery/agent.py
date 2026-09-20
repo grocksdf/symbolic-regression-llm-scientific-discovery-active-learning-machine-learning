@@ -21,9 +21,11 @@ from .proposal_runtime import ProviderSettings
 from .proposal_runtime import ProposalRuntime
 from .equation_runtime import EquationRuntime
 from .scientist_policy import (
-    ResearchPlan, ScientistReview, deterministic_plan,
+    ResearchPlan, ScientistReview, ScientistState, deterministic_plan,
 )
-from .system_evidence import attach_system_evidence, system_evaluation
+from .system_evidence import (
+    attach_scientist_policy_evidence, attach_system_evidence, system_evaluation,
+)
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,8 @@ class DiscoveryCycle:
     provider_errors: int = 0
     research_plan: Mapping[str, Any] = field(default_factory=dict)
     scientist_review: Mapping[str, Any] = field(default_factory=dict)
+    scientist_state_before: Mapping[str, Any] = field(default_factory=dict)
+    scientist_state_after: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -193,6 +197,39 @@ class DiscoveryAgent:
         attach_system_evidence(discovery, _engine_payload(engine_result), cycle)
         return discovery
 
+    def _orchestrate_cycle(self, selection, cycle, planner, task_context):
+        counters = (planner.call_count, planner.attempt_count, len(planner.errors))
+        if planner.enabled and self.config.scientist_orchestration:
+            plan, plan_telemetry = planner.plan_research(
+                task_context=task_context, available_engines=self.config.engines,
+                total_jobs=self.config.engine_budget)
+        else:
+            plan, plan_telemetry = deterministic_plan(
+                self.config.engines, self.config.engine_budget), {}
+        self._active_research_plan = plan
+        engines = self._run_engines(selection, cycle)
+        evidence = _engine_evidence(engines)
+        if planner.enabled and self.config.scientist_orchestration:
+            review, review_telemetry = planner.review_engine_evidence(
+                plan=plan, engine_evidence=evidence)
+        else:
+            review = ScientistReview(
+                ("deterministic engine evidence available",), (), (),
+                ("compare all registered engine candidates",), False,
+                "provider-free deterministic orchestration")
+            review_telemetry = {}
+        orchestration = {"schema": "scientific-llm-engine-orchestration-v1",
+            "scientist_state_before": task_context["scientist_state"],
+            "research_plan": plan.to_dict(), "research_plan_identity": plan.stable_hash,
+            "engine_evidence": evidence, "scientist_review": review.to_dict(),
+            "scientist_review_identity": review.stable_hash,
+            "provider_telemetry": [dict(plan_telemetry), dict(review_telemetry)],
+            "candidate_response_accessed": False, "heldout_opened": False}
+        usage = (planner.call_count - counters[0],
+                 planner.attempt_count - counters[1],
+                 len(planner.errors) - counters[2])
+        return plan, review, engines, evidence, orchestration, usage
+
     def run(
         self, *, selection: SelectionData,
         task_name: str, task_description: str, output_dir: str | Path,
@@ -207,44 +244,29 @@ class DiscoveryAgent:
                 selection.development.X.shape[1],
                 refit_policy=self.config.refit_policy),
             selection.development.X.shape[1], self.provider_settings, 1)
-        task_context = {"name": task_name, "description": task_description,
+        base_task_context = {"name": task_name, "description": task_description,
             "variables": {key: value for key, value in variable_metadata.items()
                           if key in {"feature_names", "feature_units",
                                      "target_name", "target_unit"}}}
+        scientist_state = ScientistState()
         for cycle in range(max(1, self.config.cycles)):
-            calls_before, attempts_before, errors_before = (
-                planner.call_count, planner.attempt_count, len(planner.errors))
-            if planner.enabled and self.config.scientist_orchestration:
-                plan, plan_telemetry = planner.plan_research(
-                    task_context=task_context, available_engines=self.config.engines,
-                    total_jobs=self.config.engine_budget)
-            else:
-                plan, plan_telemetry = deterministic_plan(
-                    self.config.engines, self.config.engine_budget), {}
-            self._active_research_plan = plan
-            engines = self._run_engines(selection, cycle)
-            evidence = _engine_evidence(engines)
-            if planner.enabled and self.config.scientist_orchestration:
-                review, review_telemetry = planner.review_engine_evidence(
-                    plan=plan, engine_evidence=evidence)
-            else:
-                review = ScientistReview(
-                    ("deterministic engine evidence available",), (), (),
-                    ("compare all registered engine candidates",), False,
-                    "provider-free deterministic orchestration")
-                review_telemetry = {}
-            orchestration = {"schema": "scientific-llm-engine-orchestration-v1",
-                "research_plan": plan.to_dict(), "research_plan_identity": plan.stable_hash,
-                "engine_evidence": evidence, "scientist_review": review.to_dict(),
-                "scientist_review_identity": review.stable_hash,
-                "provider_telemetry": [dict(plan_telemetry), dict(review_telemetry)],
-                "candidate_response_accessed": False, "heldout_opened": False}
+            state_before = scientist_state.to_dict()
+            context = {**base_task_context, "scientist_state": state_before}
+            plan, review, engines, evidence, orchestration, usage = (
+                self._orchestrate_cycle(selection, cycle, planner, context))
             final = self._discover(
                 selection, engines, previous, task_name, task_description,
                 output, knowledge, variable_metadata, cycle=cycle,
                 orchestration_context=orchestration,
             )
             previous = _survivors(final.report, final.expression)
+            scientist_state = scientist_state.advance(
+                plan=plan, review=review, engine_evidence=evidence,
+                surviving_hypotheses=previous)
+            if hasattr(final, "evidence_registry_path"):
+                attach_scientist_policy_evidence(
+                    final, cycle, state_before, scientist_state.to_dict(),
+                    plan.to_dict(), review.to_dict())
             acquisition = (
                 {"reason": "final_cycle"}
                 if cycle + 1 >= self.config.cycles
@@ -256,14 +278,12 @@ class DiscoveryAgent:
             history.append(DiscoveryCycle(
                 cycle, final.expression, final.hypothesis.hypothesis_id,
                 len(selection.development.X), _engine_payload(engines),
-                acquisition, int(final.report.get("llm_call_count", 0))
-                    + planner.call_count - calls_before,
+                acquisition, int(final.report.get("llm_call_count", 0)) + usage[0],
                 int(final.report["evaluation_budget_used"]),
-                int(final.report["llm_attempt_count"])
-                    + planner.attempt_count - attempts_before,
-                int(final.report.get("llm_error_count", 0))
-                    + len(planner.errors) - errors_before,
+                int(final.report["llm_attempt_count"]) + usage[1],
+                int(final.report.get("llm_error_count", 0)) + usage[2],
                 plan.to_dict(), review.to_dict(),
+                state_before, scientist_state.to_dict(),
             ))
         if final is None:
             raise RuntimeError("discovery agent executed no cycle")

@@ -16,6 +16,7 @@ from hypothesis_mvp.pcpi.acquisition import (
     predictive_components_for_partition,
 )
 from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target
+from .inference_router import route_inference
 from .system_evidence import validate_system_pairs
 from .resource_limits import run_bounded
 from hypothesis_mvp.data.roles import DataRole
@@ -45,6 +46,7 @@ def audit_frozen_hypothesis_bank(candidates, initial_data, actions, *, n_feature
         candidates, n_features, prior, exploration_identity, coefficient_policy,
         initial_data, actions, measurement_budget, source_prior_weights,
     )
+    inference = route_inference(model)
     probabilities = np.asarray(target.partition.class_probabilities, dtype=float)
     entropy = float(target.partition.entropy)
     bayes_risk = float(1.0 - np.max(probabilities))
@@ -62,6 +64,8 @@ def audit_frozen_hypothesis_bank(candidates, initial_data, actions, *, n_feature
         "schema": "scientific-hypothesis-bank-viability-v1",
         "model": model.stable_hash,
         "target": target.stable_hash,
+        "inference_plan": inference.to_dict(),
+        "inference_plan_identity": inference.stable_hash,
         "candidate_binding_count": len(model.candidate_bindings),
         "distinct_structural_support_count": len(model.bank.structures),
         "operational_class_count": len(probabilities),
@@ -157,7 +161,8 @@ def run_frozen_system_comparison(root, candidates, initial_data, pool,
                                  measurement_budget, controls, source_identity,
                                  random_seed, policy_wall_time_seconds=None,
                                  evaluation_data=None, source_prior_weights=None,
-                                 policies=("class_eig", "random")):
+                                 policies=("class_eig", "random"),
+                                 inference_mode="auto"):
     """Share one conditional model/H0/class map between EIG and random queries.
 
     Unsupported proposals abort the entire freeze. No retry, fallback, efficacy
@@ -189,6 +194,7 @@ def run_frozen_system_comparison(root, candidates, initial_data, pool,
     else:
         (model, target), _ = run_bounded(_freeze_comparison, args=freeze_arguments,
             seconds=policy_wall_time_seconds, provider_attempts=0)
+    inference = route_inference(model, requested_mode=inference_mode)
     contract = {"schema": "conditional-discovery-comparison-v1",
         "model": model.stable_hash, "target": target.stable_hash,
         "source": source_identity, "controls": vars(controls),
@@ -196,6 +202,8 @@ def run_frozen_system_comparison(root, candidates, initial_data, pool,
         "policy_wall_time_seconds": policy_wall_time_seconds,
         "evaluation_identity": None if evaluation_data is None else evaluation_data.fingerprint,
         "source_prior_weights": source_prior_weights,
+        "inference_plan": inference.to_dict(),
+        "inference_plan_identity": inference.stable_hash,
         "policies": list(policies), "heldout_opened": False,
         "hypothesis_audit": {
             "candidate_binding_count": len(model.candidate_bindings),

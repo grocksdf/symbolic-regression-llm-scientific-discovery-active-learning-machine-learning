@@ -102,3 +102,25 @@ def attach_system_evidence(
     )
     if not registry.verify().valid:
         raise RuntimeError("system evidence chain failed verification")
+
+
+def attach_scientist_policy_evidence(
+    discovery: Any, cycle: int, state_before: Mapping[str, Any],
+    state_after: Mapping[str, Any], plan: Mapping[str, Any],
+    review: Mapping[str, Any],
+) -> None:
+    """Append the typed policy transition after hypothesis synthesis."""
+    registry = EvidenceRegistry(discovery.evidence_registry_path)
+    payload = json_safe({
+        "stage": "scientist_policy_transition", "cycle": cycle,
+        "state_before": dict(state_before), "state_after": dict(state_after),
+        "research_plan": dict(plan), "scientist_review": dict(review),
+        "candidate_response_accessed": False, "heldout_opened": False,
+        "independent_confirmation": False,
+    })
+    if not any(event.to_dict()["payload"] == payload for event in registry.events()):
+        registry.append(
+            hypothesis_id=discovery.hypothesis.hypothesis_id,
+            event_type=EvidenceEventType.EVIDENCE_ATTACHED, payload=payload)
+    if not registry.verify().valid:
+        raise RuntimeError("scientist policy evidence chain failed verification")

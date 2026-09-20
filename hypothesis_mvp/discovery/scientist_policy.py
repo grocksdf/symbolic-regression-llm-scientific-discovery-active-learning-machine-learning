@@ -126,6 +126,56 @@ class ScientistReview:
         return _identity(self.to_dict())
 
 
+@dataclass(frozen=True)
+class ScientistState:
+    round_index: int = 0
+    prior_rounds: tuple[Mapping[str, Any], ...] = ()
+    surviving_hypotheses: tuple[str, ...] = ()
+    cumulative_engine_jobs: int = 0
+
+    def __post_init__(self):
+        if (type(self.round_index) is not int or self.round_index < 0
+                or type(self.cumulative_engine_jobs) is not int
+                or self.cumulative_engine_jobs < 0
+                or len(self.prior_rounds) > 8
+                or len(self.surviving_hypotheses) > 32):
+            raise ValueError("invalid bounded scientist state")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"schema": "scientific-policy-state-v1",
+            "round_index": self.round_index,
+            "prior_rounds": [dict(row) for row in self.prior_rounds],
+            "surviving_hypotheses": list(self.surviving_hypotheses),
+            "cumulative_engine_jobs": self.cumulative_engine_jobs,
+            "candidate_response_accessed": False, "heldout_opened": False}
+
+    @property
+    def stable_hash(self) -> str:
+        return _identity(self.to_dict())
+
+    def advance(self, *, plan: ResearchPlan, review: ScientistReview,
+                engine_evidence: Sequence[Mapping[str, Any]],
+                surviving_hypotheses: Sequence[str]) -> "ScientistState":
+        engines = {}
+        for row in engine_evidence:
+            name = str(row.get("engine", ""))
+            score = float(row.get("selection_score", float("inf")))
+            current = engines.get(name)
+            if current is None or score < current["best_selection_score"]:
+                engines[name] = {"best_selection_score": score,
+                    "best_expression": str(row.get("expression", ""))}
+        trace = {"round_index": self.round_index,
+            "research_plan_identity": plan.stable_hash,
+            "scientist_review_identity": review.stable_hash,
+            "engine_summary": engines, "stop_requested": review.stop,
+            "stop_reason": review.stop_reason}
+        return ScientistState(
+            self.round_index + 1, (*self.prior_rounds[-7:], trace),
+            tuple(dict.fromkeys(str(value) for value in surviving_hypotheses))[:32],
+            self.cumulative_engine_jobs + sum(
+                call.jobs for call in plan.engine_calls))
+
+
 def deterministic_plan(engines: Sequence[str], total_jobs: int) -> ResearchPlan:
     names = tuple(dict.fromkeys(str(value) for value in engines))
     if not names or total_jobs < len(names):
@@ -172,6 +222,7 @@ def review_from_json(raw: Mapping[str, Any]) -> ScientistReview:
 
 __all__ = [
     "ENGINE_REVIEW_PROTOCOL", "EngineCall", "EngineSkill", "ResearchPlan",
-    "ScientistReview", "REGISTERED_ENGINE_SKILLS", "RESEARCH_PLAN_PROTOCOL",
+    "ScientistReview", "ScientistState", "REGISTERED_ENGINE_SKILLS",
+    "RESEARCH_PLAN_PROTOCOL",
     "deterministic_plan", "plan_from_json", "review_from_json",
 ]

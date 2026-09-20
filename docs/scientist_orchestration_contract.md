@@ -21,12 +21,27 @@ experimental authority.
    registered engine diagnostics enter `review_engine_evidence`.
 5. The typed `ScientistReview` records supported and contradicted mechanisms,
    cross-engine conflicts, synthesis instructions and a stop decision.
-6. The existing `ScientificDiscoveryRuntime` receives that immutable context
+6. A bounded `ScientistState` records engine summaries, surviving hypotheses,
+   plan/review identities and cumulative job use. The next round must receive
+   this state before issuing a new plan.
+7. The existing `ScientificDiscoveryRuntime` receives that immutable context
    while proposing complete executable equations.
-7. Independent candidate, source, posterior, utility and transaction gates
+8. Independent candidate, source, posterior, utility and transaction gates
    remain authoritative. LLM approval cannot pass a Gate.
-8. Research plan, engine evidence and review identities enter the existing
+9. Research plan, engine evidence, state transition and review identities enter the existing
    hash-chained evidence path.
+
+Registered cycle count remains an exact matched-compute contract. A Scientist
+may request stopping, but formal ablations do not silently save compute for one
+variant; the request is recorded and the remaining registered rounds continue.
+
+## Inference routing
+
+Finite frozen hypothesis banks use the exact conjugate posterior. An open or
+transdimensional bank may request certified SMC only through the inference
+router and only after a separate SMC integration authorization. The current
+scientific-system runner accepts `auto` or `exact_finite`; unauthorized open
+SMC fails before response access.
 
 ## Skills
 

@@ -63,12 +63,15 @@ def validate_system_registration(config):
         "measurement_budget", "exploration_seconds", "policy_seconds", "data_loading_seconds",
         "provider_attempt_ceiling", "provider_public_identity", "coefficient_policy",
         "user_execution_authorized", "hypothesis_bank_gate", "marginal_influence_gate"}
-    if (not required <= set(config) or set(config) - required > {"targeted_query_policy"}
+    if (not required <= set(config)
+            or set(config) - required > {"targeted_query_policy", "inference_mode"}
             or config["schema"] != "scientific-system-development-registration-v1"):
         raise ValueError("unknown or incomplete scientific system registration")
     if config.get("targeted_query_policy", "class_eig") not in {
             "class_eig", "decision_risk"}:
         raise ValueError("invalid targeted query policy")
+    if config.get("inference_mode", "auto") not in {"auto", "exact_finite"}:
+        raise ValueError("current scientific system permits finite exact inference only")
     if (not config["data"] or not config["seeds"] or len(set(config["seeds"])) != len(config["seeds"])
             or any(type(seed) is not int or seed < 0 for seed in config["seeds"])
             or type(config["user_execution_authorized"]) is not bool
@@ -537,7 +540,8 @@ def _run_comparison_variant(project_root, workspace, row, data, config, provider
         source_identity=source_identity, random_seed=seed,
         policy_wall_time_seconds=config["policy_seconds"], evaluation_data=evaluation_data,
         source_prior_weights=row["source_prior_weights"],
-        policies=(config.get("targeted_query_policy", "class_eig"), "random"))
+        policies=(config.get("targeted_query_policy", "class_eig"), "random"),
+        inference_mode=config.get("inference_mode", "auto"))
     registry = EvidenceRegistry(workspace / "exploration" / variant / "evidence_registry.jsonl")
     if not registry.verify().valid or not registry.events():
         raise ValueError("missing or invalid discovery evidence chain")

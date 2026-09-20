@@ -9,8 +9,9 @@ from hypothesis_mvp.discovery.equation_runtime import EquationRuntime
 from hypothesis_mvp.discovery.proposal_runtime import ProposalRuntime
 from hypothesis_mvp.discovery.scientist_policy import (
     ENGINE_REVIEW_PROTOCOL, RESEARCH_PLAN_PROTOCOL,
-    deterministic_plan, plan_from_json, review_from_json,
+    ScientistState, deterministic_plan, plan_from_json, review_from_json,
 )
+from hypothesis_mvp.discovery.inference_router import route_inference
 from hypothesis_mvp.symbolic.scheduler import EngineScheduler
 
 
@@ -101,3 +102,36 @@ def test_engine_scheduler_executes_nonuniform_scientist_allocation(monkeypatch):
         parallel=False)
     assert seen == [("polynomial_lasso", 0), ("mcts", 0), ("mcts", 1)]
     assert result.evaluations_used == 3
+
+
+def test_scientist_state_carries_prior_evidence_into_replanning():
+    plan = deterministic_plan(("polynomial_lasso", "mcts"), 2)
+    review = review_from_json({
+        "protocol_id": ENGINE_REVIEW_PROTOCOL,
+        "supported_mechanisms": ["nonlinear"], "contradicted_mechanisms": [],
+        "cross_engine_conflicts": ["different support"],
+        "synthesis_instructions": ["retain both"],
+        "stop": False, "stop_reason": "another round is registered"})
+    state = ScientistState().advance(
+        plan=plan, review=review,
+        engine_evidence=[
+            {"engine": "polynomial_lasso", "selection_score": 2.,
+             "expression": "x0"},
+            {"engine": "mcts", "selection_score": 1., "expression": "sin(x0)"}],
+        surviving_hypotheses=("x0", "sin(x0)"))
+    assert state.round_index == 1 and state.cumulative_engine_jobs == 2
+    assert state.prior_rounds[0]["engine_summary"]["mcts"][
+        "best_expression"] == "sin(x0)"
+    assert state.to_dict()["candidate_response_accessed"] is False
+
+
+def test_inference_router_uses_exact_for_finite_and_blocks_unauthorized_open_smc():
+    model = SimpleNamespace(stable_hash="finite-model")
+    exact = route_inference(model)
+    assert exact.mode == "exact_finite" and not exact.certified_smc_authorized
+    with pytest.raises(PermissionError):
+        route_inference(model, open_support=True)
+    open_plan = route_inference(
+        model, requested_mode="certified_open_smc", open_support=True,
+        certified_smc_authorized=True)
+    assert open_plan.mode == "certified_open_smc"
