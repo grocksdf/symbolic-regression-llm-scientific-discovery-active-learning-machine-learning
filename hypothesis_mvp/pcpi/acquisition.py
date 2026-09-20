@@ -484,6 +484,50 @@ def exact_class_eig_shared_actions(
     return ExactEIGResult(scores, errors)
 
 
+def exact_class_decision_risk_reduction_shared_actions(
+    components: PredictiveComponents,
+    *,
+    epsabs: float = EXACT_CLASS_EIG_EPSABS,
+    epsrel: float = EXACT_CLASS_EIG_EPSREL,
+) -> ExactEIGResult:
+    """Integrate expected Bayes 0--1 class-risk reduction for every action.
+
+    For class prior ``p(c)`` and predictive class density ``p(y|c)``, the
+    posterior Bayes accuracy after observing ``y`` has expectation
+    ``integral max_c p(c,y) dy``.  Subtracting the prior Bayes accuracy
+    ``max_c p(c)`` gives the exact expected reduction in 0--1 decision risk.
+    The calculation accepts predictive components only and is response-free.
+    """
+
+    if (not np.isfinite(epsabs) or not np.isfinite(epsrel)
+            or epsabs <= 0.0 or epsrel <= 0.0):
+        raise ValueError("decision-risk integration tolerances must be positive and finite")
+    weights = components.structure_probabilities
+    locations, scales = components.locations, components.scales
+    degrees = components.degrees_freedom
+    class_count = len(components.partition.class_ids)
+    action_count = locations.shape[1]
+
+    def integrand(value: float) -> np.ndarray:
+        density = student_t.pdf(
+            value, df=degrees[:, None], loc=locations, scale=scales)
+        joint = np.zeros((class_count, action_count), dtype=float)
+        for structure_index, class_index in enumerate(
+                components.partition.structure_to_class):
+            joint[class_index] += weights[structure_index] * density[structure_index]
+        return np.max(joint, axis=0)
+
+    posterior_accuracy, error = quad_vec(
+        integrand, -np.inf, np.inf, epsabs=epsabs, epsrel=epsrel,
+        norm="max", limit=250)
+    prior_accuracy = max(components.partition.class_probabilities)
+    scores = np.maximum(0.0, np.asarray(posterior_accuracy) - prior_accuracy)
+    prior_risk = 1.0 - prior_accuracy
+    if np.any(scores > prior_risk + float(error) + 32.0 * np.finfo(float).eps):
+        raise FloatingPointError("decision-risk reduction exceeds prior Bayes risk")
+    return ExactEIGResult(scores, np.full(action_count, float(error)))
+
+
 def _validated_quantization_levels(
     probability_levels: tuple[float, ...],
 ) -> np.ndarray:
@@ -1401,6 +1445,7 @@ __all__ = [
     "estimate_class_eig",
     "exact_class_eig",
     "exact_class_eig_shared_actions",
+    "exact_class_decision_risk_reduction_shared_actions",
     "fixed_partition_probabilities",
     "inflate_predictive_components",
     "posterior_predictive_mean",

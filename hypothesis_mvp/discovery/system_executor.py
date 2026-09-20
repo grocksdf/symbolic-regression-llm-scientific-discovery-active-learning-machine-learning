@@ -23,7 +23,10 @@ from .proposal_runtime import ProviderSettings
 from .resource_limits import run_bounded
 from .system_ablation import run_exploration_ablations
 from .system_freeze import verify_system_freeze
-from .system_run import run_frozen_system_comparison, audit_frozen_hypothesis_bank
+from .system_run import (
+    run_frozen_system_comparison, audit_frozen_hypothesis_bank,
+    audit_frozen_decision_risk_utility,
+)
 from .marginal_influence import (
     audit_marginal_influence, initial_eig_interval_profile,
     leave_one_source_out_candidates, predictive_quality_profile,
@@ -57,8 +60,12 @@ def validate_system_registration(config):
         "measurement_budget", "exploration_seconds", "policy_seconds", "data_loading_seconds",
         "provider_attempt_ceiling", "provider_public_identity", "coefficient_policy",
         "user_execution_authorized", "hypothesis_bank_gate", "marginal_influence_gate"}
-    if set(config) != required or config["schema"] != "scientific-system-development-registration-v1":
+    if (not required <= set(config) or set(config) - required > {"targeted_query_policy"}
+            or config["schema"] != "scientific-system-development-registration-v1"):
         raise ValueError("unknown or incomplete scientific system registration")
+    if config.get("targeted_query_policy", "class_eig") not in {
+            "class_eig", "decision_risk"}:
+        raise ValueError("invalid targeted query policy")
     if (not config["data"] or not config["seeds"] or len(set(config["seeds"])) != len(config["seeds"])
             or any(type(seed) is not int or seed < 0 for seed in config["seeds"])
             or type(config["user_execution_authorized"]) is not bool
@@ -423,6 +430,31 @@ def _prepare_source_gates(workspace, exploration, data, config, arbitration):
         workspace, exploration, data, config, arbitration, admission)
 
 
+def _prepare_decision_risk_utility_gate(workspace, exploration, data, config):
+    if config.get("targeted_query_policy", "class_eig") != "decision_risk":
+        return None
+    reports = {}
+    for row in exploration["rows"]:
+        reports[row["variant"]] = audit_frozen_decision_risk_utility(
+            row["candidates"], data.initial, data.pool.X_pool,
+            n_features=data.initial.X.shape[1],
+            prior=NormalInverseGammaPrior(**config["prior"]),
+            exploration_identity=_digest(row),
+            coefficient_policy=config["coefficient_policy"],
+            measurement_budget=config["measurement_budget"],
+            exact_epsabs=config["hypothesis_bank_gate"]["exact_eig_epsabs"],
+            source_prior_weights=row["source_prior_weights"])
+    family = {
+        "schema": "scientific-response-free-decision-risk-utility-family-gate-v1",
+        "variants": reports, "passed": all(row["passed"] for row in reports.values()),
+        "candidate_response_accessed": False, "heldout_opened": False,
+    }
+    _publish(workspace / "DECISION_RISK_UTILITY_VIABILITY.json", family)
+    if family["passed"] is not True:
+        raise HypothesisBankNotViable()
+    return family
+
+
 def _run_comparison_variant(project_root, workspace, row, data, config, provider,
                             source_identity, seed, expected_freeze, coordinate,
                             evaluation_data):
@@ -440,7 +472,8 @@ def _run_comparison_variant(project_root, workspace, row, data, config, provider
         controls=DiscoveryScoringControls(**config["scoring"]),
         source_identity=source_identity, random_seed=seed,
         policy_wall_time_seconds=config["policy_seconds"], evaluation_data=evaluation_data,
-        source_prior_weights=row["source_prior_weights"])
+        source_prior_weights=row["source_prior_weights"],
+        policies=(config.get("targeted_query_policy", "class_eig"), "random"))
     registry = EvidenceRegistry(workspace / "exploration" / variant / "evidence_registry.jsonl")
     if not registry.verify().valid or not registry.events():
         raise ValueError("missing or invalid discovery evidence chain")
@@ -501,6 +534,8 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
                 arbitration, reporting_evaluation = _split_source_arbitration(
                     data.evaluation, config["marginal_influence_gate"]["arbitration_fraction"])
                 _prepare_source_gates(workspace, exploration, data, config, arbitration)
+                utility_gate = _prepare_decision_risk_utility_gate(
+                    workspace, exploration, data, config)
                 if measurement_authorized is not True:
                     results.append({"dataset": dataset, "seed": seed,
                         "family": data.manifest["family"],
@@ -510,7 +545,9 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
                         "source_admission": _digest(json.loads((workspace /
                             "SOURCE_ADMISSION.json").read_text(encoding="utf-8"))),
                         "marginal_influence": _digest(json.loads((workspace /
-                            "MARGINAL_DECISION_INFLUENCE.json").read_text(encoding="utf-8")))})
+                            "MARGINAL_DECISION_INFLUENCE.json").read_text(encoding="utf-8"))),
+                        **({"decision_risk_utility": _digest(utility_gate)}
+                           if utility_gate is not None else {})})
                     continue
                 comparisons = {row["variant"]: _run_comparison_variant(
                     project_root, workspace, row, data, config, provider,
@@ -556,6 +593,8 @@ def _passed_screen_artifact_names(config):
         f"{coordinate}/SOURCE_ADMISSION.json",
         f"{coordinate}/MARGINAL_DECISION_INFLUENCE.json",
         f"{coordinate}/exploration/ANALYSIS.json"}
+    if config.get("targeted_query_policy") == "decision_risk":
+        names.add(f"{coordinate}/DECISION_RISK_UTILITY_VIABILITY.json")
     for variant in ("full", "no_llm", "single_engine"):
         base = f"{coordinate}/exploration/{variant}"
         names.update({f"{base}/RESULT.json", f"{base}/evidence_registry.jsonl",
@@ -589,8 +628,11 @@ def _verify_passed_source_screen(source_root, config, continuation):
     dataset, seed = config["data"][0]["dataset"], config["seeds"][0]
     workspace = source_root / dataset / str(seed)
     analysis = json.loads((workspace / "exploration/ANALYSIS.json").read_text(encoding="utf-8"))
-    for name in ("H0_HYPOTHESIS_BANK_VIABILITY.json", "HYPOTHESIS_BANK_VIABILITY.json",
-                 "SOURCE_ADMISSION.json", "MARGINAL_DECISION_INFLUENCE.json"):
+    gate_names = ["H0_HYPOTHESIS_BANK_VIABILITY.json", "HYPOTHESIS_BANK_VIABILITY.json",
+                  "SOURCE_ADMISSION.json", "MARGINAL_DECISION_INFLUENCE.json"]
+    if config.get("targeted_query_policy") == "decision_risk":
+        gate_names.append("DECISION_RISK_UTILITY_VIABILITY.json")
+    for name in gate_names:
         if json.loads((workspace / name).read_text(encoding="utf-8")).get("passed") is not True:
             raise ValueError("passed-screen source Gate is not passed")
     forbidden = {"DECISION-001.json", "RECEIPT-001.json", "SYSTEM_MANIFEST.json"}
@@ -704,6 +746,8 @@ def _copy_continuation_artifacts(source_workspace, workspace, exploration, mode)
         names = ("HYPOTHESIS_BANK_VIABILITY.json", "MARGINAL_DECISION_INFLUENCE.json")
         if mode == "passed-sourcewise-screen":
             names += ("H0_HYPOTHESIS_BANK_VIABILITY.json", "SOURCE_ADMISSION.json")
+            if (source_workspace / "DECISION_RISK_UTILITY_VIABILITY.json").is_file():
+                names += ("DECISION_RISK_UTILITY_VIABILITY.json",)
         for name in names:
             shutil.copyfile(source_workspace / name, workspace / name)
     (workspace / "exploration").mkdir(parents=True, exist_ok=True)
@@ -771,6 +815,9 @@ def execute_registered_system_continuation(project_root, root, source_root, conf
         if continuation_mode == "response-free-capacity-rebank":
             _prepare_hypothesis_bank_viability(workspace, exploration, data, config)
             _prepare_source_gates(workspace, exploration, data, config, arbitration)
+        if (config.get("targeted_query_policy") == "decision_risk"
+                and not (workspace / "DECISION_RISK_UTILITY_VIABILITY.json").is_file()):
+            _prepare_decision_risk_utility_gate(workspace, exploration, data, config)
         if measurement_authorized is not True:
             screen = {"schema": "scientific-system-source-admission-screen-v2",
                 "coordinate": coordinate, "continuation_source": str(source_root),
@@ -781,6 +828,9 @@ def execute_registered_system_continuation(project_root, root, source_root, conf
                     "SOURCE_ADMISSION.json").read_text(encoding="utf-8"))),
                 "marginal_decision_influence": _digest(json.loads((workspace /
                     "MARGINAL_DECISION_INFLUENCE.json").read_text(encoding="utf-8"))),
+                **({"decision_risk_utility": _digest(json.loads((workspace /
+                    "DECISION_RISK_UTILITY_VIABILITY.json").read_text(encoding="utf-8")))}
+                   if config.get("targeted_query_policy") == "decision_risk" else {}),
                 "protocol_complete": True, "measurement_authorized": False,
                 "candidate_response_accessed": False, "heldout_opened": False,
                 "superiority_demonstrated": False,

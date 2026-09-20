@@ -14,7 +14,6 @@ from .pcpi_adapter import structural_terms
 
 
 VARIANTS = ("full", "no_llm", "single_engine")
-POLICIES = ("class_eig", "random")
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -51,7 +50,7 @@ def _policy_summary(root: Path, policy: str, observed: list[Path]) -> dict[str, 
     gains = [float(curve["rmse"][i] - curve["rmse"][i + 1]) for i in range(len(decisions))]
     scores = [row.get("score") for row in decisions]
     correlation = None
-    if policy == "class_eig" and len(scores) > 1:
+    if policy != "random" and len(scores) > 1:
         value = float(spearmanr(np.asarray(scores, dtype=float), np.asarray(gains)).statistic)
         correlation = value if np.isfinite(value) else None
     entropies = [(row.get("information_audit") or {}).get("class_entropy_nats") for row in decisions]
@@ -87,6 +86,10 @@ def audit_system_contribution(root: str | Path) -> dict[str, Any]:
     if n_features < 1:
         raise ValueError("data manifest has no registered features")
     summaries, supports = {}, {}
+    targeted_policy = ("decision_risk" if
+        (coordinate / "measured" / "full" / "decision_risk").is_dir()
+        else "class_eig")
+    policies_to_audit = (targeted_policy, "random")
     for variant in VARIANTS:
         variant_root = coordinate / "exploration" / variant
         frozen_path = variant_root / "FROZEN_BANK.json"
@@ -100,18 +103,19 @@ def audit_system_contribution(root: str | Path) -> dict[str, Any]:
         if not EvidenceRegistry(registry).verify().valid:
             raise ValueError("invalid exploration evidence chain")
         supports[variant] = _support_rows(result, n_features)
-        policies = {p: _policy_summary(coordinate / "measured" / variant, p, observed) for p in POLICIES}
+        policies = {p: _policy_summary(coordinate / "measured" / variant, p, observed)
+                    for p in policies_to_audit}
         summaries[variant] = {"candidate_count": len(supports[variant]),
             "engine_sources": result["hypothesis_provenance"]["engine_sources"],
             "llm_retained_candidate_count": result["hypothesis_provenance"]["llm_retained_candidate_count"],
             "evidence_chain_valid": True, "policies": policies}
     full = summaries["full"]
-    eig_ids = {v: summaries[v]["policies"]["class_eig"]["candidate_ids"] for v in VARIANTS}
+    eig_ids = {v: summaries[v]["policies"][targeted_policy]["candidate_ids"] for v in VARIANTS}
     random_ids = {v: summaries[v]["policies"]["random"]["candidate_ids"] for v in VARIANTS}
     contributions = {}
     for variant in ("no_llm", "single_engine"):
-        baseline = summaries[variant]["policies"]["class_eig"]
-        target = full["policies"]["class_eig"]
+        baseline = summaries[variant]["policies"][targeted_policy]
+        target = full["policies"][targeted_policy]
         contributions[variant] = {
             "normalized_mean_rmse_relative_advantage": float(
                 (baseline["normalized_mean_rmse"] - target["normalized_mean_rmse"])
@@ -123,7 +127,7 @@ def audit_system_contribution(root: str | Path) -> dict[str, Any]:
     after = {str(path): _digest(path) for path in observed}
     if before != after:
         raise RuntimeError("source artifacts changed during read-only audit")
-    entropy_constant = {v: len(set(summaries[v]["policies"]["class_eig"]["reported_class_entropies"])) == 1
+    entropy_constant = {v: len(set(summaries[v]["policies"][targeted_policy]["reported_class_entropies"])) == 1
                         for v in VARIANTS}
     return {"schema": "scientific-system-contribution-audit-v1", "read_only": True,
         "source_artifacts_immutable": True, "receipt_response_values_accessed": False,
@@ -131,7 +135,8 @@ def audit_system_contribution(root: str | Path) -> dict[str, Any]:
         "source_manifest_sha256": _digest(manifest_path), "artifact_sha256": before,
         "superiority_demonstrated": False, "variants": summaries,
         "full_contribution": contributions,
-        "decision_influence": {"class_eig_sequences_identical": len({tuple(x) for x in eig_ids.values()}) == 1,
+        "decision_influence": {"targeted_policy": targeted_policy,
+            "class_eig_sequences_identical": len({tuple(x) for x in eig_ids.values()}) == 1,
             "random_sequences_identical": len({tuple(x) for x in random_ids.values()}) == 1,
             "class_eig_candidate_ids": eig_ids, "random_candidate_ids": random_ids},
         "reporting_correction": {"reported_entropy_constant_across_prefixes": entropy_constant,

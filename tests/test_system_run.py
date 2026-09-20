@@ -8,6 +8,7 @@ from hypothesis_mvp.data.oracle import PoolOracle
 from hypothesis_mvp.discovery.system_run import analyze_system_contract
 from hypothesis_mvp.discovery.system_run import run_frozen_system_comparison
 from hypothesis_mvp.discovery.system_run import audit_frozen_hypothesis_bank
+from hypothesis_mvp.discovery.system_run import audit_frozen_decision_risk_utility
 
 
 def _random(root, base, seed=17):
@@ -102,3 +103,29 @@ def test_response_free_hypothesis_bank_gate_is_resolution_derived(
     assert audit["passed"] is passed
     assert audit["candidate_response_accessed"] is False
     assert audit["familywise_utility_resolution_nats"] == 4e-10
+
+
+def test_decision_risk_utility_gate_is_response_free_and_resolution_derived(monkeypatch):
+    from types import SimpleNamespace
+    from hypothesis_mvp.pcpi.acquisition import ClassPartition
+    partition = ClassPartition(("a", "b"), ((0,), (1,)), (.5, .5), (0, 1))
+    model = SimpleNamespace(stable_hash="model", engine=lambda identity: object())
+    target = SimpleNamespace(stable_hash="target", partition=partition,
+                             initial_posterior=object(), model_identity="model")
+    monkeypatch.setattr("hypothesis_mvp.discovery.system_run._freeze_comparison",
+                        lambda *args, **kwargs: (model, target))
+    monkeypatch.setattr(
+        "hypothesis_mvp.discovery.system_run.predictive_components_for_partition",
+        lambda *args: object())
+    monkeypatch.setattr(
+        "hypothesis_mvp.discovery.system_run."
+        "exact_class_decision_risk_reduction_shared_actions",
+        lambda *args, **kwargs: SimpleNamespace(
+            scores=np.array([.1, .3]), quadrature_errors=np.array([1e-12, 1e-12])))
+    audit = audit_frozen_decision_risk_utility(
+        [{}, {}], object(), np.zeros((2, 1)), n_features=1, prior=object(),
+        exploration_identity="fixture", coefficient_policy="fixture",
+        measurement_budget=2, exact_epsabs=1e-10)
+    assert audit["passed"] is True and audit["selected_action_index"] == 1
+    assert audit["candidate_response_accessed"] is False
+    assert audit["familywise_resolution"] == 2e-10

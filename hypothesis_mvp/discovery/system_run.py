@@ -11,7 +11,10 @@ from hypothesis_mvp.data.oracle import PoolOracle
 from hypothesis_mvp.pcpi.discovery_transaction import (
     DiscoveryTransaction, DiscoveryScoringControls, _publish,
 )
-from hypothesis_mvp.pcpi.acquisition import EXACT_CLASS_EIG_EPSABS
+from hypothesis_mvp.pcpi.acquisition import (
+    EXACT_CLASS_EIG_EPSABS, exact_class_decision_risk_reduction_shared_actions,
+    predictive_components_for_partition,
+)
 from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target
 from .system_evidence import validate_system_pairs
 from .resource_limits import run_bounded
@@ -75,6 +78,47 @@ def audit_frozen_hypothesis_bank(candidates, initial_data, actions, *, n_feature
     }
 
 
+def audit_frozen_decision_risk_utility(candidates, initial_data, actions, *, n_features,
+                                       prior, exploration_identity, coefficient_policy,
+                                       measurement_budget, exact_epsabs,
+                                       source_prior_weights=None):
+    """Certify a nontrivial initial-prefix decision-risk utility without responses."""
+    if exact_epsabs != EXACT_CLASS_EIG_EPSABS:
+        raise ValueError("decision-risk Gate must match registered absolute tolerance")
+    model, target = _freeze_comparison(
+        candidates, n_features, prior, exploration_identity, coefficient_policy,
+        initial_data, actions, measurement_budget, source_prior_weights)
+    engine = model.engine(target.model_identity)
+    components = predictive_components_for_partition(
+        engine, target.initial_posterior, target.partition, actions)
+    exact = exact_class_decision_risk_reduction_shared_actions(
+        components, epsabs=exact_epsabs)
+    lower = np.maximum(0.0, exact.scores - exact.quadrature_errors)
+    upper = exact.scores + exact.quadrature_errors
+    leader = int(np.argmax(lower))
+    resolution = float(len(actions) * exact_epsabs)
+    decisions = {
+        "all_intervals_finite_and_ordered": bool(
+            np.all(np.isfinite(lower)) and np.all(np.isfinite(upper))
+            and np.all(lower <= upper)),
+        "maximum_lower_bound_exceeds_familywise_resolution": bool(
+            lower[leader] > resolution),
+        "selected_upper_bound_within_prior_bayes_risk": bool(
+            upper[leader] <= 1.0 - max(target.partition.class_probabilities)
+            + exact.quadrature_errors[leader] + 32.0 * np.finfo(float).eps),
+    }
+    return {
+        "schema": "scientific-response-free-decision-risk-utility-gate-v1",
+        "model": model.stable_hash, "target": target.stable_hash,
+        "utility": "expected-bayes-zero-one-operational-class-risk-reduction-v1",
+        "candidate_action_count": len(actions), "selected_action_index": leader,
+        "selected_score": float(exact.scores[leader]),
+        "selected_lower_bound": float(lower[leader]),
+        "selected_upper_bound": float(upper[leader]),
+        "familywise_resolution": resolution, "decisions": decisions,
+        "passed": all(decisions.values()), "candidate_response_accessed": False,
+        "heldout_opened": False,
+    }
 def _execute_policy(root, model, target, actions, controls, source_identity,
                     policy, random_seed, pool, ids, evaluation):
     transaction = DiscoveryTransaction(root, model, target, actions,
@@ -112,7 +156,8 @@ def run_frozen_system_comparison(root, candidates, initial_data, pool,
                                  exploration_identity, coefficient_policy,
                                  measurement_budget, controls, source_identity,
                                  random_seed, policy_wall_time_seconds=None,
-                                 evaluation_data=None, source_prior_weights=None):
+                                 evaluation_data=None, source_prior_weights=None,
+                                 policies=("class_eig", "random")):
     """Share one conditional model/H0/class map between EIG and random queries.
 
     Unsupported proposals abort the entire freeze. No retry, fallback, efficacy
@@ -124,6 +169,10 @@ def run_frozen_system_comparison(root, candidates, initial_data, pool,
         raise TypeError("registered static pool required")
     if evaluation_data is not None and evaluation_data.role is not DataRole.VALIDATION:
         raise ValueError("only opened development evaluation is supported")
+    policies = tuple(policies)
+    if (len(policies) != 2 or policies[-1] != "random"
+            or policies[0] not in {"class_eig", "decision_risk"}):
+        raise ValueError("invalid registered system comparison policies")
     root = Path(root)
     if (root / "TERMINAL_FAILURE.json").exists():
         raise ValueError("terminally failed comparison cannot resume")
@@ -147,7 +196,7 @@ def run_frozen_system_comparison(root, candidates, initial_data, pool,
         "policy_wall_time_seconds": policy_wall_time_seconds,
         "evaluation_identity": None if evaluation_data is None else evaluation_data.fingerprint,
         "source_prior_weights": source_prior_weights,
-        "policies": ["class_eig", "random"], "heldout_opened": False,
+        "policies": list(policies), "heldout_opened": False,
         "hypothesis_audit": {
             "candidate_binding_count": len(model.candidate_bindings),
             "distinct_structural_support_count": len(model.bank.structures),

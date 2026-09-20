@@ -259,3 +259,27 @@ all projections preserve a valid merged evidence chain.  This repairs causal
 ablation identity and reduces duplicated engine/provider work; it is a
 response-free correctness change, not efficacy evidence.  The failed
 `20260920/2026092001` coordinate remains immutable and cannot be rerun.
+
+The source-first `20260921/2026092101` screen passed every response-free
+source and bank Gate, but its immutable four-query development continuation
+did not demonstrate system superiority.  Full class-EIG was worse than matched
+random acquisition in both normalized mean and endpoint RMSE, and its reported
+EIG scores had Spearman correlation `-1.0` with realized RMSE reduction.  Full
+was also worse than the core-plus-LLM single-engine system.  The corresponding
+artifact-bound utility-alignment audit is diagnostic opened-development
+evidence; it does not authorize held-out access, seed changes, threshold
+relaxation or retrospective score fitting.
+
+The next method changes the scientific utility rather than reweighting the
+observed result.  For frozen operational classes it maximizes the exact
+expected reduction in Bayes 0--1 class-decision risk:
+`integral max_c p(c,y) dy - max_c p(c)`.  One shared adaptive quadrature
+evaluates every candidate action, exports containing numerical intervals, and
+selects the action with maximum lower endpoint with a certified minimax-regret
+bound.  The method accepts only the strict-prefix posterior and candidate
+covariates; candidate responses, reporting responses and held-out objects are
+not arguments.  An initial-prefix family Gate requires finite ordered
+intervals, a lower bound above familywise numerical resolution, and an upper
+bound within the prior Bayes risk before any measurement can be authorized.
+The new utility remains a hypothesis-discrimination objective; predictive RMSE
+is an external development metric, not an input or tuned surrogate.

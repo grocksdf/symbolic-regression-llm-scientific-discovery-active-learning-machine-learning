@@ -17,6 +17,7 @@ from hypothesis_mvp.data.oracle import PoolOracle
 from .acquisition import (
     predictive_components_for_partition, estimate_class_eig_until_ranked,
     analytic_class_eig_bounds, exact_class_eig_shared_actions,
+    exact_class_decision_risk_reduction_shared_actions,
     PredictiveComponents,
 )
 from .p3j_run_identity import _publish_no_overwrite
@@ -28,6 +29,9 @@ MINIMAX_REGRET_EIG_METHOD = (
 )
 EXACT_EIG_METHOD = (
     "shared-action-adaptive-scipy-quad-exact-finite-mixture-interval-ranking"
+)
+EXACT_DECISION_RISK_METHOD = (
+    "shared-action-adaptive-scipy-quad-exact-bayes-zero-one-risk-reduction-v1"
 )
 
 
@@ -74,7 +78,7 @@ class DiscoveryTransaction:
                  target: FrozenDiscoveryTarget, domain: np.ndarray,
                  controls: DiscoveryScoringControls, *, source_identity: str,
                  query_policy: str = "class_eig", random_seed: int = 0):
-        if query_policy not in {"class_eig", "random"}:
+        if query_policy not in {"class_eig", "decision_risk", "random"}:
             raise ValueError("unsupported registered query policy")
         if type(random_seed) is not int or random_seed < 0:
             raise ValueError("random seed must be a nonnegative integer")
@@ -100,6 +104,7 @@ class DiscoveryTransaction:
                     "class_eig_ranking_methods": [
                         FAST_EIG_METHOD, EXACT_EIG_METHOD, MINIMAX_REGRET_EIG_METHOD
                     ],
+                    "decision_risk_ranking_method": EXACT_DECISION_RISK_METHOD,
                     "class_eig_decision_rule": (
                         "strict-interval-maximizer-else-exact-interval-minimax-regret"
                     )}
@@ -133,8 +138,8 @@ class DiscoveryTransaction:
             or payload["query_policy"] != self.query_policy
             or payload.get("integration_method") not in {
                 "query-indexed-uniform-random", FAST_EIG_METHOD, EXACT_EIG_METHOD,
-                MINIMAX_REGRET_EIG_METHOD}
-            or payload["certified"] is not (self.query_policy == "class_eig")):
+                MINIMAX_REGRET_EIG_METHOD, EXACT_DECISION_RISK_METHOD}
+            or payload["certified"] is not (self.query_policy != "random")):
             raise ValueError("invalid durable discovery decision")
         if self.query_policy == "random":
             if (payload.get("selection_certificate") != "registered-uniform-random"
@@ -145,10 +150,13 @@ class DiscoveryTransaction:
               or not np.isfinite(payload.get("utility_regret_upper_bound", np.nan))
               or payload["utility_regret_upper_bound"] < 0.0):
             raise ValueError("invalid class-EIG discovery decision certificate")
-        if self.query_policy == "class_eig":
+        if self.query_policy in {"class_eig", "decision_risk"}:
             audit = payload.get("information_audit")
             if (not isinstance(audit, dict)
-                    or audit.get("schema") != "discovery-class-eig-identifiability-v1"
+                    or audit.get("schema") != (
+                        "discovery-class-eig-identifiability-v1"
+                        if self.query_policy == "class_eig"
+                        else "discovery-class-decision-risk-v1")
                     or audit.get("candidate_response_accessed") is not False
                     or audit.get("candidate_count") != len(payload["errors"])
                     or audit.get("strict_prefix_response_count") != payload["query"] - 1):
@@ -184,9 +192,14 @@ class DiscoveryTransaction:
             selection_certificate = "registered-uniform-random"
             utility_regret_upper_bound = None
             information_audit = None
-        else:
+        elif self.query_policy == "class_eig":
             (leader, score, errors, integration_method, selection_certificate,
              utility_regret_upper_bound, information_audit) = self._rank(values, ids)
+            certified = True
+        else:
+            (leader, score, errors, integration_method, selection_certificate,
+             utility_regret_upper_bound, information_audit) = self._rank_decision_risk(
+                values, ids)
             certified = True
         decision = {"identity": self.identity, "prefix": self.prefix_hash, "query": index,
                     "candidates": candidates_hash, "candidate_id": int(ids[leader]),
@@ -278,6 +291,34 @@ class DiscoveryTransaction:
         return (leader, score, errors,
                 MINIMAX_REGRET_EIG_METHOD, "exact-interval-minimax-regret",
                 regret_bound, audit)
+
+    def _rank_decision_risk(self, values, ids):
+        components = predictive_components_for_partition(
+            self.engine, self.posterior, self.target.partition, values)
+        exact = exact_class_decision_risk_reduction_shared_actions(components)
+        scores = np.asarray(exact.scores, dtype=float)
+        errors = np.asarray(exact.quadrature_errors, dtype=float)
+        if (scores.shape != (len(ids),) or errors.shape != scores.shape
+                or not np.all(np.isfinite(scores)) or not np.all(np.isfinite(errors))
+                or np.any(scores < 0.0) or np.any(errors < 0.0)):
+            raise DiscoverySelectionError("invalid-exact-decision-risk-certificate")
+        lower, upper = np.maximum(0.0, scores - errors), scores + errors
+        leader = min(range(len(ids)), key=lambda i: (-float(lower[i]), int(ids[i])))
+        regret = max(0.0, float(np.max(upper) - lower[leader]))
+        prior_risk = 1.0 - max(components.partition.class_probabilities)
+        audit = {
+            "schema": "discovery-class-decision-risk-v1",
+            "candidate_response_accessed": False,
+            "strict_prefix_response_count": len(self.receipts),
+            "class_count": len(components.partition.class_ids),
+            "prior_bayes_zero_one_risk": float(prior_risk),
+            "candidate_count": len(ids),
+            "selected_lower_bound": float(lower[leader]),
+            "selected_upper_bound": float(upper[leader]),
+        }
+        return (leader, float(scores[leader]), errors.tolist(),
+                EXACT_DECISION_RISK_METHOD, "exact-interval-minimax-regret",
+                regret, audit)
 
     def _information_audit(self, lower, upper, active, leader, current_partition,
                            *, exact_shared_actions):

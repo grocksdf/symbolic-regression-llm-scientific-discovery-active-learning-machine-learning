@@ -24,6 +24,7 @@ from hypothesis_mvp.pcpi import (
     class_conditional_predictive_eig,
     estimate_class_eig_until_ranked,
     exact_class_eig,
+    exact_class_decision_risk_reduction_shared_actions,
     fixed_class_entropy,
     least_favorable_model_indices,
     normalized_area_under_learning_curve,
@@ -376,6 +377,24 @@ def test_adaptive_eig_raises_first_look_to_four_nodes_per_structure() -> None:
     assert sum(result.estimate.structure_allocations) == result.estimate.sample_count
     with pytest.raises(ValueError, match="four nodes per structure"):
         estimate_class_eig_until_ranked(components, 32, 40)
+
+
+def test_exact_decision_risk_utility_is_response_free_and_action_equivariant() -> None:
+    partition = ClassPartition(
+        ("a", "b"), ((0,), (1,)), (.5, .5), (0, 1))
+    components = PredictiveComponents(
+        np.array([.5, .5]), np.array([30., 30.]),
+        np.array([[0., -4.], [0., 4.]]),
+        np.full((2, 2), .5), partition)
+    result = exact_class_decision_risk_reduction_shared_actions(components)
+    assert result.scores[0] == pytest.approx(0.0, abs=2e-8)
+    assert 0.45 < result.scores[1] <= 0.5
+    assert np.all(result.quadrature_errors >= 0.0)
+    permuted = PredictiveComponents(
+        components.structure_probabilities, components.degrees_freedom,
+        components.locations[:, ::-1], components.scales[:, ::-1], partition)
+    reverse = exact_class_decision_risk_reduction_shared_actions(permuted)
+    np.testing.assert_allclose(result.scores, reverse.scores[::-1], atol=2e-8, rtol=0.0)
 
 
 def test_budget_resolved_threshold_has_root_budget_identity() -> None:

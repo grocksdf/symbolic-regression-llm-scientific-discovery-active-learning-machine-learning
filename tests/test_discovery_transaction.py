@@ -9,7 +9,7 @@ from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.data.oracle import PoolOracle
 
 
-def _session(tmp_path, source="source-frozen-correctness-fixture"):
+def _session(tmp_path, source="source-frozen-correctness-fixture", policy="class_eig"):
     model = freeze_discovery_model([
         {"expression": "x0", "source": "engine:a"},
         {"expression": "x0**2", "source": "llm"},
@@ -20,7 +20,8 @@ def _session(tmp_path, source="source-frozen-correctness-fixture"):
     target = freeze_discovery_target(model, initial, domain, measurement_budget=2,
                                     expected_model_identity=model.stable_hash)
     return DiscoveryTransaction(tmp_path, model, target, domain,
-                                DiscoveryScoringControls(8, 16, 2.), source_identity=source)
+                                DiscoveryScoringControls(8, 16, 2.), source_identity=source,
+                                query_policy=policy)
 
 
 def _broad_analytic(monkeypatch):
@@ -66,6 +67,24 @@ def test_information_audit_reports_current_not_frozen_class_entropy(tmp_path):
         np.exp(current.entropy))
     assert second["information_audit"]["strict_prefix_response_count"] == 1
     assert current.entropy != pytest.approx(session.target.partition.entropy)
+
+
+def test_decision_risk_policy_is_response_free_and_durably_certified(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    monkeypatch.setattr(
+        "hypothesis_mvp.pcpi.discovery_transaction."
+        "exact_class_decision_risk_reduction_shared_actions",
+        lambda components: SimpleNamespace(
+            scores=np.array([.1, .3]), quadrature_errors=np.array([1e-8, 1e-8])))
+    session = _session(tmp_path, policy="decision_risk")
+    decision = session.plan(np.array([10, 11]), np.array([[3.], [4.]]))
+    assert decision["candidate_id"] == 11 and decision["certified"] is True
+    assert decision["query_policy"] == "decision_risk"
+    assert decision["information_audit"]["schema"] == "discovery-class-decision-risk-v1"
+    assert decision["information_audit"]["candidate_response_accessed"] is False
+    assert not (tmp_path / "RECEIPT-001.json").exists()
+    assert _session(tmp_path, policy="decision_risk").plan(
+        np.array([10, 11]), np.array([[3.], [4.]])) == decision
 
 
 def test_response_and_candidate_identity_fail_closed(tmp_path):
