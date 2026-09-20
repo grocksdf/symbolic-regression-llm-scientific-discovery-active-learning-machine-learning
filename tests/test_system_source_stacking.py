@@ -117,8 +117,8 @@ def test_helpful_source_cannot_mask_another_sources_bad_fold(monkeypatch):
 def test_candidatewise_admission_keeps_only_fold_safe_optional_supports(monkeypatch):
     baseline = np.full(8, -2.0)
     profiles = {
-        "good": baseline + np.array([.4, .2, .3, .1, .2, .3, .1, .4]),
-        "bad": baseline + np.array([.5, -.8, .5, -.8, .5, -.8, .5, -.8]),
+        "sin(x0)": baseline + np.array([.4, .2, .3, .1, .2, .3, .1, .4]),
+        "cos(x0)": baseline + np.array([.5, -.8, .5, -.8, .5, -.8, .5, -.8]),
     }
     def profile(candidates, *args, **kwargs):
         name = candidates[-1]["expression"]
@@ -130,16 +130,39 @@ def test_candidatewise_admission_keeps_only_fold_safe_optional_supports(monkeypa
     rows = [
         {"expression": "x0", "source": "anchor-a", "origin": "deterministic"},
         {"expression": "x0**2", "source": "anchor-b", "origin": "deterministic"},
-        {"expression": "good", "source": "llm-good", "origin": "llm"},
-        {"expression": "bad", "source": "llm-bad", "origin": "llm"},
+        {"expression": "sin(x0)", "source": "llm-good", "origin": "llm"},
+        {"expression": "cos(x0)", "source": "llm-bad", "origin": "llm"},
     ]
-    retained, report = filter_fold_safe_source_candidates(rows, None, None)
-    assert {row["expression"] for row in retained} == {"x0", "x0**2", "good"}
+    retained, report = filter_fold_safe_source_candidates(
+        rows, None, None, n_features=1)
+    assert {row["expression"] for row in retained} == {
+        "x0", "x0**2", "sin(x0)"}
     certificates = {row["source"]: row for row in report["candidate_certificates"]}
     assert certificates["llm-good"]["admitted"] is True
     assert certificates["llm-bad"]["admitted"] is False
     assert certificates["llm-bad"]["negative_transfer_certified"] is True
     assert report["candidate_response_accessed"] is False
+
+
+def test_candidatewise_admission_certifies_cross_source_duplicate_as_redundant(
+        monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("duplicate support must be rejected before scoring")
+    monkeypatch.setattr(
+        "hypothesis_mvp.discovery.source_stacking.arbitration_source_log_predictive",
+        forbidden)
+    rows = [
+        {"expression": "x0", "source": "anchor-a", "origin": "deterministic"},
+        {"expression": "x0**2", "source": "anchor-b", "origin": "deterministic"},
+        {"expression": "2*x0", "source": "llm-duplicate", "origin": "llm"},
+    ]
+    retained, report = filter_fold_safe_source_candidates(
+        rows, None, None, n_features=1)
+    assert {row["source"] for row in retained} == {"anchor-a", "anchor-b"}
+    certificate = report["candidate_certificates"][0]
+    assert certificate["admitted"] is False
+    assert certificate["redundant_support_certified"] is True
+    assert certificate["redundancy_reason"] == "duplicates-core-support"
 
 
 def test_conditional_engine_admission_requires_gain_beyond_core_llm(monkeypatch):

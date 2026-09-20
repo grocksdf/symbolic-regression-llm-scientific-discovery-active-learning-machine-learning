@@ -258,11 +258,42 @@ def filter_fold_safe_source_candidates(candidates, initial_data, arbitration, **
     optional = tuple(row for row in rows if source_family(row) != "core")
     if len(core) < 2:
         raise ValueError("candidate admission requires at least two core supports")
+    from .pcpi_adapter import structural_terms
+    n_features = int(kwargs["n_features"])
+    support = {id(row): structural_terms(row["expression"], n_features)
+               for row in rows}
+    core_supports = {support[id(row)] for row in core}
+    optional_families = {}
+    for row in optional:
+        optional_families.setdefault(support[id(row)], set()).add(
+            source_family(row))
+    ambiguous = {key for key, families in optional_families.items()
+                 if len(families) > 1}
     retained, certificates = list(core), []
     ordered = sorted(optional, key=lambda row: sha256(json.dumps(
         row, sort_keys=True, default=str).encode()).hexdigest())
     for candidate in ordered:
         family = source_family(candidate)
+        candidate_support = support[id(candidate)]
+        redundancy = (
+            "duplicates-core-support" if candidate_support in core_supports
+            else "cross-optional-family-support-unattributable"
+            if candidate_support in ambiguous else "")
+        identity = sha256(json.dumps(candidate, sort_keys=True,
+            default=str).encode()).hexdigest()
+        if redundancy:
+            certificates.append({
+                "candidate_identity": identity,
+                "source": str(candidate["source"]),
+                "origin": str(candidate.get("origin", "")), "family": family,
+                "admitted": False, "fold_log_score_gains_vs_core": [],
+                "fold_numerical_tolerances": [],
+                "negative_transfer_certified": False,
+                "redundant_support_certified": True,
+                "redundancy_reason": redundancy,
+                "structural_support": list(candidate_support),
+                "candidate_response_accessed": False, "heldout_opened": False})
+            continue
         values, folds, families = arbitration_source_log_predictive(
             [*core, candidate], initial_data, arbitration, **kwargs)
         baseline = values[:, families.index("core")]
@@ -280,14 +311,14 @@ def filter_fold_safe_source_candidates(candidates, initial_data, arbitration, **
         if admitted:
             retained.append(candidate)
         certificates.append({
-            "candidate_identity": sha256(json.dumps(candidate, sort_keys=True,
-                default=str).encode()).hexdigest(),
+            "candidate_identity": identity,
             "source": str(candidate["source"]), "origin": str(candidate.get("origin", "")),
             "family": family, "admitted": admitted,
             "fold_log_score_gains_vs_core": gains,
             "fold_numerical_tolerances": tolerances,
             "negative_transfer_certified": bool(not admitted and any(
                 gain < -tolerance for gain, tolerance in zip(gains, tolerances))),
+            "redundant_support_certified": False,
             "candidate_response_accessed": False, "heldout_opened": False,
         })
     return tuple(retained), {

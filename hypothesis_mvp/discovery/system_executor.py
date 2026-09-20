@@ -204,14 +204,15 @@ def _variant_composition(variant, candidates, candidate_admission=None,
     optional_engine_safely_rejected = bool(
         optional_engine_certificates
         and all(row.get("admitted") is False
-                and row.get("negative_transfer_certified") is True
+                and (row.get("negative_transfer_certified") is True
+                     or row.get("redundant_support_certified") is True)
                 for row in optional_engine_certificates)
     )
     return {
         "llm_enabled_variant_retains_llm_hypothesis": (
             "llm" in origins if variant != "no_llm" else "llm" not in origins
         ),
-        "full_optional_engine_retained_or_candidatewise_negative_transfer_certified": (
+        "full_optional_engine_retained_or_candidatewise_safe_rejection_certified": (
             len(engines) >= 2 or (
                 optional_engine_safely_rejected and not require_optional_engine)
             if variant == "full" else True
@@ -367,6 +368,8 @@ def _prepare_source_admission(workspace, exploration, data, config, arbitration)
     prior = NormalInverseGammaPrior(**config["prior"])
     reports, viability = {}, {}
     gate = config["marginal_influence_gate"]
+    candidate_family = json.loads((Path(workspace) /
+        "CANDIDATE_ADMISSION.json").read_text(encoding="utf-8"))
     for row in exploration["rows"]:
         certificate, sources = calibrate_source_admission(
             row["candidates"], data.initial, arbitration,
@@ -379,6 +382,27 @@ def _prepare_source_admission(workspace, exploration, data, config, arbitration)
         variant = row["variant"]
         required = set(gate["required_active_contributions"]) if variant == "full" else set()
         rejected = set(gate["rejectable_contributions"]) if variant == "full" else set()
+        candidate_rows = candidate_family["variants"][variant][
+            "candidate_certificates"]
+        for name in rejected - set(sources):
+            relevant = [item for item in candidate_rows
+                        if item.get("family") == name]
+            safe = bool(relevant and all(
+                item.get("admitted") is False and (
+                    item.get("negative_transfer_certified") is True
+                    or item.get("redundant_support_certified") is True)
+                for item in relevant))
+            if safe:
+                sources[name] = {"weight": 0.0, "admitted": False,
+                    "fold_log_score_gains_vs_core": [],
+                    "fold_numerical_tolerances": [],
+                    "negative_transfer_certified": bool(all(
+                        item.get("negative_transfer_certified") is True
+                        for item in relevant)),
+                    "redundant_support_certified": bool(any(
+                        item.get("redundant_support_certified") is True
+                        for item in relevant)),
+                    "candidatewise_safe_rejection_certified": True}
         decisions = {
             "core_reserve_satisfied": bool(
                 certificate.source_weights.get("core", 0.0) >= 0.5 - 2e-12),
@@ -387,6 +411,8 @@ def _prepare_source_admission(workspace, exploration, data, config, arbitration)
             "rejectable_sources_admitted_or_negative_transfer_certified": all(
                 sources.get(name, {}).get("admitted")
                 or sources.get(name, {}).get("negative_transfer_certified")
+                or sources.get(name, {}).get(
+                    "candidatewise_safe_rejection_certified")
                 for name in rejected),
         }
         report = {"schema": "scientific-independent-sourcewise-admission-v2",

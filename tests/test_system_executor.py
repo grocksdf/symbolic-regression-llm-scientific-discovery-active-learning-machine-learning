@@ -244,7 +244,7 @@ def test_full_composition_accepts_certified_optional_engine_rejection():
     admission["candidate_certificates"][0]["negative_transfer_certified"] = False
     decisions = executor._variant_composition("full", candidates, admission)
     assert not decisions[
-        "full_optional_engine_retained_or_candidatewise_negative_transfer_certified"]
+        "full_optional_engine_retained_or_candidatewise_safe_rejection_certified"]
 
 
 def test_marginal_influence_failure_stops_before_any_pool_response(tmp_path, monkeypatch):
