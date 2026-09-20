@@ -181,16 +181,30 @@ def verify_registered_provider(project_root, config):
     return provider
 
 
-def _variant_composition(variant, candidates):
+def _variant_composition(variant, candidates, candidate_admission=None):
     origins = [str(candidate.get("origin", "")) for candidate in candidates]
     engines = {str(candidate.get("source", "")) for candidate in candidates
                if str(candidate.get("source", "")).startswith("engine:")}
+    certificates = (
+        [] if candidate_admission is None
+        else list(candidate_admission.get("candidate_certificates", []))
+    )
+    optional_engine_certificates = [
+        row for row in certificates if row.get("family") == "engine:mcts"
+    ]
+    optional_engine_safely_rejected = bool(
+        optional_engine_certificates
+        and all(row.get("admitted") is False
+                and row.get("negative_transfer_certified") is True
+                for row in optional_engine_certificates)
+    )
     return {
         "llm_enabled_variant_retains_llm_hypothesis": (
             "llm" in origins if variant != "no_llm" else "llm" not in origins
         ),
-        "full_variant_retains_multiple_engine_sources": (
-            len(engines) >= 2 if variant == "full" else True
+        "full_optional_engine_retained_or_candidatewise_negative_transfer_certified": (
+            len(engines) >= 2 or optional_engine_safely_rejected
+            if variant == "full" else True
         ),
         "no_llm_variant_retains_no_llm_hypothesis": (
             "llm" not in origins if variant == "no_llm" else True
@@ -198,7 +212,8 @@ def _variant_composition(variant, candidates):
     }
 
 
-def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
+def _prepare_hypothesis_bank_viability(
+        workspace, exploration, data, config, candidate_admission=None):
     viability = {}
     for row in exploration["rows"]:
         variant = row["variant"]
@@ -238,7 +253,12 @@ def _prepare_hypothesis_bank_viability(workspace, exploration, data, config):
             exact_eig_epsabs=config["hypothesis_bank_gate"]["exact_eig_epsabs"],
             source_prior_weights=row["source_prior_weights"],
         )
-        composition = _variant_composition(variant, row["candidates"])
+        variant_candidate_admission = (
+            None if candidate_admission is None
+            else candidate_admission["variants"][variant]
+        )
+        composition = _variant_composition(
+            variant, row["candidates"], variant_candidate_admission)
         audit["composition_decisions"] = composition
         audit["passed"] = bool(audit["passed"] and all(composition.values())
                                and selection["source_safety_passed"])
@@ -558,7 +578,8 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
                     data.evaluation, config["marginal_influence_gate"]["arbitration_fraction"])
                 candidate_admission = _prepare_candidate_admission(
                     workspace, exploration, data, config, arbitration)
-                _prepare_hypothesis_bank_viability(workspace, exploration, data, config)
+                _prepare_hypothesis_bank_viability(
+                    workspace, exploration, data, config, candidate_admission)
                 _prepare_source_gates(workspace, exploration, data, config, arbitration)
                 utility_gate = _prepare_decision_risk_utility_gate(
                     workspace, exploration, data, config)
@@ -842,8 +863,10 @@ def execute_registered_system_continuation(project_root, root, source_root, conf
         arbitration, reporting_evaluation = _split_source_arbitration(
             data.evaluation, config["marginal_influence_gate"]["arbitration_fraction"])
         if continuation_mode == "response-free-capacity-rebank":
-            _prepare_candidate_admission(workspace, exploration, data, config, arbitration)
-            _prepare_hypothesis_bank_viability(workspace, exploration, data, config)
+            candidate_admission = _prepare_candidate_admission(
+                workspace, exploration, data, config, arbitration)
+            _prepare_hypothesis_bank_viability(
+                workspace, exploration, data, config, candidate_admission)
             _prepare_source_gates(workspace, exploration, data, config, arbitration)
         if (config.get("targeted_query_policy") == "decision_risk"
                 and not (workspace / "DECISION_RISK_UTILITY_VIABILITY.json").is_file()):

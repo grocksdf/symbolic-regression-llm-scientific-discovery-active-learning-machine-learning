@@ -222,6 +222,25 @@ def test_degenerate_bank_stops_before_any_pool_response(tmp_path, monkeypatch):
         executor.execute_registered_system(tmp_path / "source", root, _config(), {}, execution_role="user")
 
 
+def test_full_composition_accepts_certified_optional_engine_rejection():
+    candidates = [
+        {"source": "engine:polynomial_lasso", "origin": "deterministic"},
+        {"source": "llm_proposal", "origin": "llm"},
+    ]
+    admission = {"candidate_certificates": [
+        {"family": "engine:mcts", "admitted": False,
+         "negative_transfer_certified": True},
+        {"family": "engine:mcts", "admitted": False,
+         "negative_transfer_certified": True},
+    ]}
+    decisions = executor._variant_composition("full", candidates, admission)
+    assert all(decisions.values())
+    admission["candidate_certificates"][0]["negative_transfer_certified"] = False
+    decisions = executor._variant_composition("full", candidates, admission)
+    assert not decisions[
+        "full_optional_engine_retained_or_candidatewise_negative_transfer_certified"]
+
+
 def test_marginal_influence_failure_stops_before_any_pool_response(tmp_path, monkeypatch):
     _patch(monkeypatch)
     monkeypatch.setattr(executor, "audit_marginal_influence",

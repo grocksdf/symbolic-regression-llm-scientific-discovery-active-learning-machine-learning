@@ -328,3 +328,19 @@ then applied as a second layer.  The procedure never searches combinations of
 optional candidates, so a good support cannot hide a bad one and vice versa.
 It accesses source-arbitration validation responses only; acquisition-pool,
 reporting-validation and held-out responses remain unavailable.
+
+The first candidatewise screen at `20260924/2026092401` retained three
+individually fold-safe LLM supports and rejected every MCTS support with
+candidate-level negative-transfer certificates.  H0 capacity and operational
+class resolution were nondegenerate, but the historical composition check
+still required two retained engine sources and therefore contradicted the
+registered rule that MCTS is rejectable when negative transfer is certified.
+This screen remains an immutable response-free NO-GO.
+
+Composition now distinguishes an absent source from a safely rejected source.
+The full bank must retain an LLM hypothesis.  The optional MCTS engine must
+either retain at least one candidate or have every generated candidate rejected
+by the candidatewise Gate with an explicit negative-transfer certificate.
+This does not restore harmful supports, waive source admission, or claim that
+one engine is useful; it only makes H0 composition consistent with the already
+registered rejectable-source contract.
