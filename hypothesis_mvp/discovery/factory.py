@@ -23,6 +23,7 @@ def build_scientific_discovery_runtime(
     primitive_registry: PrimitiveRegistry | None = None,
     event_callback: Callable[[RuntimeEvent], None] | None = None,
     task_context: DiscoveryTaskContext | None = None,
+    orchestration_context: Mapping[str, Any] | None = None,
 ) -> ScientificDiscoveryRuntime:
     resolved = config if isinstance(config, DiscoveryConfig) else DiscoveryConfig.from_mapping(config)
     registry = primitive_registry or PrimitiveRegistry()
@@ -46,6 +47,7 @@ def build_scientific_discovery_runtime(
         ),
         config=resolved, event_callback=event_callback,
         task_context=task_context or DiscoveryTaskContext(),
+        orchestration_context=orchestration_context,
     )
 
 

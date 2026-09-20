@@ -139,6 +139,11 @@ def run_exploration_ablations(root, selection, *, dataset, config,
     total_jobs = len(config.engines) * config.engine_repeats
     if config.engine_budget != total_jobs:
         raise ValueError("engine budget must cover exactly the registered jobs")
+    if config.scientist_orchestration:
+        return _run_scientist_ablations(
+            root, selection, dataset, config, provider_settings, single_engine,
+            compute_ceiling, provider_attempt_ceiling, source_identity,
+            scientific_context, total_jobs)
     optional_engines = tuple(engine for engine in config.engines if engine != single_engine)
     if not optional_engines:
         raise ValueError("source-first exploration requires an optional engine")
@@ -197,6 +202,92 @@ def run_exploration_ablations(root, selection, *, dataset, config,
         compute_ceiling, provider_attempt_ceiling, selection)
     _complete_anchor_banks(rows, selection)
     _assert_source_first_projection(rows)
+    analysis = analyze_system_contract(rows)
+    _publish(root / "ANALYSIS.json", analysis)
+    return analysis
+
+
+def _scientist_contract(dataset, config, single_engine, selection,
+                        compute_ceiling, provider_attempt_ceiling,
+                        source_identity, scientific_context, provider_settings):
+    public_provider = asdict(provider_settings)
+    for route in public_provider["routes"]:
+        route.pop("api_key", None)
+    return {"schema": "scientific-llm-skill-orchestration-ablation-v1",
+        "dataset": dataset, "config": asdict(config),
+        "single_engine": single_engine,
+        "development": selection.development.fingerprint,
+        "validation": selection.validation.fingerprint,
+        "compute_ceiling": compute_ceiling,
+        "provider_attempt_ceiling": provider_attempt_ceiling,
+        "source": source_identity, "heldout_opened": False,
+        "scientific_context": scientific_context,
+        "provider_settings_identity": sha256(json.dumps(
+            public_provider, sort_keys=True, default=str).encode()).hexdigest(),
+        "full_policy": "llm-research-plan-engine-dispatch-review-synthesis-v1",
+        "formal_experiment_authorized": False}
+
+
+def _run_scientist_variant(root, variant, variant_config, provider, selection,
+                           compute_ceiling, provider_attempt_ceiling,
+                           scientific_context, contract, dataset, total_jobs):
+    workspace = Path(root) / variant
+    workspace.mkdir(exist_ok=True)
+    completed = workspace / "RESULT.json"
+    if completed.exists():
+        return json.loads(completed.read_text(encoding="utf-8"))
+    if (workspace / "STARTED.json").exists():
+        raise ValueError("unfinished scientist exploration cannot repeat calls")
+    _publish(workspace / "STARTED.json", {"variant": variant})
+    print(f"scientist exploration variant started: {variant} hard_limit={compute_ceiling}s",
+          flush=True)
+    summary, enforcement = run_bounded(
+        _run_variant, args=(variant_config, provider, selection, workspace,
+            compute_ceiling, provider_attempt_ceiling, scientific_context),
+        seconds=compute_ceiling,
+        provider_attempts=(provider_attempt_ceiling if provider else 0))
+    usage = summary["usage"]
+    row = {"dataset": dataset, "seed": variant_config.random_seed,
+        "variant": variant, "status": "succeeded", "heldout_opened": False,
+        "selection_used_heldout": False, "best_val_nmse": summary["best_val_nmse"],
+        "development_fingerprint": contract["development"],
+        "validation_fingerprint": contract["validation"], "measurement_budget": 0,
+        "engine_job_budget": total_jobs * variant_config.cycles,
+        "candidate_evaluation_budget": variant_config.discovery_budget * variant_config.cycles,
+        "compute_ceiling": compute_ceiling, "provider_calls": summary["provider_calls"],
+        **usage, "resource_enforcement": enforcement,
+        "candidates": summary["candidates"],
+        "hypothesis_provenance": summary["hypothesis_provenance"],
+        "evidence_registry_path": summary["evidence_registry_path"]}
+    _publish(completed, row)
+    return row
+
+
+def _run_scientist_ablations(root, selection, dataset, config, provider_settings,
+                             single_engine, compute_ceiling,
+                             provider_attempt_ceiling, source_identity,
+                             scientific_context, total_jobs):
+    root = Path(root); root.mkdir(parents=True, exist_ok=True)
+    contract = _scientist_contract(
+        dataset, config, single_engine, selection, compute_ceiling,
+        provider_attempt_ceiling, source_identity, scientific_context,
+        provider_settings)
+    contract = json.loads(json.dumps(contract, allow_nan=False))
+    _publish(root / "ABLATION_CONTRACT.json", contract)
+    variants = {
+        "full": (config, provider_settings),
+        "no_llm": (replace(config, scientist_orchestration=False), None),
+        "single_engine": (replace(
+            config, engines=(single_engine,), engine_repeats=total_jobs,
+            engine_budget=total_jobs), provider_settings),
+    }
+    rows = [_run_scientist_variant(
+        root, variant, variant_config, provider, selection, compute_ceiling,
+        provider_attempt_ceiling, scientific_context, contract, dataset, total_jobs)
+        for variant, (variant_config, provider) in variants.items()]
+    if rows[1]["provider_calls"] or rows[1]["provider_attempts_used"]:
+        raise ValueError("provider-free scientist ablation attempted provider calls")
+    _complete_anchor_banks(rows, selection)
     analysis = analyze_system_contract(rows)
     _publish(root / "ANALYSIS.json", analysis)
     return analysis

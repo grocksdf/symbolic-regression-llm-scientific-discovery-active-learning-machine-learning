@@ -100,7 +100,8 @@ def validate_system_registration(config):
             or agent.mcts_score_folds != 2
             or type(agent.llm_evaluation_reserve) is not int
             or agent.llm_evaluation_reserve < 0
-            or agent.llm_evaluation_reserve >= agent.discovery_budget):
+            or agent.llm_evaluation_reserve >= agent.discovery_budget
+            or type(agent.scientist_orchestration) is not bool):
         raise ValueError("unmatched or unsupported internal-engine registration")
     if (not agent.discovery_islands or len(set(agent.discovery_islands)) != len(agent.discovery_islands)
             or any(value not in {"balanced", "low_complexity", "nmse", "tail", "novelty"}

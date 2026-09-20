@@ -17,6 +17,10 @@ from .resource_limits import before_provider_transport
 
 from .contracts import DISCOVERY_RUNTIME_ID, json_safe
 from .equation_runtime import EquationRuntime, sha256_text
+from .scientist_policy import (
+    ENGINE_REVIEW_PROTOCOL, RESEARCH_PLAN_PROTOCOL, REGISTERED_ENGINE_SKILLS,
+    ResearchPlan, ScientistReview, plan_from_json, review_from_json,
+)
 
 PROPOSAL_PROTOCOL_ID = "hypothesis-proposal-v1"
 ALLOWED_ACTIONS = frozenset({
@@ -378,6 +382,53 @@ class ProposalRuntime:
         if not isinstance(parsed, dict):
             raise ProtocolError("root_must_be_object")
         return parsed, telemetry
+
+    def plan_research(
+        self, *, task_context: Mapping[str, Any],
+        available_engines: Sequence[str], total_jobs: int,
+    ) -> tuple[ResearchPlan, Mapping[str, Any]]:
+        available = tuple(dict.fromkeys(str(value) for value in available_engines))
+        skills = [skill.to_dict() for skill in REGISTERED_ENGINE_SKILLS
+                  if skill.name in available]
+        payload = {"protocol_id": RESEARCH_PLAN_PROTOCOL,
+            "task_context": dict(task_context), "available_skills": skills,
+            "total_engine_jobs": total_jobs,
+            "authority": {
+                "may_choose_engine_jobs": True,
+                "may_access_pool_responses": False,
+                "may_access_heldout": False,
+                "may_modify_bayesian_target": False,
+            }}
+        system = (
+            "Act as a scientific research planner. Return one unfenced JSON object. "
+            f"Use protocol_id='{RESEARCH_PLAN_PROTOCOL}'. Provide mechanisms, engine_calls, "
+            "comparison_questions, synthesis_goal and stop_conditions. Each engine call "
+            "needs engine, jobs, objective and expected_evidence. Allocate exactly the "
+            "registered total_engine_jobs across available_skills. Choose tools based on "
+            "their inductive bias; do not propose equations or request hidden responses.")
+        raw, telemetry = self.complete_json(system_message=system, payload=payload)
+        return plan_from_json(raw, available, total_jobs), telemetry
+
+    def review_engine_evidence(
+        self, *, plan: ResearchPlan, engine_evidence: Sequence[Mapping[str, Any]],
+    ) -> tuple[ScientistReview, Mapping[str, Any]]:
+        payload = {"protocol_id": ENGINE_REVIEW_PROTOCOL,
+            "research_plan": plan.to_dict(),
+            "engine_evidence": [dict(row) for row in engine_evidence],
+            "authority": {
+                "may_synthesize_hypothesis_instructions": True,
+                "may_run_additional_engines": False,
+                "may_access_pool_responses": False,
+                "may_access_heldout": False,
+            }}
+        system = (
+            "Act as a scientific evidence reviewer. Return one unfenced JSON object. "
+            f"Use protocol_id='{ENGINE_REVIEW_PROTOCOL}'. Provide supported_mechanisms, "
+            "contradicted_mechanisms, cross_engine_conflicts, synthesis_instructions, "
+            "stop and stop_reason. Base every statement only on supplied engine evidence. "
+            "Do not certify efficacy, posterior correctness, or hidden-data performance.")
+        raw, telemetry = self.complete_json(system_message=system, payload=payload)
+        return review_from_json(raw), telemetry
 
     def _proposal_payload(
         self, task_name: str, task_desc: str, context: ProposalContext,

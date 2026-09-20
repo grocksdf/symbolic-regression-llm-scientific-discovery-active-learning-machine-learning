@@ -240,6 +240,39 @@ def test_source_first_projection_generates_llm_once_and_only_deletes_sources(tmp
     assert {row["variant"]: row["candidates"] for row in analysis["rows"]} == published
 
 
+def test_scientist_orchestration_runs_policy_level_ablations(tmp_path, monkeypatch):
+    selection, config = _inputs()
+    config = __import__("dataclasses").replace(
+        config, scientist_orchestration=True)
+    seen = []
+    class Agent:
+        def __init__(self, agent_config, provider):
+            self.config, self.provider = agent_config, provider
+        def run(self, **kwargs):
+            _write_fixture_registry(kwargs["output_dir"])
+            seen.append((self.config.engines, self.config.engine_repeats,
+                         self.provider is not None,
+                         self.config.scientist_orchestration))
+            return _result(self.config, self.provider is not None)
+    monkeypatch.setattr("hypothesis_mvp.discovery.system_ablation.DiscoveryAgent", Agent)
+    monkeypatch.setattr("hypothesis_mvp.discovery.system_ablation.run_bounded", _inline)
+    run_exploration_ablations(tmp_path, selection, dataset="opaque", config=config,
+        provider_settings=ProviderSettings(routes=(ProviderRoute(
+            "https://fixture.invalid", "fixture-model", "fixture-key"),)),
+        single_engine="polynomial_lasso", compute_ceiling=100,
+        provider_attempt_ceiling=3, source_identity="correctness-fixture",
+        scientific_context=CONTEXT)
+    assert seen == [
+        (("polynomial_lasso", "mcts"), 2, True, True),
+        (("polynomial_lasso", "mcts"), 2, False, False),
+        (("polynomial_lasso",), 4, True, True),
+    ]
+    contract = __import__("json").loads(
+        (tmp_path / "ABLATION_CONTRACT.json").read_text(encoding="utf-8"))
+    assert contract["schema"] == "scientific-llm-skill-orchestration-ablation-v1"
+    assert contract["full_policy"].startswith("llm-research-plan")
+
+
 @pytest.mark.parametrize("field,value", [("candidate_evaluations", 11), ("provider_attempts", 4)])
 def test_budget_overrun_blocks_analysis(field, value):
     _, config = _inputs(); result = _result(config)

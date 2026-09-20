@@ -211,6 +211,58 @@ def _aggregate(results: Sequence[EngineResult], budget: int, used: int) -> tuple
 
 
 class EngineScheduler:
+    def run_allocated(
+        self, *, allocations: Mapping[str, int], config: SymbolicConfig,
+        X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray,
+        y_val: np.ndarray, base_seed: int = 0, max_retries: int = 0,
+        evaluation_budget: int | None = None, parallel: bool = True,
+        max_workers: int = 2, timeout_s: float = 300.0,
+    ) -> MultiEngineResult:
+        plan = {str(name): int(count) for name, count in allocations.items()}
+        if (not plan or any(not name or count < 1 for name, count in plan.items())
+                or len(plan) != len(allocations)):
+            raise ValueError("invalid allocated engine plan")
+        retry_count = max(0, int(max_retries))
+        default_budget = sum(plan.values()) * (retry_count + 1)
+        budget = int(evaluation_budget or default_budget)
+        if budget < sum(plan.values()):
+            raise ValueError("allocated engine budget cannot cover planned jobs")
+        pending = [_Job(name, repeat, 0,
+            _stable_seed(base_seed, name, repeat, 0))
+            for name, count in plan.items() for repeat in range(count)]
+        arrays = tuple(np.asarray(value, dtype=float)
+            for value in (X_train, y_train, X_val, y_val))
+        return self._execute_plan(
+            pending, config, arrays, retry_count, budget, base_seed,
+            parallel, max_workers, timeout_s)
+
+    @staticmethod
+    def _execute_plan(pending, config, arrays, retry_count, budget, base_seed,
+                      parallel, max_workers, timeout_s):
+        results, records = [], []
+        while pending and len(records) < budget:
+            room = budget - len(records)
+            batch, pending = pending[:room], pending[room:]
+            for job_results, record in _run_jobs(
+                    batch, config, arrays, parallel=parallel,
+                    workers=max_workers, timeout_s=timeout_s):
+                records.append(record)
+                if job_results:
+                    results.extend(job_results)
+                elif record.attempt < retry_count and len(records) + len(pending) < budget:
+                    attempt = record.attempt + 1
+                    pending.append(_Job(record.engine, record.repeat, attempt,
+                        _stable_seed(base_seed, record.engine, record.repeat, attempt)))
+        if not results:
+            summary = "; ".join(
+                f"{row.engine}:{row.status}:{row.error_type}" for row in records)
+            raise RuntimeError(
+                "all allocated symbolic engines failed; no fallback was used: " + summary)
+        aggregated = _aggregate(results, budget, len(records))
+        failures = tuple(asdict(row) for row in records if row.status != "succeeded")
+        return MultiEngineResult(
+            aggregated[0], aggregated, tuple(records), failures, budget, len(records))
+
     def run(
         self, *, engines: Sequence[str], config: SymbolicConfig,
         X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray, y_val: np.ndarray,
@@ -226,38 +278,12 @@ class EngineScheduler:
         budget = int(evaluation_budget or default_budget)
         if budget < len(names):
             raise ValueError("engine budget must allow at least one attempt per engine")
-        pending = [
-            _Job(name, repeat, 0, _stable_seed(base_seed, name, repeat, 0))
-            for name in names for repeat in range(repeat_count)
-        ]
-        arrays = tuple(np.asarray(value, dtype=float) for value in (X_train, y_train, X_val, y_val))
-        results: list[EngineResult] = []
-        records: list[EngineRunRecord] = []
-        while pending and len(records) < budget:
-            batch, pending = pending[: budget - len(records)], pending[budget - len(records):]
-            for job_results, record in _run_jobs(
-                batch, config, arrays, parallel=parallel,
-                workers=max_workers, timeout_s=timeout_s,
-            ):
-                records.append(record)
-                if job_results:
-                    results.extend(job_results)
-                elif record.attempt < retry_count and len(records) + len(pending) < budget:
-                    attempt = record.attempt + 1
-                    pending.append(_Job(
-                        record.engine, record.repeat, attempt,
-                        _stable_seed(base_seed, record.engine, record.repeat, attempt),
-                    ))
-        if not results:
-            summary = "; ".join(
-                f"{row.engine}:{row.status}:{row.error_type}" for row in records
-            )
-            raise RuntimeError("all symbolic engines failed; no fallback was used: " + summary)
-        aggregated = _aggregate(results, budget, len(records))
-        failures = tuple(asdict(row) for row in records if row.status != "succeeded")
-        return MultiEngineResult(
-            aggregated[0], aggregated, tuple(records), failures, budget, len(records)
-        )
+        return self.run_allocated(
+            allocations={name: repeat_count for name in names}, config=config,
+            X_train=X_train, y_train=y_train, X_val=X_val, y_val=y_val,
+            base_seed=base_seed, max_retries=retry_count,
+            evaluation_budget=budget, parallel=parallel,
+            max_workers=max_workers, timeout_s=timeout_s)
 
 
 __all__ = [

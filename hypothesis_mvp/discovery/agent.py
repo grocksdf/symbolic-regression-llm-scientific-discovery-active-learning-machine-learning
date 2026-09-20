@@ -18,6 +18,11 @@ from hypothesis_mvp.symbolic import EngineScheduler
 from .api import DiscoveryRunResult, discover_from_selection
 from .contracts import DiscoveryConfig
 from .proposal_runtime import ProviderSettings
+from .proposal_runtime import ProposalRuntime
+from .equation_runtime import EquationRuntime
+from .scientist_policy import (
+    ResearchPlan, ScientistReview, deterministic_plan,
+)
 from .system_evidence import attach_system_evidence, system_evaluation
 
 
@@ -40,6 +45,7 @@ class DiscoveryAgentConfig:
     llm_evaluation_reserve: int = 0
     refit_policy: str = "global-constants"
     discovery_islands: tuple[str, ...] = ("low_complexity", "nmse", "tail", "novelty")
+    scientist_orchestration: bool = False
 
 
 @dataclass(frozen=True)
@@ -54,6 +60,8 @@ class DiscoveryCycle:
     candidate_evaluations: int = 0
     provider_attempts: int = 0
     provider_errors: int = 0
+    research_plan: Mapping[str, Any] = field(default_factory=dict)
+    scientist_review: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -87,6 +95,19 @@ def _engine_payload(result: Any) -> dict[str, Any]:
     }
 
 
+def _engine_evidence(result: Any) -> list[dict[str, Any]]:
+    if not hasattr(result, "all_results"):
+        return []
+    return [{"engine": row.engine, "expression": row.expression,
+        "validation_mse": row.mse_val, "complexity": row.complexity,
+        "selection_score": row.score, "lineage_id": row.lineage_id,
+        "diagnostics": {
+            key: value for key, value in dict(row.diagnostics).items()
+            if key in {"candidate_rank", "candidate_count", "search_score_method",
+                       "search_score_folds", "candidate_set_method"}
+        }} for row in result.all_results]
+
+
 class DiscoveryAgent:
     def __init__(
         self, config: DiscoveryAgentConfig,
@@ -111,11 +132,24 @@ class DiscoveryAgent:
             expression_contract=("pcpi-closed-basis-v1" if
                 self.config.refit_policy == "pcpi-closed-basis-amplitudes" else "unrestricted"),
         )
-        return self.scheduler.run(
-            engines=self.config.engines, config=symbolic,
+        resolved = getattr(self, "_active_research_plan", None)
+        if resolved is None:
+            return self.scheduler.run(
+                engines=self.config.engines, config=symbolic,
+                X_train=selection.development.X, y_train=selection.development.y,
+                X_val=selection.validation.X, y_val=selection.validation.y,
+                repeats=self.config.engine_repeats,
+                base_seed=self.config.random_seed + cycle,
+                max_retries=self.config.engine_retries,
+                evaluation_budget=self.config.engine_budget,
+                parallel=self.config.engine_workers > 1,
+                max_workers=self.config.engine_workers,
+                timeout_s=self.config.engine_timeout_s)
+        allocations = {call.engine: call.jobs for call in resolved.engine_calls}
+        return self.scheduler.run_allocated(
+            allocations=allocations, config=symbolic,
             X_train=selection.development.X, y_train=selection.development.y,
             X_val=selection.validation.X, y_val=selection.validation.y,
-            repeats=self.config.engine_repeats,
             base_seed=self.config.random_seed + cycle,
             max_retries=self.config.engine_retries,
             evaluation_budget=self.config.engine_budget,
@@ -128,7 +162,7 @@ class DiscoveryAgent:
         self, selection: SelectionData, engine_result: Any,
         previous: Sequence[str], task_name: str, task_description: str,
         output_dir: Path, knowledge_dir: Path, variable_metadata: Mapping[str, Any],
-        cycle: int = 0,
+        cycle: int = 0, orchestration_context: Mapping[str, Any] | None = None,
     ) -> DiscoveryRunResult:
         seeds = [{
             "expression": row.expression, "source": f"engine:{row.engine}",
@@ -153,6 +187,7 @@ class DiscoveryAgent:
             }),
             provider_settings=self.provider_settings,
             variable_metadata=dict(variable_metadata),
+            orchestration_context=dict(orchestration_context or {}),
             refinement_enabled=True, include_generic_candidates=True,
         )
         attach_system_evidence(discovery, _engine_payload(engine_result), cycle)
@@ -163,17 +198,51 @@ class DiscoveryAgent:
         task_name: str, task_description: str, output_dir: str | Path,
         knowledge_dir: str | Path, variable_metadata: Mapping[str, Any],
     ) -> DiscoveryAgentResult:
-        output, knowledge = Path(output_dir), Path(knowledge_dir)
-        output.mkdir(parents=True, exist_ok=True)
-        current = selection
+        output, knowledge = Path(output_dir), Path(knowledge_dir); output.mkdir(parents=True, exist_ok=True)
         previous: tuple[str, ...] = ()
         history: list[DiscoveryCycle] = []
         final: DiscoveryRunResult | None = None
+        planner = ProposalRuntime(
+            EquationRuntime(
+                selection.development.X.shape[1],
+                refit_policy=self.config.refit_policy),
+            selection.development.X.shape[1], self.provider_settings, 1)
+        task_context = {"name": task_name, "description": task_description,
+            "variables": {key: value for key, value in variable_metadata.items()
+                          if key in {"feature_names", "feature_units",
+                                     "target_name", "target_unit"}}}
         for cycle in range(max(1, self.config.cycles)):
-            engines = self._run_engines(current, cycle)
+            calls_before, attempts_before, errors_before = (
+                planner.call_count, planner.attempt_count, len(planner.errors))
+            if planner.enabled and self.config.scientist_orchestration:
+                plan, plan_telemetry = planner.plan_research(
+                    task_context=task_context, available_engines=self.config.engines,
+                    total_jobs=self.config.engine_budget)
+            else:
+                plan, plan_telemetry = deterministic_plan(
+                    self.config.engines, self.config.engine_budget), {}
+            self._active_research_plan = plan
+            engines = self._run_engines(selection, cycle)
+            evidence = _engine_evidence(engines)
+            if planner.enabled and self.config.scientist_orchestration:
+                review, review_telemetry = planner.review_engine_evidence(
+                    plan=plan, engine_evidence=evidence)
+            else:
+                review = ScientistReview(
+                    ("deterministic engine evidence available",), (), (),
+                    ("compare all registered engine candidates",), False,
+                    "provider-free deterministic orchestration")
+                review_telemetry = {}
+            orchestration = {"schema": "scientific-llm-engine-orchestration-v1",
+                "research_plan": plan.to_dict(), "research_plan_identity": plan.stable_hash,
+                "engine_evidence": evidence, "scientist_review": review.to_dict(),
+                "scientist_review_identity": review.stable_hash,
+                "provider_telemetry": [dict(plan_telemetry), dict(review_telemetry)],
+                "candidate_response_accessed": False, "heldout_opened": False}
             final = self._discover(
-                current, engines, previous, task_name, task_description,
+                selection, engines, previous, task_name, task_description,
                 output, knowledge, variable_metadata, cycle=cycle,
+                orchestration_context=orchestration,
             )
             previous = _survivors(final.report, final.expression)
             acquisition = (
@@ -186,17 +255,22 @@ class DiscoveryAgent:
             )
             history.append(DiscoveryCycle(
                 cycle, final.expression, final.hypothesis.hypothesis_id,
-                len(current.development.X), _engine_payload(engines),
-                acquisition, int(final.report.get("llm_call_count", 0)),
+                len(selection.development.X), _engine_payload(engines),
+                acquisition, int(final.report.get("llm_call_count", 0))
+                    + planner.call_count - calls_before,
                 int(final.report["evaluation_budget_used"]),
-                int(final.report["llm_attempt_count"]),
-                int(final.report.get("llm_error_count", 0)),
+                int(final.report["llm_attempt_count"])
+                    + planner.attempt_count - attempts_before,
+                int(final.report.get("llm_error_count", 0))
+                    + len(planner.errors) - errors_before,
+                plan.to_dict(), review.to_dict(),
             ))
         if final is None:
             raise RuntimeError("discovery agent executed no cycle")
-        remaining = len(current.acquisition_pool.X) if current.acquisition_pool is not None else 0
+        remaining = (len(selection.acquisition_pool.X)
+                     if selection.acquisition_pool is not None else 0)
         return DiscoveryAgentResult(
-            final, tuple(history), current, remaining, self.provider_settings is not None,
+            final, tuple(history), selection, remaining, self.provider_settings is not None,
             system_evaluation(history),
         )
 

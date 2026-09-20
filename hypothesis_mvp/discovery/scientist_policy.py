@@ -1,0 +1,177 @@
+"""Typed, auditable scientist policy over registered engine skills.
+
+The policy may choose tools and synthesize evidence. It cannot access pool
+responses, held-out objects, posterior internals, or experimental authority.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from hashlib import sha256
+import json
+from typing import Any, Mapping, Sequence
+
+
+RESEARCH_PLAN_PROTOCOL = "scientific-research-plan-v1"
+ENGINE_REVIEW_PROTOCOL = "scientific-engine-evidence-review-v1"
+
+
+def _identity(value: Mapping[str, Any]) -> str:
+    return sha256(json.dumps(
+        dict(value), sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False, allow_nan=False).encode()).hexdigest()
+
+
+@dataclass(frozen=True)
+class EngineSkill:
+    name: str
+    capabilities: tuple[str, ...]
+    inductive_bias: str
+    cost_unit: str = "engine_job"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "capabilities": list(self.capabilities),
+                "inductive_bias": self.inductive_bias, "cost_unit": self.cost_unit}
+
+
+REGISTERED_ENGINE_SKILLS = (
+    EngineSkill("polynomial_lasso",
+        ("sparse polynomial support", "fast deterministic baseline",
+         "global additive interactions"),
+        "degree-bounded sparse polynomial"),
+    EngineSkill("mcts",
+        ("typed symbolic search", "nonlinear primitive search",
+         "structural diversity frontier"),
+        "tree-search over registered closed basis"),
+)
+
+
+@dataclass(frozen=True)
+class EngineCall:
+    engine: str
+    jobs: int
+    objective: str
+    expected_evidence: str
+
+    def __post_init__(self):
+        if (not self.engine or type(self.jobs) is not int or self.jobs < 1
+                or not self.objective.strip() or not self.expected_evidence.strip()):
+            raise ValueError("invalid scientist engine call")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"engine": self.engine, "jobs": self.jobs,
+                "objective": self.objective,
+                "expected_evidence": self.expected_evidence}
+
+
+@dataclass(frozen=True)
+class ResearchPlan:
+    mechanisms: tuple[str, ...]
+    engine_calls: tuple[EngineCall, ...]
+    comparison_questions: tuple[str, ...]
+    synthesis_goal: str
+    stop_conditions: tuple[str, ...]
+    protocol_id: str = RESEARCH_PLAN_PROTOCOL
+
+    def validate(self, available_engines: Sequence[str], total_jobs: int) -> None:
+        names = tuple(str(value) for value in available_engines)
+        planned = tuple(call.engine for call in self.engine_calls)
+        if (self.protocol_id != RESEARCH_PLAN_PROTOCOL or not self.mechanisms
+                or not self.engine_calls or len(set(planned)) != len(planned)
+                or any(name not in names for name in planned)
+                or sum(call.jobs for call in self.engine_calls) != total_jobs
+                or not self.comparison_questions or not self.synthesis_goal.strip()
+                or not self.stop_conditions):
+            raise ValueError("scientist research plan violates registered contract")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"protocol_id": self.protocol_id,
+            "mechanisms": list(self.mechanisms),
+            "engine_calls": [call.to_dict() for call in self.engine_calls],
+            "comparison_questions": list(self.comparison_questions),
+            "synthesis_goal": self.synthesis_goal,
+            "stop_conditions": list(self.stop_conditions)}
+
+    @property
+    def stable_hash(self) -> str:
+        return _identity(self.to_dict())
+
+
+@dataclass(frozen=True)
+class ScientistReview:
+    supported_mechanisms: tuple[str, ...]
+    contradicted_mechanisms: tuple[str, ...]
+    cross_engine_conflicts: tuple[str, ...]
+    synthesis_instructions: tuple[str, ...]
+    stop: bool
+    stop_reason: str
+    protocol_id: str = ENGINE_REVIEW_PROTOCOL
+
+    def __post_init__(self):
+        if (self.protocol_id != ENGINE_REVIEW_PROTOCOL
+                or not self.synthesis_instructions
+                or not isinstance(self.stop, bool)
+                or not self.stop_reason.strip()):
+            raise ValueError("invalid scientist evidence review")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"protocol_id": self.protocol_id,
+            "supported_mechanisms": list(self.supported_mechanisms),
+            "contradicted_mechanisms": list(self.contradicted_mechanisms),
+            "cross_engine_conflicts": list(self.cross_engine_conflicts),
+            "synthesis_instructions": list(self.synthesis_instructions),
+            "stop": self.stop, "stop_reason": self.stop_reason}
+
+    @property
+    def stable_hash(self) -> str:
+        return _identity(self.to_dict())
+
+
+def deterministic_plan(engines: Sequence[str], total_jobs: int) -> ResearchPlan:
+    names = tuple(dict.fromkeys(str(value) for value in engines))
+    if not names or total_jobs < len(names):
+        raise ValueError("deterministic plan cannot cover registered engines")
+    base, extra = divmod(total_jobs, len(names))
+    calls = tuple(EngineCall(name, base + int(index < extra),
+        "produce a predictive structural hypothesis",
+        "validated expression, predictive score, complexity and lineage")
+        for index, name in enumerate(names))
+    plan = ResearchPlan(
+        ("generic predictive structure",), calls,
+        ("Which supports generalize across validation rows?",),
+        "construct a diverse falsifiable hypothesis bank",
+        ("registered engine budget exhausted",))
+    plan.validate(names, total_jobs)
+    return plan
+
+
+def plan_from_json(raw: Mapping[str, Any], engines: Sequence[str],
+                   total_jobs: int) -> ResearchPlan:
+    calls = tuple(EngineCall(
+        str(row.get("engine", "")), int(row.get("jobs", 0)),
+        str(row.get("objective", "")), str(row.get("expected_evidence", "")))
+        for row in raw.get("engine_calls", ()) if isinstance(row, Mapping))
+    plan = ResearchPlan(
+        tuple(str(value) for value in raw.get("mechanisms", ())),
+        calls, tuple(str(value) for value in raw.get("comparison_questions", ())),
+        str(raw.get("synthesis_goal", "")),
+        tuple(str(value) for value in raw.get("stop_conditions", ())),
+        str(raw.get("protocol_id", "")))
+    plan.validate(engines, total_jobs)
+    return plan
+
+
+def review_from_json(raw: Mapping[str, Any]) -> ScientistReview:
+    return ScientistReview(
+        tuple(str(value) for value in raw.get("supported_mechanisms", ())),
+        tuple(str(value) for value in raw.get("contradicted_mechanisms", ())),
+        tuple(str(value) for value in raw.get("cross_engine_conflicts", ())),
+        tuple(str(value) for value in raw.get("synthesis_instructions", ())),
+        bool(raw.get("stop", False)), str(raw.get("stop_reason", "")),
+        str(raw.get("protocol_id", "")))
+
+
+__all__ = [
+    "ENGINE_REVIEW_PROTOCOL", "EngineCall", "EngineSkill", "ResearchPlan",
+    "ScientistReview", "REGISTERED_ENGINE_SKILLS", "RESEARCH_PLAN_PROTOCOL",
+    "deterministic_plan", "plan_from_json", "review_from_json",
+]

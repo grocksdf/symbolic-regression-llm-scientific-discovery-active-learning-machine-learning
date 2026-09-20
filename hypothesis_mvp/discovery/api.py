@@ -178,6 +178,7 @@ def _discover_from_arrays(
     plugins: Sequence[DiscoveryPlugin] = (),
     event_callback: Callable[[RuntimeEvent], None] | None = None,
     selection_contract: Mapping[str, Any] | None = None,
+    orchestration_context: Mapping[str, Any] | None = None,
 ) -> DiscoveryRunResult:
     train, validation = _matrix(X_train, "development"), _matrix(X_val, "validation")
     train_y, validation_y = _vector(y_train, "development"), _vector(y_val, "validation")
@@ -205,6 +206,7 @@ def _discover_from_arrays(
         provider_settings=provider_settings,
         variable_metadata=structure_metadata,
         task_context=_registered_task_context(task_description, structure_metadata, train.shape[1]),
+        orchestration_context=dict(orchestration_context or {}),
         primitive_registry=registry, event_callback=event_callback,
     )
     expression, raw_report = runtime.run(

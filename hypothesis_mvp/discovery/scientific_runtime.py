@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import concurrent.futures
+import hashlib
+import json
 import time
 from typing import Any, Callable, Mapping, Sequence
 
@@ -38,6 +40,7 @@ class ScientificDiscoveryRuntime:
         knowledge: KnowledgeRuntime, config: DiscoveryConfig,
         event_callback: Callable[[RuntimeEvent], None] | None = None,
         task_context: DiscoveryTaskContext | None = None,
+        orchestration_context: Mapping[str, Any] | None = None,
     ) -> None:
         self.equation = equation
         self.exploration = exploration
@@ -47,6 +50,7 @@ class ScientificDiscoveryRuntime:
         self.config = config
         self.event_callback = event_callback
         self.task_context = task_context or DiscoveryTaskContext()
+        self.orchestration_context = json_safe(dict(orchestration_context or {}))
         self._events: list[RuntimeEvent] = []
 
     def _emit(
@@ -185,6 +189,7 @@ class ScientificDiscoveryRuntime:
                 "ADD", "DELETE", "REPLACE", "REPARAMETERIZE",
                 "CHANGE_OPERATOR", "CHANGE_INTERACTION",
             ],
+            "scientist_orchestration": self.orchestration_context,
         }
 
     def _request_batches(
@@ -436,6 +441,13 @@ class ScientificDiscoveryRuntime:
                 for row in self.proposal.telemetry
             ),
             "task_context_audit": self.task_context.audit(self.proposal.n_features),
+            "scientist_orchestration_identity": (
+                hashlib.sha256(
+                    json.dumps(
+                        self.orchestration_context, sort_keys=True,
+                        separators=(",", ":"), allow_nan=False
+                    ).encode()).hexdigest()
+                if self.orchestration_context else None),
             "knowledge_stage_status": staged.get("status", "not_staged"),
             "knowledge_stage_id": staged.get("stage_id", ""),
             "rejected_candidate_count": len(self.evaluation.rejections),
