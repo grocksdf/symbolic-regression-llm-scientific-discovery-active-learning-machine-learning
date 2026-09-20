@@ -7,8 +7,11 @@ import pytest
 from hypothesis_mvp.config import SymbolicConfig
 from hypothesis_mvp.discovery.equation_runtime import EquationRuntime
 from hypothesis_mvp.discovery.agent import (
-    DiscoveryAgentConfig, _bounded_seed_bank,
+    DiscoveryAgentConfig, _bounded_seed_bank, _survivors,
 )
+from hypothesis_mvp.discovery.contracts import DiscoveryConfig
+from hypothesis_mvp.discovery.evaluation_runtime import EvaluationRuntime
+from hypothesis_mvp.discovery.initializer import normalize_candidates
 from hypothesis_mvp.discovery.proposal_runtime import ProposalRuntime
 from hypothesis_mvp.discovery.scientist_policy import (
     ENGINE_REVIEW_PROTOCOL, RESEARCH_PLAN_PROTOCOL,
@@ -197,8 +200,31 @@ def test_cross_round_seed_bank_respects_fixed_deterministic_budget():
     assert len(rows) == audit["limit"] == 15
     assert {row["source"] for row in rows} >= {
         "engine:polynomial_lasso", "engine:mcts",
-        "previous_cycle_survivor", "deterministic_linear_anchor",
+        "legacy_previous_cycle_survivor", "deterministic_linear_anchor",
         "deterministic_constant_anchor"}
+
+
+def test_cross_round_survivor_preserves_source_origin_and_lineage():
+    survivor = _survivors({"final_topk": [{
+        "expression": "x0**2", "source": "llm_round_1",
+        "origin": "llm", "lineage_id": "lineage"}]}, "x0")[0]
+    assert survivor == {"expression": "x0**2", "source": "llm_round_1",
+                        "origin": "llm", "lineage_id": "lineage"}
+    normalized, rejected = normalize_candidates([survivor], n_features=1)
+    assert rejected == 0 and normalized[0]["origin"] == "llm"
+    assert normalized[0]["engine_provenance"][0]["origin"] == "llm"
+    runtime = EvaluationRuntime(
+        EquationRuntime(1, refit_policy="pcpi-closed-basis-amplitudes"),
+        DiscoveryConfig.from_mapping({
+            "evaluation_budget": 8, "llm_evaluation_reserve": 2,
+            "refit_policy": "pcpi-closed-basis-amplitudes"}))
+    X = np.linspace(-1., 1., 8)[:, None]
+    _, states = runtime.seed_survivor(
+        [survivor, {"expression": "x0", "source": "core"}],
+        X, X[:, 0] ** 2, X, X[:, 0] ** 2)
+    llm = next(row for row in states if row.source == "llm_round_1")
+    assert llm.origin == "llm" and llm.source == "llm_round_1"
+    assert llm.lineage_id == "lineage"
 
 def test_single_engine_plan_projects_only_fixed_dispatch_fields(monkeypatch):
     runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)

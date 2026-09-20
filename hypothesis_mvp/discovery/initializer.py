@@ -77,6 +77,7 @@ def normalize_candidates(
             identity = dag.canonical_hash
             provenance = {
                 "source": str(candidate.get("source", "caller_seed")),
+                "origin": str(candidate.get("origin", "unknown")),
                 "lineage_id": str(candidate.get("lineage_id", "")),
             }
             if identity in accepted:

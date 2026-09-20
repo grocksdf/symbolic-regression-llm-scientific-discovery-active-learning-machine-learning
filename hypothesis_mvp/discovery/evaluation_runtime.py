@@ -1123,13 +1123,18 @@ class EvaluationRuntime:
             if protect_seeds:
                 self.budget.protected_seed_slots -= 1
             if isinstance(seed, str):
-                expression, source = seed, "deterministic_seed"
+                expression, source, origin, seed_lineage = (
+                    seed, "deterministic_seed", "deterministic", "")
             elif isinstance(seed, Mapping):
                 expression = str(seed.get("expression") or seed.get("program") or seed.get("equation") or "")
                 source = str(seed.get("source") or "deterministic_seed")
+                origin = str(seed.get("origin") or "deterministic")
+                seed_lineage = str(seed.get("lineage_id") or "")
             else:
                 expression = str(getattr(seed, "expression", ""))
                 source = str(getattr(seed, "source", "deterministic_seed"))
+                origin = str(getattr(seed, "origin", "deterministic"))
+                seed_lineage = str(getattr(seed, "lineage_id", ""))
             if not expression.strip():
                 continue
             if self.budget.exhausted:
@@ -1137,8 +1142,12 @@ class EvaluationRuntime:
                     island="anchor", round_id=0, expression=expression,
                     stage="seed_evaluation", budget=self.budget.snapshot())
                 continue
-            state = self.build_state(expression, X_train, y_train, X_val, y_val, source=source, origin="deterministic", island="anchor", round_id=0)
+            state = self.build_state(
+                expression, X_train, y_train, X_val, y_val,
+                source=source, origin=origin, island="anchor", round_id=0)
             if state is not None:
+                if seed_lineage:
+                    state = dataclasses.replace(state, lineage_id=seed_lineage)
                 candidates.append(state)
         if not candidates:
             if self.budget.exhausted:

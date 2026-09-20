@@ -79,14 +79,22 @@ class DiscoveryAgentResult:
     system_evaluation: Mapping[str, Any] = field(default_factory=dict)
 
 
-def _survivors(report: Mapping[str, Any], fallback: str) -> tuple[str, ...]:
-    expressions = [
-        str(row.get("expression") or "").strip()
+def _survivors(report: Mapping[str, Any], fallback: str) -> tuple[Mapping[str, str], ...]:
+    rows = [{
+        "expression": str(row.get("expression") or "").strip(),
+        "source": str(row.get("source") or "prior_cycle_candidate"),
+        "origin": str(row.get("origin") or "unknown"),
+        "lineage_id": str(row.get("lineage_id") or ""),
+    }
         for row in report.get("final_topk") or ()
         if isinstance(row, Mapping)
     ]
-    values = tuple(dict.fromkeys(value for value in expressions if value))
-    return values or (fallback,)
+    unique = {row["expression"].replace(" ", ""): row
+              for row in rows if row["expression"]}
+    return tuple(unique.values()) or ({
+        "expression": fallback, "source": "prior_cycle_final",
+        "origin": str(report.get("selected_source") or "unknown"),
+        "lineage_id": str(report.get("final_lineage_id") or "")},)
 
 
 def _engine_payload(result: Any) -> dict[str, Any]:
@@ -117,8 +125,11 @@ def _bounded_seed_bank(engine_result, previous, selection, config):
     engine_rows = [{"expression": row.expression,
         "source": f"engine:{row.engine}", "lineage_id": row.lineage_id}
         for row in engine_result.all_results]
-    previous_rows = [{"expression": expression,
-        "source": "previous_cycle_survivor"} for expression in previous]
+    previous_rows = [
+        (dict(row) if isinstance(row, Mapping) else {
+            "expression": str(row), "source": "legacy_previous_cycle_survivor",
+            "origin": "unknown", "lineage_id": ""})
+        for row in previous]
     generic = generic_deterministic_candidates(
         selection.development.X, selection.development.y)
     limit = (config.discovery_budget - config.llm_evaluation_reserve
@@ -273,7 +284,7 @@ class DiscoveryAgent:
         knowledge_dir: str | Path, variable_metadata: Mapping[str, Any],
     ) -> DiscoveryAgentResult:
         output, knowledge = Path(output_dir), Path(knowledge_dir); output.mkdir(parents=True, exist_ok=True)
-        previous: tuple[str, ...] = ()
+        previous: tuple[Mapping[str, str], ...] = ()
         history: list[DiscoveryCycle] = []
         final: DiscoveryRunResult | None = None
         planner = ProposalRuntime(
