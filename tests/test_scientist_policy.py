@@ -199,3 +199,118 @@ def test_cross_round_seed_bank_respects_fixed_deterministic_budget():
         "engine:polynomial_lasso", "engine:mcts",
         "previous_cycle_survivor", "deterministic_linear_anchor",
         "deterministic_constant_anchor"}
+
+def test_single_engine_plan_projects_only_fixed_dispatch_fields(monkeypatch):
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    raw = {"protocol_id": RESEARCH_PLAN_PROTOCOL,
+        "mechanisms": ["sparse predictive structure"],
+        "engine_calls": [{"engine": "mcts", "jobs": 1,
+            "objective": "estimate sparse polynomial support",
+            "expected_evidence": "validated polynomial support"}],
+        "comparison_questions": ["which support generalizes"],
+        "synthesis_goal": "retain falsifiable structure",
+        "stop_conditions": ["registered budget exhausted"]}
+    calls = []
+    def complete_json(**kwargs):
+        calls.append(kwargs)
+        return raw, {"fixture": True}
+    monkeypatch.setattr(runtime, "complete_json", complete_json)
+    plan, telemetry = runtime.plan_research(
+        task_context={"description": "fixture"},
+        available_engines=("polynomial_lasso",), total_jobs=2)
+    assert len(calls) == 1
+    assert len(plan.engine_calls) == 1
+    assert plan.engine_calls[0].engine == "polynomial_lasso"
+    assert plan.engine_calls[0].jobs == 2
+    assert plan.engine_calls[0].objective == "estimate sparse polynomial support"
+    assert plan.engine_calls[0].expected_evidence == "validated polynomial support"
+    assert plan.mechanisms == ("sparse predictive structure",)
+    projection = telemetry["singleton_dispatch_projection"]
+    assert projection["applied"] is True
+    assert projection["original_engine"] == "mcts"
+    assert projection["original_jobs"] == 1
+
+
+def test_single_engine_projection_keeps_capability_validation_and_one_repair(monkeypatch):
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    responses = iter([
+        {"protocol_id": RESEARCH_PLAN_PROTOCOL,
+         "mechanisms": ["fixture"],
+         "engine_calls": [{"engine": "mcts", "jobs": 1,
+             "objective": "test logarithmic alternatives",
+             "expected_evidence": "logarithmic support"}],
+         "comparison_questions": ["which support generalizes"],
+         "synthesis_goal": "retain falsifiable structure",
+         "stop_conditions": ["budget"]},
+        {"protocol_id": RESEARCH_PLAN_PROTOCOL,
+         "mechanisms": ["fixture"],
+         "engine_calls": [{"engine": "mcts", "jobs": 1,
+             "objective": "estimate sparse polynomial support",
+             "expected_evidence": "validated polynomial support"}],
+         "comparison_questions": ["which support generalizes"],
+         "synthesis_goal": "retain falsifiable structure",
+         "stop_conditions": ["budget"]},
+    ])
+    calls = []
+    def complete_json(**kwargs):
+        calls.append(kwargs)
+        return next(responses), {"fixture": len(calls)}
+    monkeypatch.setattr(runtime, "complete_json", complete_json)
+    plan, telemetry = runtime.plan_research(
+        task_context={"description": "fixture"},
+        available_engines=("polynomial_lasso",), total_jobs=2)
+    assert len(calls) == 2
+    assert telemetry["protocol_repair_attempted"] is True
+    assert plan.engine_calls[0].engine == "polynomial_lasso"
+    assert plan.engine_calls[0].jobs == 2
+    assert "logarithmic" not in plan.engine_calls[0].objective
+
+
+def test_single_engine_projection_does_not_mask_invalid_non_dispatch_fields(monkeypatch):
+    from hypothesis_mvp.discovery.proposal_runtime import ScientistPlanProtocolError
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    invalid = {"protocol_id": RESEARCH_PLAN_PROTOCOL,
+        "mechanisms": ["fixture"],
+        "engine_calls": [{"engine": "mcts", "jobs": 1,
+            "objective": "estimate sparse polynomial support",
+            "expected_evidence": "validated polynomial support"}],
+        "comparison_questions": ["which support generalizes"],
+        "synthesis_goal": "retain falsifiable structure",
+        "stop_conditions": []}
+    responses = iter([invalid, invalid])
+    monkeypatch.setattr(runtime, "complete_json",
+        lambda **kwargs: (next(responses), {"fixture": True}))
+    with pytest.raises(
+            ScientistPlanProtocolError,
+            match="scientist-plan-invalid-after-one-provider-repair"
+    ) as caught:
+        runtime.plan_research(task_context={"description": "fixture"},
+            available_engines=("polynomial_lasso",), total_jobs=2)
+    assert caught.value.public_diagnostic == (
+        "scientist-plan-invalid-after-one-provider-repair")
+
+
+def test_multi_engine_plan_remains_fail_closed_after_invalid_repair(monkeypatch):
+    from hypothesis_mvp.discovery.proposal_runtime import ScientistPlanProtocolError
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    invalid = {"protocol_id": RESEARCH_PLAN_PROTOCOL,
+        "mechanisms": ["fixture"],
+        "engine_calls": [
+            {"engine": "polynomial_lasso", "jobs": 1,
+             "objective": "logarithmic baseline",
+             "expected_evidence": "logarithmic support"},
+            {"engine": "mcts", "jobs": 1,
+             "objective": "typed symbolic search",
+             "expected_evidence": "structural diversity frontier"}],
+        "comparison_questions": ["which support generalizes"],
+        "synthesis_goal": "retain falsifiable structure",
+        "stop_conditions": ["budget"]}
+    responses = iter([invalid, invalid])
+    monkeypatch.setattr(runtime, "complete_json",
+        lambda **kwargs: (next(responses), {"fixture": True}))
+    with pytest.raises(
+            ScientistPlanProtocolError,
+            match="scientist-plan-invalid-after-one-provider-repair"
+    ):
+        runtime.plan_research(task_context={"description": "fixture"},
+            available_engines=("polynomial_lasso", "mcts"), total_jobs=2)

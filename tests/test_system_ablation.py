@@ -335,3 +335,35 @@ def test_earlier_cycle_provider_failure_blocks_even_if_final_report_clean(tmp_pa
     monkeypatch.setattr("hypothesis_mvp.discovery.system_ablation.DiscoveryAgent", Agent)
     with pytest.raises(ValueError, match="provider-infrastructure"):
         _run_variant(config, None, selection, tmp_path, 100, 3, CONTEXT)
+
+def test_scientist_ablation_failure_is_durable_and_replay_blocked(tmp_path, monkeypatch):
+    selection, config = _inputs()
+    config = __import__("dataclasses").replace(
+        config, scientist_orchestration=True)
+    calls = []
+    def fail_bounded(*args, **kwargs):
+        calls.append(1)
+        raise RuntimeError(
+            "isolated stage failed: {'error_type': 'ScientistPlanProtocolError', "
+            "'message': 'scientist-plan-invalid-after-one-provider-repair'}")
+    monkeypatch.setattr(
+        "hypothesis_mvp.discovery.system_ablation.run_bounded", fail_bounded)
+    kwargs = dict(dataset="opaque", config=config,
+        provider_settings=ProviderSettings(routes=(ProviderRoute(
+            "https://fixture.invalid", "fixture-model", "fixture-key"),)),
+        single_engine="polynomial_lasso", compute_ceiling=100,
+        provider_attempt_ceiling=3, source_identity="correctness-fixture",
+        scientific_context=CONTEXT)
+    with pytest.raises(RuntimeError, match="isolated stage failed"):
+        run_exploration_ablations(tmp_path, selection, **kwargs)
+    failure_path = tmp_path / "full" / "FAILURE.json"
+    assert failure_path.is_file()
+    failure = __import__("json").loads(
+        failure_path.read_text(encoding="utf-8"))
+    assert failure["candidate_response_accessed"] is False
+    assert failure["heldout_opened"] is False
+    assert failure["efficacy_demonstrated"] is False
+    assert failure["diagnostic"].startswith("isolated stage failed:")
+    with pytest.raises(ValueError, match="unfinished scientist exploration"):
+        run_exploration_ablations(tmp_path, selection, **kwargs)
+    assert len(calls) == 1

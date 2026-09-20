@@ -32,6 +32,13 @@ ALLOWED_ACTIONS = frozenset({
 class ProtocolError(ValueError):
     pass
 
+class ScientistPlanProtocolError(ValueError):
+    """Response-free diagnostic for a rejected typed Scientist plan."""
+    def __init__(self, diagnostic: str) -> None:
+        super().__init__(diagnostic)
+        self.public_diagnostic = diagnostic
+
+
 
 def _unique_object(pairs: Sequence[tuple[str, Any]]) -> dict[str, Any]:
     value: dict[str, Any] = {}
@@ -383,6 +390,34 @@ class ProposalRuntime:
             raise ProtocolError("root_must_be_object")
         return parsed, telemetry
 
+    @staticmethod
+    def _normalize_research_plan(
+        raw_plan: Mapping[str, Any], available: tuple[str, ...], total_jobs: int,
+    ) -> tuple[ResearchPlan, Mapping[str, Any] | None]:
+        candidate, projection = dict(raw_plan), None
+        if len(available) == 1:
+            calls = candidate.get("engine_calls")
+            if (isinstance(calls, (list, tuple)) and len(calls) == 1
+                    and isinstance(calls[0], Mapping)):
+                original, fixed = dict(calls[0]), dict(calls[0])
+                fixed.update({"engine": available[0], "jobs": total_jobs})
+                candidate["engine_calls"] = [fixed]
+                projection = {"applied": True, "engine": available[0],
+                    "jobs": total_jobs,
+                    "original_engine": str(original.get("engine", "")),
+                    "original_jobs": original.get("jobs"),
+                    "reason": (
+                        "singleton-engine-identity-and-job-allocation-"
+                        "are-not-decision-variables")}
+        return plan_from_json(candidate, available, total_jobs), projection
+
+    @staticmethod
+    def _plan_telemetry(telemetry, projection, **extra):
+        result = {**dict(telemetry), **extra}
+        if projection is not None:
+            result["singleton_dispatch_projection"] = projection
+        return result
+
     def plan_research(
         self, *, task_context: Mapping[str, Any],
         available_engines: Sequence[str], total_jobs: int,
@@ -394,31 +429,49 @@ class ProposalRuntime:
             "task_context": dict(task_context), "available_skills": skills,
             "total_engine_jobs": total_jobs,
             "authority": {
-                "may_choose_engine_jobs": True,
+                "may_choose_engine_jobs": len(available) != 1,
                 "may_access_pool_responses": False,
                 "may_access_heldout": False,
                 "may_modify_bayesian_target": False,
             }}
+        if len(available) == 1:
+            payload["fixed_singleton_dispatch"] = {
+                "engine": available[0], "jobs": total_jobs}
         system = (
             "Act as a scientific research planner. Return one unfenced JSON object. "
             f"Use protocol_id='{RESEARCH_PLAN_PROTOCOL}'. Provide mechanisms, engine_calls, "
             "comparison_questions, synthesis_goal and stop_conditions. Each engine call "
             "needs engine, jobs, objective and expected_evidence. Allocate exactly the "
             "registered total_engine_jobs across available_skills. Choose tools based on "
-            "their inductive bias; do not propose equations or request hidden responses.")
+            "their inductive bias; do not propose equations or request hidden responses. "
+            "Objectives and expected evidence must use only declared capabilities and must "
+            "not request any forbidden_requests. If fixed_singleton_dispatch is present, "
+            "return exactly one engine call using that engine and jobs; objective and "
+            "expected_evidence remain scientific planning fields.")
+
         raw, telemetry = self.complete_json(system_message=system, payload=payload)
         try:
-            return plan_from_json(raw, available, total_jobs), telemetry
+            plan, projection = self._normalize_research_plan(
+                raw, available, total_jobs)
+            return plan, self._plan_telemetry(telemetry, projection)
         except ValueError as error:
             repaired, second = self.complete_json(
                 system_message=system, payload={**payload, "protocol_repair": {
                     "previous_error": str(error),
                     "instruction": (
                         "Return a complete replacement plan using only capabilities "
-                        "declared by the selected engine skills.")}})
-            plan = plan_from_json(repaired, available, total_jobs)
-            return plan, {"protocol_repair_attempted": True,
-                "provider_requests": [dict(telemetry), dict(second)]}
+                        "declared by the selected engine skills. Respect "
+                        "fixed_singleton_dispatch exactly when present.")}})
+            try:
+                plan, projection = self._normalize_research_plan(
+                    repaired, available, total_jobs)
+            except ValueError as repaired_error:
+                raise ScientistPlanProtocolError(
+                    "scientist-plan-invalid-after-one-provider-repair"
+                ) from repaired_error
+            return plan, self._plan_telemetry(
+                {}, projection, protocol_repair_attempted=True,
+                provider_requests=[dict(telemetry), dict(second)])
 
     def review_engine_evidence(
         self, *, plan: ResearchPlan, engine_evidence: Sequence[Mapping[str, Any]],

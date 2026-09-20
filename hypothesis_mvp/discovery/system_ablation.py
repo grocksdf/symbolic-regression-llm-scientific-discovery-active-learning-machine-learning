@@ -225,6 +225,8 @@ def _scientist_contract(dataset, config, single_engine, selection,
         "provider_settings_identity": sha256(json.dumps(
             public_provider, sort_keys=True, default=str).encode()).hexdigest(),
         "full_policy": "llm-research-plan-engine-dispatch-review-synthesis-v1",
+        "single_engine_policy": (
+            "llm-plan-review-synthesis-fixed-singleton-engine-and-jobs-v1"),
         "formal_experiment_authorized": False}
 
 
@@ -241,11 +243,29 @@ def _run_scientist_variant(root, variant, variant_config, provider, selection,
     _publish(workspace / "STARTED.json", {"variant": variant})
     print(f"scientist exploration variant started: {variant} hard_limit={compute_ceiling}s",
           flush=True)
-    summary, enforcement = run_bounded(
-        _run_variant, args=(variant_config, provider, selection, workspace,
-            compute_ceiling, provider_attempt_ceiling, scientific_context),
-        seconds=compute_ceiling,
-        provider_attempts=(provider_attempt_ceiling if provider else 0))
+    try:
+        summary, enforcement = run_bounded(
+            _run_variant, args=(variant_config, provider, selection, workspace,
+                compute_ceiling, provider_attempt_ceiling, scientific_context),
+            seconds=compute_ceiling,
+            provider_attempts=(provider_attempt_ceiling if provider else 0))
+    except Exception as error:
+        diagnostic = str(error)
+        safe_diagnostic = (
+            diagnostic if diagnostic.startswith("isolated stage failed:")
+            else type(error).__name__
+        )
+        _publish(workspace / "FAILURE.json", {
+            "schema": "scientific-llm-skill-orchestration-failure-v1",
+            "variant": variant,
+            "error_type": type(error).__name__,
+            "diagnostic": safe_diagnostic,
+            "candidate_response_accessed": False,
+            "heldout_opened": False,
+            "efficacy_demonstrated": False,
+            "formal_experiment_authorized": False,
+        })
+        raise
     usage = summary["usage"]
     row = {"dataset": dataset, "seed": variant_config.random_seed,
         "variant": variant, "status": "succeeded", "heldout_opened": False,
