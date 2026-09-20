@@ -106,6 +106,8 @@ class MCTSSymbolicAgent(SymbolicRegressor):
         self.best_score = float("inf")
         self._archive: dict[str, tuple[float, float, np.ndarray]] = {}
         self._frontier: tuple[str, ...] = ()
+        self._core_reference_signature = np.array([], dtype=float)
+        self.contract_rejections = 0
         self._seed_asts = self._load_source_only_seeds(config, seed_expressions)
 
     def _load_source_only_seeds(
@@ -147,6 +149,8 @@ class MCTSSymbolicAgent(SymbolicRegressor):
         self.best_score = float("inf")
         self._archive = {}
         self._frontier = ()
+        self._core_reference_signature = self._linear_core_crossfit_signature(
+            features, target)
         self.contract_rejections = 0
         for _ in range(self.max_iterations):
             leaf = self._select(root)
@@ -157,6 +161,22 @@ class MCTSSymbolicAgent(SymbolicRegressor):
             self._evaluate(root, features, target)
         self._frontier = self._select_predictive_pareto_frontier()
         return self
+
+    def _linear_core_crossfit_signature(
+            self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """Deterministic OOF linear-core prediction used only for diversity."""
+        folds = np.arange(len(y), dtype=int) % min(self.score_folds, len(y))
+        prediction = np.empty(len(y), dtype=float)
+        for fold in np.unique(folds):
+            held = folds == fold
+            train = ~held
+            design = np.column_stack((np.ones(np.sum(train)), X[train]))
+            coefficients = np.linalg.lstsq(design, y[train], rcond=None)[0]
+            prediction[held] = np.column_stack(
+                (np.ones(np.sum(held)), X[held])) @ coefficients
+        centered = prediction - float(np.mean(prediction))
+        norm = float(np.linalg.norm(centered))
+        return centered / norm if norm > 0.0 else np.zeros_like(centered)
 
     def _contract_admits(self, expression: str) -> bool:
         if self.expression_contract == "unrestricted":
@@ -319,9 +339,13 @@ class MCTSSymbolicAgent(SymbolicRegressor):
         if not self._archive:
             return (self.best_expr,) if self.best_expr else ()
         best_signature = self._archive[self.best_expr][2]
+        core_signature = self._core_reference_signature
         rows = []
         for expression, (score, complexity, signature) in self._archive.items():
-            similarity = abs(float(signature @ best_signature))
+            similarities = [abs(float(signature @ best_signature))]
+            if core_signature.shape == signature.shape:
+                similarities.append(abs(float(signature @ core_signature)))
+            similarity = max(similarities)
             novelty = max(0.0, 1.0 - min(1.0, similarity))
             rows.append((expression, score, complexity, novelty, signature))
         pareto = []
@@ -342,8 +366,12 @@ class MCTSSymbolicAgent(SymbolicRegressor):
         while (remaining or fallback) and len(selected) < self.frontier_size:
             pool = remaining if remaining else fallback
             def key(row):
+                references = [chosen[4] for chosen in selected]
+                if core_signature.shape == row[4].shape:
+                    references.append(core_signature)
                 minimum_distance = min(
-                    1.0 - abs(float(row[4] @ chosen[4])) for chosen in selected)
+                    1.0 - abs(float(row[4] @ reference))
+                    for reference in references)
                 return (-minimum_distance, row[1], row[2], row[0])
             chosen = min(pool, key=key)
             selected.append(chosen); pool.remove(chosen)
@@ -386,7 +414,8 @@ class MCTSSymbolicAgent(SymbolicRegressor):
             "expansion_factor": self.expansion_factor,
             "best_expression": self.best_expr,
             "best_score": self.best_score,
-            "candidate_set_method": "cross-fitted-closed-basis-pareto-predictive-nonredundancy-v1",
+            "candidate_set_method": (
+                "cross-fitted-closed-basis-pareto-core-relative-predictive-nonredundancy-v2"),
             "search_score_method": ("closed-basis-amplitude-refit-crossfit-v1" if
                 self.expression_contract == "pcpi-closed-basis-v1" else
                 "literal-expression-training-mse-v1"),

@@ -34,7 +34,8 @@ from .marginal_influence import (
 from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target
 from .bank_selection import select_operational_capacity_bank
 from .source_stacking import (
-    calibrate_source_admission, filter_fold_safe_source_candidates, source_family,
+    calibrate_source_admission, filter_fold_safe_source_candidates,
+    filter_conditionally_complementary_engine_candidates, source_family,
 )
 
 
@@ -136,8 +137,11 @@ def validate_system_registration(config):
             or influence["arbitration_fraction"] != 0.5
             or influence["source_admission_rule"] !=
                 "independent-sourcewise-fold-safe-half-core-log-score-stacking-v2"
-            or influence["required_active_contributions"] != ["llm"]
-            or influence["rejectable_contributions"] != ["engine:mcts"]
+            or influence["required_active_contributions"] not in (
+                ["llm"], ["llm", "engine:mcts"])
+            or influence["rejectable_contributions"] != (
+                ["engine:mcts"] if influence["required_active_contributions"] == ["llm"]
+                else [])
             or influence["require_all_contributions"] is not True):
         raise ValueError("invalid marginal decision influence registration")
     identity = config["provider_public_identity"]
@@ -181,7 +185,8 @@ def verify_registered_provider(project_root, config):
     return provider
 
 
-def _variant_composition(variant, candidates, candidate_admission=None):
+def _variant_composition(variant, candidates, candidate_admission=None,
+                         *, require_optional_engine=False):
     origins = [str(candidate.get("origin", "")) for candidate in candidates]
     engines = {str(candidate.get("source", "")) for candidate in candidates
                if str(candidate.get("source", "")).startswith("engine:")}
@@ -203,7 +208,8 @@ def _variant_composition(variant, candidates, candidate_admission=None):
             "llm" in origins if variant != "no_llm" else "llm" not in origins
         ),
         "full_optional_engine_retained_or_candidatewise_negative_transfer_certified": (
-            len(engines) >= 2 or optional_engine_safely_rejected
+            len(engines) >= 2 or (
+                optional_engine_safely_rejected and not require_optional_engine)
             if variant == "full" else True
         ),
         "no_llm_variant_retains_no_llm_hypothesis": (
@@ -258,7 +264,10 @@ def _prepare_hypothesis_bank_viability(
             else candidate_admission["variants"][variant]
         )
         composition = _variant_composition(
-            variant, row["candidates"], variant_candidate_admission)
+            variant, row["candidates"], variant_candidate_admission,
+            require_optional_engine=(
+                "engine:mcts" in config["marginal_influence_gate"][
+                    "required_active_contributions"]))
         audit["composition_decisions"] = composition
         audit["passed"] = bool(audit["passed"] and all(composition.values())
                                and selection["source_safety_passed"])
@@ -283,6 +292,16 @@ def _prepare_candidate_admission(workspace, exploration, data, config, arbitrati
             coefficient_policy=config["coefficient_policy"],
             measurement_budget=config["measurement_budget"],
             action_domain=data.pool.X_pool)
+        if row["variant"] == "full":
+            retained, complementarity = (
+                filter_conditionally_complementary_engine_candidates(
+                    retained, data.initial, arbitration,
+                    n_features=data.initial.X.shape[1], prior=prior,
+                    exploration_identity=_digest(row),
+                    coefficient_policy=config["coefficient_policy"],
+                    measurement_budget=config["measurement_budget"],
+                    action_domain=data.pool.X_pool))
+            report["conditional_engine_complementarity"] = complementarity
         row["candidates"] = list(retained)
         reports[row["variant"]] = report
     family = {

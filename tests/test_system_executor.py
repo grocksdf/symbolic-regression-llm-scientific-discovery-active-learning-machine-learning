@@ -91,6 +91,12 @@ def _patch(monkeypatch, supported=True):
         lambda candidates, *args, **kwargs: (tuple(candidates), {
             "schema": "fixture-candidate-admission", "candidate_certificates": [],
             "candidate_response_accessed": False, "heldout_opened": False}))
+    monkeypatch.setattr(executor,
+        "filter_conditionally_complementary_engine_candidates",
+        lambda candidates, *args, **kwargs: (tuple(candidates), {
+            "schema": "fixture-engine-complementarity",
+            "candidate_certificates": [], "retained_engine_count": 1,
+            "candidate_response_accessed": False, "heldout_opened": False}))
     def admission_fixture(candidates, *args, **kwargs):
         families = sorted({executor.source_family(row) for row in candidates})
         core = families.index("core")

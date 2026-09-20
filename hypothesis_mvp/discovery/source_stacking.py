@@ -298,6 +298,82 @@ def filter_fold_safe_source_candidates(candidates, initial_data, arbitration, **
     }
 
 
+def filter_conditionally_complementary_engine_candidates(
+        candidates, initial_data, arbitration, **kwargs):
+    """Require optional-engine gain beyond the already safe core+LLM mixture."""
+    rows = tuple(dict(row) for row in candidates)
+    reference = tuple(row for row in rows
+                      if source_family(row) in {"core", "llm"})
+    engines = tuple(row for row in rows
+                    if source_family(row) == "engine:mcts")
+    if not engines:
+        return rows, {
+            "schema": "scientific-conditional-engine-complementarity-v1",
+            "candidate_certificates": [], "retained_engine_count": 0,
+            "candidate_response_accessed": False, "heldout_opened": False,
+        }
+    reference_values, folds, reference_families = arbitration_source_log_predictive(
+        reference, initial_data, arbitration, **kwargs)
+    if set(reference_families) != {"core", "llm"}:
+        raise ValueError("conditional engine admission requires core and LLM reference")
+    reference_certificate = safe_source_stacking(
+        reference_values, folds, reference_families, baseline_source="core")
+    reference_weights = np.asarray(reference_certificate.weights, dtype=float)
+    reference_log_density = logsumexp(
+        reference_values + np.log(np.maximum(
+            reference_weights, np.finfo(float).tiny))[None, :], axis=1)
+    retained, certificates = list(reference), []
+    ordered = sorted(engines, key=lambda row: sha256(json.dumps(
+        row, sort_keys=True, default=str).encode()).hexdigest())
+    for candidate in ordered:
+        values, candidate_folds, families = arbitration_source_log_predictive(
+            [*reference, candidate], initial_data, arbitration, **kwargs)
+        if not np.array_equal(candidate_folds, folds):
+            raise ValueError("conditional engine admission fold identity changed")
+        full_certificate = safe_source_stacking(
+            values, folds, families, baseline_source="core")
+        full_log_density = logsumexp(
+            values + np.log(np.maximum(
+                np.asarray(full_certificate.weights), np.finfo(float).tiny))[None, :],
+            axis=1)
+        gains, tolerances = [], []
+        for fold in np.unique(folds):
+            active = folds == fold
+            gain = float(np.sum(full_log_density[active]
+                                - reference_log_density[active]))
+            scale = max(1.0, float(np.sum(np.abs(full_log_density[active]))),
+                        float(np.sum(np.abs(reference_log_density[active]))))
+            gains.append(gain)
+            tolerances.append(float(1024.0 * np.finfo(float).eps * scale))
+        engine_weight = full_certificate.source_weights.get("engine:mcts", 0.0)
+        admitted = bool(engine_weight > 2e-12 and all(
+            gain > tolerance for gain, tolerance in zip(gains, tolerances)))
+        if admitted:
+            retained.append(candidate)
+        certificates.append({
+            "candidate_identity": sha256(json.dumps(candidate, sort_keys=True,
+                default=str).encode()).hexdigest(),
+            "source": str(candidate["source"]), "admitted": admitted,
+            "conditional_fold_log_score_gains": gains,
+            "fold_numerical_tolerances": tolerances,
+            "conditional_source_weight": float(engine_weight),
+            "conditionally_redundant_certified": bool(
+                not admitted and engine_weight <= 2e-12
+                and all(gain + tolerance >= 0.0
+                        for gain, tolerance in zip(gains, tolerances))),
+            "negative_transfer_certified": bool(not admitted and any(
+                gain < -tolerance for gain, tolerance in zip(gains, tolerances))),
+            "candidate_response_accessed": False, "heldout_opened": False,
+        })
+    return tuple(retained), {
+        "schema": "scientific-conditional-engine-complementarity-v1",
+        "reference_stacking": reference_certificate.to_dict(),
+        "candidate_certificates": certificates,
+        "retained_engine_count": sum(row["admitted"] for row in certificates),
+        "candidate_response_accessed": False, "heldout_opened": False,
+    }
+
+
 def crossfit_source_log_predictive(candidates, initial_data, action_domain, *,
                                    n_features, prior, exploration_identity,
                                    coefficient_policy, measurement_budget):
@@ -350,5 +426,6 @@ def crossfit_source_log_predictive(candidates, initial_data, action_domain, *,
 
 __all__ = ["SafeSourceStackingCertificate", "arbitration_source_log_predictive",
            "calibrate_source_admission", "filter_fold_safe_source_candidates",
+           "filter_conditionally_complementary_engine_candidates",
            "crossfit_source_log_predictive",
            "safe_source_stacking", "source_family"]

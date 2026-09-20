@@ -5,6 +5,7 @@ import pytest
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.discovery.source_stacking import (
     calibrate_source_admission, filter_fold_safe_source_candidates,
+    filter_conditionally_complementary_engine_candidates,
     safe_source_stacking, source_family,
 )
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
@@ -139,3 +140,31 @@ def test_candidatewise_admission_keeps_only_fold_safe_optional_supports(monkeypa
     assert certificates["llm-bad"]["admitted"] is False
     assert certificates["llm-bad"]["negative_transfer_certified"] is True
     assert report["candidate_response_accessed"] is False
+
+
+def test_conditional_engine_admission_requires_gain_beyond_core_llm(monkeypatch):
+    baseline = np.full(8, -2.0)
+    llm = baseline + np.array([.6, .1, .6, .1, .6, .1, .6, .1])
+    complementary = llm + .2
+    def profile(candidates, *args, **kwargs):
+        if any(row["source"] == "engine:mcts" for row in candidates):
+            return (np.column_stack((baseline, complementary, llm)),
+                    np.arange(8) % 2, ("core", "engine:mcts", "llm"))
+        return (np.column_stack((baseline, llm)),
+                np.arange(8) % 2, ("core", "llm"))
+    monkeypatch.setattr(
+        "hypothesis_mvp.discovery.source_stacking.arbitration_source_log_predictive",
+        profile)
+    rows = [
+        {"expression": "x0", "source": "anchor-a", "origin": "deterministic"},
+        {"expression": "x0**2", "source": "anchor-b", "origin": "deterministic"},
+        {"expression": "x0**3", "source": "llm", "origin": "llm"},
+        {"expression": "x0*x1", "source": "engine:mcts", "origin": "deterministic"},
+    ]
+    retained, report = filter_conditionally_complementary_engine_candidates(
+        rows, None, None)
+    assert any(source_family(row) == "engine:mcts" for row in retained)
+    assert report["retained_engine_count"] == 1
+    certificate = report["candidate_certificates"][0]
+    assert certificate["admitted"] is True
+    assert min(certificate["conditional_fold_log_score_gains"]) > 0.0

@@ -90,6 +90,25 @@ def test_mcts_closed_basis_search_score_is_invariant_to_external_amplitudes():
     assert np.allclose(first_prediction, second_prediction, atol=1e-12, rtol=0.0)
 
 
+def test_mcts_frontier_diversity_is_measured_against_linear_core():
+    model = MCTSSymbolicAgent(SymbolicConfig(
+        engine="mcts", expression_contract="pcpi-closed-basis-v1",
+        mcts_frontier_size=2))
+    core = np.array([1., 0., -1., 0.])
+    novel = np.array([0., 1., 0., -1.])
+    near_core = np.array([1., .01, -1., -.01])
+    near_core /= np.linalg.norm(near_core)
+    model._core_reference_signature = core / np.linalg.norm(core)
+    model.best_expr = "best"
+    model._archive = {
+        "best": (1.0, 1.0, model._core_reference_signature),
+        "near": (1.01, 1.0, near_core),
+        "novel": (1.02, 1.0, novel / np.linalg.norm(novel)),
+    }
+    assert model._select_predictive_pareto_frontier() == ("best", "novel")
+    assert "core-relative" in model.info()["candidate_set_method"]
+
+
 def test_scheduler_charges_one_mcts_job_while_exporting_fixed_frontier():
     from hypothesis_mvp.symbolic import EngineScheduler
     X, y = _fixture()

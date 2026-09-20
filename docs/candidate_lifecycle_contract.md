@@ -344,3 +344,23 @@ by the candidatewise Gate with an explicit negative-transfer certificate.
 This does not restore harmful supports, waive source admission, or claim that
 one engine is useful; it only makes H0 composition consistent with the already
 registered rejectable-source contract.
+
+The `20260925/2026092501` response-free screen then retained one individually
+safe LLM support and one individually safe MCTS support.  Joint source
+stacking assigned the LLM positive mass but assigned MCTS numerical zero:
+MCTS improved over core alone yet added no predictive value conditional on the
+safe core-plus-LLM mixture.  The screen correctly stopped before the
+decision-risk Gate.  For a multi-engine superiority experiment, conditional
+redundancy cannot be relabelled as contribution or repaired by forcing mass.
+
+The next engine contract therefore adds two task-independent requirements.
+First, MCTS frontier diversity is measured against a deterministic two-fold
+linear-core predictive signature as well as against the best MCTS candidate,
+so its fixed frontier preferentially exposes structures not already explained
+by the core.  Second, after candidatewise safety, every MCTS candidate is
+tested against the already safe core-plus-LLM stacking mixture.  A candidate
+must receive positive safe-stacking mass and strictly improve cumulative
+proper log score on every arbitration fold.  The new full-system registration
+requires both LLM and MCTS to remain active; MCTS is no longer rejectable for
+this superiority screen.  Candidate-pool, reporting-validation and held-out
+responses remain inaccessible.
