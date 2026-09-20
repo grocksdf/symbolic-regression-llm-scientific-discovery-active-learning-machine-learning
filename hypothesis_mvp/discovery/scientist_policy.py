@@ -239,7 +239,9 @@ def _strings(value: Any, *, allow_empty: bool = False) -> tuple[str, ...]:
     if isinstance(value, str):
         rows = (value.strip(),)
     elif isinstance(value, (list, tuple)):
-        rows = tuple(str(item).strip() for item in value)
+        if any(not isinstance(item, str) for item in value):
+            raise ValueError("scientist text array items must be strings")
+        rows = tuple(item.strip() for item in value)
     elif value is None and allow_empty:
         rows = ()
     else:

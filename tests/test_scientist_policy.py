@@ -13,6 +13,7 @@ from hypothesis_mvp.discovery.contracts import DiscoveryConfig
 from hypothesis_mvp.discovery.evaluation_runtime import EvaluationRuntime
 from hypothesis_mvp.discovery.initializer import normalize_candidates
 from hypothesis_mvp.discovery.proposal_runtime import ProposalRuntime
+from hypothesis_mvp.discovery.proposal_runtime import ProposalContext
 from hypothesis_mvp.discovery.scientist_policy import (
     ENGINE_REVIEW_PROTOCOL, RESEARCH_PLAN_PROTOCOL,
     ScientistState, deterministic_plan, plan_from_json, review_from_json,
@@ -69,6 +70,25 @@ def test_scientist_review_schema_is_strict():
         "stop": False, "stop_reason": "continue"})
     assert scalar.synthesis_instructions == (
         "retain the simpler falsifiable law",)
+    with pytest.raises(ValueError, match="items must be strings"):
+        review_from_json({
+            "protocol_id": ENGINE_REVIEW_PROTOCOL,
+            "supported_mechanisms": [{"name": "not-a-string"}],
+            "contradicted_mechanisms": [], "cross_engine_conflicts": [],
+            "synthesis_instructions": ["retain"], "stop": False,
+            "stop_reason": "continue"})
+
+
+def test_proposal_parent_hash_is_code_bound_not_llm_controlled():
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    context = ProposalContext(1, "balanced", "bound-parent", 1, 1)
+    candidate, audit = runtime._candidate({
+        "candidate_id": "candidate", "parent_hash": "wrong-parent",
+        "action": "ADD", "equation": "x0", "rationale": "testable law"},
+        0, context, "prompt", "response")
+    assert candidate.parent_hash == "bound-parent"
+    assert audit["parent_hash_projected"] is True
+    assert audit["supplied_parent_hash"] == "wrong-parent"
 
 
 def test_proposal_runtime_uses_single_transport_for_plan_and_review(monkeypatch):

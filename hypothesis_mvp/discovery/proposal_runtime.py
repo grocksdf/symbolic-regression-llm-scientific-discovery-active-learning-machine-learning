@@ -573,8 +573,7 @@ class ProposalRuntime:
         identifier = str(item.get("candidate_id") or "").strip()
         if not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", identifier):
             raise ProtocolError("invalid_candidate_id")
-        if str(item.get("parent_hash")) != context.parent_hash:
-            raise ProtocolError("parent_hash_mismatch")
+        supplied_parent = str(item.get("parent_hash") or "")
         action = str(item.get("action") or "").upper()
         if action not in ALLOWED_ACTIONS:
             raise ProtocolError("invalid_action")
@@ -591,9 +590,10 @@ class ProposalRuntime:
             tuple(str(value) for value in item.get("library_refs") or ()),
             lineage, prompt_hash, response_hash, index,
         )
-        return candidate, {
-            "candidate_id": identifier, "proposal_index": index, **normalization,
-        }
+        return candidate, {"candidate_id": identifier, "proposal_index": index,
+            "parent_hash_projected": supplied_parent != context.parent_hash,
+            "supplied_parent_hash": supplied_parent,
+            "bound_parent_hash": context.parent_hash, **normalization}
 
     def _validate_batch(
         self, parsed: Mapping[str, Any], context: ProposalContext,
@@ -626,7 +626,8 @@ class ProposalRuntime:
                     raise ProtocolError("duplicate_candidate_id")
                 seen.add(candidate.candidate_id)
                 candidates.append(candidate)
-                if normalization.get("assignment_removed"):
+                if (normalization.get("assignment_removed")
+                        or normalization.get("parent_hash_projected")):
                     normalizations.append(normalization)
             except Exception as error:
                 rejections.append({

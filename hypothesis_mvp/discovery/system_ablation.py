@@ -58,8 +58,10 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
     usage = audit_usage(config, result, time.monotonic() - start,
                         compute_ceiling, provider_attempt_ceiling)
     report = result.discovery.report
-    if report.get("llm_error_count", 0) or any(getattr(c, "provider_errors", 0) for c in result.cycles):
-        raise ExplorationProtocolError("provider-infrastructure-failure-blocks-exploration")
+    if report.get("llm_error_count", 0) or any(
+            getattr(c, "provider_errors", 0) for c in result.cycles):
+        raise ExplorationProtocolError(
+            "provider-or-protocol-failure-blocks-exploration")
     if provider_settings is not None and (
             int(report.get("llm_call_count", 0)) < 1
             or int(report.get("llm_attempt_count", 0)) < 1):

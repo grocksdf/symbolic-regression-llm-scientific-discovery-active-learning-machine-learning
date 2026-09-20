@@ -333,7 +333,7 @@ def test_earlier_cycle_provider_failure_blocks_even_if_final_report_clean(tmp_pa
         def __init__(self, *args): pass
         def run(self, **kwargs): return result
     monkeypatch.setattr("hypothesis_mvp.discovery.system_ablation.DiscoveryAgent", Agent)
-    with pytest.raises(ValueError, match="provider-infrastructure"):
+    with pytest.raises(ValueError, match="provider-or-protocol"):
         _run_variant(config, None, selection, tmp_path, 100, 3, CONTEXT)
 
 def test_scientist_ablation_failure_is_durable_and_replay_blocked(tmp_path, monkeypatch):
