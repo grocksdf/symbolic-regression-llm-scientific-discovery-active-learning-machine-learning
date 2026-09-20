@@ -7,11 +7,18 @@ from hypothesis_mvp.discovery.agent import DiscoveryAgentConfig
 from hypothesis_mvp.discovery.proposal_runtime import ProviderSettings, ProviderRoute
 from hypothesis_mvp.discovery.system_ablation import run_exploration_ablations, audit_usage
 from hypothesis_mvp.data.roles import SelectionData, RoleDataset, DataRole
+from hypothesis_mvp.hypotheses import EvidenceEventType, EvidenceRegistry
 
 
 CONTEXT = {"task_name": "fixture_law", "task_description": "fixture description",
            "feature_names": ["fixture_feature"], "feature_units": ["unit"],
            "target_name": "fixture_target", "target_unit": "unit"}
+
+
+def _write_fixture_registry(output_dir):
+    registry = EvidenceRegistry(output_dir / "evidence_registry.jsonl")
+    registry.append(hypothesis_id="fixture", event_type=EvidenceEventType.PROPOSED,
+                    payload={"fixture_only": True})
 
 
 def _candidate_audit(score=1., exhausted=False):
@@ -46,6 +53,7 @@ def test_mixed_candidate_audit_publishes_complete_strict_json(tmp_path, monkeypa
     class Agent:
         def __init__(self, config, provider): self.config, self.provider = config, provider
         def run(self, **kwargs):
+            _write_fixture_registry(kwargs["output_dir"])
             result = _result(self.config, self.provider is not None)
             result.discovery.report["llm_rounds"] = [{"candidate_audit": audit}] if self.provider else []
             return result
@@ -141,7 +149,9 @@ def test_equal_jobs_provider_free_and_completed_recovery(tmp_path, monkeypatch):
     class Agent:
         def __init__(self, config, provider):
             self.config = config; self.provider = provider; seen.append((config, provider))
-        def run(self, **kwargs): return _result(self.config, self.provider is not None)
+        def run(self, **kwargs):
+            _write_fixture_registry(kwargs["output_dir"])
+            return _result(self.config, self.provider is not None)
     monkeypatch.setattr("hypothesis_mvp.discovery.system_ablation.DiscoveryAgent", Agent)
     monkeypatch.setattr("hypothesis_mvp.discovery.system_ablation.run_bounded", _inline)
     kwargs = dict(dataset="opaque", config=config, provider_settings=ProviderSettings(
@@ -151,16 +161,64 @@ def test_equal_jobs_provider_free_and_completed_recovery(tmp_path, monkeypatch):
         scientific_context=CONTEXT)
     result = run_exploration_ablations(tmp_path, selection, **kwargs)
     assert result["pair_gate"]["passed"] and not result["superiority_demonstrated"]
-    assert seen[1][1] is None
-    assert seen[2][0].engine_repeats == 4
+    assert seen[0][1] is not None and seen[0][0].engines == ("polynomial_lasso",)
+    assert seen[1][1] is None and seen[1][0].engines == ("mcts",)
+    assert seen[0][0].discovery_budget + seen[1][0].discovery_budget == config.discovery_budget
+    assert seen[1][0].llm_evaluation_reserve == 0
     assert all(row["hypothesis_provenance"]["all_candidates_source_bound"]
                for row in result["rows"])
     assert all("llm_retained_candidate_count" in row["hypothesis_provenance"]
                for row in result["rows"])
     assert run_exploration_ablations(tmp_path, selection, **kwargs) == result
-    assert len(seen) == 3
+    assert len(seen) == 2
     with pytest.raises(ValueError):
         run_exploration_ablations(tmp_path, selection, **{**kwargs, "compute_ceiling": 101})
+
+
+def test_source_first_projection_generates_llm_once_and_only_deletes_sources(tmp_path, monkeypatch):
+    selection, config = _inputs()
+    calls = []
+    class Agent:
+        def __init__(self, source_config, provider):
+            self.config, self.provider = source_config, provider
+        def run(self, **kwargs):
+            _write_fixture_registry(kwargs["output_dir"])
+            calls.append((self.config.engines, self.provider is not None))
+            result = _result(self.config, self.provider is not None)
+            if self.provider is not None:
+                result.discovery.report["evaluated_hypothesis_bank"] = [
+                    {"expression": "x0", "source": "engine:polynomial_lasso",
+                     "origin": "deterministic"},
+                    {"expression": "x0**2", "source": "llm_proposal", "origin": "llm"},
+                ]
+            else:
+                result.discovery.report["evaluated_hypothesis_bank"] = [
+                    {"expression": "x0**3", "source": "engine:mcts",
+                     "origin": "deterministic"},
+                ]
+            return result
+    monkeypatch.setattr("hypothesis_mvp.discovery.system_ablation.DiscoveryAgent", Agent)
+    monkeypatch.setattr("hypothesis_mvp.discovery.system_ablation.run_bounded", _inline)
+    run_exploration_ablations(tmp_path, selection, dataset="opaque", config=config,
+        provider_settings=ProviderSettings(routes=(ProviderRoute(
+            "https://fixture.invalid", "fixture-model", "fixture-key"),)),
+        single_engine="polynomial_lasso", compute_ceiling=100,
+        provider_attempt_ceiling=3, source_identity="correctness-fixture",
+        scientific_context=CONTEXT)
+    rows = {variant: __import__("json").loads(
+        (tmp_path / variant / "RESULT.json").read_text(encoding="utf-8"))
+        for variant in ("full", "no_llm", "single_engine")}
+    expressions = {variant: {row["expression"] for row in result["candidates"]}
+                   for variant, result in rows.items()}
+    assert calls == [(("polynomial_lasso",), True), (("mcts",), False)]
+    assert "x0**2" in expressions["full"] == expressions["single_engine"] | {"x0**3"}
+    assert "x0**2" not in expressions["no_llm"] and "x0**3" in expressions["no_llm"]
+    assert rows["full"]["source_first_bank_identity"] == rows["no_llm"][
+        "source_first_bank_identity"] == rows["single_engine"]["source_first_bank_identity"]
+    assert rows["full"]["hypothesis_provenance"]["llm_parent_context"] == "core-only"
+    analysis = __import__("json").loads((tmp_path / "ANALYSIS.json").read_text(encoding="utf-8"))
+    published = {row["variant"]: row["candidates"] for row in rows.values()}
+    assert {row["variant"]: row["candidates"] for row in analysis["rows"]} == published
 
 
 @pytest.mark.parametrize("field,value", [("candidate_evaluations", 11), ("provider_attempts", 4)])
@@ -203,7 +261,7 @@ def test_failed_exploration_cannot_repeat_calls(tmp_path, monkeypatch):
         provider_attempt_ceiling=3, source_identity="correctness-fixture",
         scientific_context=CONTEXT)
     with pytest.raises(RuntimeError): run_exploration_ablations(tmp_path, selection, **kwargs)
-    assert (tmp_path / "full" / "FAILURE.json").is_file()
+    assert (tmp_path / "_source_generation" / "core_llm" / "FAILURE.json").is_file()
     with pytest.raises(ValueError): run_exploration_ablations(tmp_path, selection, **kwargs)
     assert len(calls) == 1 and not (tmp_path / "ANALYSIS.json").exists()
 

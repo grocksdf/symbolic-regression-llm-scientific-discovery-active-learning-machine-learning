@@ -237,3 +237,25 @@ admission but before every measured comparison.  A passed screen can be hash-
 bound by `build_scientific_screen_continuation.py` and continued without
 rerunning engines or the LLM; the continuation rejects any decision, receipt,
 measured directory, changed artifact, configuration or data manifest.
+
+That prospective screen is retained as a response-free NO-GO.  Both optional
+sources were independently negative on both full-bank arbitration folds, while
+the LLM was positive on both folds in the separately generated single-engine
+ablation.  Inspection of the immutable proposal artifacts showed that the
+ablations had invoked the LLM separately with different parent banks: MCTS
+therefore changed the LLM proposal itself, so deleting a source did not define
+a counterfactual over one common hypothesis bank.
+
+The production exploration contract now uses source-first generation.  The
+registered core engine runs once and is the only parent context exposed to one
+LLM generation; optional engines run once in a separate provider-free process.
+The three system variants are then immutable projections of those exact source
+artifacts: `full=core+optional+llm`, `no_llm=core+optional`, and
+`single_engine=core+llm`.  Candidate expressions are identical wherever a
+source is shared, and each projection carries one common bank identity plus
+the hashes of both source evidence chains.  The no-LLM projection makes no
+provider call.  Source generation failures cannot be replayed in place, and
+all projections preserve a valid merged evidence chain.  This repairs causal
+ablation identity and reduces duplicated engine/provider work; it is a
+response-free correctness change, not efficacy evidence.  The failed
+`20260920/2026092001` coordinate remains immutable and cannot be rerun.
