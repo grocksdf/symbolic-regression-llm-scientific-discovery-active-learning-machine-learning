@@ -26,22 +26,28 @@ class EngineSkill:
     name: str
     capabilities: tuple[str, ...]
     inductive_bias: str
+    forbidden_requests: tuple[str, ...] = ()
     cost_unit: str = "engine_job"
 
     def to_dict(self) -> dict[str, Any]:
         return {"name": self.name, "capabilities": list(self.capabilities),
-                "inductive_bias": self.inductive_bias, "cost_unit": self.cost_unit}
+                "inductive_bias": self.inductive_bias,
+                "forbidden_requests": list(self.forbidden_requests),
+                "cost_unit": self.cost_unit}
 
 
 REGISTERED_ENGINE_SKILLS = (
     EngineSkill("polynomial_lasso",
         ("sparse polynomial support", "fast deterministic baseline",
          "global additive interactions"),
-        "degree-bounded sparse polynomial"),
+        "degree-bounded sparse polynomial", ("trigonometric", "logarithmic",
+        "exponential", "reciprocal", "division")),
     EngineSkill("mcts",
         ("typed symbolic search", "nonlinear primitive search",
-         "structural diversity frontier"),
-        "tree-search over registered closed basis"),
+         "structural diversity frontier", "degree-at-most-four monomials",
+         "sin(xi), cos(xi), tanh(xi)"),
+        "tree-search over registered closed basis",
+        ("reciprocal", "logarithmic", "exponential", "division", "ratio")),
 )
 
 
@@ -82,6 +88,15 @@ class ResearchPlan:
                 or not self.comparison_questions or not self.synthesis_goal.strip()
                 or not self.stop_conditions):
             raise ValueError("scientist research plan violates registered contract")
+        skills = {skill.name: skill for skill in REGISTERED_ENGINE_SKILLS}
+        for call in self.engine_calls:
+            text = f"{call.objective} {call.expected_evidence}".lower()
+            forbidden = [token for token in skills[call.engine].forbidden_requests
+                         if token in text]
+            if forbidden:
+                raise ValueError(
+                    f"scientist plan requests unsupported {call.engine} capability:"
+                    + ",".join(forbidden))
 
     def to_dict(self) -> dict[str, Any]:
         return {"protocol_id": self.protocol_id,

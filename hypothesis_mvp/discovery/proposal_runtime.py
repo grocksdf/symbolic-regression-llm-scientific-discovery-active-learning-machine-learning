@@ -407,7 +407,18 @@ class ProposalRuntime:
             "registered total_engine_jobs across available_skills. Choose tools based on "
             "their inductive bias; do not propose equations or request hidden responses.")
         raw, telemetry = self.complete_json(system_message=system, payload=payload)
-        return plan_from_json(raw, available, total_jobs), telemetry
+        try:
+            return plan_from_json(raw, available, total_jobs), telemetry
+        except ValueError as error:
+            repaired, second = self.complete_json(
+                system_message=system, payload={**payload, "protocol_repair": {
+                    "previous_error": str(error),
+                    "instruction": (
+                        "Return a complete replacement plan using only capabilities "
+                        "declared by the selected engine skills.")}})
+            plan = plan_from_json(repaired, available, total_jobs)
+            return plan, {"protocol_repair_attempted": True,
+                "provider_requests": [dict(telemetry), dict(second)]}
 
     def review_engine_evidence(
         self, *, plan: ResearchPlan, engine_evidence: Sequence[Mapping[str, Any]],

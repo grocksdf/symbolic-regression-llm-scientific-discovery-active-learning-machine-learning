@@ -12,6 +12,9 @@ sys.path.insert(0, str(ROOT))
 
 from hypothesis_mvp.hypotheses import EvidenceRegistry
 from hypothesis_mvp.pcpi.discovery_transaction import _publish
+from hypothesis_mvp.discovery.scientist_policy import (
+    plan_from_json, review_from_json,
+)
 
 
 def _read(path):
@@ -37,6 +40,17 @@ def audit(source):
                    == "scientist_policy_transition"]
     registered_cycles = int(contract["registration"]["agent"]["cycles"])
     registered_jobs = int(contract["registration"]["agent"]["engine_budget"])
+    semantic_valid = True
+    for row in transitions:
+        try:
+            plan_from_json(
+                row["research_plan"], contract["registration"]["agent"]["engines"],
+                registered_jobs)
+            review = review_from_json(row["scientist_review"])
+            semantic_valid = semantic_valid and not any(
+                len(value) == 1 for value in review.synthesis_instructions)
+        except Exception:
+            semantic_valid = False
     decisions = {
         "source_terminal_is_ipc_reporting_failure": (
             failure.get("error_type") == "RuntimeError"
@@ -55,6 +69,7 @@ def audit(source):
             and row["scientist_review"]["protocol_id"]
             == "scientific-engine-evidence-review-v1"
             for row in transitions),
+        "plans_and_reviews_semantically_valid": semantic_valid,
         "engine_budget_exact_each_round": all(
             len(row["engine_report"]["run_records"]) == registered_jobs
             for row in cycles),
