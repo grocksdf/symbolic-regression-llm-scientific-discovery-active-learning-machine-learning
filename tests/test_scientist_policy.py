@@ -12,6 +12,9 @@ from hypothesis_mvp.discovery.scientist_policy import (
     ScientistState, deterministic_plan, plan_from_json, review_from_json,
 )
 from hypothesis_mvp.discovery.inference_router import route_inference
+from hypothesis_mvp.discovery.skill_policy import (
+    SkillTaskEvidence, fit_skill_reliability, leave_one_task_out_skill_policy,
+)
 from hypothesis_mvp.symbolic.scheduler import EngineScheduler
 
 
@@ -135,3 +138,31 @@ def test_inference_router_uses_exact_for_finite_and_blocks_unauthorized_open_smc
         model, requested_mode="certified_open_smc", open_support=True,
         certified_smc_authorized=True)
     assert open_plan.mode == "certified_open_smc"
+
+
+def test_skill_reliability_counts_tasks_not_folds_as_replicates():
+    rows = [
+        SkillTaskEvidence("a", "family-a", "mcts", (1., 2.), (.01, .01)),
+        SkillTaskEvidence("b", "family-b", "mcts", (-1., 2.), (.01, .01)),
+    ]
+    result = fit_skill_reliability(rows)[0]
+    assert result.successes == 1 and result.failures == 1
+    assert result.posterior_alpha == result.posterior_beta == 1.5
+
+
+def test_leave_one_task_out_skill_gate_requires_cross_family_coverage():
+    same_family = tuple(SkillTaskEvidence(
+        str(index), "gas", "mcts", (1., 1.), (.01, .01))
+        for index in range(4))
+    failed = leave_one_task_out_skill_policy(same_family)
+    assert failed["passed"] is False
+    assert failed["status"] == "insufficient-cross-family-coverage"
+    diverse = (
+        SkillTaskEvidence("a1", "a", "mcts", (1., 1.), (.01, .01)),
+        SkillTaskEvidence("a2", "a", "mcts", (1., 1.), (.01, .01)),
+        SkillTaskEvidence("b1", "b", "mcts", (1., 1.), (.01, .01)),
+        SkillTaskEvidence("b2", "b", "mcts", (1., 1.), (.01, .01)),
+    )
+    passed = leave_one_task_out_skill_policy(diverse)
+    assert passed["passed"] is True
+    assert passed["candidate_response_accessed"] is False

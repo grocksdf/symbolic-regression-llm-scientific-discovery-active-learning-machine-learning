@@ -15,6 +15,7 @@ from hypothesis_mvp.discovery.scientist_policy import (
     REGISTERED_ENGINE_SKILLS, ScientistState, deterministic_plan,
 )
 from hypothesis_mvp.discovery.inference_router import route_inference
+from hypothesis_mvp.discovery.skill_policy import SkillTaskEvidence
 from hypothesis_mvp.symbolic.scheduler import EngineScheduler
 
 
@@ -52,6 +53,10 @@ def main() -> int:
         "finite_bank_routes_to_exact_inference": (
             route_inference(type("Model", (), {"stable_hash": "fixture"})()).mode
             == "exact_finite"),
+        "skill_policy_counts_tasks_not_folds": (
+            SkillTaskEvidence(
+                "task", "family", "skill", (1.0, 1.0), (0.0, 0.0)
+            ).outcome == "success"),
     }
     result = {"schema": "scientific-llm-skill-orchestration-source-gate-v1",
         "decisions": decisions, "passed": all(decisions.values()),

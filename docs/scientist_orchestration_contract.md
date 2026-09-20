@@ -75,5 +75,23 @@ may provide durable formal execution, and MCP may expose external skills.
 None of those frameworks may own the posterior, utility, held-out capability
 or evidence verdict.
 
+## Cross-task policy learning
+
+Historical response-free candidate/source certificates may train a Bayesian
+skill-reliability prior only through leave-one-task-out replay. Each task
+contributes at most one Bernoulli outcome per skill; arbitration folds certify
+that outcome but are not counted as independent replicates. A Jeffreys
+Beta(1/2, 1/2) prior supplies the reliability posterior.
+
+Production use requires at least three training task identities from at least
+two registered dataset families for every held-out replay task. Until that
+coverage Gate passes, Scientist planning receives no learned reliability prior.
+Acquisition responses, reporting-validation responses and held-out outcomes are
+never inputs to policy replay.
+
+The September 20, 2026 artifact replay found seven task coordinates but only
+one `gas_turbine` family. It is retained as
+`insufficient-cross-family-coverage`, not as skill-performance evidence.
+
 This contract is correctness architecture only. It is not efficacy,
 superiority or confirmation evidence.
