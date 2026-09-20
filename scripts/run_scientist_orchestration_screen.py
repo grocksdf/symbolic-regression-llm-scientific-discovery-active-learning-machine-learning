@@ -22,10 +22,14 @@ from hypothesis_mvp.pcpi.discovery_transaction import _publish
 
 def _execute(agent_config, provider, data, output, context):
     agent = DiscoveryAgent(agent_config, provider)
-    return agent.run(
+    result = agent.run(
         selection=data.selection, task_name=context["task_name"],
         task_description=context["task_description"], output_dir=output,
         knowledge_dir=Path(output) / "knowledge", variable_metadata=context)
+    return {"system_evaluation": result.system_evaluation,
+        "final_expression": result.discovery.expression,
+        "evidence_registry_path": str(result.discovery.evidence_registry_path),
+        "provider_configured": result.provider_configured}
 
 
 def main():
@@ -63,7 +67,7 @@ def main():
                             data.manifest["scientific_context"]),
             seconds=config["exploration_seconds"],
             provider_attempts=config["provider_attempt_ceiling"])
-        cycles = result.system_evaluation["cycles"]
+        cycles = result["system_evaluation"]["cycles"]
         decisions = {
             "registered_rounds_completed": len(cycles) == agent_config.cycles,
             "every_round_has_typed_plan": all(
@@ -79,12 +83,14 @@ def main():
                 len(row["engine_report"]["run_records"])
                 == agent_config.engine_budget for row in cycles),
             "no_acquisition_executed": (
-                result.system_evaluation["acquisition_executed"] is False),
+                result["system_evaluation"]["acquisition_executed"] is False),
         }
         manifest = {"schema": "scientific-llm-scientist-smoke-result-v1",
             "decisions": decisions, "passed": all(decisions.values()),
             "resource_enforcement": enforcement,
-            "system_evaluation": result.system_evaluation,
+            "system_evaluation": result["system_evaluation"],
+            "final_expression": result["final_expression"],
+            "evidence_registry_path": result["evidence_registry_path"],
             "candidate_response_accessed": False, "heldout_opened": False,
             "formal_experiment_authorized": False,
             "claim_boundary": "development Scientist wiring only; no efficacy claim"}
