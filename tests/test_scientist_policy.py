@@ -344,11 +344,13 @@ def test_multi_engine_plan_remains_fail_closed_after_invalid_repair(monkeypatch)
         "mechanisms": ["fixture"],
         "engine_calls": [
             {"engine": "polynomial_lasso", "jobs": 1,
-             "objective": "logarithmic baseline",
-             "expected_evidence": "logarithmic support"},
+             "objective": "baseline",
+             "expected_evidence": "support",
+             "requested_operations": ["logarithmic"]},
             {"engine": "mcts", "jobs": 1,
              "objective": "typed symbolic search",
-             "expected_evidence": "structural diversity frontier"}],
+             "expected_evidence": "structural diversity frontier",
+             "requested_operations": []}],
         "comparison_questions": ["which support generalizes"],
         "synthesis_goal": "retain falsifiable structure",
         "stop_conditions": ["budget"]}

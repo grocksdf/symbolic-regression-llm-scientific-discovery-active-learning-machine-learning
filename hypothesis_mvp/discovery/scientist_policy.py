@@ -57,16 +57,19 @@ class EngineCall:
     jobs: int
     objective: str
     expected_evidence: str
+    requested_operations: tuple[str, ...] = ()
 
     def __post_init__(self):
         if (not self.engine or type(self.jobs) is not int or self.jobs < 1
-                or not self.objective.strip() or not self.expected_evidence.strip()):
+                or not self.objective.strip() or not self.expected_evidence.strip()
+                or any(not value.strip() for value in self.requested_operations)):
             raise ValueError("invalid scientist engine call")
 
     def to_dict(self) -> dict[str, Any]:
         return {"engine": self.engine, "jobs": self.jobs,
                 "objective": self.objective,
-                "expected_evidence": self.expected_evidence}
+                "expected_evidence": self.expected_evidence,
+                "requested_operations": list(self.requested_operations)}
 
 
 @dataclass(frozen=True)
@@ -90,9 +93,8 @@ class ResearchPlan:
             raise ValueError("scientist research plan violates registered contract")
         skills = {skill.name: skill for skill in REGISTERED_ENGINE_SKILLS}
         for call in self.engine_calls:
-            text = f"{call.objective} {call.expected_evidence}".lower()
-            forbidden = [token for token in skills[call.engine].forbidden_requests
-                         if token in text]
+            forbidden = sorted(set(call.requested_operations)
+                - set(skills[call.engine].capabilities))
             if forbidden:
                 raise ValueError(
                     f"scientist plan requests unsupported {call.engine} capability:"
@@ -213,7 +215,8 @@ def plan_from_json(raw: Mapping[str, Any], engines: Sequence[str],
                    total_jobs: int) -> ResearchPlan:
     calls = tuple(EngineCall(
         str(row.get("engine", "")), int(row.get("jobs", 0)),
-        str(row.get("objective", "")), str(row.get("expected_evidence", "")))
+        str(row.get("objective", "")), str(row.get("expected_evidence", "")),
+        tuple(str(value) for value in row.get("requested_operations", ())))
         for row in raw.get("engine_calls", ()) if isinstance(row, Mapping))
     plan = ResearchPlan(
         _strings(raw.get("mechanisms")),
