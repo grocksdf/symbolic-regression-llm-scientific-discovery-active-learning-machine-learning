@@ -315,14 +315,16 @@ class DiscoveryAgent:
                 attach_scientist_policy_evidence(
                     final, cycle, state_before, scientist_state.to_dict(),
                     plan.to_dict(), review.to_dict())
-            acquisition = (
-                {"reason": "final_cycle"}
-                if cycle + 1 >= self.config.cycles
-                else {
+            if review.stop:
+                acquisition = {"reason": "scientist_stop_condition",
+                    "stop_reason": review.stop_reason,
+                    "cycle_continues_without_labels": False}
+            elif cycle + 1 >= self.config.cycles:
+                acquisition = {"reason": "final_cycle"}
+            else:
+                acquisition = {
                     "reason": "canonical_p3b_acquisition_required",
-                    "cycle_continues_without_labels": True,
-                }
-            )
+                    "cycle_continues_without_labels": True}
             history.append(DiscoveryCycle(
                 cycle, final.expression, final.hypothesis.hypothesis_id,
                 len(selection.development.X), _engine_payload(engines),
@@ -333,6 +335,8 @@ class DiscoveryAgent:
                 plan.to_dict(), review.to_dict(),
                 state_before, scientist_state.to_dict(),
             ))
+            if review.stop:
+                break
         if final is None:
             raise RuntimeError("discovery agent executed no cycle")
         remaining = (len(selection.acquisition_pool.X)

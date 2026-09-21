@@ -35,16 +35,27 @@ def audit_usage(config, result, elapsed, compute_ceiling, provider_attempt_ceili
     if (not math.isfinite(elapsed) or elapsed < 0
             or any(type(v) is not int or v < 0 for v in (jobs, evaluations, attempts))):
         raise ValueError("invalid measured exploration usage")
-    expected_jobs = len(config.engines) * config.engine_repeats * config.cycles
+    actual_cycles = len(result.cycles)
+    early_stop = (0 < actual_cycles < config.cycles
+                  and result.cycles[-1].scientist_review.get("stop") is True
+                  and result.cycles[-1].acquisition.get("reason")
+                  == "scientist_stop_condition")
+    if actual_cycles < 1 or actual_cycles > config.cycles:
+        raise ValueError("invalid exploration cycle count")
+    if actual_cycles < config.cycles and not early_stop:
+        raise ValueError("unregistered early exploration termination")
+    expected_jobs = len(config.engines) * config.engine_repeats * actual_cycles
     if (jobs != expected_jobs or any(c.engine_report["failures"] for c in result.cycles)
             or any(r["status"] != "succeeded" for c in result.cycles
                    for r in c.engine_report["run_records"])):
         raise ValueError("incomplete or failed engine execution")
-    if (evaluations > config.discovery_budget * config.cycles
+    if (evaluations > config.discovery_budget * actual_cycles
             or attempts > provider_attempt_ceiling or elapsed > compute_ceiling):
         raise ValueError("registered exploration ceiling exceeded")
     return {"engine_jobs_used": jobs, "candidate_evaluations_used": evaluations,
-            "provider_attempts_used": attempts, "elapsed_seconds": elapsed}
+            "provider_attempts_used": attempts, "elapsed_seconds": elapsed,
+            "cycles_completed": actual_cycles,
+            "scientist_early_stop": early_stop}
 
 
 def _run_variant(config, provider_settings, selection, workspace, compute_ceiling,

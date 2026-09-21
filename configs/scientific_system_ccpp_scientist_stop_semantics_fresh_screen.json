@@ -1,0 +1,82 @@
+{
+  "schema": "scientific-system-development-registration-v1",
+  "data": [{
+    "dataset": "uci_ccpp",
+    "source": "D:/01/666/hypothesis_mvp/data/combined+cycle+power+plant/CCPP/Folds5x2_pp.xlsx",
+    "split_seed": 31031,
+    "counts": {
+      "exploration_development": 32,
+      "exploration_validation": 32,
+      "inference_initial": 16,
+      "development_evaluation": 64,
+      "acquisition_pool": 8
+    }
+  }],
+  "seeds": [3103101],
+  "agent": {
+    "engines": ["polynomial_lasso", "mcts"],
+    "engine_repeats": 1,
+    "engine_budget": 2,
+    "engine_workers": 1,
+    "engine_timeout_s": 90.0,
+    "engine_retries": 0,
+    "cycles": 2,
+    "discovery_budget": 24,
+    "random_seed": 3103101,
+    "search_iterations": 12,
+    "mcts_frontier_size": 3,
+    "mcts_score_folds": 2,
+    "acquisition_enabled": false,
+    "use_knowledge": false,
+    "llm_evaluation_reserve": 8,
+    "discovery_islands": ["balanced"],
+    "refit_policy": "pcpi-closed-basis-amplitudes",
+    "scientist_orchestration": true
+  },
+  "single_engine": "polynomial_lasso",
+  "prior": {
+    "coefficient_mean": 0.0,
+    "coefficient_precision": 1.0,
+    "noise_shape": 2.5,
+    "noise_scale": 0.2
+  },
+  "scoring": {
+    "minimum_samples": 16,
+    "maximum_samples": 128,
+    "error_safety_factor": 2.0,
+    "growth_factor": 2
+  },
+  "measurement_budget": 2,
+  "hypothesis_bank_gate": {
+    "schema": "scientific-hypothesis-bank-gate-v4",
+    "exact_eig_epsabs": 1e-10,
+    "maximum_candidates": 4,
+    "selection_rule": "two-fold-safe-half-core-source-stacking-operational-entropy-v3",
+    "source_safety_folds": 2,
+    "source_stacking_baseline": "core",
+    "source_stacking_dyadic_depth": 8,
+    "source_stacking_max_optional_mass": 0.5,
+    "require_all_variants": true
+  },
+  "marginal_influence_gate": {
+    "schema": "scientific-source-admission-influence-gate-v5",
+    "exact_eig_epsabs": 1e-10,
+    "required_contributions": ["llm", "engine:mcts"],
+    "required_active_contributions": ["llm"],
+    "rejectable_contributions": ["engine:mcts"],
+    "source_admission_rule": "independent-sourcewise-fold-safe-half-core-log-score-stacking-v2",
+    "decision_rule": "full-target-certified-regret-v1",
+    "quality_rule": "positive-paired-cumulative-log-predictive-ratio-v1",
+    "arbitration_fraction": 0.5,
+    "require_all_contributions": true
+  },
+  "targeted_query_policy": "decision_risk",
+  "inference_mode": "exact_finite",
+  "exploration_seconds": 420,
+  "policy_seconds": 60,
+  "data_loading_seconds": 30,
+  "provider_attempt_ceiling": 16,
+  "provider_public_identity": "8d136a7f8a310ebe6120a192e1d62dc598eefdad030dfbda0819dfcef5d040a0",
+  "coefficient_policy": "discard-fitted-coefficients-refit-closed-basis",
+  "user_execution_authorized": true
+}
