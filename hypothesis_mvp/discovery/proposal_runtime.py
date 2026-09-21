@@ -391,6 +391,56 @@ class ProposalRuntime:
         return parsed, telemetry
 
     @staticmethod
+    def _compile_forced_coverage_calls(
+        calls: Any, available: tuple[str, ...],
+    ) -> tuple[list[dict[str, Any]] | None, Mapping[str, Any] | None]:
+        if (not isinstance(calls, (list, tuple))
+                or not all(isinstance(row, Mapping) for row in calls)):
+            return None, None
+        by_engine, discarded = {}, []
+        for index, row in enumerate(calls):
+            value, name = dict(row), str(row.get("engine", ""))
+            if name not in available:
+                discarded.append({"index": index, "engine": name,
+                    "reason": "unregistered-engine"})
+            elif name in by_engine:
+                discarded.append({"index": index, "engine": name,
+                    "reason": "duplicate-engine-call"})
+            else:
+                by_engine[name] = value
+        if not by_engine:
+            return None, None
+        skills = {skill.name: skill for skill in REGISTERED_ENGINE_SKILLS}
+        compiled, synthesized, supplied_jobs = [], [], {}
+        for name in available:
+            row = by_engine.get(name)
+            if row is None:
+                skill = skills[name]
+                row = {"engine": name,
+                    "objective": (
+                        "Execute the registered skill under its inductive "
+                        f"bias: {skill.inductive_bias}."),
+                    "expected_evidence": (
+                        "Validated expressions, predictive scores, complexity, "
+                        "lineage, and registered engine diagnostics."),
+                    "requested_operations": []}
+                synthesized.append(name)
+            supplied_jobs[name] = row.get("jobs")
+            compiled.append({**row, "engine": name, "jobs": 1})
+        if (not synthesized and not discarded
+                and all(value == 1 for value in supplied_jobs.values())):
+            return compiled, None
+        projection = {"engines": list(available),
+            "bound_jobs": {name: 1 for name in available},
+            "supplied_jobs": supplied_jobs,
+            "synthesized_required_calls": synthesized,
+            "discarded_calls": discarded,
+            "reason": (
+                "one-job-per-registered-skill-is-the-only-feasible-"
+                "full-coverage-allocation")}
+        return compiled, projection
+
+    @staticmethod
     def _normalize_research_plan(
         raw_plan: Mapping[str, Any], available: tuple[str, ...], total_jobs: int,
     ) -> tuple[ResearchPlan, Mapping[str, Any] | None]:
@@ -430,28 +480,14 @@ class ProposalRuntime:
                     "are-code-owned-not-policy-decision-variables")}
             projection.update(singleton_dispatch_projection)
         elif total_jobs == len(available):
-            calls = candidate.get("engine_calls")
-            if (isinstance(calls, (list, tuple))
-                    and len(calls) == len(available)
-                    and all(isinstance(row, Mapping) for row in calls)):
-                by_engine = {str(row.get("engine", "")): dict(row)
-                             for row in calls}
-                if (len(by_engine) == len(available)
-                        and set(by_engine) == set(available)):
-                    supplied_jobs = {
-                        name: by_engine[name].get("jobs") for name in available}
-                    candidate["engine_calls"] = [
-                        {**by_engine[name], "engine": name, "jobs": 1}
-                        for name in available]
-                    if any(value != 1 for value in supplied_jobs.values()):
-                        projection["forced_coverage_dispatch_projection"] = {
-                            "engines": list(available),
-                            "bound_jobs": {name: 1 for name in available},
-                            "supplied_jobs": supplied_jobs,
-                            "reason": (
-                                "one-job-per-registered-skill-is-the-only-"
-                                "feasible-full-coverage-allocation"),
-                        }
+            compiled, coverage_projection = (
+                ProposalRuntime._compile_forced_coverage_calls(
+                    candidate.get("engine_calls"), available))
+            if compiled is not None:
+                candidate["engine_calls"] = compiled
+            if coverage_projection is not None:
+                projection["forced_coverage_dispatch_projection"] = (
+                    coverage_projection)
         return (plan_from_json(candidate, available, total_jobs),
                 projection or None)
 
@@ -474,7 +510,7 @@ class ProposalRuntime:
             "task_context": dict(task_context), "available_skills": skills,
             "total_engine_jobs": total_jobs,
             "authority": {
-                "may_choose_engine_jobs": len(available) != 1,
+                "may_choose_engine_jobs": total_jobs > len(available),
                 "may_access_pool_responses": False,
                 "may_access_heldout": False,
                 "may_modify_bayesian_target": False,
@@ -482,6 +518,9 @@ class ProposalRuntime:
         if len(available) == 1:
             payload["fixed_singleton_dispatch"] = {
                 "engine": available[0], "jobs": total_jobs}
+        elif total_jobs == len(available):
+            payload["fixed_full_coverage_dispatch"] = {
+                "engines": list(available), "jobs_per_engine": 1}
         system = (
             "Act as a scientific research planner. Return one unfenced JSON object. "
             f"Use protocol_id='{RESEARCH_PLAN_PROTOCOL}'. Provide mechanisms, engine_calls, "

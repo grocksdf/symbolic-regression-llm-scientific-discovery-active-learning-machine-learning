@@ -399,6 +399,56 @@ def test_forced_full_coverage_jobs_are_code_owned(monkeypatch):
         "bound_jobs"] == {"polynomial_lasso": 1, "mcts": 1}
 
 
+def test_forced_full_coverage_compiles_missing_registered_skill(monkeypatch):
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    raw = {"protocol_id": RESEARCH_PLAN_PROTOCOL,
+        "mechanisms": ["compare sparse and nonlinear structure"],
+        "engine_calls": [
+            {"engine": "mcts", "jobs": 2,
+             "objective": "search a nonlinear structural frontier",
+             "expected_evidence": "validated structural diversity"}],
+        "comparison_questions": ["which support generalizes"],
+        "synthesis_goal": "retain falsifiable structure",
+        "stop_conditions": ["registered budget exhausted"]}
+    calls = []
+    def complete_json(**kwargs):
+        calls.append(kwargs)
+        return raw, {"fixture": True}
+    monkeypatch.setattr(runtime, "complete_json", complete_json)
+    plan, telemetry = runtime.plan_research(
+        task_context={"description": "fixture"},
+        available_engines=("polynomial_lasso", "mcts"), total_jobs=2)
+    assert len(calls) == 1
+    assert [(call.engine, call.jobs) for call in plan.engine_calls] == [
+        ("polynomial_lasso", 1), ("mcts", 1)]
+    projection = telemetry["plan_contract_projection"][
+        "forced_coverage_dispatch_projection"]
+    assert projection["synthesized_required_calls"] == [
+        "polynomial_lasso"]
+    assert plan.engine_calls[0].requested_operations == ()
+
+
+def test_forced_full_coverage_rejects_entirely_unusable_dispatch(monkeypatch):
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    invalid = {"protocol_id": RESEARCH_PLAN_PROTOCOL,
+        "mechanisms": ["fixture"],
+        "engine_calls": [{"engine": "invented_engine", "jobs": 2,
+            "objective": "unknown search", "expected_evidence": "unknown"}],
+        "comparison_questions": ["which support generalizes"],
+        "synthesis_goal": "retain falsifiable structure",
+        "stop_conditions": ["budget"]}
+    responses = iter([invalid, invalid])
+    monkeypatch.setattr(runtime, "complete_json",
+        lambda **kwargs: (next(responses), {"fixture": True}))
+    from hypothesis_mvp.discovery.proposal_runtime import ScientistPlanProtocolError
+    with pytest.raises(
+            ScientistPlanProtocolError,
+            match=("scientist-plan-invalid-after-one-provider-repair:"
+                   "incomplete-or-inconsistent-plan")):
+        runtime.plan_research(task_context={"description": "fixture"},
+            available_engines=("polynomial_lasso", "mcts"), total_jobs=2)
+
+
 def test_multi_engine_plan_remains_fail_closed_after_invalid_repair(monkeypatch):
     from hypothesis_mvp.discovery.proposal_runtime import ScientistPlanProtocolError
     runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
