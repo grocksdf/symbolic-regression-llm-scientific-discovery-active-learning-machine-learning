@@ -394,7 +394,15 @@ class ProposalRuntime:
     def _normalize_research_plan(
         raw_plan: Mapping[str, Any], available: tuple[str, ...], total_jobs: int,
     ) -> tuple[ResearchPlan, Mapping[str, Any] | None]:
-        candidate, projection = dict(raw_plan), None
+        candidate, projection = dict(raw_plan), {}
+        supplied_protocol = str(candidate.get("protocol_id", ""))
+        candidate["protocol_id"] = RESEARCH_PLAN_PROTOCOL
+        if supplied_protocol != RESEARCH_PLAN_PROTOCOL:
+            projection["protocol_identity_projection"] = {
+                "supplied": supplied_protocol,
+                "bound": RESEARCH_PLAN_PROTOCOL,
+                "reason": "protocol-identity-is-code-owned",
+            }
         if len(available) == 1:
             calls = candidate.get("engine_calls")
             original = (dict(calls[0]) if isinstance(calls, (list, tuple))
@@ -409,7 +417,8 @@ class ProposalRuntime:
                 "expected_evidence": (
                     "Validated expressions, predictive scores, complexity, "
                     "lineage, and registered engine diagnostics.")}]
-            projection = {"applied": True, "engine": available[0],
+            singleton_dispatch_projection = {
+                "applied": True, "engine": available[0],
                 "jobs": total_jobs,
                 "original_engine": str(original.get("engine", "")),
                 "original_jobs": original.get("jobs"),
@@ -419,12 +428,38 @@ class ProposalRuntime:
                 "reason": (
                     "singleton-skill-dispatch-and-executable-contract-"
                     "are-code-owned-not-policy-decision-variables")}
-        return plan_from_json(candidate, available, total_jobs), projection
+            projection.update(singleton_dispatch_projection)
+        elif total_jobs == len(available):
+            calls = candidate.get("engine_calls")
+            if (isinstance(calls, (list, tuple))
+                    and len(calls) == len(available)
+                    and all(isinstance(row, Mapping) for row in calls)):
+                by_engine = {str(row.get("engine", "")): dict(row)
+                             for row in calls}
+                if (len(by_engine) == len(available)
+                        and set(by_engine) == set(available)):
+                    supplied_jobs = {
+                        name: by_engine[name].get("jobs") for name in available}
+                    candidate["engine_calls"] = [
+                        {**by_engine[name], "engine": name, "jobs": 1}
+                        for name in available]
+                    if any(value != 1 for value in supplied_jobs.values()):
+                        projection["forced_coverage_dispatch_projection"] = {
+                            "engines": list(available),
+                            "bound_jobs": {name: 1 for name in available},
+                            "supplied_jobs": supplied_jobs,
+                            "reason": (
+                                "one-job-per-registered-skill-is-the-only-"
+                                "feasible-full-coverage-allocation"),
+                        }
+        return (plan_from_json(candidate, available, total_jobs),
+                projection or None)
 
     @staticmethod
     def _plan_telemetry(telemetry, projection, **extra):
         result = {**dict(telemetry), **extra}
         if projection is not None:
+            result["plan_contract_projection"] = projection
             result["singleton_dispatch_projection"] = projection
         return result
 
@@ -476,12 +511,31 @@ class ProposalRuntime:
                 plan, projection = self._normalize_research_plan(
                     repaired, available, total_jobs)
             except ValueError as repaired_error:
+                reason = self._scientist_plan_error_code(repaired_error)
                 raise ScientistPlanProtocolError(
-                    "scientist-plan-invalid-after-one-provider-repair"
+                    "scientist-plan-invalid-after-one-provider-repair:"
+                    + reason
                 ) from repaired_error
             return plan, self._plan_telemetry(
                 {}, projection, protocol_repair_attempted=True,
                 provider_requests=[dict(telemetry), dict(second)])
+
+    @staticmethod
+    def _scientist_plan_error_code(error: ValueError) -> str:
+        message = str(error)
+        if message.startswith("scientist plan requests unsupported "):
+            return "unsupported-engine-capability"
+        return {
+            "scientist research plan violates registered contract":
+                "incomplete-or-inconsistent-plan",
+            "invalid scientist engine call": "invalid-engine-call",
+            "scientist text array items must be strings":
+                "non-string-scientist-text",
+            "scientist text collection must be a string or array":
+                "invalid-scientist-text-container",
+            "scientist text collection contains empty values":
+                "empty-scientist-text",
+        }.get(message, "invalid-typed-plan")
 
     def review_engine_evidence(
         self, *, plan: ResearchPlan, engine_evidence: Sequence[Mapping[str, Any]],

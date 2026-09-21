@@ -1,4 +1,4 @@
-"""Certify a response-free retry after a pre-plan provider failure."""
+"""Certify one response-free retry after a pre-engine Scientist failure."""
 from __future__ import annotations
 
 import argparse
@@ -41,18 +41,28 @@ def main():
         path.name in {"RESULT.json", "evidence_registry.jsonl"}
         or path.name.startswith(("DECISION-", "RECEIPT-"))
         or "measured" in path.parts)]
+    diagnostic = failure.get("diagnostic", "")
+    if "'function': '_request'" in diagnostic:
+        failure_stage = "provider-before-research-plan"
+    elif ("'error_type': 'ScientistPlanProtocolError'" in diagnostic
+          and "'function': 'plan_research'" in diagnostic):
+        failure_stage = "typed-research-plan-before-engine-execution"
+    else:
+        failure_stage = ""
     if (contract.get("registration") != config
             or failure.get("variant") != "full"
-            or "'function': '_request'" not in failure.get("diagnostic", "")
-            or forbidden):
-        raise ValueError("source is not a pre-plan provider failure")
-    certificate = {"schema": "scientific-preplan-provider-retry-v1",
+            or failure.get("candidate_response_accessed") is not False
+            or failure.get("heldout_opened") is not False
+            or not failure_stage or forbidden):
+        raise ValueError("source is not a certifiable pre-engine failure")
+    certificate = {"schema": "scientific-preengine-retry-v2",
         "source_output": str(source), "artifacts": artifacts,
+        "failure_stage": failure_stage,
         "scientific_artifact_count": 0,
         "candidate_response_accessed": False, "heldout_opened": False,
         "claim_boundary": (
-            "one retry of the same frozen coordinate after provider failure "
-            "before ResearchPlan, engine execution, or scientific artifacts")}
+            "one retry of the same frozen coordinate after a certified failure "
+            "before engine execution or scientific artifacts")}
     _publish(args.output.resolve(), certificate)
     print(json.dumps(certificate, indent=2, sort_keys=True))
 

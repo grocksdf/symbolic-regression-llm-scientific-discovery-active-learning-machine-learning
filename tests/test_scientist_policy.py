@@ -334,7 +334,69 @@ def test_single_engine_projection_does_not_mask_invalid_non_dispatch_fields(monk
         runtime.plan_research(task_context={"description": "fixture"},
             available_engines=("polynomial_lasso",), total_jobs=2)
     assert caught.value.public_diagnostic == (
-        "scientist-plan-invalid-after-one-provider-repair")
+        "scientist-plan-invalid-after-one-provider-repair:"
+        "empty-scientist-text")
+
+
+def test_plan_protocol_identity_is_code_owned_without_provider_retry(monkeypatch):
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    raw = {"protocol_id": "provider-invented-protocol",
+        "mechanisms": ["compare sparse and nonlinear structure"],
+        "engine_calls": [
+            {"engine": "polynomial_lasso", "jobs": 1,
+             "objective": "estimate sparse polynomial support",
+             "expected_evidence": "validated sparse support"},
+            {"engine": "mcts", "jobs": 1,
+             "objective": "search a nonlinear structural frontier",
+             "expected_evidence": "validated structural diversity"}],
+        "comparison_questions": ["which support generalizes"],
+        "synthesis_goal": "retain falsifiable structure",
+        "stop_conditions": ["registered budget exhausted"]}
+    calls = []
+    def complete_json(**kwargs):
+        calls.append(kwargs)
+        return raw, {"fixture": True}
+    monkeypatch.setattr(runtime, "complete_json", complete_json)
+    plan, telemetry = runtime.plan_research(
+        task_context={"description": "fixture"},
+        available_engines=("polynomial_lasso", "mcts"), total_jobs=2)
+    assert len(calls) == 1
+    assert plan.protocol_id == RESEARCH_PLAN_PROTOCOL
+    projection = telemetry["plan_contract_projection"]
+    assert projection["protocol_identity_projection"]["supplied"] == (
+        "provider-invented-protocol")
+    assert projection["protocol_identity_projection"]["bound"] == (
+        RESEARCH_PLAN_PROTOCOL)
+
+
+def test_forced_full_coverage_jobs_are_code_owned(monkeypatch):
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    raw = {"protocol_id": RESEARCH_PLAN_PROTOCOL,
+        "mechanisms": ["compare sparse and nonlinear structure"],
+        "engine_calls": [
+            {"engine": "mcts", "jobs": 2,
+             "objective": "search a nonlinear structural frontier",
+             "expected_evidence": "validated structural diversity"},
+            {"engine": "polynomial_lasso", "jobs": 0,
+             "objective": "estimate sparse polynomial support",
+             "expected_evidence": "validated sparse support"}],
+        "comparison_questions": ["which support generalizes"],
+        "synthesis_goal": "retain falsifiable structure",
+        "stop_conditions": ["registered budget exhausted"]}
+    calls = []
+    def complete_json(**kwargs):
+        calls.append(kwargs)
+        return raw, {"fixture": True}
+    monkeypatch.setattr(runtime, "complete_json", complete_json)
+    plan, telemetry = runtime.plan_research(
+        task_context={"description": "fixture"},
+        available_engines=("polynomial_lasso", "mcts"), total_jobs=2)
+    assert len(calls) == 1
+    assert [(call.engine, call.jobs) for call in plan.engine_calls] == [
+        ("polynomial_lasso", 1), ("mcts", 1)]
+    projection = telemetry["plan_contract_projection"]
+    assert projection["forced_coverage_dispatch_projection"][
+        "bound_jobs"] == {"polynomial_lasso": 1, "mcts": 1}
 
 
 def test_multi_engine_plan_remains_fail_closed_after_invalid_repair(monkeypatch):

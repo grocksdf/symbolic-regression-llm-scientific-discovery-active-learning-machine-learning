@@ -1,4 +1,4 @@
-"""User-only retry of a frozen system after certified pre-plan provider failure."""
+"""User-only retry after a certified response-free pre-engine failure."""
 from __future__ import annotations
 
 import argparse
@@ -34,9 +34,13 @@ def main():
     validate_system_registration(config)
     verify_system_freeze(ROOT, config, freeze)
     source, output = args.source_output.resolve(), args.output_dir.resolve()
-    if (retry.get("schema") != "scientific-preplan-provider-retry-v1"
+    if (retry.get("schema") not in {
+                "scientific-preplan-provider-retry-v1",
+                "scientific-preengine-retry-v2"}
             or Path(retry.get("source_output", "")).resolve() != source
             or retry.get("scientific_artifact_count") != 0
+            or retry.get("candidate_response_accessed") is not False
+            or retry.get("heldout_opened") is not False
             or output.exists() or output == source):
         raise ValueError("invalid pre-plan retry request")
     for name, expected in retry["artifacts"].items():
