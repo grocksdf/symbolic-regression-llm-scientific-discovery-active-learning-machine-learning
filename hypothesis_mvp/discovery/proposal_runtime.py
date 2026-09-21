@@ -39,6 +39,13 @@ class ScientistPlanProtocolError(ValueError):
         self.public_diagnostic = diagnostic
 
 
+class ScientistReviewProtocolError(ValueError):
+    """Response-free diagnostic for a rejected typed Scientist review."""
+    def __init__(self, diagnostic: str) -> None:
+        super().__init__(diagnostic)
+        self.public_diagnostic = diagnostic
+
+
 
 def _unique_object(pairs: Sequence[tuple[str, Any]]) -> dict[str, Any]:
     value: dict[str, Any] = {}
@@ -576,6 +583,83 @@ class ProposalRuntime:
                 "empty-scientist-text",
         }.get(message, "invalid-typed-plan")
 
+    @staticmethod
+    def _compile_review_collection(
+        value: Any, *, allow_empty: bool,
+    ) -> tuple[Any, int]:
+        if isinstance(value, str) or value is None:
+            return value, 0
+        if not isinstance(value, (list, tuple)):
+            return value, 0
+        compiled, structured = [], 0
+        for item in value:
+            if isinstance(item, str):
+                compiled.append(item)
+            elif isinstance(item, Mapping) and item:
+                compiled.append(json.dumps(
+                    dict(item), sort_keys=True, separators=(",", ":"),
+                    ensure_ascii=False, allow_nan=False))
+                structured += 1
+            else:
+                compiled.append(item)
+        if not compiled and allow_empty:
+            return [], structured
+        return compiled, structured
+
+    @staticmethod
+    def _normalize_scientist_review(
+        raw_review: Mapping[str, Any],
+    ) -> tuple[ScientistReview, Mapping[str, Any] | None]:
+        candidate, projection = dict(raw_review), {}
+        supplied_protocol = str(candidate.get("protocol_id", ""))
+        candidate["protocol_id"] = ENGINE_REVIEW_PROTOCOL
+        if supplied_protocol != ENGINE_REVIEW_PROTOCOL:
+            projection["protocol_identity_projection"] = {
+                "supplied": supplied_protocol, "bound": ENGINE_REVIEW_PROTOCOL,
+                "reason": "protocol-identity-is-code-owned"}
+        fields = {
+            "supported_mechanisms": True,
+            "contradicted_mechanisms": True,
+            "cross_engine_conflicts": True,
+            "synthesis_instructions": False}
+        structured = {}
+        for field, allow_empty in fields.items():
+            value, count = ProposalRuntime._compile_review_collection(
+                candidate.get(field), allow_empty=allow_empty)
+            candidate[field] = value
+            if count:
+                structured[field] = count
+        if structured:
+            projection["structured_statement_projection"] = {
+                "canonical_json_statement_counts": structured,
+                "reason": "typed-evidence-objects-preserved-as-canonical-json"}
+        supplied_stop = candidate.get("stop", False)
+        if type(supplied_stop) is bool:
+            candidate["stop"] = supplied_stop
+        elif isinstance(supplied_stop, str) and supplied_stop.lower() in {
+                "true", "false"}:
+            candidate["stop"] = supplied_stop.lower() == "true"
+            projection["stop_boolean_projection"] = {
+                "supplied": supplied_stop, "bound": candidate["stop"],
+                "reason": "stop-decision-must-be-a-typed-boolean"}
+        else:
+            raise ValueError("scientist stop decision must be boolean")
+        return review_from_json(candidate), projection or None
+
+    @staticmethod
+    def _scientist_review_error_code(error: ValueError) -> str:
+        return {
+            "invalid scientist evidence review": "incomplete-review",
+            "scientist text array items must be strings":
+                "invalid-evidence-statement",
+            "scientist text collection must be a string or array":
+                "invalid-evidence-container",
+            "scientist text collection contains empty values":
+                "empty-required-review-field",
+            "scientist stop decision must be boolean":
+                "invalid-stop-decision",
+        }.get(str(error), "invalid-typed-review")
+
     def review_engine_evidence(
         self, *, plan: ResearchPlan, engine_evidence: Sequence[Mapping[str, Any]],
     ) -> tuple[ScientistReview, Mapping[str, Any]]:
@@ -595,7 +679,32 @@ class ProposalRuntime:
             "stop and stop_reason. Base every statement only on supplied engine evidence. "
             "Do not certify efficacy, posterior correctness, or hidden-data performance.")
         raw, telemetry = self.complete_json(system_message=system, payload=payload)
-        return review_from_json(raw), telemetry
+        try:
+            review, projection = self._normalize_scientist_review(raw)
+            result = dict(telemetry)
+            if projection is not None:
+                result["review_contract_projection"] = projection
+            return review, result
+        except (TypeError, ValueError) as error:
+            repaired, second = self.complete_json(
+                system_message=system, payload={**payload, "protocol_repair": {
+                    "previous_error": str(error),
+                    "instruction": (
+                        "Return a complete replacement evidence review. Evidence "
+                        "collections may contain strings or structured JSON "
+                        "objects; stop must be a JSON boolean.")}})
+            try:
+                review, projection = self._normalize_scientist_review(repaired)
+            except (TypeError, ValueError) as repaired_error:
+                reason = self._scientist_review_error_code(repaired_error)
+                raise ScientistReviewProtocolError(
+                    "scientist-review-invalid-after-one-provider-repair:"
+                    + reason) from repaired_error
+            result = {"protocol_repair_attempted": True,
+                "provider_requests": [dict(telemetry), dict(second)]}
+            if projection is not None:
+                result["review_contract_projection"] = projection
+            return review, result
 
     def _proposal_payload(
         self, task_name: str, task_desc: str, context: ProposalContext,

@@ -79,6 +79,62 @@ def test_scientist_review_schema_is_strict():
             "stop_reason": "continue"})
 
 
+def test_review_compiler_preserves_structured_evidence_and_typed_stop(monkeypatch):
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    raw = {"protocol_id": "provider-review-protocol",
+        "supported_mechanisms": [
+            {"mechanism": "sparse dependence", "evidence": "lower score"}],
+        "contradicted_mechanisms": [],
+        "cross_engine_conflicts": [{"engines": ["a", "b"], "reason": "rank"}],
+        "synthesis_instructions": [
+            {"instruction": "retain both supports", "scope": "development"}],
+        "stop": "false", "stop_reason": "another comparison remains"}
+    calls = []
+    def complete_json(**kwargs):
+        calls.append(kwargs)
+        return raw, {"fixture": True}
+    monkeypatch.setattr(runtime, "complete_json", complete_json)
+    review, telemetry = runtime.review_engine_evidence(
+        plan=deterministic_plan(("polynomial_lasso",), 1),
+        engine_evidence=[])
+    assert len(calls) == 1 and review.stop is False
+    assert review.supported_mechanisms == (
+        '{"evidence":"lower score","mechanism":"sparse dependence"}',)
+    assert review.cross_engine_conflicts == (
+        '{"engines":["a","b"],"reason":"rank"}',)
+    projection = telemetry["review_contract_projection"]
+    assert projection["protocol_identity_projection"]["bound"] == (
+        ENGINE_REVIEW_PROTOCOL)
+    assert projection["stop_boolean_projection"]["bound"] is False
+    assert projection["structured_statement_projection"][
+        "canonical_json_statement_counts"] == {
+            "supported_mechanisms": 1,
+            "cross_engine_conflicts": 1,
+            "synthesis_instructions": 1}
+
+
+def test_review_compiler_fails_closed_after_invalid_stop_repair(monkeypatch):
+    from hypothesis_mvp.discovery.proposal_runtime import (
+        ScientistReviewProtocolError,
+    )
+    invalid = {"protocol_id": ENGINE_REVIEW_PROTOCOL,
+        "supported_mechanisms": [], "contradicted_mechanisms": [],
+        "cross_engine_conflicts": [],
+        "synthesis_instructions": ["retain evidence"],
+        "stop": "maybe", "stop_reason": "ambiguous"}
+    responses = iter([invalid, invalid])
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    monkeypatch.setattr(runtime, "complete_json",
+        lambda **kwargs: (next(responses), {"fixture": True}))
+    with pytest.raises(
+            ScientistReviewProtocolError,
+            match=("scientist-review-invalid-after-one-provider-repair:"
+                   "invalid-stop-decision")):
+        runtime.review_engine_evidence(
+            plan=deterministic_plan(("polynomial_lasso",), 1),
+            engine_evidence=[])
+
+
 def test_proposal_parent_hash_is_code_bound_not_llm_controlled():
     runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
     context = ProposalContext(1, "balanced", "bound-parent", 1, 1)
