@@ -425,6 +425,48 @@ def test_plan_protocol_identity_is_code_owned_without_provider_retry(monkeypatch
         RESEARCH_PLAN_PROTOCOL)
 
 
+def test_plan_compiler_preserves_structured_scientific_statements(monkeypatch):
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    raw = {"protocol_id": "provider-plan-protocol",
+        "mechanisms": [{"name": "sparse baseline", "role": "falsifier"}],
+        "engine_calls": [
+            {"engine": "mcts", "jobs": 2,
+             "objective": {"goal": "search nonlinear support"},
+             "expected_evidence": {"artifact": "validated frontier"}}],
+        "comparison_questions": {"question": "which support generalizes"},
+        "synthesis_goal": {"goal": "retain falsifiable diversity"},
+        "stop_conditions": [{"condition": "registered budget exhausted"}]}
+    calls = []
+    def complete_json(**kwargs):
+        calls.append(kwargs)
+        return raw, {"fixture": True}
+    monkeypatch.setattr(runtime, "complete_json", complete_json)
+    plan, telemetry = runtime.plan_research(
+        task_context={"description": "fixture"},
+        available_engines=("polynomial_lasso", "mcts"), total_jobs=2)
+    assert len(calls) == 1
+    assert plan.mechanisms == (
+        '{"name":"sparse baseline","role":"falsifier"}',)
+    assert plan.comparison_questions == (
+        '{"question":"which support generalizes"}',)
+    assert plan.synthesis_goal == '{"goal":"retain falsifiable diversity"}'
+    assert plan.stop_conditions == (
+        '{"condition":"registered budget exhausted"}',)
+    assert [(call.engine, call.jobs) for call in plan.engine_calls] == [
+        ("polynomial_lasso", 1), ("mcts", 1)]
+    assert plan.engine_calls[1].objective == (
+        '{"goal":"search nonlinear support"}')
+    projection = telemetry["plan_contract_projection"]
+    assert projection["structured_plan_statement_projection"][
+        "canonical_json_statement_counts"] == {
+            "mechanisms": 1, "comparison_questions": 1,
+            "stop_conditions": 1, "synthesis_goal": 1}
+    assert projection["forced_coverage_dispatch_projection"][
+        "structured_engine_text_fields"] == [
+            {"engine": "mcts", "field": "objective"},
+            {"engine": "mcts", "field": "expected_evidence"}]
+
+
 def test_forced_full_coverage_jobs_are_code_owned(monkeypatch):
     runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
     raw = {"protocol_id": RESEARCH_PLAN_PROTOCOL,

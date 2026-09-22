@@ -418,7 +418,7 @@ class ProposalRuntime:
         if not by_engine:
             return None, None
         skills = {skill.name: skill for skill in REGISTERED_ENGINE_SKILLS}
-        compiled, synthesized, supplied_jobs = [], [], {}
+        compiled, synthesized, supplied_jobs, structured_fields = [], [], {}, []
         for name in available:
             row = by_engine.get(name)
             if row is None:
@@ -432,9 +432,19 @@ class ProposalRuntime:
                         "lineage, and registered engine diagnostics."),
                     "requested_operations": []}
                 synthesized.append(name)
+            else:
+                row = dict(row)
+                for field in ("objective", "expected_evidence"):
+                    value, count = ProposalRuntime._compile_scalar_statement(
+                        row.get(field))
+                    row[field] = value
+                    if count:
+                        structured_fields.append({
+                            "engine": name, "field": field})
             supplied_jobs[name] = row.get("jobs")
             compiled.append({**row, "engine": name, "jobs": 1})
         if (not synthesized and not discarded
+                and not structured_fields
                 and all(value == 1 for value in supplied_jobs.values())):
             return compiled, None
         projection = {"engines": list(available),
@@ -442,10 +452,51 @@ class ProposalRuntime:
             "supplied_jobs": supplied_jobs,
             "synthesized_required_calls": synthesized,
             "discarded_calls": discarded,
+            "structured_engine_text_fields": structured_fields,
             "reason": (
                 "one-job-per-registered-skill-is-the-only-feasible-"
                 "full-coverage-allocation")}
         return compiled, projection
+
+    @staticmethod
+    def _compile_statement_collection(
+        value: Any, *, allow_empty: bool,
+    ) -> tuple[Any, int]:
+        if isinstance(value, str) or value is None:
+            return value, 0
+        if isinstance(value, Mapping):
+            if not value:
+                return value, 0
+            return json.dumps(dict(value), sort_keys=True, separators=(",", ":"),
+                              ensure_ascii=False, allow_nan=False), 1
+        if not isinstance(value, (list, tuple)):
+            return value, 0
+        compiled, structured = [], 0
+        for item in value:
+            if isinstance(item, str):
+                compiled.append(item)
+            elif isinstance(item, Mapping) and item:
+                compiled.append(json.dumps(
+                    dict(item), sort_keys=True, separators=(",", ":"),
+                    ensure_ascii=False, allow_nan=False))
+                structured += 1
+            else:
+                compiled.append(item)
+        if not compiled and allow_empty:
+            return [], structured
+        return compiled, structured
+
+    @staticmethod
+    def _compile_scalar_statement(value: Any) -> tuple[Any, int]:
+        if isinstance(value, str):
+            return value, 0
+        if isinstance(value, Mapping) and value:
+            return json.dumps(dict(value), sort_keys=True, separators=(",", ":"),
+                              ensure_ascii=False, allow_nan=False), 1
+        if isinstance(value, (list, tuple)) and value:
+            return json.dumps(list(value), sort_keys=True, separators=(",", ":"),
+                              ensure_ascii=False, allow_nan=False), 1
+        return value, 0
 
     @staticmethod
     def _normalize_research_plan(
@@ -460,6 +511,22 @@ class ProposalRuntime:
                 "bound": RESEARCH_PLAN_PROTOCOL,
                 "reason": "protocol-identity-is-code-owned",
             }
+        structured = {}
+        for field in ("mechanisms", "comparison_questions", "stop_conditions"):
+            value, count = ProposalRuntime._compile_statement_collection(
+                candidate.get(field), allow_empty=False)
+            candidate[field] = value
+            if count:
+                structured[field] = count
+        goal, goal_count = ProposalRuntime._compile_scalar_statement(
+            candidate.get("synthesis_goal"))
+        candidate["synthesis_goal"] = goal
+        if goal_count:
+            structured["synthesis_goal"] = goal_count
+        if structured:
+            projection["structured_plan_statement_projection"] = {
+                "canonical_json_statement_counts": structured,
+                "reason": "typed-scientific-objects-preserved-as-canonical-json"}
         if len(available) == 1:
             calls = candidate.get("engine_calls")
             original = (dict(calls[0]) if isinstance(calls, (list, tuple))
@@ -584,29 +651,6 @@ class ProposalRuntime:
         }.get(message, "invalid-typed-plan")
 
     @staticmethod
-    def _compile_review_collection(
-        value: Any, *, allow_empty: bool,
-    ) -> tuple[Any, int]:
-        if isinstance(value, str) or value is None:
-            return value, 0
-        if not isinstance(value, (list, tuple)):
-            return value, 0
-        compiled, structured = [], 0
-        for item in value:
-            if isinstance(item, str):
-                compiled.append(item)
-            elif isinstance(item, Mapping) and item:
-                compiled.append(json.dumps(
-                    dict(item), sort_keys=True, separators=(",", ":"),
-                    ensure_ascii=False, allow_nan=False))
-                structured += 1
-            else:
-                compiled.append(item)
-        if not compiled and allow_empty:
-            return [], structured
-        return compiled, structured
-
-    @staticmethod
     def _normalize_scientist_review(
         raw_review: Mapping[str, Any],
     ) -> tuple[ScientistReview, Mapping[str, Any] | None]:
@@ -624,7 +668,7 @@ class ProposalRuntime:
             "synthesis_instructions": False}
         structured = {}
         for field, allow_empty in fields.items():
-            value, count = ProposalRuntime._compile_review_collection(
+            value, count = ProposalRuntime._compile_statement_collection(
                 candidate.get(field), allow_empty=allow_empty)
             candidate[field] = value
             if count:
