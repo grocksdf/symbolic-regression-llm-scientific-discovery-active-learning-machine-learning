@@ -35,6 +35,13 @@ class SymbolicConfig:
     mcts_max_depth: int = 6
     mcts_max_nodes: int = 40
     mcts_constants: list[float] = field(default_factory=lambda: [1.0, 2.0, 3.0])
+    sparse_library_thresholds: list[float] = field(
+        default_factory=lambda: [0.0, 0.02, 0.05, 0.1, 0.2])
+    sparse_library_iterations: int = 8
+    sparse_library_max_terms: int = 12
+    sparse_library_frontier_size: int = 3
+    additive_mechanism_max_terms: int = 4
+    additive_mechanism_frontier_size: int = 3
     math_eps: float = 1.0e-6
     math_max_exp: float = 20.0
     math_max_pow_abs: int = 4

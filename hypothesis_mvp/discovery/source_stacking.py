@@ -14,6 +14,7 @@ import json
 import numpy as np
 from scipy.optimize import minimize
 from scipy.special import logsumexp
+from hypothesis_mvp.symbolic.registry import baseline_engine_name
 
 
 SCHEMA = "scientific-safe-source-stacking-v1"
@@ -25,7 +26,9 @@ def source_family(candidate) -> str:
     if str(candidate.get("origin", "")) == "llm":
         return "llm"
     source = str(candidate.get("source", ""))
-    return "engine:mcts" if source == "engine:mcts" else "core"
+    if source == f"engine:{baseline_engine_name()}":
+        return "core"
+    return source if source.startswith("engine:") else "core"
 
 
 @dataclass(frozen=True)
@@ -336,7 +339,7 @@ def filter_conditionally_complementary_engine_candidates(
     reference = tuple(row for row in rows
                       if source_family(row) in {"core", "llm"})
     engines = tuple(row for row in rows
-                    if source_family(row) == "engine:mcts")
+                    if source_family(row) not in {"core", "llm"})
     if not engines:
         return rows, {
             "schema": "scientific-conditional-engine-complementarity-v1",
@@ -376,7 +379,8 @@ def filter_conditionally_complementary_engine_candidates(
                         float(np.sum(np.abs(reference_log_density[active]))))
             gains.append(gain)
             tolerances.append(float(1024.0 * np.finfo(float).eps * scale))
-        engine_weight = full_certificate.source_weights.get("engine:mcts", 0.0)
+        family = source_family(candidate)
+        engine_weight = full_certificate.source_weights.get(family, 0.0)
         admitted = bool(engine_weight > 2e-12 and all(
             gain > tolerance for gain, tolerance in zip(gains, tolerances)))
         if admitted:
@@ -384,7 +388,8 @@ def filter_conditionally_complementary_engine_candidates(
         certificates.append({
             "candidate_identity": sha256(json.dumps(candidate, sort_keys=True,
                 default=str).encode()).hexdigest(),
-            "source": str(candidate["source"]), "admitted": admitted,
+            "source": str(candidate["source"]), "family": family,
+            "admitted": admitted,
             "conditional_fold_log_score_gains": gains,
             "fold_numerical_tolerances": tolerances,
             "conditional_source_weight": float(engine_weight),

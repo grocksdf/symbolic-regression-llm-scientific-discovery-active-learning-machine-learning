@@ -18,6 +18,7 @@ from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.hypotheses import EvidenceRegistry, EvidenceEventType
 from hypothesis_mvp.pcpi.discovery_transaction import DiscoveryScoringControls, _publish
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
+from hypothesis_mvp.symbolic.registry import registered_engine_names
 from .agent import DiscoveryAgentConfig
 from .proposal_runtime import ProviderSettings
 from .resource_limits import run_bounded
@@ -58,6 +59,38 @@ def _digest(value):
                              separators=(",", ":")).encode()).hexdigest()
 
 
+def _validate_influence_registration(config, agent):
+    influence = config["marginal_influence_gate"]
+    optional = [f"engine:{name}" for name in agent.engines
+                if name != config["single_engine"]]
+    registered = ["llm", *optional]
+    active = influence.get("required_active_contributions")
+    rejected = influence.get("rejectable_contributions")
+    if (set(influence) != {"schema", "exact_eig_epsabs",
+            "required_contributions", "decision_rule", "quality_rule",
+            "arbitration_fraction", "require_all_contributions",
+            "source_admission_rule", "required_active_contributions",
+            "rejectable_contributions"}
+            or influence["schema"] !=
+                "scientific-source-admission-influence-gate-v5"
+            or influence["exact_eig_epsabs"] !=
+                config["hypothesis_bank_gate"]["exact_eig_epsabs"]
+            or influence["required_contributions"] != registered
+            or influence["decision_rule"] !=
+                "full-target-certified-regret-v1"
+            or influence["quality_rule"] !=
+                "positive-paired-cumulative-log-predictive-ratio-v1"
+            or influence["arbitration_fraction"] != 0.5
+            or influence["source_admission_rule"] !=
+                "independent-sourcewise-fold-safe-half-core-log-score-stacking-v2"
+            or not isinstance(active, list) or not active
+            or active[0] != "llm"
+            or not set(active) <= set(registered)
+            or rejected != [name for name in optional if name not in active]
+            or influence["require_all_contributions"] is not True):
+        raise ValueError("invalid marginal decision influence registration")
+
+
 def validate_system_registration(config):
     required = {"schema", "data", "seeds", "agent", "single_engine", "prior", "scoring",
         "measurement_budget", "exploration_seconds", "policy_seconds", "data_loading_seconds",
@@ -94,7 +127,7 @@ def validate_system_registration(config):
     if (agent.engine_workers != 1 or agent.engine_retries != 0 or agent.acquisition_enabled
             or agent.use_knowledge or agent.cycles < 1 or agent.engine_repeats < 1
             or len(set(agent.engines)) != len(agent.engines) or len(agent.engines) < 2
-            or any(e not in {"polynomial_lasso", "mcts"} for e in agent.engines)
+            or any(e not in set(registered_engine_names()) for e in agent.engines)
             or config["single_engine"] not in agent.engines
             or agent.engine_budget != len(agent.engines) * agent.engine_repeats
             or agent.discovery_budget < 1
@@ -128,26 +161,7 @@ def validate_system_registration(config):
             or gate["source_stacking_max_optional_mass"] != 0.5
             or gate["require_all_variants"] is not True):
         raise ValueError("invalid hypothesis-bank viability registration")
-    influence = config["marginal_influence_gate"]
-    if (set(influence) != {"schema", "exact_eig_epsabs", "required_contributions",
-                           "decision_rule", "quality_rule", "arbitration_fraction",
-                           "require_all_contributions", "source_admission_rule",
-                           "required_active_contributions", "rejectable_contributions"}
-            or influence["schema"] != "scientific-source-admission-influence-gate-v5"
-            or influence["exact_eig_epsabs"] != gate["exact_eig_epsabs"]
-            or influence["required_contributions"] != ["llm", "engine:mcts"]
-            or influence["decision_rule"] != "full-target-certified-regret-v1"
-            or influence["quality_rule"] != "positive-paired-cumulative-log-predictive-ratio-v1"
-            or influence["arbitration_fraction"] != 0.5
-            or influence["source_admission_rule"] !=
-                "independent-sourcewise-fold-safe-half-core-log-score-stacking-v2"
-            or influence["required_active_contributions"] not in (
-                ["llm"], ["llm", "engine:mcts"])
-            or influence["rejectable_contributions"] != (
-                ["engine:mcts"] if influence["required_active_contributions"] == ["llm"]
-                else [])
-            or influence["require_all_contributions"] is not True):
-        raise ValueError("invalid marginal decision influence registration")
+    _validate_influence_registration(config, agent)
     identity = config["provider_public_identity"]
     if identity is None and config["user_execution_authorized"] is False:
         return config
@@ -190,36 +204,47 @@ def verify_registered_provider(project_root, config):
 
 
 def _variant_composition(variant, candidates, candidate_admission=None,
-                         *, require_optional_engine=False):
+                         *, optional_engine_families=(),
+                         required_active_contributions=()):
     origins = [str(candidate.get("origin", "")) for candidate in candidates]
-    engines = {str(candidate.get("source", "")) for candidate in candidates
-               if str(candidate.get("source", "")).startswith("engine:")}
+    engines = {source_family(candidate) for candidate in candidates
+               if source_family(candidate) not in {"core", "llm"}}
     certificates = (
         [] if candidate_admission is None
         else list(candidate_admission.get("candidate_certificates", []))
     )
-    optional_engine_certificates = [
-        row for row in certificates if row.get("family") == "engine:mcts"
-    ]
-    optional_engine_safely_rejected = bool(
-        optional_engine_certificates
-        and all(row.get("admitted") is False
-                and (row.get("negative_transfer_certified") is True
-                     or row.get("redundant_support_certified") is True)
-                for row in optional_engine_certificates)
-    )
+    if not optional_engine_families:
+        optional_engine_families = tuple(sorted({
+            *engines, *(str(row.get("family", "")) for row in certificates
+                        if str(row.get("family", "")).startswith("engine:"))}))
+    optional_decisions = {}
+    for family in optional_engine_families:
+        relevant = [row for row in certificates
+                    if row.get("family") == family]
+        safely_rejected = bool(relevant and all(
+            row.get("admitted") is False
+            and (row.get("negative_transfer_certified") is True
+                 or row.get("redundant_support_certified") is True)
+            for row in relevant))
+        retained = family in engines
+        required = family in required_active_contributions
+        optional_decisions[family] = {
+            "retained": retained, "safely_rejected": safely_rejected,
+            "required_active": required,
+            "passed": (True if variant != "full" else
+                       retained or (safely_rejected and not required))}
     return {
         "llm_enabled_variant_retains_llm_hypothesis": (
             "llm" in origins if variant != "no_llm" else "llm" not in origins
         ),
         "full_optional_engine_retained_or_candidatewise_safe_rejection_certified": (
-            len(engines) >= 2 or (
-                optional_engine_safely_rejected and not require_optional_engine)
+            all(row["passed"] for row in optional_decisions.values())
             if variant == "full" else True
         ),
         "no_llm_variant_retains_no_llm_hypothesis": (
             "llm" not in origins if variant == "no_llm" else True
         ),
+        "optional_engine_decisions": optional_decisions,
     }
 
 
@@ -268,13 +293,21 @@ def _prepare_hypothesis_bank_viability(
             None if candidate_admission is None
             else candidate_admission["variants"][variant]
         )
+        optional_families = tuple(
+            f"engine:{name}" for name in config["agent"]["engines"]
+            if name != config["single_engine"])
         composition = _variant_composition(
             variant, row["candidates"], variant_candidate_admission,
-            require_optional_engine=(
-                "engine:mcts" in config["marginal_influence_gate"][
-                    "required_active_contributions"]))
-        audit["composition_decisions"] = composition
-        audit["passed"] = bool(audit["passed"] and all(composition.values())
+            optional_engine_families=optional_families,
+            required_active_contributions=tuple(config[
+                "marginal_influence_gate"]["required_active_contributions"]))
+        optional_details = composition.pop("optional_engine_decisions")
+        audit["composition_decisions"] = {
+            **composition, "optional_engine_decisions": optional_details}
+        audit["passed"] = bool(audit["passed"]
+                               and all(composition.values())
+                               and all(row["passed"]
+                                       for row in optional_details.values())
                                and selection["source_safety_passed"])
         viability[variant] = audit
     _publish(workspace / "H0_HYPOTHESIS_BANK_VIABILITY.json", {
@@ -462,9 +495,12 @@ def _bind_source_admission_to_influence(report, admission):
         comparison["source_admission"] = source
         if not source["admitted"]:
             comparison["pre_admission_influence_passed"] = comparison["passed"]
-            comparison["accepted_contribution_role"] = "rejected-negative-transfer"
+            comparison["accepted_contribution_role"] = (
+                "rejected-safe-before-influence")
             comparison["passed"] = bool(source["weight"] <= 2e-12
-                                         and source["negative_transfer_certified"])
+                and (source.get("negative_transfer_certified")
+                     or source.get("redundant_support_certified")
+                     or source.get("candidatewise_safe_rejection_certified")))
     report["schema"] = "scientific-source-admission-and-influence-family-gate-v1"
     report["passed"] = all(row["passed"] for row in report["comparisons"].values())
     report["source_admission_identity"] = _digest(full)
@@ -481,8 +517,15 @@ def _prepare_marginal_decision_influence(workspace, exploration, data, config,
     full = rows["full"]
     candidates = {"full": full["candidates"]}
     for contribution in gate["required_contributions"]:
+        if contribution == "llm":
+            present = any(str(row.get("origin", "")) == "llm"
+                          for row in full["candidates"])
+        else:
+            present = any(source_family(row) == contribution
+                          for row in full["candidates"])
         candidates[f"full_without_{contribution.replace(':', '_')}"] = (
-            leave_one_source_out_candidates(full["candidates"], contribution))
+            leave_one_source_out_candidates(full["candidates"], contribution)
+            if present else list(full["candidates"]))
     profiles, quality_profiles = {}, {}
     for variant, bank in candidates.items():
         source_weights = _renormalized_source_weights(

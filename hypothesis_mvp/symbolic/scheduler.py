@@ -77,7 +77,8 @@ def _stable_seed(base: int, engine: str, repeat: int, attempt: int) -> int:
 
 
 def _normalize_expression(expression: str) -> str:
-    value = re.sub(r"\b(x\d+)\s+(x\d+)\b", r"\1*\2", str(expression).strip())
+    value = str(expression).strip().replace("^", "**")
+    value = re.sub(r"\b(x\d+)\s+(x\d+)\b", r"\1*\2", value)
     return re.sub(r"(\d(?:\.\d+)?)\s+(x\d+)\b", r"\1*\2", value)
 
 
@@ -204,8 +205,8 @@ def _aggregate(results: Sequence[EngineResult], budget: int, used: int) -> tuple
                 float(np.median([row.score for row in ordered])), diagnostics,
                 repeats, best.lineage_id))
         candidates.sort(key=lambda item: (item.score, item.complexity, item.expression))
-        limit = (max(int(row.diagnostics.get("frontier_size_limit", 1)) for row in rows)
-                 if engine == "mcts" else 1)
+        limit = max(int(row.diagnostics.get("frontier_size_limit", 1))
+                    for row in rows)
         aggregated.extend(candidates[:limit])
     return tuple(sorted(aggregated, key=lambda item: (item.score, item.engine)))
 

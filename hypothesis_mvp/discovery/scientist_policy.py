@@ -10,6 +10,8 @@ from hashlib import sha256
 import json
 from typing import Any, Mapping, Sequence
 
+from hypothesis_mvp.symbolic.registry import REGISTERED_SYMBOLIC_ENGINES
+
 
 RESEARCH_PLAN_PROTOCOL = "scientific-research-plan-v1"
 ENGINE_REVIEW_PROTOCOL = "scientific-engine-evidence-review-v1"
@@ -36,19 +38,10 @@ class EngineSkill:
                 "cost_unit": self.cost_unit}
 
 
-REGISTERED_ENGINE_SKILLS = (
-    EngineSkill("polynomial_lasso",
-        ("sparse polynomial support", "fast deterministic baseline",
-         "global additive interactions"),
-        "degree-bounded sparse polynomial", ("trigonometric", "logarithmic",
-        "exponential", "reciprocal", "division")),
-    EngineSkill("mcts",
-        ("typed symbolic search", "nonlinear primitive search",
-         "structural diversity frontier", "degree-at-most-four monomials",
-         "sin(xi), cos(xi), tanh(xi)"),
-        "tree-search over registered closed basis",
-        ("reciprocal", "logarithmic", "exponential", "division", "ratio")),
-)
+REGISTERED_ENGINE_SKILLS = tuple(
+    EngineSkill(spec.name, spec.capabilities, spec.inductive_bias,
+                spec.forbidden_requests)
+    for spec in REGISTERED_SYMBOLIC_ENGINES)
 
 
 @dataclass(frozen=True)

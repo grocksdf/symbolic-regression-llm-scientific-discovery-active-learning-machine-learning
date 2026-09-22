@@ -10,6 +10,7 @@ from hypothesis_mvp.discovery.equation_runtime import EquationRuntime
 from hypothesis_mvp.discovery.pcpi_adapter import additive_closed_form, structural_terms
 from hypothesis_mvp.symbolic.mcts_agent import MCTSSymbolicAgent
 from hypothesis_mvp.symbolic.pysr_wrapper import PolynomialLassoRegressor, get_symbolic_regressor
+from hypothesis_mvp.symbolic.registry import registered_engine_names
 from hypothesis_mvp.symbolic.typed_grammar import Var, Unary, expand_ast
 
 
@@ -123,6 +124,41 @@ def test_scheduler_charges_one_mcts_job_while_exporting_fixed_frontier():
     assert 2 <= len(mcts) <= 4
     assert all(row.diagnostics["candidate_count"] == len(mcts) for row in mcts)
     assert len({row.lineage_id for row in mcts}) == len(mcts)
+
+
+@pytest.mark.parametrize("engine", ["sparse_library", "additive_mechanisms"])
+def test_registered_library_engines_are_deterministic_and_adapter_closed(engine):
+    X, y = _fixture()
+    config = SymbolicConfig(
+        engine=engine, expression_contract="pcpi-closed-basis-v1")
+    first = get_symbolic_regressor(config).fit(X, y)
+    second = get_symbolic_regressor(config).fit(X, y)
+    assert first.candidate_expressions() == second.candidate_expressions()
+    assert first.best_expression() == first.candidate_expressions()[0]
+    assert all(structural_terms(value, X.shape[1])
+               for value in first.candidate_expressions())
+    prediction = first.predict(X).reshape(-1)
+    assert prediction.shape == y.shape and np.all(np.isfinite(prediction))
+
+
+def test_four_skill_scheduler_preserves_one_job_per_engine_and_lineage():
+    from hypothesis_mvp.symbolic import EngineScheduler
+    X, y = _fixture()
+    engines = registered_engine_names()
+    assert engines == ("polynomial_lasso", "mcts", "sparse_library",
+                       "additive_mechanisms")
+    result = EngineScheduler().run(
+        engines=engines,
+        config=SymbolicConfig(expression_contract="pcpi-closed-basis-v1",
+            mcts_max_iterations=12, mcts_frontier_size=2),
+        X_train=X, y_train=y, X_val=X, y_val=y, repeats=1,
+        base_seed=17, max_retries=0, evaluation_budget=len(engines),
+        parallel=False, max_workers=1, timeout_s=30)
+    assert not result.failures
+    assert result.evaluations_used == len(engines)
+    assert {row.engine for row in result.all_results} == set(engines)
+    assert len({row.lineage_id for row in result.all_results}) == len(
+        result.all_results)
 
 
 def test_invalid_unary_expansions_do_not_exhaust_valid_generation_slots():

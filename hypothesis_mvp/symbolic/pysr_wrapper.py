@@ -10,7 +10,11 @@ import numpy as np
 from hypothesis_mvp.config import SymbolicConfig
 
 from .base import SymbolicRegressor
+from .library_engines import (
+    AdditiveMechanismRegressor, SparseLibraryRegressor,
+)
 from .mcts_agent import MCTSSymbolicAgent
+from .registry import registered_engine_names
 
 
 class PySRSymbolicRegressor(SymbolicRegressor):
@@ -167,7 +171,8 @@ class PolynomialLassoRegressor(SymbolicRegressor):
 def get_symbolic_regressor(config: SymbolicConfig) -> SymbolicRegressor:
     if config.expression_contract not in {"unrestricted", "pcpi-closed-basis-v1"}:
         raise ValueError("unknown symbolic expression contract")
-    if config.expression_contract != "unrestricted" and config.engine not in {"mcts", "polynomial_lasso"}:
+    if (config.expression_contract != "unrestricted"
+            and config.engine not in set(registered_engine_names())):
         raise ValueError("backend does not implement closed expression contract")
     factories = {
         "pysr": lambda: PySRSymbolicRegressor(config),
@@ -178,10 +183,16 @@ def get_symbolic_regressor(config: SymbolicConfig) -> SymbolicRegressor:
         "mcts": lambda: MCTSSymbolicAgent(
             config, seed_expressions=list(config.seed_expressions)
         ),
+        "sparse_library": lambda: SparseLibraryRegressor(config),
+        "additive_mechanisms": lambda: AdditiveMechanismRegressor(config),
     }
     if config.engine not in factories:
         raise ValueError(f"unsupported symbolic engine: {config.engine}")
     return factories[config.engine]()
 
 
-__all__ = ["PolynomialLassoRegressor", "PySRSymbolicRegressor", "get_symbolic_regressor"]
+__all__ = [
+    "AdditiveMechanismRegressor", "PolynomialLassoRegressor",
+    "PySRSymbolicRegressor", "SparseLibraryRegressor",
+    "get_symbolic_regressor",
+]

@@ -12,6 +12,7 @@ from hashlib import sha256
 import json
 
 import numpy as np
+from hypothesis_mvp.symbolic.registry import registered_engine_names
 
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.pcpi.acquisition import (
@@ -257,7 +258,11 @@ def compare_marginal_influence(full: InitialEIGIntervalProfile,
 def audit_marginal_influence(profiles: dict[str, InitialEIGIntervalProfile],
                              *, quality_profiles: dict[str, PredictiveQualityProfile],
                              required_contributions: tuple[str, ...]) -> dict:
-    if required_contributions != ("llm", "engine:mcts"):
+    if (len(required_contributions) < 2
+            or required_contributions[0] != "llm"
+            or len(set(required_contributions)) != len(required_contributions)
+            or any(name != "llm" and not name.startswith("engine:")
+                   for name in required_contributions)):
         raise ValueError("unknown marginal influence contribution registration")
     expected = {"full", *(f"full_without_{name.replace(':', '_')}"
                           for name in required_contributions)}
@@ -331,7 +336,9 @@ def leave_one_source_out_candidates(candidates, contribution: str):
     """Return a source-matched ablation without inspecting any response."""
     if contribution == "llm":
         kept = [row for row in candidates if str(row.get("origin", "")) != "llm"]
-    elif contribution == "engine:mcts":
+    elif (contribution.startswith("engine:")
+          and contribution.removeprefix("engine:")
+          in set(registered_engine_names())):
         kept = [row for row in candidates if str(row.get("source", "")) != contribution]
     else:
         raise ValueError("unknown source contribution")

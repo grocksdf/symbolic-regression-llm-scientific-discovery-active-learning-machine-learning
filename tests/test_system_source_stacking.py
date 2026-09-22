@@ -63,6 +63,12 @@ def test_source_families_are_task_independent_and_explicit():
     assert source_family({"source": "llm_anything", "origin": "llm"}) == "llm"
     assert source_family({"source": "engine:polynomial_lasso", "origin": "deterministic"}) == "core"
     assert source_family({"source": "deterministic_anchor", "origin": "deterministic"}) == "core"
+    assert source_family({
+        "source": "engine:sparse_library",
+        "origin": "deterministic"}) == "engine:sparse_library"
+    assert source_family({
+        "source": "engine:additive_mechanisms",
+        "origin": "deterministic"}) == "engine:additive_mechanisms"
 
 
 def test_independent_admission_rejects_harmful_engine_with_certificate():

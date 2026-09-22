@@ -16,6 +16,7 @@ from .agent import DiscoveryAgent, DiscoveryAgentConfig
 from .system_run import analyze_system_contract
 from .resource_limits import run_bounded
 from hypothesis_mvp.pcpi.discovery_transaction import _publish
+from hypothesis_mvp.symbolic.registry import registered_engine_names
 from .pcpi_adapter import structural_terms
 from .initializer import generic_deterministic_candidates
 from .source_stacking import source_family
@@ -139,7 +140,8 @@ def run_exploration_ablations(root, selection, *, dataset, config,
             or single_engine not in config.engines or config.engine_repeats < 1
             or config.engine_retries != 0 or config.use_knowledge
             or config.acquisition_enabled or config.engine_workers != 1
-            or any(engine not in {"polynomial_lasso", "mcts"} for engine in config.engines)
+            or any(engine not in set(registered_engine_names())
+                   for engine in config.engines)
             or provider_settings is None or not provider_settings.routes or not source_identity
             or not isinstance(scientific_context, dict)
             or not scientific_context.get("task_name")

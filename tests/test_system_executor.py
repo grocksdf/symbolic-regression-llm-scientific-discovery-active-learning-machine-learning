@@ -53,6 +53,22 @@ def _config():
         "user_execution_authorized": True}
 
 
+def test_registration_accepts_four_typed_engine_skills():
+    config = _config()
+    config["agent"]["engines"] = [
+        "polynomial_lasso", "mcts", "sparse_library",
+        "additive_mechanisms"]
+    config["agent"]["engine_repeats"] = 1
+    config["agent"]["engine_budget"] = 4
+    config["marginal_influence_gate"]["required_contributions"] = [
+        "llm", "engine:mcts", "engine:sparse_library",
+        "engine:additive_mechanisms"]
+    config["marginal_influence_gate"]["rejectable_contributions"] = [
+        "engine:mcts", "engine:sparse_library",
+        "engine:additive_mechanisms"]
+    assert executor.validate_system_registration(config) is config
+
+
 def _data():
     def role(kind, x): return RoleDataset(kind, np.array(x, dtype=float)[:, None], np.array(x, dtype=float))
     return OpenSystemData(SelectionData(role(DataRole.DEVELOPMENT, [0, 1]),
@@ -245,6 +261,31 @@ def test_full_composition_accepts_certified_optional_engine_rejection():
     decisions = executor._variant_composition("full", candidates, admission)
     assert not decisions[
         "full_optional_engine_retained_or_candidatewise_safe_rejection_certified"]
+
+
+def test_full_composition_audits_multiple_optional_engine_families():
+    candidates = [
+        {"source": "engine:polynomial_lasso", "origin": "deterministic"},
+        {"source": "llm_proposal", "origin": "llm"},
+        {"source": "engine:sparse_library", "origin": "deterministic"},
+    ]
+    admission = {"candidate_certificates": [{
+        "family": "engine:mcts", "admitted": False,
+        "negative_transfer_certified": True}, {
+        "family": "engine:additive_mechanisms", "admitted": False,
+        "redundant_support_certified": True}]}
+    decisions = executor._variant_composition(
+        "full", candidates, admission,
+        optional_engine_families=(
+            "engine:mcts", "engine:sparse_library",
+            "engine:additive_mechanisms"),
+        required_active_contributions=("llm",))
+    assert decisions[
+        "full_optional_engine_retained_or_candidatewise_safe_rejection_certified"]
+    details = decisions["optional_engine_decisions"]
+    assert details["engine:sparse_library"]["retained"] is True
+    assert details["engine:mcts"]["safely_rejected"] is True
+    assert details["engine:additive_mechanisms"]["safely_rejected"] is True
 
 
 def test_marginal_influence_failure_stops_before_any_pool_response(tmp_path, monkeypatch):
