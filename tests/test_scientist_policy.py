@@ -20,7 +20,8 @@ from hypothesis_mvp.discovery.scientist_policy import (
 )
 from hypothesis_mvp.discovery.inference_router import route_inference
 from hypothesis_mvp.discovery.skill_policy import (
-    SkillTaskEvidence, fit_skill_reliability, leave_one_task_out_skill_policy,
+    SkillTaskEvidence, allocate_bayesian_skill_jobs, fit_skill_reliability,
+    leave_one_task_out_skill_policy, leave_one_task_out_skill_policy_v2,
 )
 from hypothesis_mvp.symbolic.scheduler import EngineScheduler
 
@@ -256,6 +257,43 @@ def test_leave_one_task_out_skill_gate_requires_cross_family_coverage():
     passed = leave_one_task_out_skill_policy(diverse)
     assert passed["passed"] is True
     assert passed["candidate_response_accessed"] is False
+
+
+def test_skill_replay_v2_requires_per_skill_cross_family_prediction():
+    rows = tuple(
+        SkillTaskEvidence(
+            f"{skill}-{family}-{index}", family, skill,
+            ((1., 1.) if outcome else (-1., -1.)), (.01, .01))
+        for skill, outcomes in {
+            "mcts": (True, False, True, False),
+            "sparse_library": (True, True, False, True)}.items()
+        for index, (family, outcome) in enumerate(zip(
+            ("a", "a", "b", "b"), outcomes)))
+    report = leave_one_task_out_skill_policy_v2(
+        rows, minimum_training_tasks=2, minimum_resolved_predictions=4)
+    assert report["coverage_passed"]
+    assert report["resolved_covered_prediction_count"] == 8
+    assert report["brier_score"] is not None
+
+
+def test_bayesian_skill_allocator_combines_reliability_and_llm_preference():
+    reliability = {
+        "polynomial_lasso": {
+            "posterior_mean": .6, "lower_credible_bound": .4},
+        "mcts": {"posterior_mean": .2, "lower_credible_bound": .05},
+        "sparse_library": {
+            "posterior_mean": .7, "lower_credible_bound": .45},
+        "additive_mechanisms": {
+            "posterior_mean": .5, "lower_credible_bound": .3}}
+    result = allocate_bayesian_skill_jobs(
+        tuple(reliability), 6, reliability,
+        llm_requested_jobs={"polynomial_lasso": 2, "mcts": 1,
+                            "sparse_library": 2,
+                            "additive_mechanisms": 1})
+    assert sum(result["allocated_jobs"].values()) == 6
+    assert result["allocated_jobs"]["sparse_library"] >= 2
+    assert result["allocated_jobs"]["mcts"] == 1
+    assert result["candidate_response_accessed"] is False
 
 
 def test_cross_round_seed_bank_respects_fixed_deterministic_budget():
