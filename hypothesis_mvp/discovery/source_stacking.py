@@ -334,7 +334,7 @@ def filter_fold_safe_source_candidates(candidates, initial_data, arbitration, **
 
 def filter_conditionally_complementary_engine_candidates(
         candidates, initial_data, arbitration, **kwargs):
-    """Require optional-engine gain beyond the already safe core+LLM mixture."""
+    """Require gain beyond the currently retained safe reference mixture."""
     rows = tuple(dict(row) for row in candidates)
     reference = tuple(row for row in rows
                       if source_family(row) in {"core", "llm"})
@@ -348,8 +348,10 @@ def filter_conditionally_complementary_engine_candidates(
         }
     reference_values, folds, reference_families = arbitration_source_log_predictive(
         reference, initial_data, arbitration, **kwargs)
-    if set(reference_families) != {"core", "llm"}:
-        raise ValueError("conditional engine admission requires core and LLM reference")
+    if ("core" not in reference_families
+            or set(reference_families) - {"core", "llm"}):
+        raise ValueError(
+            "conditional engine admission requires a core-anchored reference")
     reference_certificate = safe_source_stacking(
         reference_values, folds, reference_families, baseline_source="core")
     reference_weights = np.asarray(reference_certificate.weights, dtype=float)
@@ -403,6 +405,7 @@ def filter_conditionally_complementary_engine_candidates(
         })
     return tuple(retained), {
         "schema": "scientific-conditional-engine-complementarity-v1",
+        "reference_families": list(reference_families),
         "reference_stacking": reference_certificate.to_dict(),
         "candidate_certificates": certificates,
         "retained_engine_count": sum(row["admitted"] for row in certificates),

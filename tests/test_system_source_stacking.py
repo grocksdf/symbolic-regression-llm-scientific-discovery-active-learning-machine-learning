@@ -197,3 +197,30 @@ def test_conditional_engine_admission_requires_gain_beyond_core_llm(monkeypatch)
     certificate = report["candidate_certificates"][0]
     assert certificate["admitted"] is True
     assert min(certificate["conditional_fold_log_score_gains"]) > 0.0
+
+
+def test_conditional_engine_admission_uses_core_when_llm_is_safely_absent(
+        monkeypatch):
+    baseline = np.full(8, -2.0)
+    complementary = baseline + .2
+    def profile(candidates, *args, **kwargs):
+        if any(row["source"] == "engine:sparse_library"
+               for row in candidates):
+            return (np.column_stack((baseline, complementary)),
+                    np.arange(8) % 2, ("core", "engine:sparse_library"))
+        return (baseline[:, None], np.arange(8) % 2, ("core",))
+    monkeypatch.setattr(
+        "hypothesis_mvp.discovery.source_stacking.arbitration_source_log_predictive",
+        profile)
+    rows = [
+        {"expression": "x0", "source": "anchor-a", "origin": "deterministic"},
+        {"expression": "x0**2", "source": "anchor-b", "origin": "deterministic"},
+        {"expression": "sin(x0)", "source": "engine:sparse_library",
+         "origin": "deterministic"},
+    ]
+    retained, report = filter_conditionally_complementary_engine_candidates(
+        rows, None, None)
+    assert any(source_family(row) == "engine:sparse_library"
+               for row in retained)
+    assert report["reference_families"] == ["core"]
+    assert report["candidate_certificates"][0]["admitted"] is True
