@@ -497,6 +497,54 @@ def test_forced_full_coverage_jobs_are_code_owned(monkeypatch):
         "bound_jobs"] == {"polynomial_lasso": 1, "mcts": 1}
 
 
+def test_scientist_extra_budget_allocation_is_executable(monkeypatch):
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    raw = {"protocol_id": RESEARCH_PLAN_PROTOCOL,
+        "mechanisms": ["compare sparse and nonlinear structure"],
+        "engine_calls": [
+            {"engine": "polynomial_lasso", "jobs": 3,
+             "objective": "fit sparse support",
+             "expected_evidence": "validated polynomial support"},
+            {"engine": "mcts", "jobs": 1,
+             "objective": "search nonlinear support",
+             "expected_evidence": "validated nonlinear frontier"}],
+        "comparison_questions": ["which support generalizes"],
+        "synthesis_goal": "retain falsifiable structure",
+        "stop_conditions": ["registered budget exhausted"]}
+    monkeypatch.setattr(runtime, "complete_json",
+        lambda **kwargs: (raw, {"fixture": True}))
+    plan, telemetry = runtime.plan_research(
+        task_context={"description": "fixture"},
+        available_engines=("polynomial_lasso", "mcts"), total_jobs=4)
+    assert [(call.engine, call.jobs) for call in plan.engine_calls] == [
+        ("polynomial_lasso", 3), ("mcts", 1)]
+    assert "forced_coverage_dispatch_projection" not in telemetry.get(
+        "plan_contract_projection", {})
+
+
+def test_scientist_invalid_extra_budget_is_projected_from_preferences(monkeypatch):
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    raw = {"protocol_id": RESEARCH_PLAN_PROTOCOL,
+        "mechanisms": ["fixture"],
+        "engine_calls": [
+            {"engine": "polynomial_lasso", "jobs": 9,
+             "objective": "baseline", "expected_evidence": "support"},
+            {"engine": "mcts", "jobs": 0,
+             "objective": "search", "expected_evidence": "frontier"}],
+        "comparison_questions": ["compare"], "synthesis_goal": "synthesize",
+        "stop_conditions": ["budget"]}
+    monkeypatch.setattr(runtime, "complete_json",
+        lambda **kwargs: (raw, {"fixture": True}))
+    plan, telemetry = runtime.plan_research(
+        task_context={"description": "fixture"},
+        available_engines=("polynomial_lasso", "mcts"), total_jobs=4)
+    assert [(call.engine, call.jobs) for call in plan.engine_calls] == [
+        ("polynomial_lasso", 2), ("mcts", 2)]
+    assert telemetry["plan_contract_projection"][
+        "forced_coverage_dispatch_projection"]["bound_jobs"] == {
+            "polynomial_lasso": 2, "mcts": 2}
+
+
 def test_forced_full_coverage_compiles_missing_registered_skill(monkeypatch):
     runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
     raw = {"protocol_id": RESEARCH_PLAN_PROTOCOL,

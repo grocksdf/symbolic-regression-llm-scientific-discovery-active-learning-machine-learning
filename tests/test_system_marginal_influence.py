@@ -112,6 +112,26 @@ def test_family_gate_requires_llm_and_mcts_source_ablations():
                                  required_contributions=("llm",))
 
 
+def test_family_gate_accepts_policy_level_scientist_ablation():
+    full = _profile("full", (.8, .1, .05), (.81, .11, .06),
+                    supports=(("x0",), ("x1",), ("x2",)))
+    no_policy = _profile(
+        "full_without_scientist_policy", (.1, .7, .05), (.11, .71, .06),
+        supports=(("x0",), ("x2",)))
+    no_mcts = _profile(
+        "full_without_engine_mcts", (.1, .05, .7), (.11, .06, .71),
+        supports=(("x0",), ("x1",)))
+    profiles = {"full": full,
+        "full_without_scientist_policy": no_policy,
+        "full_without_engine_mcts": no_mcts}
+    quality = {name: _quality(name, (-1., -1.) if name == "full"
+                             else (-2., -2.))
+               for name in profiles}
+    report = audit_marginal_influence(
+        profiles, quality_profiles=quality,
+        required_contributions=("scientist_policy", "engine:mcts"))
+    assert report["passed"]
+    assert report["comparisons"]["scientist_policy"]["passed"]
 def test_quality_channel_accepts_unique_source_when_decision_is_unchanged():
     full = _profile("full", (.8, .1), (.81, .11), supports=(("x0",), ("x1",)))
     ablated = _profile("full_without_llm", (.7, .2), (.71, .21), supports=(("x0",),))

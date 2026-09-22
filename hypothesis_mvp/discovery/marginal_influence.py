@@ -259,9 +259,10 @@ def audit_marginal_influence(profiles: dict[str, InitialEIGIntervalProfile],
                              *, quality_profiles: dict[str, PredictiveQualityProfile],
                              required_contributions: tuple[str, ...]) -> dict:
     if (len(required_contributions) < 2
-            or required_contributions[0] != "llm"
+            or required_contributions[0] not in {"llm", "scientist_policy"}
             or len(set(required_contributions)) != len(required_contributions)
-            or any(name != "llm" and not name.startswith("engine:")
+            or any(name not in {"llm", "scientist_policy"}
+                   and not name.startswith("engine:")
                    for name in required_contributions)):
         raise ValueError("unknown marginal influence contribution registration")
     expected = {"full", *(f"full_without_{name.replace(':', '_')}"

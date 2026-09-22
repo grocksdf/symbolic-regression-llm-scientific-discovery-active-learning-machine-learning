@@ -63,16 +63,25 @@ def _validate_influence_registration(config, agent):
     influence = config["marginal_influence_gate"]
     optional = [f"engine:{name}" for name in agent.engines
                 if name != config["single_engine"]]
-    registered = ["llm", *optional]
+    schema = influence.get("schema")
+    policy_level = schema == "scientific-policy-and-source-influence-gate-v6"
+    contribution = "scientist_policy" if policy_level else "llm"
+    registered = [contribution, *optional]
     active = influence.get("required_active_contributions")
     rejected = influence.get("rejectable_contributions")
-    if (set(influence) != {"schema", "exact_eig_epsabs",
+    keys = {"schema", "exact_eig_epsabs",
             "required_contributions", "decision_rule", "quality_rule",
             "arbitration_fraction", "require_all_contributions",
             "source_admission_rule", "required_active_contributions",
             "rejectable_contributions"}
-            or influence["schema"] !=
-                "scientific-source-admission-influence-gate-v5"
+    if policy_level:
+        keys.add("scientist_policy_ablation")
+    if (set(influence) != keys
+            or schema not in {
+                "scientific-source-admission-influence-gate-v5",
+                "scientific-policy-and-source-influence-gate-v6"}
+            or (policy_level and influence["scientist_policy_ablation"] !=
+                "full-vs-no_llm-matched-budget-v1")
             or influence["exact_eig_epsabs"] !=
                 config["hypothesis_bank_gate"]["exact_eig_epsabs"]
             or influence["required_contributions"] != registered
@@ -84,7 +93,7 @@ def _validate_influence_registration(config, agent):
             or influence["source_admission_rule"] !=
                 "independent-sourcewise-fold-safe-half-core-log-score-stacking-v2"
             or not isinstance(active, list) or not active
-            or active[0] != "llm"
+            or active[0] != contribution
             or not set(active) <= set(registered)
             or rejected != [name for name in optional if name not in active]
             or influence["require_all_contributions"] is not True):
@@ -129,7 +138,10 @@ def validate_system_registration(config):
             or len(set(agent.engines)) != len(agent.engines) or len(agent.engines) < 2
             or any(e not in set(registered_engine_names()) for e in agent.engines)
             or config["single_engine"] not in agent.engines
-            or agent.engine_budget != len(agent.engines) * agent.engine_repeats
+            or agent.engine_budget < len(agent.engines)
+            or (not agent.scientist_orchestration
+                and agent.engine_budget !=
+                len(agent.engines) * agent.engine_repeats)
             or agent.discovery_budget < 1
             or type(agent.mcts_frontier_size) is not int
             or not 2 <= agent.mcts_frontier_size <= 8
@@ -205,7 +217,10 @@ def verify_registered_provider(project_root, config):
 
 def _variant_composition(variant, candidates, candidate_admission=None,
                          *, optional_engine_families=(),
-                         required_active_contributions=()):
+                         required_active_contributions=(),
+                         scientist_policy_mode=False,
+                         scientist_policy_trace=(),
+                         provider_configured=None):
     origins = [str(candidate.get("origin", "")) for candidate in candidates]
     engines = {source_family(candidate) for candidate in candidates
                if source_family(candidate) not in {"core", "llm"}}
@@ -233,19 +248,28 @@ def _variant_composition(variant, candidates, candidate_admission=None,
             "required_active": required,
             "passed": (True if variant != "full" else
                        retained or (safely_rejected and not required))}
-    return {
-        "llm_enabled_variant_retains_llm_hypothesis": (
-            "llm" in origins if variant != "no_llm" else "llm" not in origins
-        ),
+    decisions = {
         "full_optional_engine_retained_or_candidatewise_safe_rejection_certified": (
             all(row["passed"] for row in optional_decisions.values())
-            if variant == "full" else True
-        ),
+            if variant == "full" else True),
         "no_llm_variant_retains_no_llm_hypothesis": (
-            "llm" not in origins if variant == "no_llm" else True
-        ),
-        "optional_engine_decisions": optional_decisions,
-    }
+            "llm" not in origins if variant == "no_llm" else True)}
+    if scientist_policy_mode:
+        trace = tuple(scientist_policy_trace or ())
+        trace_valid = bool(trace and all(
+            row.get("research_plan") and row.get("scientist_review")
+            and row.get("candidate_response_accessed") is False
+            and row.get("heldout_opened") is False for row in trace))
+        decisions["scientist_policy_execution_audited"] = (
+            (provider_configured is False
+             and all(row.get("provider_calls") == 0 for row in trace))
+            if variant == "no_llm"
+            else provider_configured is True and trace_valid)
+    else:
+        decisions["llm_enabled_variant_retains_llm_hypothesis"] = (
+            "llm" in origins if variant != "no_llm" else "llm" not in origins
+        )
+    return {**decisions, "optional_engine_decisions": optional_decisions}
 
 
 def _prepare_hypothesis_bank_viability(
@@ -300,7 +324,12 @@ def _prepare_hypothesis_bank_viability(
             variant, row["candidates"], variant_candidate_admission,
             optional_engine_families=optional_families,
             required_active_contributions=tuple(config[
-                "marginal_influence_gate"]["required_active_contributions"]))
+                "marginal_influence_gate"]["required_active_contributions"]),
+            scientist_policy_mode=(config["marginal_influence_gate"]["schema"]
+                == "scientific-policy-and-source-influence-gate-v6"),
+            scientist_policy_trace=row.get("scientist_policy_trace", ()),
+            provider_configured=row.get(
+                "scientist_policy_provider_configured"))
         optional_details = composition.pop("optional_engine_decisions")
         audit["composition_decisions"] = {
             **composition, "optional_engine_decisions": optional_details}
@@ -413,7 +442,10 @@ def _prepare_source_admission(workspace, exploration, data, config, arbitration)
             action_domain=data.pool.X_pool)
         row["source_prior_weights"] = certificate.source_weights
         variant = row["variant"]
-        required = set(gate["required_active_contributions"]) if variant == "full" else set()
+        required = ({
+            name for name in gate["required_active_contributions"]
+            if name != "scientist_policy"}
+            if variant == "full" else set())
         rejected = set(gate["rejectable_contributions"]) if variant == "full" else set()
         candidate_rows = candidate_family["variants"][variant][
             "candidate_certificates"]
@@ -491,6 +523,12 @@ def _prepare_source_admission(workspace, exploration, data, config, arbitration)
 def _bind_source_admission_to_influence(report, admission):
     full = admission["variants"]["full"]
     for name, comparison in report["comparisons"].items():
+        if name == "scientist_policy":
+            comparison["source_admission"] = {
+                "role": "policy-level-ablation",
+                "admitted": True,
+                "weight": None}
+            continue
         source = full["sources"][name]
         comparison["source_admission"] = source
         if not source["admitted"]:
@@ -515,21 +553,31 @@ def _prepare_marginal_decision_influence(workspace, exploration, data, config,
     if set(rows) != {"full", "no_llm", "single_engine"}:
         raise ValueError("unexpected exploration variants for marginal influence")
     full = rows["full"]
-    candidates = {"full": full["candidates"]}
+    candidates = {"full": (full, full["candidates"])}
     for contribution in gate["required_contributions"]:
-        if contribution == "llm":
+        if contribution == "scientist_policy":
+            owner = rows["no_llm"]
+            bank = owner["candidates"]
+        elif contribution == "llm":
             present = any(str(row.get("origin", "")) == "llm"
                           for row in full["candidates"])
+            owner = full
+            bank = (leave_one_source_out_candidates(
+                full["candidates"], contribution)
+                if present else list(full["candidates"]))
         else:
             present = any(source_family(row) == contribution
                           for row in full["candidates"])
+            owner = full
+            bank = (leave_one_source_out_candidates(
+                full["candidates"], contribution)
+                if present else list(full["candidates"]))
         candidates[f"full_without_{contribution.replace(':', '_')}"] = (
-            leave_one_source_out_candidates(full["candidates"], contribution)
-            if present else list(full["candidates"]))
+            owner, bank)
     profiles, quality_profiles = {}, {}
-    for variant, bank in candidates.items():
+    for variant, (owner, bank) in candidates.items():
         source_weights = _renormalized_source_weights(
-            full["source_prior_weights"], bank)
+            owner["source_prior_weights"], bank)
         # A leave-one-source-out counterfactual may legitimately condition to
         # one remaining support.  That is a zero-capacity diagnostic model,
         # not a production hypothesis bank.  Keeping it explicit lets the
@@ -537,7 +585,7 @@ def _prepare_marginal_decision_influence(workspace, exploration, data, config,
         # EIG leader instead of crashing or inventing a second hypothesis.
         minimum_supports = 2 if variant == "full" else 1
         model = freeze_discovery_model(bank, n_features=data.initial.X.shape[1],
-            prior=prior, exploration_identity=_digest(full),
+            prior=prior, exploration_identity=_digest(owner),
             coefficient_policy=config["coefficient_policy"],
             source_prior_weights=source_weights,
             minimum_supports=minimum_supports)

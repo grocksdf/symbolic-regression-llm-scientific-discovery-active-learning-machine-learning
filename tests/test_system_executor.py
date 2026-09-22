@@ -69,6 +69,16 @@ def test_registration_accepts_four_typed_engine_skills():
     assert executor.validate_system_registration(config) is config
 
 
+def test_registration_accepts_policy_level_scientist_ablation():
+    config = _config()
+    gate = config["marginal_influence_gate"]
+    gate["schema"] = "scientific-policy-and-source-influence-gate-v6"
+    gate["required_contributions"] = ["scientist_policy", "engine:mcts"]
+    gate["required_active_contributions"] = ["scientist_policy"]
+    gate["scientist_policy_ablation"] = "full-vs-no_llm-matched-budget-v1"
+    assert executor.validate_system_registration(config) is config
+
+
 def _data():
     def role(kind, x): return RoleDataset(kind, np.array(x, dtype=float)[:, None], np.array(x, dtype=float))
     return OpenSystemData(SelectionData(role(DataRole.DEVELOPMENT, [0, 1]),
@@ -286,6 +296,26 @@ def test_full_composition_audits_multiple_optional_engine_families():
     assert details["engine:sparse_library"]["retained"] is True
     assert details["engine:mcts"]["safely_rejected"] is True
     assert details["engine:additive_mechanisms"]["safely_rejected"] is True
+
+
+def test_policy_level_composition_does_not_require_llm_formula_retention():
+    candidates = [
+        {"source": "engine:polynomial_lasso", "origin": "deterministic"},
+        {"source": "engine:sparse_library", "origin": "deterministic"}]
+    trace = [{"research_plan": {"engine_calls": [{"engine": "a", "jobs": 1}]},
+              "scientist_review": {"stop": True},
+              "provider_calls": 2,
+              "candidate_response_accessed": False,
+              "heldout_opened": False}]
+    decisions = executor._variant_composition(
+        "full", candidates,
+        {"candidate_certificates": []},
+        optional_engine_families=("engine:sparse_library",),
+        required_active_contributions=("scientist_policy",),
+        scientist_policy_mode=True,
+        scientist_policy_trace=trace, provider_configured=True)
+    assert decisions["scientist_policy_execution_audited"] is True
+    assert "llm_enabled_variant_retains_llm_hypothesis" not in decisions
 
 
 def test_marginal_influence_failure_stops_before_any_pool_response(tmp_path, monkeypatch):

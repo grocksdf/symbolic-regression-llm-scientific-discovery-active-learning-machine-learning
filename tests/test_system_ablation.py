@@ -301,6 +301,18 @@ def test_registered_scientist_stop_reduces_actual_usage_without_failure():
         audit_usage(config, result, 1., 100., 3)
 
 
+def test_scientist_usage_charges_registered_allocatable_job_budget():
+    _, base = _inputs()
+    config = __import__("dataclasses").replace(
+        base, scientist_orchestration=True,
+        engine_repeats=1, engine_budget=3)
+    result = _result(config)
+    result.cycles[0].engine_report["run_records"].append(
+        {"status": "succeeded"})
+    usage = audit_usage(config, result, 1., 100., 3)
+    assert usage["engine_jobs_used"] == 3
+
+
 def test_freeze_is_fail_closed_before_runtime(monkeypatch):
     from hypothesis_mvp.discovery import system_freeze
     def dirty(*args): raise RuntimeError("dirty source")

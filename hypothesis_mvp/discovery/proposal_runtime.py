@@ -399,7 +399,7 @@ class ProposalRuntime:
 
     @staticmethod
     def _compile_forced_coverage_calls(
-        calls: Any, available: tuple[str, ...],
+        calls: Any, available: tuple[str, ...], total_jobs: int,
     ) -> tuple[list[dict[str, Any]] | None, Mapping[str, Any] | None]:
         if (not isinstance(calls, (list, tuple))
                 or not all(isinstance(row, Mapping) for row in calls)):
@@ -418,7 +418,7 @@ class ProposalRuntime:
         if not by_engine:
             return None, None
         skills = {skill.name: skill for skill in REGISTERED_ENGINE_SKILLS}
-        compiled, synthesized, supplied_jobs, structured_fields = [], [], {}, []
+        compiled_rows, synthesized, supplied_jobs, structured_fields = [], [], {}, []
         for name in available:
             row = by_engine.get(name)
             if row is None:
@@ -442,13 +442,32 @@ class ProposalRuntime:
                         structured_fields.append({
                             "engine": name, "field": field})
             supplied_jobs[name] = row.get("jobs")
-            compiled.append({**row, "engine": name, "jobs": 1})
+            compiled_rows.append({**row, "engine": name})
+        bound_jobs = {name: 1 for name in available}
+        exact = (
+            all(type(supplied_jobs[name]) is int and supplied_jobs[name] >= 1
+                for name in available)
+            and sum(supplied_jobs.values()) == total_jobs)
+        if exact:
+            bound_jobs = dict(supplied_jobs)
+        else:
+            extras = total_jobs - len(available)
+            if extras < 0:
+                return None, None
+            order = sorted(available, key=lambda name: (
+                -supplied_jobs[name] if type(supplied_jobs[name]) is int
+                else 0, available.index(name)))
+            for index in range(extras):
+                bound_jobs[order[index % len(order)]] += 1
+        compiled = [
+            {**row, "jobs": bound_jobs[row["engine"]]}
+            for row in compiled_rows]
         if (not synthesized and not discarded
                 and not structured_fields
-                and all(value == 1 for value in supplied_jobs.values())):
+                and exact):
             return compiled, None
         projection = {"engines": list(available),
-            "bound_jobs": {name: 1 for name in available},
+            "bound_jobs": bound_jobs,
             "supplied_jobs": supplied_jobs,
             "synthesized_required_calls": synthesized,
             "discarded_calls": discarded,
@@ -553,10 +572,10 @@ class ProposalRuntime:
                     "singleton-skill-dispatch-and-executable-contract-"
                     "are-code-owned-not-policy-decision-variables")}
             projection.update(singleton_dispatch_projection)
-        elif total_jobs == len(available):
+        elif total_jobs >= len(available):
             compiled, coverage_projection = (
                 ProposalRuntime._compile_forced_coverage_calls(
-                    candidate.get("engine_calls"), available))
+                    candidate.get("engine_calls"), available, total_jobs))
             if compiled is not None:
                 candidate["engine_calls"] = compiled
             if coverage_projection is not None:
@@ -595,6 +614,10 @@ class ProposalRuntime:
         elif total_jobs == len(available):
             payload["fixed_full_coverage_dispatch"] = {
                 "engines": list(available), "jobs_per_engine": 1}
+        elif total_jobs > len(available):
+            payload["minimum_skill_coverage"] = {
+                "engines": list(available), "minimum_jobs_per_engine": 1,
+                "total_jobs": total_jobs}
         system = (
             "Act as a scientific research planner. Return one unfenced JSON object. "
             f"Use protocol_id='{RESEARCH_PLAN_PROTOCOL}'. Provide mechanisms, engine_calls, "

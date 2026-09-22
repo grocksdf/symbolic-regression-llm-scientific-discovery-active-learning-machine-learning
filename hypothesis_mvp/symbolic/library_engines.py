@@ -107,6 +107,10 @@ class SparseLibraryRegressor:
         self._scales[self._scales <= np.finfo(float).eps] = 1.0
         scaled = (matrix - self._means) / self._scales
         centered = target - np.mean(target)
+        registered_caps = (4, 8, self.config.sparse_library_max_terms)
+        term_cap = min(self.config.sparse_library_max_terms,
+                       registered_caps[self.config.mcts_random_seed % 3])
+        self._term_cap = term_cap
         candidates = []
         for threshold in self.config.sparse_library_thresholds:
             active = np.arange(scaled.shape[1])
@@ -118,7 +122,7 @@ class SparseLibraryRegressor:
                 order = np.argsort(-np.abs(coefficients), kind="stable")
                 retained = order[
                     np.abs(coefficients[order]) >= float(threshold)]
-                retained = retained[:self.config.sparse_library_max_terms]
+                retained = retained[:term_cap]
                 updated = np.sort(active[retained])
                 if np.array_equal(updated, active):
                     break
@@ -164,6 +168,8 @@ class SparseLibraryRegressor:
             "method": "sequential-thresholded-least-squares-v1",
             "library_size": len(self._library),
             "selected_feature_count": len(self._active),
+            "registered_job_variant": self.config.mcts_random_seed % 3,
+            "registered_term_cap": self._term_cap,
             "thresholds": list(self.config.sparse_library_thresholds),
             "frontier_size_limit": self.config.sparse_library_frontier_size,
             "expression_contract": self.config.expression_contract}
@@ -193,7 +199,10 @@ class AdditiveMechanismRegressor:
                      _render(intercept, tuple(library[i].label for i in active),
                              coefficients),
                      tuple(active), intercept, coefficients, mse)]
-        for _ in range(self.config.additive_mechanism_max_terms):
+        addition_cap = 1 + (
+            self.config.mcts_random_seed
+            % self.config.additive_mechanism_max_terms)
+        for _ in range(addition_cap):
             proposals = []
             for index in sorted(available):
                 trial = np.asarray([*active, index])
@@ -222,6 +231,7 @@ class AdditiveMechanismRegressor:
             (row[1] for row in frontier), X.shape[1],
             self.config.additive_mechanism_frontier_size)
         self._library_labels = tuple(row.label for row in library)
+        self._addition_cap = addition_cap
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -244,6 +254,10 @@ class AdditiveMechanismRegressor:
         return {"engine": "additive_mechanisms",
             "method": "residual-forward-additive-mechanism-selection-v1",
             "selected_feature_count": len(self._active),
+            "registered_job_variant": (
+                self.config.mcts_random_seed
+                % self.config.additive_mechanism_max_terms),
+            "registered_addition_cap": self._addition_cap,
             "frontier_size_limit": self.config.additive_mechanism_frontier_size,
             "expression_contract": self.config.expression_contract}
 

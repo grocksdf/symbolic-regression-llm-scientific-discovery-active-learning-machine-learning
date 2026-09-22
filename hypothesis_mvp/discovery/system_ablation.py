@@ -45,7 +45,7 @@ def audit_usage(config, result, elapsed, compute_ceiling, provider_attempt_ceili
         raise ValueError("invalid exploration cycle count")
     if actual_cycles < config.cycles and not early_stop:
         raise ValueError("unregistered early exploration termination")
-    expected_jobs = len(config.engines) * config.engine_repeats * actual_cycles
+    expected_jobs = config.engine_budget * actual_cycles
     if (jobs != expected_jobs or any(c.engine_report["failures"] for c in result.cycles)
             or any(r["status"] != "succeeded" for c in result.cycles
                    for r in c.engine_report["run_records"])):
@@ -124,10 +124,30 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
         "llm_candidate_lifecycle": report.get("llm_rounds", []),
         "heldout_accessed": False,
     }
+    policy_trace = [{
+        "cycle": getattr(cycle, "cycle", index),
+        "research_plan": dict(getattr(cycle, "research_plan", {})),
+        "scientist_review": dict(getattr(cycle, "scientist_review", {})),
+        "scientist_state_before": dict(getattr(
+            cycle, "scientist_state_before", {})),
+        "scientist_state_after": dict(getattr(
+            cycle, "scientist_state_after", {})),
+        "engine_allocations": {
+            str(call.get("engine")): int(call.get("jobs", 0))
+            for call in getattr(
+                cycle, "research_plan", {}).get("engine_calls", [])},
+        "provider_calls": cycle.provider_calls,
+        "provider_attempts": cycle.provider_attempts,
+        "candidate_response_accessed": False,
+        "heldout_opened": False,
+    } for index, cycle in enumerate(result.cycles)]
     return {"best_val_nmse": report["best_val_nmse"], "usage": usage,
         "provider_calls": sum(c.provider_calls for c in result.cycles),
         "candidates": candidates,
         "hypothesis_provenance": provenance,
+        "scientist_policy_trace": policy_trace,
+        "scientist_policy_provider_configured": getattr(
+            result, "provider_configured", provider_settings is not None),
         "evidence_registry_path": str(workspace / "evidence_registry.jsonl")}
 
 
@@ -151,9 +171,9 @@ def run_exploration_ablations(root, selection, *, dataset, config,
         raise ValueError("invalid matched exploration contract")
     for route in provider_settings.routes:
         route.validate()
-    total_jobs = len(config.engines) * config.engine_repeats
-    if config.engine_budget != total_jobs:
-        raise ValueError("engine budget must cover exactly the registered jobs")
+    total_jobs = config.engine_budget
+    if total_jobs < len(config.engines):
+        raise ValueError("engine budget must cover every registered skill")
     if config.scientist_orchestration:
         return _run_scientist_ablations(
             root, selection, dataset, config, provider_settings, single_engine,
@@ -293,6 +313,9 @@ def _run_scientist_variant(root, variant, variant_config, provider, selection,
         **usage, "resource_enforcement": enforcement,
         "candidates": summary["candidates"],
         "hypothesis_provenance": summary["hypothesis_provenance"],
+        "scientist_policy_trace": summary["scientist_policy_trace"],
+        "scientist_policy_provider_configured": summary[
+            "scientist_policy_provider_configured"],
         "evidence_registry_path": summary["evidence_registry_path"]}
     _publish(completed, row)
     return row
