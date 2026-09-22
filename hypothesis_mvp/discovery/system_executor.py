@@ -59,6 +59,40 @@ def _digest(value):
                              separators=(",", ":")).encode()).hexdigest()
 
 
+def _load_skill_policy_certificate(config):
+    policy = config.get("skill_policy")
+    if policy is None:
+        return {}, ""
+    if (set(policy) != {"schema", "certificate", "certificate_sha256",
+            "replay_identity", "allocation_method"}
+            or policy["schema"] != "scientific-bayesian-skill-policy-binding-v1"
+            or policy["allocation_method"] !=
+                "posterior-lower-mean-llm-preference-diminishing-returns-v1"):
+        raise ValueError("invalid Bayesian skill policy binding")
+    path = Path(policy["certificate"])
+    if (not path.is_absolute() or not path.is_file()
+            or sha256(path.read_bytes()).hexdigest()
+                != policy["certificate_sha256"]):
+        raise ValueError("Bayesian skill policy certificate identity changed")
+    certificate = json.loads(path.read_text(encoding="utf-8"))
+    reliability = certificate.get("skill_reliability", {})
+    if (certificate.get("schema")
+            != "scientific-bayesian-skill-policy-certificate-v1"
+            or certificate.get("passed") is not True
+            or certificate.get("candidate_response_accessed") is not False
+            or certificate.get("heldout_opened") is not False
+            or certificate.get("replay", {}).get("identity")
+                != policy["replay_identity"]
+            or set(reliability) != set(registered_engine_names())):
+        raise ValueError("Bayesian skill policy certificate is not eligible")
+    for skill, row in reliability.items():
+        mean = float(row["posterior_mean"])
+        lower = float(row["lower_credible_bound"])
+        if not 0.0 <= lower <= mean <= 1.0:
+            raise ValueError(f"invalid reliability for skill: {skill}")
+    return reliability, policy["replay_identity"]
+
+
 def _validate_influence_registration(config, agent):
     influence = config["marginal_influence_gate"]
     optional = [f"engine:{name}" for name in agent.engines
@@ -106,7 +140,8 @@ def validate_system_registration(config):
         "provider_attempt_ceiling", "provider_public_identity", "coefficient_policy",
         "user_execution_authorized", "hypothesis_bank_gate", "marginal_influence_gate"}
     if (not required <= set(config)
-            or set(config) - required > {"targeted_query_policy", "inference_mode"}
+            or set(config) - required > {
+                "targeted_query_policy", "inference_mode", "skill_policy"}
             or config["schema"] != "scientific-system-development-registration-v1"):
         raise ValueError("unknown or incomplete scientific system registration")
     if config.get("targeted_query_policy", "class_eig") not in {
@@ -174,6 +209,10 @@ def validate_system_registration(config):
             or gate["require_all_variants"] is not True):
         raise ValueError("invalid hypothesis-bank viability registration")
     _validate_influence_registration(config, agent)
+    if (config.get("skill_policy") is not None
+            and config["marginal_influence_gate"]["schema"]
+                != "scientific-policy-and-source-influence-gate-v6"):
+        raise ValueError("Bayesian skill policy requires policy-level ablation")
     identity = config["provider_public_identity"]
     if identity is None and config["user_execution_authorized"] is False:
         return config
@@ -688,6 +727,8 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
     if any(name.startswith("HYPOTHESIS_DISCOVERY_") for name in os.environ):
         raise ValueError("unregistered discovery environment overrides are forbidden")
     verify_system_freeze(project_root, config, expected_freeze)
+    skill_reliability, skill_policy_identity = (
+        _load_skill_policy_certificate(config))
     provider = verify_registered_provider(project_root, config)
     source_identity = _digest(expected_freeze)
     root.mkdir(parents=True, exist_ok=True)
@@ -708,7 +749,11 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
                 workspace = root / dataset / str(seed)
                 workspace.mkdir(parents=True, exist_ok=True)
                 _publish(workspace / "DATA_MANIFEST.json", data.manifest)
-                agent_config = replace(DiscoveryAgentConfig(**config["agent"]), random_seed=seed)
+                agent_config = replace(
+                    DiscoveryAgentConfig(**config["agent"]),
+                    random_seed=seed,
+                    skill_reliability=skill_reliability,
+                    skill_policy_identity=skill_policy_identity)
                 print(f"system exploration: {coordinate}", flush=True)
                 exploration = run_exploration_ablations(workspace / "exploration", data.selection,
                     dataset=dataset, config=agent_config, provider_settings=provider,

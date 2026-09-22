@@ -204,6 +204,22 @@ def deterministic_plan(engines: Sequence[str], total_jobs: int) -> ResearchPlan:
     return plan
 
 
+def allocated_plan(allocations: Mapping[str, int]) -> ResearchPlan:
+    names = tuple(str(value) for value in allocations)
+    calls = tuple(EngineCall(
+        name, int(allocations[name]),
+        "produce a predictive structural hypothesis",
+        "validated expression, predictive score, complexity and lineage")
+        for name in names)
+    plan = ResearchPlan(
+        ("generic predictive structure",), calls,
+        ("Which supports generalize across validation rows?",),
+        "construct a diverse falsifiable hypothesis bank",
+        ("registered engine budget exhausted",))
+    plan.validate(names, sum(allocations.values()))
+    return plan
+
+
 def plan_from_json(raw: Mapping[str, Any], engines: Sequence[str],
                    total_jobs: int) -> ResearchPlan:
     calls = tuple(EngineCall(
@@ -251,5 +267,6 @@ __all__ = [
     "ENGINE_REVIEW_PROTOCOL", "EngineCall", "EngineSkill", "ResearchPlan",
     "ScientistReview", "ScientistState", "REGISTERED_ENGINE_SKILLS",
     "RESEARCH_PLAN_PROTOCOL",
-    "deterministic_plan", "plan_from_json", "review_from_json",
+    "allocated_plan", "deterministic_plan", "plan_from_json",
+    "review_from_json",
 ]

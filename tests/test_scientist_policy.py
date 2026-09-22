@@ -296,6 +296,47 @@ def test_bayesian_skill_allocator_combines_reliability_and_llm_preference():
     assert result["candidate_response_accessed"] is False
 
 
+def test_plan_compiler_binds_replay_posterior_to_llm_job_preferences(
+        monkeypatch):
+    reliability = {
+        "polynomial_lasso": {
+            "posterior_mean": .5, "lower_credible_bound": 0.0},
+        "mcts": {
+            "posterior_mean": .278, "lower_credible_bound": .106},
+        "sparse_library": {
+            "posterior_mean": .5, "lower_credible_bound": .225},
+        "additive_mechanisms": {
+            "posterior_mean": .875, "lower_credible_bound": .661}}
+    runtime = ProposalRuntime(
+        EquationRuntime(1), 1, None, 1,
+        skill_reliability=reliability, skill_policy_identity="replay")
+    raw = {"protocol_id": RESEARCH_PLAN_PROTOCOL,
+        "mechanisms": ["fixture"],
+        "engine_calls": [
+            {"engine": "polynomial_lasso", "jobs": 2,
+             "objective": "baseline", "expected_evidence": "support"},
+            {"engine": "mcts", "jobs": 1,
+             "objective": "tree search", "expected_evidence": "frontier"},
+            {"engine": "sparse_library", "jobs": 2,
+             "objective": "sparse search", "expected_evidence": "path"},
+            {"engine": "additive_mechanisms", "jobs": 1,
+             "objective": "additive search", "expected_evidence": "terms"}],
+        "comparison_questions": ["compare"], "synthesis_goal": "synthesize",
+        "stop_conditions": ["budget"]}
+    monkeypatch.setattr(runtime, "complete_json",
+        lambda **kwargs: (raw, {"fixture": True}))
+    plan, telemetry = runtime.plan_research(
+        task_context={"description": "fixture"},
+        available_engines=tuple(reliability), total_jobs=6)
+    jobs = {call.engine: call.jobs for call in plan.engine_calls}
+    assert jobs == {"polynomial_lasso": 1, "mcts": 1,
+                    "sparse_library": 2, "additive_mechanisms": 2}
+    projection = telemetry["plan_contract_projection"][
+        "forced_coverage_dispatch_projection"]
+    assert projection["skill_policy_identity"] == "replay"
+    assert projection["bayesian_skill_allocation"]["allocated_jobs"] == jobs
+
+
 def test_cross_round_seed_bank_respects_fixed_deterministic_budget():
     engine = SimpleNamespace(all_results=tuple(
         SimpleNamespace(expression=f"x0+{index}", engine=(

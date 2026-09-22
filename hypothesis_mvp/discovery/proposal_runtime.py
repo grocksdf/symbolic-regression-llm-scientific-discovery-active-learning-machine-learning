@@ -21,6 +21,7 @@ from .scientist_policy import (
     ENGINE_REVIEW_PROTOCOL, RESEARCH_PLAN_PROTOCOL, REGISTERED_ENGINE_SKILLS,
     ResearchPlan, ScientistReview, plan_from_json, review_from_json,
 )
+from .skill_policy import allocate_bayesian_skill_jobs
 
 PROPOSAL_PROTOCOL_ID = "hypothesis-proposal-v1"
 ALLOWED_ACTIONS = frozenset({
@@ -232,6 +233,8 @@ class ProposalRuntime:
     def __init__(
         self, equation_runtime: EquationRuntime, n_features: int,
         settings: ProviderSettings | None, candidates_per_island: int,
+        *, skill_reliability: Mapping[str, Mapping[str, float]] | None = None,
+        skill_policy_identity: str = "",
     ) -> None:
         self.equation_runtime = equation_runtime
         self.registry = equation_runtime.registry
@@ -239,6 +242,10 @@ class ProposalRuntime:
         self.n_features = int(n_features)
         self.settings = settings
         self.candidates_per_island = max(1, int(candidates_per_island))
+        self.skill_reliability = {
+            str(key): dict(value)
+            for key, value in (skill_reliability or {}).items()}
+        self.skill_policy_identity = str(skill_policy_identity)
         self.call_count = 0
         self.attempt_count = 0
         self._errors: list[str] = []
@@ -397,8 +404,36 @@ class ProposalRuntime:
             raise ProtocolError("root_must_be_object")
         return parsed, telemetry
 
-    @staticmethod
+    def _bind_dispatch_jobs(self, available, total_jobs, supplied_jobs):
+        bound = {name: 1 for name in available}
+        exact = (
+            all(type(supplied_jobs[name]) is int and supplied_jobs[name] >= 1
+                for name in available)
+            and sum(supplied_jobs.values()) == total_jobs)
+        if exact:
+            bound = dict(supplied_jobs)
+        else:
+            extras = total_jobs - len(available)
+            if extras < 0:
+                return None, None, False
+            order = sorted(available, key=lambda name: (
+                -supplied_jobs[name] if type(supplied_jobs[name]) is int
+                else 0, available.index(name)))
+            for index in range(extras):
+                bound[order[index % len(order)]] += 1
+        bayesian = None
+        if self.skill_reliability and total_jobs > len(available):
+            bayesian = allocate_bayesian_skill_jobs(
+                available, total_jobs, self.skill_reliability,
+                llm_requested_jobs={
+                    name: (supplied_jobs[name]
+                           if type(supplied_jobs[name]) is int else 1)
+                    for name in available})
+            bound = dict(bayesian["allocated_jobs"])
+        return bound, bayesian, exact
+
     def _compile_forced_coverage_calls(
+        self,
         calls: Any, available: tuple[str, ...], total_jobs: int,
     ) -> tuple[list[dict[str, Any]] | None, Mapping[str, Any] | None]:
         if (not isinstance(calls, (list, tuple))
@@ -443,28 +478,16 @@ class ProposalRuntime:
                             "engine": name, "field": field})
             supplied_jobs[name] = row.get("jobs")
             compiled_rows.append({**row, "engine": name})
-        bound_jobs = {name: 1 for name in available}
-        exact = (
-            all(type(supplied_jobs[name]) is int and supplied_jobs[name] >= 1
-                for name in available)
-            and sum(supplied_jobs.values()) == total_jobs)
-        if exact:
-            bound_jobs = dict(supplied_jobs)
-        else:
-            extras = total_jobs - len(available)
-            if extras < 0:
-                return None, None
-            order = sorted(available, key=lambda name: (
-                -supplied_jobs[name] if type(supplied_jobs[name]) is int
-                else 0, available.index(name)))
-            for index in range(extras):
-                bound_jobs[order[index % len(order)]] += 1
+        bound_jobs, bayesian, exact = self._bind_dispatch_jobs(
+            available, total_jobs, supplied_jobs)
+        if bound_jobs is None:
+            return None, None
         compiled = [
             {**row, "jobs": bound_jobs[row["engine"]]}
             for row in compiled_rows]
         if (not synthesized and not discarded
                 and not structured_fields
-                and exact):
+                and exact and bayesian is None):
             return compiled, None
         projection = {"engines": list(available),
             "bound_jobs": bound_jobs,
@@ -472,6 +495,8 @@ class ProposalRuntime:
             "synthesized_required_calls": synthesized,
             "discarded_calls": discarded,
             "structured_engine_text_fields": structured_fields,
+            "bayesian_skill_allocation": bayesian,
+            "skill_policy_identity": self.skill_policy_identity,
             "reason": (
                 "one-job-per-registered-skill-is-the-only-feasible-"
                 "full-coverage-allocation")}
@@ -517,8 +542,8 @@ class ProposalRuntime:
                               ensure_ascii=False, allow_nan=False), 1
         return value, 0
 
-    @staticmethod
     def _normalize_research_plan(
+        self,
         raw_plan: Mapping[str, Any], available: tuple[str, ...], total_jobs: int,
     ) -> tuple[ResearchPlan, Mapping[str, Any] | None]:
         candidate, projection = dict(raw_plan), {}
@@ -574,7 +599,7 @@ class ProposalRuntime:
             projection.update(singleton_dispatch_projection)
         elif total_jobs >= len(available):
             compiled, coverage_projection = (
-                ProposalRuntime._compile_forced_coverage_calls(
+                self._compile_forced_coverage_calls(
                     candidate.get("engine_calls"), available, total_jobs))
             if compiled is not None:
                 candidate["engine_calls"] = compiled

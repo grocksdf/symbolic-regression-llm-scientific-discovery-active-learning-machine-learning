@@ -22,8 +22,10 @@ from .proposal_runtime import ProposalRuntime
 from .equation_runtime import EquationRuntime
 from .initializer import generic_deterministic_candidates
 from .scientist_policy import (
-    ResearchPlan, ScientistReview, ScientistState, deterministic_plan,
+    ResearchPlan, ScientistReview, ScientistState, allocated_plan,
+    deterministic_plan,
 )
+from .skill_policy import allocate_bayesian_skill_jobs
 from .system_evidence import (
     attach_scientist_policy_evidence, attach_system_evidence, system_evaluation,
 )
@@ -49,6 +51,9 @@ class DiscoveryAgentConfig:
     refit_policy: str = "global-constants"
     discovery_islands: tuple[str, ...] = ("low_complexity", "nmse", "tail", "novelty")
     scientist_orchestration: bool = False
+    skill_reliability: Mapping[str, Mapping[str, float]] = field(
+        default_factory=dict)
+    skill_policy_identity: str = ""
 
 
 @dataclass(frozen=True)
@@ -251,6 +256,13 @@ class DiscoveryAgent:
             plan, plan_telemetry = planner.plan_research(
                 task_context=task_context, available_engines=self.config.engines,
                 total_jobs=self.config.engine_budget)
+        elif self.config.skill_reliability:
+            allocation = allocate_bayesian_skill_jobs(
+                self.config.engines, self.config.engine_budget,
+                self.config.skill_reliability)
+            plan = allocated_plan(allocation["allocated_jobs"])
+            plan_telemetry = {"bayesian_skill_allocation": allocation,
+                "skill_policy_identity": self.config.skill_policy_identity}
         else:
             plan, plan_telemetry = deterministic_plan(
                 self.config.engines, self.config.engine_budget), {}
@@ -291,7 +303,9 @@ class DiscoveryAgent:
             EquationRuntime(
                 selection.development.X.shape[1],
                 refit_policy=self.config.refit_policy),
-            selection.development.X.shape[1], self.provider_settings, 1)
+            selection.development.X.shape[1], self.provider_settings, 1,
+            skill_reliability=self.config.skill_reliability,
+            skill_policy_identity=self.config.skill_policy_identity)
         base_task_context = {"name": task_name, "description": task_description,
             "variables": {key: value for key, value in variable_metadata.items()
                           if key in {"feature_names", "feature_units",

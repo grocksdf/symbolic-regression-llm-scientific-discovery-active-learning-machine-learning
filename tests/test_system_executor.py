@@ -2,6 +2,8 @@
 from dataclasses import asdict
 from types import SimpleNamespace
 from pathlib import Path
+from hashlib import sha256
+import json
 import numpy as np
 import pytest
 
@@ -77,6 +79,39 @@ def test_registration_accepts_policy_level_scientist_ablation():
     gate["required_active_contributions"] = ["scientist_policy"]
     gate["scientist_policy_ablation"] = "full-vs-no_llm-matched-budget-v1"
     assert executor.validate_system_registration(config) is config
+
+
+def test_bayesian_skill_policy_certificate_is_hash_and_replay_bound(tmp_path):
+    reliability = {
+        name: {"posterior_mean": .5, "lower_credible_bound": .2}
+        for name in ("polynomial_lasso", "mcts", "sparse_library",
+                     "additive_mechanisms")}
+    certificate = {
+        "schema": "scientific-bayesian-skill-policy-certificate-v1",
+        "passed": True, "candidate_response_accessed": False,
+        "heldout_opened": False, "replay": {"identity": "replay"},
+        "skill_reliability": reliability}
+    path = tmp_path / "replay.json"
+    path.write_text(json.dumps(certificate), encoding="utf-8")
+    config = _config()
+    gate = config["marginal_influence_gate"]
+    gate["schema"] = "scientific-policy-and-source-influence-gate-v6"
+    gate["required_contributions"] = ["scientist_policy", "engine:mcts"]
+    gate["required_active_contributions"] = ["scientist_policy"]
+    gate["scientist_policy_ablation"] = "full-vs-no_llm-matched-budget-v1"
+    config["skill_policy"] = {
+        "schema": "scientific-bayesian-skill-policy-binding-v1",
+        "certificate": str(path.resolve()),
+        "certificate_sha256": sha256(path.read_bytes()).hexdigest(),
+        "replay_identity": "replay",
+        "allocation_method":
+            "posterior-lower-mean-llm-preference-diminishing-returns-v1"}
+    assert executor.validate_system_registration(config) is config
+    loaded, identity = executor._load_skill_policy_certificate(config)
+    assert loaded == reliability and identity == "replay"
+    config["skill_policy"]["certificate_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="identity changed"):
+        executor._load_skill_policy_certificate(config)
 
 
 def _data():

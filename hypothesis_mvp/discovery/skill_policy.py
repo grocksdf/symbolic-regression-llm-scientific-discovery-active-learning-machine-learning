@@ -227,7 +227,7 @@ def allocate_bayesian_skill_jobs(
             lower = float(row["lower_credible_bound"])
             if (not 0.0 <= mean <= 1.0 or not 0.0 <= lower <= mean):
                 raise ValueError("invalid Bayesian skill reliability")
-            preference = 1.0 + 0.05 * (requested[name] - 1)
+            preference = 1.0 + 0.5 * (requested[name] - 1)
             scores[name] = ((0.5 * lower + 0.5 * mean)
                             * preference / jobs[name])
         selected = max(names, key=lambda name: (
