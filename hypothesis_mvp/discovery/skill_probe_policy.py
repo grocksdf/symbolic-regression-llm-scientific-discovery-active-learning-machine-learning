@@ -90,11 +90,12 @@ def extract_skill_probe_evidence(source_output: str | Path):
     baseline = _first_result(report, "polynomial_lasso")
     n_features = audit["context"]["feature_count"]
     baseline_support = set(structural_terms(
-        baseline["expression"], n_features))
+        str(baseline["expression"]).replace("^", "**"), n_features))
     rows = []
     for row in evidence:
         candidate = _first_result(report, row.skill)
-        support = set(structural_terms(candidate["expression"], n_features))
+        support = set(structural_terms(
+            str(candidate["expression"]).replace("^", "**"), n_features))
         scale_score = max(abs(float(baseline["score"])), 1e-12)
         scale_mse = max(abs(float(baseline["mse_val"])), 1e-12)
         rows.append(SkillProbeEvidence(row, {
