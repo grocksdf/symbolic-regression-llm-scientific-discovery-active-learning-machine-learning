@@ -246,8 +246,133 @@ def allocate_bayesian_skill_jobs(
     return result
 
 
+def _contextual_posterior(evidence, skill, dataset_family, *,
+                          cross_family_prior_strength, credible_level):
+    rows = [row for row in evidence
+            if row.skill == skill and row.outcome != "unresolved"]
+    within = [row for row in rows if row.dataset_family == dataset_family]
+    cross = [row for row in rows if row.dataset_family != dataset_family]
+    cross_success = sum(row.outcome == "success" for row in cross)
+    cross_failure = sum(row.outcome == "failure" for row in cross)
+    cross_mean = ((cross_success + 0.5)
+                  / (cross_success + cross_failure + 1.0))
+    alpha = (0.5 + cross_family_prior_strength * cross_mean
+             + sum(row.outcome == "success" for row in within))
+    beta = (0.5 + cross_family_prior_strength * (1.0 - cross_mean)
+            + sum(row.outcome == "failure" for row in within))
+    return {"skill": skill, "dataset_family": dataset_family,
+        "within_family_task_count": len(within),
+        "cross_family_task_count": len(cross),
+        "posterior_alpha": alpha, "posterior_beta": beta,
+        "posterior_mean": alpha / (alpha + beta),
+        "lower_credible_bound": float(beta_distribution.ppf(
+            1.0 - credible_level, alpha, beta))}
+
+
+def fit_contextual_skill_reliability(
+        evidence: Sequence[SkillTaskEvidence], dataset_family: str, *,
+        cross_family_prior_strength: float = 2.0,
+        credible_level: float = 0.9) -> tuple[dict[str, Any], ...]:
+    if (not dataset_family or cross_family_prior_strength <= 0.0
+            or not 0.5 < credible_level < 1.0):
+        raise ValueError("invalid contextual skill reliability controls")
+    return tuple(_contextual_posterior(
+        evidence, skill, dataset_family,
+        cross_family_prior_strength=cross_family_prior_strength,
+        credible_level=credible_level)
+        for skill in sorted({row.skill for row in evidence}))
+
+
+def leave_one_task_out_contextual_skill_policy(
+        evidence: Sequence[SkillTaskEvidence], *,
+        minimum_within_family_tasks: int = 1,
+        minimum_cross_family_tasks: int = 1,
+        minimum_training_tasks: int = 3,
+        minimum_resolved_predictions: int = 4,
+        cross_family_prior_strength: float = 2.0) -> dict[str, Any]:
+    """Test a family-conditioned, cross-family-shrunk skill posterior."""
+    tasks = tuple(sorted({row.task_identity for row in evidence}))
+    if len(tasks) < 2:
+        raise ValueError("contextual skill replay requires two tasks")
+    evaluations, resolved = [], []
+    for held in tasks:
+        train = [row for row in evidence if row.task_identity != held]
+        test = [row for row in evidence if row.task_identity == held]
+        global_rows = {row.skill: row for row in fit_skill_reliability(train)}
+        predictions = []
+        for row in test:
+            contextual = _contextual_posterior(
+                train, row.skill, row.dataset_family,
+                cross_family_prior_strength=cross_family_prior_strength,
+                credible_level=0.9)
+            total = (contextual["within_family_task_count"]
+                     + contextual["cross_family_task_count"])
+            covered = (
+                contextual["within_family_task_count"]
+                >= minimum_within_family_tasks
+                and contextual["cross_family_task_count"]
+                >= minimum_cross_family_tasks
+                and total >= minimum_training_tasks)
+            global_mean = (global_rows[row.skill].posterior_mean
+                           if row.skill in global_rows else 0.5)
+            prediction = {**contextual,
+                "observed_outcome": row.outcome,
+                "global_posterior_mean": global_mean,
+                "coverage_sufficient": covered}
+            predictions.append(prediction)
+            if row.outcome in {"success", "failure"} and covered:
+                resolved.append((contextual["posterior_mean"], global_mean,
+                                 float(row.outcome == "success")))
+        evaluations.append({"heldout_task_identity": held,
+            "skill_predictions": predictions,
+            "coverage_sufficient": bool(predictions and all(
+                row["coverage_sufficient"] for row in predictions))})
+    contextual_brier = (float(np.mean([
+        (contextual - outcome) ** 2
+        for contextual, _, outcome in resolved])) if resolved else None)
+    global_brier = (float(np.mean([
+        (global_mean - outcome) ** 2
+        for _, global_mean, outcome in resolved])) if resolved else None)
+    coverage = bool(evaluations and all(
+        row["coverage_sufficient"] for row in evaluations))
+    predictive = bool(
+        len(resolved) >= minimum_resolved_predictions
+        and contextual_brier is not None and global_brier is not None
+        and contextual_brier < 0.25
+        and contextual_brier <= global_brier + 1e-15)
+    result = {
+        "schema": "scientific-contextual-skill-policy-replay-v1",
+        "task_count": len(tasks),
+        "dataset_families": sorted({
+            row.dataset_family for row in evidence}),
+        "cross_family_prior_strength": cross_family_prior_strength,
+        "minimum_within_family_tasks": minimum_within_family_tasks,
+        "minimum_cross_family_tasks": minimum_cross_family_tasks,
+        "minimum_training_tasks": minimum_training_tasks,
+        "minimum_resolved_predictions": minimum_resolved_predictions,
+        "resolved_prediction_count": len(resolved),
+        "contextual_brier_score": contextual_brier,
+        "global_brier_score": global_brier,
+        "uninformative_brier_score": 0.25,
+        "coverage_passed": coverage,
+        "predictive_validity_passed": predictive,
+        "evaluations": evaluations,
+        "passed": bool(coverage and predictive),
+        "candidate_response_accessed": False, "heldout_opened": False,
+        "claim_boundary": (
+            "leave-one-task-out family-context skill diagnostic only")}
+    result["status"] = ("passed" if result["passed"] else
+                        "contextual-skill-policy-not-certified")
+    result["identity"] = sha256(json.dumps(
+        result, sort_keys=True, separators=(",", ":"),
+        allow_nan=False).encode()).hexdigest()
+    return result
+
+
 __all__ = [
     "allocate_bayesian_skill_jobs",
+    "fit_contextual_skill_reliability",
     "SkillReliability", "SkillTaskEvidence", "fit_skill_reliability",
+    "leave_one_task_out_contextual_skill_policy",
     "leave_one_task_out_skill_policy", "leave_one_task_out_skill_policy_v2",
 ]

@@ -21,6 +21,7 @@ from hypothesis_mvp.discovery.scientist_policy import (
 from hypothesis_mvp.discovery.inference_router import route_inference
 from hypothesis_mvp.discovery.skill_policy import (
     SkillTaskEvidence, allocate_bayesian_skill_jobs, fit_skill_reliability,
+    leave_one_task_out_contextual_skill_policy,
     leave_one_task_out_skill_policy, leave_one_task_out_skill_policy_v2,
 )
 from hypothesis_mvp.symbolic.scheduler import EngineScheduler
@@ -294,6 +295,19 @@ def test_bayesian_skill_allocator_combines_reliability_and_llm_preference():
     assert result["allocated_jobs"]["sparse_library"] >= 2
     assert result["allocated_jobs"]["mcts"] == 1
     assert result["candidate_response_accessed"] is False
+
+
+def test_contextual_skill_replay_improves_family_specific_prediction():
+    rows = tuple(
+        SkillTaskEvidence(
+            f"{family}-{index}", family, "fixture_skill",
+            ((1., 1.) if family == "a" else (-1., -1.)), (.01, .01))
+        for family in ("a", "b") for index in range(3))
+    report = leave_one_task_out_contextual_skill_policy(rows)
+    assert report["passed"]
+    assert report["coverage_passed"]
+    assert report["contextual_brier_score"] < report["global_brier_score"]
+    assert report["contextual_brier_score"] < .25
 
 
 def test_plan_compiler_binds_replay_posterior_to_llm_job_preferences(
