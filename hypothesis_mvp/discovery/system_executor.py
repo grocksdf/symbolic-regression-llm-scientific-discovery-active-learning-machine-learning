@@ -125,6 +125,34 @@ def _load_probe_skill_policy_certificate(config):
     return model, policy["replay_identity"]
 
 
+def _load_llm_preference_policy_decision(config):
+    policy = config.get("llm_preference_policy")
+    if policy is None:
+        return "llm-preference-enabled", ""
+    if (set(policy) != {"schema", "certificate", "certificate_sha256",
+            "replay_identity", "decision"}
+            or policy["schema"] !=
+                "scientific-llm-preference-policy-binding-v1"
+            or policy["decision"] != "disable-llm-job-preference-v1"):
+        raise ValueError("invalid LLM preference policy binding")
+    path = Path(policy["certificate"])
+    if (not path.is_absolute() or not path.is_file()
+            or sha256(path.read_bytes()).hexdigest()
+                != policy["certificate_sha256"]):
+        raise ValueError("LLM preference certificate identity changed")
+    certificate = json.loads(path.read_text(encoding="utf-8"))
+    replay = certificate.get("replay", {})
+    if (certificate.get("schema")
+            != "scientific-llm-preference-policy-certificate-v1"
+            or certificate.get("passed") is not False
+            or certificate.get("candidate_response_accessed") is not False
+            or certificate.get("heldout_opened") is not False
+            or replay.get("identity") != policy["replay_identity"]
+            or replay.get("preference_beta_90pct_lower", 1.0) > 0.0):
+        raise ValueError("LLM preference disable decision is not certified")
+    return "probe-only", policy["replay_identity"]
+
+
 def _validate_influence_registration(config, agent):
     influence = config["marginal_influence_gate"]
     optional = [f"engine:{name}" for name in agent.engines
@@ -174,7 +202,7 @@ def validate_system_registration(config):
     if (not required <= set(config)
             or set(config) - required > {
                 "targeted_query_policy", "inference_mode", "skill_policy",
-                "probe_skill_policy"}
+                "probe_skill_policy", "llm_preference_policy"}
             or config["schema"] != "scientific-system-development-registration-v1"):
         raise ValueError("unknown or incomplete scientific system registration")
     if config.get("targeted_query_policy", "class_eig") not in {
@@ -250,6 +278,9 @@ def validate_system_registration(config):
             and config["marginal_influence_gate"]["schema"]
                 != "scientific-policy-and-source-influence-gate-v6"):
         raise ValueError("task-local probe policy requires policy-level ablation")
+    if (config.get("llm_preference_policy") is not None
+            and config.get("probe_skill_policy") is None):
+        raise ValueError("LLM preference decision requires task-local probe policy")
     identity = config["provider_public_identity"]
     if identity is None and config["user_execution_authorized"] is False:
         return config
@@ -751,7 +782,8 @@ def _run_comparison_variant(project_root, workspace, row, data, config, provider
 
 def _bound_agent_config(config, seed, data, skill_reliability,
                         skill_policy_identity, probe_skill_model,
-                        probe_skill_policy_identity):
+                        probe_skill_policy_identity, probe_allocation_mode,
+                        llm_preference_policy_identity):
     return replace(
         DiscoveryAgentConfig(**config["agent"]),
         random_seed=seed,
@@ -759,7 +791,18 @@ def _bound_agent_config(config, seed, data, skill_reliability,
         skill_policy_identity=skill_policy_identity,
         probe_skill_model=probe_skill_model,
         probe_skill_policy_identity=probe_skill_policy_identity,
+        probe_allocation_mode=probe_allocation_mode,
+        llm_preference_policy_identity=llm_preference_policy_identity,
         dataset_family=data.manifest["family"])
+
+
+def _load_bound_policies(config):
+    skill_reliability, skill_identity = _load_skill_policy_certificate(config)
+    probe_model, probe_identity = _load_probe_skill_policy_certificate(config)
+    allocation_mode, preference_identity = (
+        _load_llm_preference_policy_decision(config))
+    return (skill_reliability, skill_identity, probe_model, probe_identity,
+            allocation_mode, preference_identity)
 
 
 def execute_registered_system(project_root, root, config, expected_freeze, *, execution_role,
@@ -777,10 +820,9 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
     if any(name.startswith("HYPOTHESIS_DISCOVERY_") for name in os.environ):
         raise ValueError("unregistered discovery environment overrides are forbidden")
     verify_system_freeze(project_root, config, expected_freeze)
-    skill_reliability, skill_policy_identity = (
-        _load_skill_policy_certificate(config))
-    probe_skill_model, probe_skill_policy_identity = (
-        _load_probe_skill_policy_certificate(config))
+    (skill_reliability, skill_policy_identity, probe_skill_model,
+     probe_skill_policy_identity, probe_allocation_mode,
+     llm_preference_policy_identity) = _load_bound_policies(config)
     provider = verify_registered_provider(project_root, config)
     source_identity = _digest(expected_freeze)
     root.mkdir(parents=True, exist_ok=True)
@@ -804,7 +846,8 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
                 agent_config = _bound_agent_config(
                     config, seed, data, skill_reliability,
                     skill_policy_identity, probe_skill_model,
-                    probe_skill_policy_identity)
+                    probe_skill_policy_identity, probe_allocation_mode,
+                    llm_preference_policy_identity)
                 print(f"system exploration: {coordinate}", flush=True)
                 exploration = run_exploration_ablations(workspace / "exploration", data.selection,
                     dataset=dataset, config=agent_config, provider_settings=provider,

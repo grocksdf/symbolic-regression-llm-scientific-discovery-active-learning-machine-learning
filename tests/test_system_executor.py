@@ -146,6 +146,34 @@ def test_task_local_probe_certificate_is_hash_model_and_replay_bound(tmp_path):
         executor._load_probe_skill_policy_certificate(config)
 
 
+def test_negative_llm_preference_certificate_disables_job_influence(tmp_path):
+    certificate = {
+        "schema": "scientific-llm-preference-policy-certificate-v1",
+        "passed": False, "candidate_response_accessed": False,
+        "heldout_opened": False,
+        "replay": {"identity": "preference",
+                   "preference_beta_90pct_lower": -.1}}
+    path = tmp_path / "preference.json"
+    path.write_text(json.dumps(certificate), encoding="utf-8")
+    config = _config()
+    config["probe_skill_policy"] = {
+        "schema": "fixture-probe-binding"}
+    config["llm_preference_policy"] = {
+        "schema": "scientific-llm-preference-policy-binding-v1",
+        "certificate": str(path.resolve()),
+        "certificate_sha256": sha256(path.read_bytes()).hexdigest(),
+        "replay_identity": "preference",
+        "decision": "disable-llm-job-preference-v1"}
+    mode, identity = executor._load_llm_preference_policy_decision(config)
+    assert mode == "probe-only" and identity == "preference"
+    certificate["replay"]["preference_beta_90pct_lower"] = .1
+    path.write_text(json.dumps(certificate), encoding="utf-8")
+    config["llm_preference_policy"]["certificate_sha256"] = sha256(
+        path.read_bytes()).hexdigest()
+    with pytest.raises(ValueError, match="not certified"):
+        executor._load_llm_preference_policy_decision(config)
+
+
 def _data():
     def role(kind, x): return RoleDataset(kind, np.array(x, dtype=float)[:, None], np.array(x, dtype=float))
     return OpenSystemData(SelectionData(role(DataRole.DEVELOPMENT, [0, 1]),

@@ -60,6 +60,8 @@ class DiscoveryAgentConfig:
     skill_policy_identity: str = ""
     probe_skill_model: Mapping[str, Any] = field(default_factory=dict)
     probe_skill_policy_identity: str = ""
+    probe_allocation_mode: str = "llm-preference-enabled"
+    llm_preference_policy_identity: str = ""
     dataset_family: str = ""
 
 
@@ -209,11 +211,16 @@ class DiscoveryAgent:
             self.config.dataset_family, probes)
         allocation = allocate_task_local_probe_jobs(
             self.config.engines, self.config.engine_budget, probabilities,
-            llm_requested_jobs=allocations)
+            llm_requested_jobs=(
+                None if self.config.probe_allocation_mode == "probe-only"
+                else allocations))
         self._last_probe_allocation = {
             **allocation,
             "probe_skill_policy_identity":
                 self.config.probe_skill_policy_identity,
+            "probe_allocation_mode": self.config.probe_allocation_mode,
+            "llm_preference_policy_identity":
+                self.config.llm_preference_policy_identity,
             "probe_features": probes}
         extras = {name: count - 1 for name, count
                   in allocation["allocated_jobs"].items() if count > 1}
