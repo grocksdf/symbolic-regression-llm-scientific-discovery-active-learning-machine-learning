@@ -42,6 +42,7 @@ class SymbolicConfig:
     sparse_library_frontier_size: int = 3
     additive_mechanism_max_terms: int = 4
     additive_mechanism_frontier_size: int = 3
+    skill_controls: list[str] = field(default_factory=list)
     math_eps: float = 1.0e-6
     math_max_exp: float = 20.0
     math_max_pow_abs: int = 4

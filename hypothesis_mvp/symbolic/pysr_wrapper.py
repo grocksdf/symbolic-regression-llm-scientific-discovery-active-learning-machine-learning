@@ -14,7 +14,7 @@ from .library_engines import (
     AdditiveMechanismRegressor, SparseLibraryRegressor,
 )
 from .mcts_agent import MCTSSymbolicAgent
-from .registry import registered_engine_names
+from .registry import engine_spec, registered_engine_names
 
 
 class PySRSymbolicRegressor(SymbolicRegressor):
@@ -63,13 +63,24 @@ class PySRSymbolicRegressor(SymbolicRegressor):
 
 class PolynomialLassoRegressor(SymbolicRegressor):
     def __init__(self, degree: int = 4, alpha: float = 1.0e-3,
-                 expression_contract: str = "unrestricted") -> None:
+                 expression_contract: str = "unrestricted",
+                 skill_controls: tuple[str, ...] = ()) -> None:
         try:
             from sklearn.linear_model import Lasso
             from sklearn.preprocessing import PolynomialFeatures, StandardScaler
         except Exception as error:
             raise ImportError("the polynomial_lasso backend requires scikit-learn") from error
-        self.degree = int(degree)
+        controls = tuple(dict.fromkeys(str(value) for value in skill_controls))
+        allowed = set(engine_spec("polynomial_lasso").capabilities)
+        if set(controls) - allowed:
+            raise ValueError("unsupported polynomial_lasso skill control")
+        degree_controls = {"linear": 1, "quadratic": 2, "cubic": 3,
+                           "quartic": 4}
+        selected_degrees = [degree_controls[value] for value in controls
+                            if value in degree_controls]
+        self.degree = max(selected_degrees) if selected_degrees else int(degree)
+        self.skill_controls = controls
+        self.allow_interactions = not controls or "interactions" in controls
         self.expression_contract = expression_contract
         if expression_contract not in {"unrestricted", "pcpi-closed-basis-v1"}:
             raise ValueError("unknown symbolic expression contract")
@@ -100,6 +111,11 @@ class PolynomialLassoRegressor(SymbolicRegressor):
         selected, pieces = [], ["-1.2345678901234567e-308"]
         for index in order:
             feature = names[index].replace(" ", "*").replace("^", "**")
+            variables = {
+                value for value in names[index].replace("^", " ").split()
+                if value.startswith("x")}
+            if not self.allow_interactions and len(variables) > 1:
+                continue
             proposal = [*pieces, f"(-1.2345678901234567e-308)*{feature}"]
             try:
                 structural_terms(" + ".join(proposal), n_features)
@@ -165,6 +181,7 @@ class PolynomialLassoRegressor(SymbolicRegressor):
                 self.expression_contract == "pcpi-closed-basis-v1" else "all-polynomial-features"),
             "selected_feature_count": None if self._selected_features is None else len(self._selected_features),
             "lasso_fit_count": 1 if self._feature_names is not None else 0,
+            "skill_controls": list(self.skill_controls),
         }
 
 
@@ -178,7 +195,8 @@ def get_symbolic_regressor(config: SymbolicConfig) -> SymbolicRegressor:
         "pysr": lambda: PySRSymbolicRegressor(config),
         "polynomial_lasso": lambda: PolynomialLassoRegressor(
             degree=config.polynomial_degree, alpha=config.polynomial_alpha,
-            expression_contract=config.expression_contract
+            expression_contract=config.expression_contract,
+            skill_controls=tuple(config.skill_controls)
         ),
         "mcts": lambda: MCTSSymbolicAgent(
             config, seed_expressions=list(config.seed_expressions)

@@ -141,6 +141,43 @@ def test_registered_library_engines_are_deterministic_and_adapter_closed(engine)
     assert prediction.shape == y.shape and np.all(np.isfinite(prediction))
 
 
+def test_typed_skill_controls_restrict_engine_hypothesis_spaces():
+    X, y = _fixture()
+    linear = get_symbolic_regressor(SymbolicConfig(
+        engine="polynomial_lasso",
+        expression_contract="pcpi-closed-basis-v1",
+        skill_controls=["linear"])).fit(X, y)
+    assert all("_sq" not in value and "_cube" not in value
+               and "_x" not in value
+               for value in structural_terms(linear.best_expression(), 9))
+    harmonic = get_symbolic_regressor(SymbolicConfig(
+        engine="sparse_library",
+        expression_contract="pcpi-closed-basis-v1",
+        skill_controls=["trigonometric"])).fit(X, y)
+    assert set(structural_terms(harmonic.best_expression(), 9)) <= {
+        "intercept", *(f"sin_x{i}" for i in range(9)),
+        *(f"cos_x{i}" for i in range(9))}
+    mcts = get_symbolic_regressor(SymbolicConfig(
+        engine="mcts", expression_contract="pcpi-closed-basis-v1",
+        mcts_max_iterations=4,
+        skill_controls=["saturating"]))
+    assert mcts._allowed_unary == ("tanh",)
+    assert mcts._binary_ops == ("+",)
+
+
+def test_scheduler_binds_controls_to_engine_diagnostics_and_lineage():
+    from hypothesis_mvp.symbolic import EngineScheduler
+    X, y = _fixture()
+    result = EngineScheduler().run_allocated(
+        allocations={"sparse_library": 1},
+        engine_controls={"sparse_library": ("trigonometric",)},
+        config=SymbolicConfig(expression_contract="pcpi-closed-basis-v1"),
+        X_train=X, y_train=y, X_val=X, y_val=y,
+        evaluation_budget=1, max_retries=0, parallel=False)
+    assert result.best.diagnostics["skill_controls"] == ["trigonometric"]
+    assert result.run_records[0].lineage_id
+
+
 def test_four_skill_scheduler_preserves_one_job_per_engine_and_lineage():
     from hypothesis_mvp.symbolic import EngineScheduler
     X, y = _fixture()

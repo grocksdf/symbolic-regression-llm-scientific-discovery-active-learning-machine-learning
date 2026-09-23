@@ -68,6 +68,7 @@ class _Job:
     repeat: int
     attempt: int
     seed: int
+    controls: tuple[str, ...] = ()
 
 
 def _stable_seed(base: int, engine: str, repeat: int, attempt: int) -> int:
@@ -85,7 +86,8 @@ def _normalize_expression(expression: str) -> str:
 def _lineage(job: _Job, expression: str, X: np.ndarray) -> str:
     material = {
         "engine": job.engine, "repeat": job.repeat, "attempt": job.attempt,
-        "seed": job.seed, "expression": expression,
+        "seed": job.seed, "controls": list(job.controls),
+        "expression": expression,
         "development_hash": sha256(np.ascontiguousarray(X).tobytes()).hexdigest(),
     }
     return sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
@@ -110,6 +112,7 @@ def _execute(
         config = SymbolicConfig(**dict(config_values))
         config.engine = job.engine
         config.mcts_random_seed = job.seed
+        config.skill_controls = list(job.controls)
         backend = get_symbolic_regressor(config)
         backend.fit(X_train, y_train)
         primary = _normalize_expression(backend.best_expression())
@@ -218,6 +221,7 @@ class EngineScheduler:
         y_val: np.ndarray, base_seed: int = 0, max_retries: int = 0,
         evaluation_budget: int | None = None, parallel: bool = True,
         max_workers: int = 2, timeout_s: float = 300.0,
+        engine_controls: Mapping[str, Sequence[str]] | None = None,
     ) -> MultiEngineResult:
         plan = {str(name): int(count) for name, count in allocations.items()}
         if (not plan or any(not name or count < 1 for name, count in plan.items())
@@ -228,8 +232,11 @@ class EngineScheduler:
         budget = int(evaluation_budget or default_budget)
         if budget < sum(plan.values()):
             raise ValueError("allocated engine budget cannot cover planned jobs")
+        controls = {name: tuple(str(value) for value in
+                    (engine_controls or {}).get(name, ()))
+                    for name in plan}
         pending = [_Job(name, repeat, 0,
-            _stable_seed(base_seed, name, repeat, 0))
+            _stable_seed(base_seed, name, repeat, 0), controls[name])
             for name, count in plan.items() for repeat in range(count)]
         arrays = tuple(np.asarray(value, dtype=float)
             for value in (X_train, y_train, X_val, y_val))
@@ -244,6 +251,8 @@ class EngineScheduler:
         while pending and len(records) < budget:
             room = budget - len(records)
             batch, pending = pending[:room], pending[room:]
+            jobs = {(job.engine, job.repeat, job.attempt): job
+                    for job in batch}
             for job_results, record in _run_jobs(
                     batch, config, arrays, parallel=parallel,
                     workers=max_workers, timeout_s=timeout_s):
@@ -252,8 +261,10 @@ class EngineScheduler:
                     results.extend(job_results)
                 elif record.attempt < retry_count and len(records) + len(pending) < budget:
                     attempt = record.attempt + 1
+                    source = jobs[(record.engine, record.repeat, record.attempt)]
                     pending.append(_Job(record.engine, record.repeat, attempt,
-                        _stable_seed(base_seed, record.engine, record.repeat, attempt)))
+                        _stable_seed(base_seed, record.engine,
+                                     record.repeat, attempt), source.controls))
         if not results:
             summary = "; ".join(
                 f"{row.engine}:{row.status}:{row.error_type}" for row in records)

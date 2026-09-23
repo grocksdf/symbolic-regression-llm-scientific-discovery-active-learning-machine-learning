@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from hypothesis_mvp.config import SymbolicConfig
+from .registry import engine_spec
 
 
 @dataclass(frozen=True)
@@ -14,29 +15,49 @@ class _Basis:
     values: np.ndarray
 
 
-def _mixed_library(X: np.ndarray) -> tuple[_Basis, ...]:
+def _mixed_library(
+        X: np.ndarray, controls: tuple[str, ...] = ()) -> tuple[_Basis, ...]:
     X = np.asarray(X, dtype=float)
+    active = set(controls)
+    all_controls = not active
     rows: list[_Basis] = []
     for index in range(X.shape[1]):
         column = X[:, index]
-        rows.extend((
-            _Basis(f"x{index}", column),
-            _Basis(f"x{index}**2", column ** 2),
-            _Basis(f"x{index}**3", column ** 3),
-            _Basis(f"sin(x{index})", np.sin(column)),
-            _Basis(f"cos(x{index})", np.cos(column)),
-            _Basis(f"tanh(x{index})", np.tanh(column)),
-        ))
-    for left in range(X.shape[1]):
-        for right in range(left + 1, X.shape[1]):
-            rows.append(_Basis(
-                f"x{left}*x{right}", X[:, left] * X[:, right]))
+        if all_controls or "monomials" in active:
+            rows.extend((_Basis(f"x{index}", column),
+                         _Basis(f"x{index}**2", column ** 2),
+                         _Basis(f"x{index}**3", column ** 3)))
+        if all_controls or "trigonometric" in active:
+            rows.extend((_Basis(f"sin(x{index})", np.sin(column)),
+                         _Basis(f"cos(x{index})", np.cos(column))))
+        if all_controls or "saturating" in active:
+            rows.append(_Basis(f"tanh(x{index})", np.tanh(column)))
+    if all_controls or "interactions" in active:
+        for left in range(X.shape[1]):
+            for right in range(left + 1, X.shape[1]):
+                rows.append(_Basis(
+                    f"x{left}*x{right}", X[:, left] * X[:, right]))
     return tuple(rows)
 
 
-def _additive_library(X: np.ndarray) -> tuple[_Basis, ...]:
-    return tuple(row for row in _mixed_library(X)
-                 if "*x" not in row.label)
+def _additive_library(
+        X: np.ndarray, controls: tuple[str, ...] = ()) -> tuple[_Basis, ...]:
+    X = np.asarray(X, dtype=float)
+    active, rows = set(controls), []
+    all_controls = not active
+    for index in range(X.shape[1]):
+        column = X[:, index]
+        if all_controls or "linear" in active:
+            rows.append(_Basis(f"x{index}", column))
+        if all_controls or "polynomial_univariate" in active:
+            rows.extend((_Basis(f"x{index}**2", column ** 2),
+                         _Basis(f"x{index}**3", column ** 3)))
+        if all_controls or "trigonometric" in active:
+            rows.extend((_Basis(f"sin(x{index})", np.sin(column)),
+                         _Basis(f"cos(x{index})", np.cos(column))))
+        if all_controls or "saturating" in active:
+            rows.append(_Basis(f"tanh(x{index})", np.tanh(column)))
+    return tuple(rows)
 
 
 def _design(library: tuple[_Basis, ...]) -> np.ndarray:
@@ -91,6 +112,10 @@ class SparseLibraryRegressor:
 
     def __init__(self, config: SymbolicConfig) -> None:
         self.config = config
+        self.skill_controls = tuple(dict.fromkeys(config.skill_controls))
+        if set(self.skill_controls) - set(
+                engine_spec("sparse_library").capabilities):
+            raise ValueError("unsupported sparse_library skill control")
         self._library: tuple[_Basis, ...] = ()
         self._active = np.empty(0, dtype=int)
         self._intercept = 0.0
@@ -100,7 +125,10 @@ class SparseLibraryRegressor:
         self._scales = np.empty(0)
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "SparseLibraryRegressor":
-        self._library = _mixed_library(np.asarray(X, dtype=float))
+        self._library = _mixed_library(
+            np.asarray(X, dtype=float), self.skill_controls)
+        if not self._library:
+            raise ValueError("sparse library controls select no basis")
         matrix, target = _design(self._library), np.asarray(y, dtype=float)
         self._means = np.mean(matrix, axis=0)
         self._scales = np.std(matrix, axis=0)
@@ -150,7 +178,8 @@ class SparseLibraryRegressor:
     def predict(self, X: np.ndarray) -> np.ndarray:
         if not len(self._active):
             raise RuntimeError("sparse library backend has not been fitted")
-        matrix = _design(_mixed_library(np.asarray(X, dtype=float)))
+        matrix = _design(_mixed_library(
+            np.asarray(X, dtype=float), self.skill_controls))
         values = (self._intercept
                   + matrix[:, self._active] @ self._coefficients)
         return np.asarray(values).reshape(-1, 1)
@@ -171,6 +200,7 @@ class SparseLibraryRegressor:
             "registered_job_variant": self.config.mcts_random_seed % 3,
             "registered_term_cap": self._term_cap,
             "thresholds": list(self.config.sparse_library_thresholds),
+            "skill_controls": list(self.skill_controls),
             "frontier_size_limit": self.config.sparse_library_frontier_size,
             "expression_contract": self.config.expression_contract}
 
@@ -180,18 +210,27 @@ class AdditiveMechanismRegressor:
 
     def __init__(self, config: SymbolicConfig) -> None:
         self.config = config
+        self.skill_controls = tuple(dict.fromkeys(config.skill_controls))
+        if set(self.skill_controls) - set(
+                engine_spec("additive_mechanisms").capabilities):
+            raise ValueError("unsupported additive_mechanisms skill control")
         self._active = np.empty(0, dtype=int)
         self._intercept = 0.0
         self._coefficients = np.empty(0)
         self._frontier: tuple[str, ...] = ()
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "AdditiveMechanismRegressor":
-        library = _additive_library(np.asarray(X, dtype=float))
+        library = _additive_library(
+            np.asarray(X, dtype=float), self.skill_controls)
+        if not library:
+            raise ValueError("additive controls select no basis")
         matrix, target = _design(library), np.asarray(y, dtype=float)
         linear = np.asarray([
             index for index, row in enumerate(library)
             if row.label.startswith("x") and "**" not in row.label],
             dtype=int)
+        if not len(linear):
+            linear = np.asarray([0], dtype=int)
         active, available = list(linear), set(range(len(library))) - set(linear)
         intercept, coefficients, mse = _fit_columns(
             matrix, target, np.asarray(active))
@@ -237,7 +276,8 @@ class AdditiveMechanismRegressor:
     def predict(self, X: np.ndarray) -> np.ndarray:
         if not len(self._active):
             raise RuntimeError("additive mechanism backend has not been fitted")
-        matrix = _design(_additive_library(np.asarray(X, dtype=float)))
+        matrix = _design(_additive_library(
+            np.asarray(X, dtype=float), self.skill_controls))
         values = (self._intercept
                   + matrix[:, self._active] @ self._coefficients)
         return np.asarray(values).reshape(-1, 1)
@@ -254,6 +294,7 @@ class AdditiveMechanismRegressor:
         return {"engine": "additive_mechanisms",
             "method": "residual-forward-additive-mechanism-selection-v1",
             "selected_feature_count": len(self._active),
+            "skill_controls": list(self.skill_controls),
             "registered_job_variant": (
                 self.config.mcts_random_seed
                 % self.config.additive_mechanism_max_terms),

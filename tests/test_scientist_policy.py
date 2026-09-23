@@ -796,3 +796,52 @@ def test_multi_engine_plan_remains_fail_closed_after_invalid_repair(monkeypatch)
     ):
         runtime.plan_research(task_context={"description": "fixture"},
             available_engines=("polynomial_lasso", "mcts"), total_jobs=2)
+
+
+def test_explicit_skill_control_protocol_is_required_when_registered(monkeypatch):
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    valid = {"protocol_id": RESEARCH_PLAN_PROTOCOL,
+        "mechanisms": ["fixture"],
+        "engine_calls": [
+            {"engine": "polynomial_lasso", "jobs": 1,
+             "objective": "linear baseline", "expected_evidence": "support",
+             "requested_operations": ["linear"]},
+            {"engine": "mcts", "jobs": 1,
+             "objective": "nonlinear search", "expected_evidence": "frontier",
+             "requested_operations": ["saturating"]}],
+        "comparison_questions": ["compare"], "synthesis_goal": "synthesize",
+        "stop_conditions": ["budget"]}
+    monkeypatch.setattr(runtime, "complete_json",
+        lambda **kwargs: (valid, {"fixture": True}))
+    plan, _ = runtime.plan_research(
+        task_context={"description": "fixture",
+                      "require_explicit_skill_controls": True},
+        available_engines=("polynomial_lasso", "mcts"), total_jobs=2)
+    assert plan.engine_calls[0].requested_operations == ("linear",)
+    assert plan.engine_calls[1].requested_operations == ("saturating",)
+
+
+def test_missing_explicit_skill_controls_fail_after_one_repair(monkeypatch):
+    from hypothesis_mvp.discovery.proposal_runtime import (
+        ScientistPlanProtocolError,
+    )
+    invalid = {"protocol_id": RESEARCH_PLAN_PROTOCOL,
+        "mechanisms": ["fixture"],
+        "engine_calls": [
+            {"engine": "polynomial_lasso", "jobs": 1,
+             "objective": "baseline", "expected_evidence": "support"},
+            {"engine": "mcts", "jobs": 1,
+             "objective": "search", "expected_evidence": "frontier"}],
+        "comparison_questions": ["compare"], "synthesis_goal": "synthesize",
+        "stop_conditions": ["budget"]}
+    responses = iter([invalid, invalid])
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    monkeypatch.setattr(runtime, "complete_json",
+        lambda **kwargs: (next(responses), {"fixture": True}))
+    with pytest.raises(
+            ScientistPlanProtocolError,
+            match="missing-explicit-skill-controls"):
+        runtime.plan_research(
+            task_context={"description": "fixture",
+                          "require_explicit_skill_controls": True},
+            available_engines=("polynomial_lasso", "mcts"), total_jobs=2)

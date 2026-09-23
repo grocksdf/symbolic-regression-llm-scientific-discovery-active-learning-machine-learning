@@ -14,6 +14,7 @@ import numpy as np
 import sympy as sp
 
 from hypothesis_mvp.config import SymbolicConfig
+from .registry import engine_spec
 from hypothesis_mvp.symbolic.sympy_utils import sympy_symbols
 
 from .base import SymbolicRegressor
@@ -99,6 +100,20 @@ class MCTSSymbolicAgent(SymbolicRegressor):
         self._allowed_unary = tuple(
             str(value) for value in getattr(config, "unary_operators", [])
         )
+        self.skill_controls = tuple(dict.fromkeys(
+            str(value) for value in getattr(config, "skill_controls", [])))
+        allowed_controls = set(engine_spec("mcts").capabilities)
+        if set(self.skill_controls) - allowed_controls:
+            raise ValueError("unsupported mcts skill control")
+        if self.skill_controls:
+            unary = []
+            if "trigonometric" in self.skill_controls:
+                unary.extend(("sin", "cos"))
+            if "saturating" in self.skill_controls:
+                unary.append("tanh")
+            self._allowed_unary = tuple(unary)
+            if "monomials" not in self.skill_controls:
+                self._binary_ops = ("+",)
         self.random_seed = int(getattr(config, "mcts_random_seed", 0))
         self._rng = np.random.default_rng(self.random_seed)
         self.reward_fn = reward_fn or (lambda mse: 1.0 / (1.0 + max(0.0, mse)))
@@ -420,6 +435,7 @@ class MCTSSymbolicAgent(SymbolicRegressor):
                 self.expression_contract == "pcpi-closed-basis-v1" else
                 "literal-expression-training-mse-v1"),
             "search_score_folds": self.score_folds,
+            "skill_controls": list(self.skill_controls),
             "frontier_size_limit": self.frontier_size,
             "frontier_expressions": list(self.candidate_expressions()),
             "archive_size": len(self._archive),

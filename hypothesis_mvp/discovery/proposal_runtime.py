@@ -584,7 +584,9 @@ class ProposalRuntime:
                     f"inductive bias: {skill.inductive_bias}."),
                 "expected_evidence": (
                     "Validated expressions, predictive scores, complexity, "
-                    "lineage, and registered engine diagnostics.")}]
+                    "lineage, and registered engine diagnostics."),
+                "requested_operations": list(
+                    original.get("requested_operations", []))}]
             singleton_dispatch_projection = {
                 "applied": True, "engine": available[0],
                 "jobs": total_jobs,
@@ -622,6 +624,8 @@ class ProposalRuntime:
         available_engines: Sequence[str], total_jobs: int,
     ) -> tuple[ResearchPlan, Mapping[str, Any]]:
         available = tuple(dict.fromkeys(str(value) for value in available_engines))
+        require_controls = bool(
+            task_context.get("require_explicit_skill_controls", False))
         skills = [skill.to_dict() for skill in REGISTERED_ENGINE_SKILLS
                   if skill.name in available]
         payload = {"protocol_id": RESEARCH_PLAN_PROTOCOL,
@@ -647,7 +651,9 @@ class ProposalRuntime:
             "Act as a scientific research planner. Return one unfenced JSON object. "
             f"Use protocol_id='{RESEARCH_PLAN_PROTOCOL}'. Provide mechanisms, engine_calls, "
             "comparison_questions, synthesis_goal and stop_conditions. Each engine call "
-            "needs engine, jobs, objective and expected_evidence. Allocate exactly the "
+            "needs engine, jobs, objective, expected_evidence and requested_operations. "
+            "requested_operations must be selected only from that skill's capabilities; "
+            "use an empty list only when all registered capabilities are required. Allocate exactly the "
             "registered total_engine_jobs across available_skills. Choose tools based on "
             "their inductive bias; do not propose equations or request hidden responses. "
             "Objectives and expected evidence must use only declared capabilities and must "
@@ -659,6 +665,11 @@ class ProposalRuntime:
         try:
             plan, projection = self._normalize_research_plan(
                 raw, available, total_jobs)
+            if require_controls and any(
+                    not call.requested_operations
+                    for call in plan.engine_calls):
+                raise ValueError(
+                    "scientist plan omits required explicit skill controls")
             return plan, self._plan_telemetry(telemetry, projection)
         except ValueError as error:
             repaired, second = self.complete_json(
@@ -667,10 +678,17 @@ class ProposalRuntime:
                     "instruction": (
                         "Return a complete replacement plan using only capabilities "
                         "declared by the selected engine skills. Respect "
-                        "fixed_singleton_dispatch exactly when present.")}})
+                        "fixed_singleton_dispatch exactly when present. Every "
+                        "engine call must select at least one requested_operations "
+                        "entry when explicit controls are required.")}})
             try:
                 plan, projection = self._normalize_research_plan(
                     repaired, available, total_jobs)
+                if require_controls and any(
+                        not call.requested_operations
+                        for call in plan.engine_calls):
+                    raise ValueError(
+                        "scientist plan omits required explicit skill controls")
             except ValueError as repaired_error:
                 reason = self._scientist_plan_error_code(repaired_error)
                 raise ScientistPlanProtocolError(
@@ -696,6 +714,8 @@ class ProposalRuntime:
                 "invalid-scientist-text-container",
             "scientist text collection contains empty values":
                 "empty-scientist-text",
+            "scientist plan omits required explicit skill controls":
+                "missing-explicit-skill-controls",
         }.get(message, "invalid-typed-plan")
 
     @staticmethod
