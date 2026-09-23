@@ -80,10 +80,20 @@ def extract_skill_task_evidence(source_output: str | Path):
             (workspace / "DATA_MANIFEST.json").read_bytes()).hexdigest(),
         f"{dataset}/{seed}/CANDIDATE_ADMISSION.json": sha256(
             (workspace / "CANDIDATE_ADMISSION.json").read_bytes()).hexdigest()}
+    scientific = manifest["scientific_context"]
+    context = {"dataset": dataset,
+        "dataset_family": manifest["family"],
+        "feature_count": len(scientific["feature_names"]),
+        "feature_names": list(scientific["feature_names"]),
+        "feature_units": list(scientific["feature_units"]),
+        "target_name": scientific["target_name"],
+        "target_unit": scientific["target_unit"],
+        "counts": dict(config["data"][0]["counts"])}
     return tuple(evidence), {
         "source_output": str(root), "dataset": dataset, "seed": seed,
         "dataset_family": manifest["family"],
         "task_identity": task_identity, "artifacts": artifacts,
+        "context": context,
         "registered_engines": list(config.get("agent", {}).get(
             "engines", registered_engine_names()))}
 

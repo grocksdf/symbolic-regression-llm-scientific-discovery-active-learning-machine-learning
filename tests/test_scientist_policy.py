@@ -24,6 +24,9 @@ from hypothesis_mvp.discovery.skill_policy import (
     leave_one_task_out_contextual_skill_policy,
     leave_one_task_out_skill_policy, leave_one_task_out_skill_policy_v2,
 )
+from hypothesis_mvp.discovery.skill_meta_policy import (
+    SkillMetaEvidence, leave_one_task_out_meta_skill_policy,
+)
 from hypothesis_mvp.symbolic.scheduler import EngineScheduler
 
 
@@ -308,6 +311,33 @@ def test_contextual_skill_replay_improves_family_specific_prediction():
     assert report["coverage_passed"]
     assert report["contextual_brier_score"] < report["global_brier_score"]
     assert report["contextual_brier_score"] < .25
+
+
+def test_task_meta_skill_policy_learns_response_free_semantic_signal():
+    rows = []
+    for index in range(8):
+        success = index % 2 == 0
+        family = "a" if index < 4 else "b"
+        evidence = SkillTaskEvidence(
+            f"task-{index}", family, "fixture_skill",
+            ((1., 1.) if success else (-1., -1.)), (.01, .01))
+        feature_count = 2 if success else 9
+        context = {"dataset": "dataset",
+            "dataset_family": family, "feature_count": feature_count,
+            "feature_names": [f"x{value}" for value in range(feature_count)],
+            "feature_units": ["u"] * feature_count,
+            "target_name": "target",
+            "target_unit": "u",
+            "counts": {"exploration_development": 32,
+                       "exploration_validation": 32,
+                       "inference_initial": 16,
+                       "development_evaluation": 64,
+                       "acquisition_pool": 8}}
+        rows.append(SkillMetaEvidence(evidence, context))
+    report = leave_one_task_out_meta_skill_policy(rows)
+    assert report["passed"], report
+    assert report["meta_brier_score"] < report["global_brier_score"]
+    assert report["rank_concordance"] > .5
 
 
 def test_plan_compiler_binds_replay_posterior_to_llm_job_preferences(
