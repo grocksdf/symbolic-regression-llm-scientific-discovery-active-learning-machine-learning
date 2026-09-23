@@ -23,15 +23,29 @@ from hypothesis_mvp.pcpi.discovery_transaction import _publish
 
 
 def _requested_allocations(source, audit):
-    path = (Path(source) / audit["dataset"] / str(audit["seed"]) /
-            "exploration/full/RESULT.json")
+    workspace = (Path(source) / audit["dataset"] / str(audit["seed"]) /
+                 "exploration/full")
+    path = workspace / "RESULT.json"
     result = json.loads(path.read_text(encoding="utf-8"))
     trace = result.get("scientist_policy_trace", [])
-    if (result.get("provider_calls", 0) < 1 or not trace
-            or not trace[0].get("engine_allocations")):
+    if (result.get("provider_calls", 0) >= 1 and trace
+            and trace[0].get("engine_allocations")):
+        return {str(key): int(value) for key, value
+                in trace[0]["engine_allocations"].items()}
+    events = [json.loads(line) for line in (
+        workspace / "evidence_registry.jsonl").read_text(
+            encoding="utf-8").splitlines() if line.strip()]
+    plans = [row["payload"]["research_plan"] for row in events
+             if row.get("payload", {}).get("stage")
+                == "scientist_policy_transition"
+             and row["payload"].get("research_plan")]
+    if result.get("provider_calls", 0) < 1 or not plans:
         raise ValueError("source has no LLM allocation preference")
-    return {str(key): int(value) for key, value
-            in trace[0]["engine_allocations"].items()}
+    calls = plans[0].get("engine_calls", [])
+    allocations = {str(row["engine"]): int(row["jobs"]) for row in calls}
+    if not allocations:
+        raise ValueError("source Scientist plan has no engine allocation")
+    return allocations
 
 
 def main() -> int:
