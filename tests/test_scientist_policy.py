@@ -27,6 +27,9 @@ from hypothesis_mvp.discovery.skill_policy import (
 from hypothesis_mvp.discovery.skill_meta_policy import (
     SkillMetaEvidence, leave_one_task_out_meta_skill_policy,
 )
+from hypothesis_mvp.discovery.skill_probe_policy import (
+    SkillProbeEvidence, leave_one_task_out_probe_skill_policy,
+)
 from hypothesis_mvp.symbolic.scheduler import EngineScheduler
 
 
@@ -315,9 +318,9 @@ def test_contextual_skill_replay_improves_family_specific_prediction():
 
 def test_task_meta_skill_policy_learns_response_free_semantic_signal():
     rows = []
-    for index in range(8):
+    for index in range(10):
         success = index % 2 == 0
-        family = "a" if index < 4 else "b"
+        family = "a" if index < 5 else "b"
         evidence = SkillTaskEvidence(
             f"task-{index}", family, "fixture_skill",
             ((1., 1.) if success else (-1., -1.)), (.01, .01))
@@ -337,6 +340,27 @@ def test_task_meta_skill_policy_learns_response_free_semantic_signal():
     report = leave_one_task_out_meta_skill_policy(rows)
     assert report["passed"], report
     assert report["meta_brier_score"] < report["global_brier_score"]
+    assert report["rank_concordance"] > .5
+
+
+def test_task_local_probe_policy_predicts_independent_admission():
+    rows = []
+    for index in range(10):
+        success = index % 2 == 0
+        family = "a" if index < 5 else "b"
+        evidence = SkillTaskEvidence(
+            f"task-{index}", family, "fixture_skill",
+            ((1., 1.) if success else (-1., -1.)), (.01, .01))
+        gain = .4 if success else -.4
+        rows.append(SkillProbeEvidence(evidence, {
+            "relative_score_gain": gain,
+            "relative_mse_gain": gain,
+            "log_complexity": 1.0,
+            "support_novelty_ratio": .5 if success else .1,
+            "log_candidate_count": 1.0}))
+    report = leave_one_task_out_probe_skill_policy(rows)
+    assert report["passed"], report
+    assert report["probe_brier_score"] < report["global_brier_score"]
     assert report["rank_concordance"] > .5
 
 
