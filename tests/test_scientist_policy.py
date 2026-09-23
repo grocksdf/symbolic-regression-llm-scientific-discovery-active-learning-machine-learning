@@ -32,6 +32,9 @@ from hypothesis_mvp.discovery.skill_probe_policy import (
     fit_probe_skill_model, leave_one_task_out_probe_skill_policy,
     predict_probe_skill_model,
 )
+from hypothesis_mvp.discovery.llm_preference_policy import (
+    LLMPreferenceEvidence, leave_one_task_out_llm_preference_policy,
+)
 from hypothesis_mvp.symbolic.scheduler import EngineScheduler
 
 
@@ -373,6 +376,20 @@ def test_task_local_probe_policy_predicts_independent_admission():
         {**probabilities, "baseline": .5},
         llm_requested_jobs={"fixture_skill": 2, "baseline": 1})
     assert allocation["allocated_jobs"]["fixture_skill"] == 2
+
+
+def test_llm_preference_requires_positive_calibrated_increment():
+    rows = []
+    for task in range(10):
+        for skill, preferred in (("good", True), ("bad", False)):
+            rows.append(LLMPreferenceEvidence(
+                f"task-{task}", skill, .5,
+                (1.0 if preferred else -1.0),
+                ("success" if preferred else "failure")))
+    report = leave_one_task_out_llm_preference_policy(rows)
+    assert report["passed"], report
+    assert report["preference_beta_90pct_lower"] > 0.0
+    assert report["calibrated_brier_score"] < report["probe_brier_score"]
 
 
 def test_plan_compiler_binds_replay_posterior_to_llm_job_preferences(
