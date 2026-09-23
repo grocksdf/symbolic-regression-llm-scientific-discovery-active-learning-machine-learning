@@ -13,7 +13,7 @@ from typing import Any, Mapping, Sequence
 
 from hypothesis_mvp.config import SymbolicConfig
 from hypothesis_mvp.data import SelectionData
-from hypothesis_mvp.symbolic import EngineScheduler
+from hypothesis_mvp.symbolic import EngineScheduler, merge_multi_engine_results
 
 from .api import DiscoveryRunResult, discover_from_selection
 from .contracts import DiscoveryConfig
@@ -26,6 +26,10 @@ from .scientist_policy import (
     deterministic_plan,
 )
 from .skill_policy import allocate_bayesian_skill_jobs
+from .skill_probe_policy import (
+    allocate_task_local_probe_jobs, predict_probe_skill_model,
+    probe_features_from_engine_results,
+)
 from .system_evidence import (
     attach_scientist_policy_evidence, attach_system_evidence, system_evaluation,
 )
@@ -54,6 +58,9 @@ class DiscoveryAgentConfig:
     skill_reliability: Mapping[str, Mapping[str, float]] = field(
         default_factory=dict)
     skill_policy_identity: str = ""
+    probe_skill_model: Mapping[str, Any] = field(default_factory=dict)
+    probe_skill_policy_identity: str = ""
+    dataset_family: str = ""
 
 
 @dataclass(frozen=True)
@@ -72,6 +79,7 @@ class DiscoveryCycle:
     scientist_review: Mapping[str, Any] = field(default_factory=dict)
     scientist_state_before: Mapping[str, Any] = field(default_factory=dict)
     scientist_state_after: Mapping[str, Any] = field(default_factory=dict)
+    probe_allocation: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -182,6 +190,49 @@ class DiscoveryAgent:
             )
         self.scheduler = EngineScheduler()
 
+    def _run_probe_stages(self, selection, cycle, symbolic, allocations):
+        first = self.scheduler.run_allocated(
+            allocations={name: 1 for name in self.config.engines},
+            config=symbolic, X_train=selection.development.X,
+            y_train=selection.development.y,
+            X_val=selection.validation.X, y_val=selection.validation.y,
+            base_seed=self.config.random_seed + cycle,
+            max_retries=self.config.engine_retries,
+            evaluation_budget=len(self.config.engines),
+            parallel=self.config.engine_workers > 1,
+            max_workers=self.config.engine_workers,
+            timeout_s=self.config.engine_timeout_s)
+        probes = probe_features_from_engine_results(
+            first.all_results, selection.development.X.shape[1])
+        probabilities = predict_probe_skill_model(
+            self.config.probe_skill_model,
+            self.config.dataset_family, probes)
+        allocation = allocate_task_local_probe_jobs(
+            self.config.engines, self.config.engine_budget, probabilities,
+            llm_requested_jobs=allocations)
+        self._last_probe_allocation = {
+            **allocation,
+            "probe_skill_policy_identity":
+                self.config.probe_skill_policy_identity,
+            "probe_features": probes}
+        extras = {name: count - 1 for name, count
+                  in allocation["allocated_jobs"].items() if count > 1}
+        if not extras:
+            return first
+        second = self.scheduler.run_allocated(
+            allocations=extras, config=symbolic,
+            X_train=selection.development.X,
+            y_train=selection.development.y,
+            X_val=selection.validation.X, y_val=selection.validation.y,
+            base_seed=self.config.random_seed + cycle + 1000003,
+            max_retries=self.config.engine_retries,
+            evaluation_budget=sum(extras.values()),
+            parallel=self.config.engine_workers > 1,
+            max_workers=self.config.engine_workers,
+            timeout_s=self.config.engine_timeout_s)
+        return merge_multi_engine_results(
+            (first, second), evaluation_budget=self.config.engine_budget)
+
     def _run_engines(self, selection: SelectionData, cycle: int) -> Any:
         symbolic = SymbolicConfig(
             niterations=self.config.search_iterations,
@@ -193,6 +244,17 @@ class DiscoveryAgent:
                 self.config.refit_policy == "pcpi-closed-basis-amplitudes" else "unrestricted"),
         )
         resolved = getattr(self, "_active_research_plan", None)
+        allocations = ({call.engine: call.jobs
+                        for call in resolved.engine_calls}
+                       if resolved is not None else {
+                           name: self.config.engine_repeats
+                           for name in self.config.engines})
+        if (self.config.probe_skill_model
+                and len(self.config.engines) > 1
+                and self.config.engine_budget > len(self.config.engines)):
+            return self._run_probe_stages(
+                selection, cycle, symbolic, allocations)
+        self._last_probe_allocation = {}
         if resolved is None:
             return self.scheduler.run(
                 engines=self.config.engines, config=symbolic,
@@ -205,7 +267,6 @@ class DiscoveryAgent:
                 parallel=self.config.engine_workers > 1,
                 max_workers=self.config.engine_workers,
                 timeout_s=self.config.engine_timeout_s)
-        allocations = {call.engine: call.jobs for call in resolved.engine_calls}
         return self.scheduler.run_allocated(
             allocations=allocations, config=symbolic,
             X_train=selection.development.X, y_train=selection.development.y,
@@ -348,6 +409,7 @@ class DiscoveryAgent:
                 int(final.report.get("llm_error_count", 0)) + usage[2],
                 plan.to_dict(), review.to_dict(),
                 state_before, scientist_state.to_dict(),
+                dict(getattr(self, "_last_probe_allocation", {})),
             ))
             if review.stop:
                 break

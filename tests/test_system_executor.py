@@ -114,6 +114,38 @@ def test_bayesian_skill_policy_certificate_is_hash_and_replay_bound(tmp_path):
         executor._load_skill_policy_certificate(config)
 
 
+def test_task_local_probe_certificate_is_hash_model_and_replay_bound(tmp_path):
+    model = {"schema": "scientific-task-local-probe-model-v1",
+        "identity": "model", "candidate_response_accessed": False,
+        "heldout_opened": False}
+    certificate = {
+        "schema": "scientific-task-local-probe-skill-certificate-v1",
+        "passed": True, "candidate_response_accessed": False,
+        "heldout_opened": False, "replay": {"identity": "replay"},
+        "model": model}
+    path = tmp_path / "probe.json"
+    path.write_text(json.dumps(certificate), encoding="utf-8")
+    config = _config()
+    gate = config["marginal_influence_gate"]
+    gate["schema"] = "scientific-policy-and-source-influence-gate-v6"
+    gate["required_contributions"] = ["scientist_policy", "engine:mcts"]
+    gate["required_active_contributions"] = ["scientist_policy"]
+    gate["scientist_policy_ablation"] = "full-vs-no_llm-matched-budget-v1"
+    config["probe_skill_policy"] = {
+        "schema": "scientific-task-local-probe-policy-binding-v1",
+        "certificate": str(path.resolve()),
+        "certificate_sha256": sha256(path.read_bytes()).hexdigest(),
+        "replay_identity": "replay", "model_identity": "model",
+        "allocation_method":
+            "one-probe-each-laplace-posterior-llm-preference-v1"}
+    assert executor.validate_system_registration(config) is config
+    loaded, identity = executor._load_probe_skill_policy_certificate(config)
+    assert loaded == model and identity == "replay"
+    config["probe_skill_policy"]["model_identity"] = "other"
+    with pytest.raises(ValueError, match="not eligible"):
+        executor._load_probe_skill_policy_certificate(config)
+
+
 def _data():
     def role(kind, x): return RoleDataset(kind, np.array(x, dtype=float)[:, None], np.array(x, dtype=float))
     return OpenSystemData(SelectionData(role(DataRole.DEVELOPMENT, [0, 1]),

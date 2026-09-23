@@ -138,6 +138,121 @@ def _design(train, test):
             np.vstack([vector(row) for row in test]))
 
 
+def fit_probe_skill_model(rows: Sequence[SkillProbeEvidence]) -> dict[str, Any]:
+    train = [row for row in rows if row.evidence.outcome != "unresolved"]
+    if len(train) < 8:
+        raise ValueError("probe skill model requires eight resolved examples")
+    keys = ("relative_score_gain", "relative_mse_gain", "log_complexity",
+            "support_novelty_ratio", "log_candidate_count")
+    numeric = np.asarray([[row.probe[key] for key in keys] for row in train])
+    mean, scale = np.mean(numeric, axis=0), np.std(numeric, axis=0)
+    scale[scale <= np.finfo(float).eps] = 1.0
+    skills = tuple(sorted({row.evidence.skill for row in train}))
+    families = tuple(sorted({row.evidence.dataset_family for row in train}))
+    def vector(row):
+        values = [(row.probe[key] - mean[index]) / scale[index]
+                  for index, key in enumerate(keys)]
+        values += [float(row.evidence.skill == skill) for skill in skills]
+        values += [float(row.evidence.dataset_family == family)
+                   for family in families]
+        return np.asarray([1.0, *values], dtype=float)
+    design = np.vstack([vector(row) for row in train])
+    weights, covariance = _fit_laplace(
+        design, [float(row.evidence.outcome == "success") for row in train])
+    model = {"schema": "scientific-task-local-probe-model-v1",
+        "numeric_keys": list(keys), "numeric_mean": mean.tolist(),
+        "numeric_scale": scale.tolist(), "skills": list(skills),
+        "dataset_families": list(families), "weights": weights.tolist(),
+        "covariance": covariance.tolist(), "prior_precision": 4.0,
+        "training_example_count": len(train),
+        "candidate_response_accessed": False, "heldout_opened": False}
+    model["identity"] = sha256(json.dumps(
+        model, sort_keys=True, separators=(",", ":"),
+        allow_nan=False).encode()).hexdigest()
+    return model
+
+
+def predict_probe_skill_model(model, dataset_family, probes):
+    keys = tuple(model["numeric_keys"])
+    mean, scale = np.asarray(model["numeric_mean"]), np.asarray(
+        model["numeric_scale"])
+    skills, families = tuple(model["skills"]), tuple(
+        model["dataset_families"])
+    weights, covariance = np.asarray(model["weights"]), np.asarray(
+        model["covariance"])
+    rows, names = [], []
+    for skill, probe in probes.items():
+        values = [(float(probe[key]) - mean[index]) / scale[index]
+                  for index, key in enumerate(keys)]
+        values += [float(skill == value) for value in skills]
+        values += [float(dataset_family == value) for value in families]
+        rows.append([1.0, *values]); names.append(skill)
+    probabilities = _predict(np.asarray(rows), weights, covariance)
+    return dict(zip(names, (float(value) for value in probabilities),
+                    strict=True))
+
+
+def probe_features_from_engine_results(results, n_features):
+    grouped = {}
+    for row in results:
+        grouped.setdefault(row.engine, []).append(row)
+    if "polynomial_lasso" not in grouped:
+        raise ValueError("probe stage requires polynomial baseline")
+    best = {engine: min(rows, key=lambda row: (
+        row.score, row.complexity, row.expression))
+            for engine, rows in grouped.items()}
+    baseline = best["polynomial_lasso"]
+    baseline_support = set(structural_terms(
+        str(baseline.expression).replace("^", "**"), n_features))
+    probes = {}
+    for engine, row in best.items():
+        support = set(structural_terms(
+            str(row.expression).replace("^", "**"), n_features))
+        probes[engine] = {
+            "relative_score_gain": (
+                float(baseline.score) - float(row.score))
+                / max(abs(float(baseline.score)), 1e-12),
+            "relative_mse_gain": (
+                float(baseline.mse_val) - float(row.mse_val))
+                / max(abs(float(baseline.mse_val)), 1e-12),
+            "log_complexity": float(np.log1p(row.complexity)),
+            "support_novelty_ratio": (
+                len(support - baseline_support)
+                / max(1, len(support | baseline_support))),
+            "log_candidate_count": float(np.log1p(
+                row.diagnostics.get("candidate_count", 1)))}
+    return probes
+
+
+def allocate_task_local_probe_jobs(skills, total_jobs, probabilities, *,
+                                   llm_requested_jobs=None):
+    names = tuple(dict.fromkeys(str(value) for value in skills))
+    if total_jobs < len(names) or not names:
+        raise ValueError("invalid task-local probe allocation")
+    requested = {name: max(1, int((llm_requested_jobs or {}).get(name, 1)))
+                 for name in names}
+    jobs = {name: 1 for name in names}
+    scores = {}
+    for _ in range(total_jobs - len(names)):
+        scores = {name: (
+            float(probabilities.get(name, 0.5))
+            * (1.0 + 0.5 * (requested[name] - 1))
+            / jobs[name]) for name in names}
+        selected = max(names, key=lambda name: (
+            scores[name], requested[name], -names.index(name)))
+        jobs[selected] += 1
+    result = {"schema": "scientific-task-local-probe-allocation-v1",
+        "probabilities": {name: float(probabilities.get(name, 0.5))
+                          for name in names},
+        "llm_requested_jobs": requested, "allocated_jobs": jobs,
+        "final_scores": scores, "total_jobs": total_jobs,
+        "candidate_response_accessed": False, "heldout_opened": False}
+    result["identity"] = sha256(json.dumps(
+        result, sort_keys=True, separators=(",", ":"),
+        allow_nan=False).encode()).hexdigest()
+    return result
+
+
 def leave_one_task_out_probe_skill_policy(
         rows: Sequence[SkillProbeEvidence], *,
         minimum_training_tasks: int = 3,
@@ -225,6 +340,8 @@ def leave_one_task_out_probe_skill_policy(
 
 
 __all__ = [
-    "SkillProbeEvidence", "extract_skill_probe_evidence",
+    "SkillProbeEvidence", "allocate_task_local_probe_jobs",
+    "extract_skill_probe_evidence", "fit_probe_skill_model",
     "leave_one_task_out_probe_skill_policy",
+    "predict_probe_skill_model", "probe_features_from_engine_results",
 ]

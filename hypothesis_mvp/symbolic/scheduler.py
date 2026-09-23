@@ -287,7 +287,25 @@ class EngineScheduler:
             max_workers=max_workers, timeout_s=timeout_s)
 
 
+def merge_multi_engine_results(
+        parts: Sequence[MultiEngineResult], *,
+        evaluation_budget: int) -> MultiEngineResult:
+    if (not parts or evaluation_budget < 1
+            or sum(part.evaluations_used for part in parts)
+                != evaluation_budget):
+        raise ValueError("invalid staged symbolic-engine results")
+    results = tuple(row for part in parts for row in part.all_results)
+    records = tuple(row for part in parts for row in part.run_records)
+    failures = tuple(row for part in parts for row in part.failures)
+    aggregated = _aggregate(results, evaluation_budget, len(records))
+    if not aggregated:
+        raise RuntimeError("staged symbolic engines produced no result")
+    return MultiEngineResult(
+        aggregated[0], aggregated, records, failures,
+        evaluation_budget, len(records))
+
+
 __all__ = [
     "EngineProtocol", "EngineResult", "EngineRunRecord",
-    "EngineScheduler", "MultiEngineResult",
+    "EngineScheduler", "MultiEngineResult", "merge_multi_engine_results",
 ]

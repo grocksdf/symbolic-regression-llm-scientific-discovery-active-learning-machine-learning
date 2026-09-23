@@ -28,7 +28,9 @@ from hypothesis_mvp.discovery.skill_meta_policy import (
     SkillMetaEvidence, leave_one_task_out_meta_skill_policy,
 )
 from hypothesis_mvp.discovery.skill_probe_policy import (
-    SkillProbeEvidence, leave_one_task_out_probe_skill_policy,
+    SkillProbeEvidence, allocate_task_local_probe_jobs,
+    fit_probe_skill_model, leave_one_task_out_probe_skill_policy,
+    predict_probe_skill_model,
 )
 from hypothesis_mvp.symbolic.scheduler import EngineScheduler
 
@@ -362,6 +364,15 @@ def test_task_local_probe_policy_predicts_independent_admission():
     assert report["passed"], report
     assert report["probe_brier_score"] < report["global_brier_score"]
     assert report["rank_concordance"] > .5
+    model = fit_probe_skill_model(rows)
+    probabilities = predict_probe_skill_model(
+        model, "a", {"fixture_skill": rows[0].probe})
+    assert probabilities["fixture_skill"] > .5
+    allocation = allocate_task_local_probe_jobs(
+        ("fixture_skill", "baseline"), 3,
+        {**probabilities, "baseline": .5},
+        llm_requested_jobs={"fixture_skill": 2, "baseline": 1})
+    assert allocation["allocated_jobs"]["fixture_skill"] == 2
 
 
 def test_plan_compiler_binds_replay_posterior_to_llm_job_preferences(

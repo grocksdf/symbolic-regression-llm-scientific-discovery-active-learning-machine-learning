@@ -138,6 +138,8 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
                 cycle, "research_plan", {}).get("engine_calls", [])},
         "provider_calls": cycle.provider_calls,
         "provider_attempts": cycle.provider_attempts,
+        "task_local_probe_allocation": dict(getattr(
+            cycle, "probe_allocation", {})),
         "candidate_response_accessed": False,
         "heldout_opened": False,
     } for index, cycle in enumerate(result.cycles)]

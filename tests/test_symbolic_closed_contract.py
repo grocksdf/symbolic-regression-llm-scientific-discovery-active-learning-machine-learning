@@ -161,6 +161,31 @@ def test_four_skill_scheduler_preserves_one_job_per_engine_and_lineage():
         result.all_results)
 
 
+def test_staged_engine_results_merge_without_replaying_probe_jobs():
+    from hypothesis_mvp.symbolic import EngineScheduler, merge_multi_engine_results
+    X, y = _fixture()
+    scheduler = EngineScheduler()
+    config = SymbolicConfig(
+        expression_contract="pcpi-closed-basis-v1",
+        mcts_max_iterations=8, mcts_frontier_size=2)
+    first = scheduler.run_allocated(
+        allocations={"polynomial_lasso": 1, "mcts": 1}, config=config,
+        X_train=X, y_train=y, X_val=X, y_val=y, base_seed=1,
+        max_retries=0, evaluation_budget=2, parallel=False,
+        max_workers=1, timeout_s=30)
+    second = scheduler.run_allocated(
+        allocations={"mcts": 1}, config=config,
+        X_train=X, y_train=y, X_val=X, y_val=y, base_seed=1000004,
+        max_retries=0, evaluation_budget=1, parallel=False,
+        max_workers=1, timeout_s=30)
+    merged = merge_multi_engine_results(
+        (first, second), evaluation_budget=3)
+    assert merged.evaluations_used == 3
+    assert len(merged.run_records) == 3
+    assert {row.engine for row in merged.all_results} == {
+        "polynomial_lasso", "mcts"}
+
+
 def test_invalid_unary_expansions_do_not_exhaust_valid_generation_slots():
     def admit(expression):
         try: structural_terms(expression, 1); return True

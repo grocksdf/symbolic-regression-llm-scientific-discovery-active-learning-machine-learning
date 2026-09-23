@@ -93,6 +93,38 @@ def _load_skill_policy_certificate(config):
     return reliability, policy["replay_identity"]
 
 
+def _load_probe_skill_policy_certificate(config):
+    policy = config.get("probe_skill_policy")
+    if policy is None:
+        return {}, ""
+    if (set(policy) != {"schema", "certificate", "certificate_sha256",
+            "replay_identity", "model_identity", "allocation_method"}
+            or policy["schema"] !=
+                "scientific-task-local-probe-policy-binding-v1"
+            or policy["allocation_method"] !=
+                "one-probe-each-laplace-posterior-llm-preference-v1"):
+        raise ValueError("invalid task-local probe policy binding")
+    path = Path(policy["certificate"])
+    if (not path.is_absolute() or not path.is_file()
+            or sha256(path.read_bytes()).hexdigest()
+                != policy["certificate_sha256"]):
+        raise ValueError("task-local probe certificate identity changed")
+    certificate = json.loads(path.read_text(encoding="utf-8"))
+    model = certificate.get("model", {})
+    if (certificate.get("schema")
+            != "scientific-task-local-probe-skill-certificate-v1"
+            or certificate.get("passed") is not True
+            or certificate.get("candidate_response_accessed") is not False
+            or certificate.get("heldout_opened") is not False
+            or certificate.get("replay", {}).get("identity")
+                != policy["replay_identity"]
+            or model.get("identity") != policy["model_identity"]
+            or model.get("candidate_response_accessed") is not False
+            or model.get("heldout_opened") is not False):
+        raise ValueError("task-local probe certificate is not eligible")
+    return model, policy["replay_identity"]
+
+
 def _validate_influence_registration(config, agent):
     influence = config["marginal_influence_gate"]
     optional = [f"engine:{name}" for name in agent.engines
@@ -141,7 +173,8 @@ def validate_system_registration(config):
         "user_execution_authorized", "hypothesis_bank_gate", "marginal_influence_gate"}
     if (not required <= set(config)
             or set(config) - required > {
-                "targeted_query_policy", "inference_mode", "skill_policy"}
+                "targeted_query_policy", "inference_mode", "skill_policy",
+                "probe_skill_policy"}
             or config["schema"] != "scientific-system-development-registration-v1"):
         raise ValueError("unknown or incomplete scientific system registration")
     if config.get("targeted_query_policy", "class_eig") not in {
@@ -213,6 +246,10 @@ def validate_system_registration(config):
             and config["marginal_influence_gate"]["schema"]
                 != "scientific-policy-and-source-influence-gate-v6"):
         raise ValueError("Bayesian skill policy requires policy-level ablation")
+    if (config.get("probe_skill_policy") is not None
+            and config["marginal_influence_gate"]["schema"]
+                != "scientific-policy-and-source-influence-gate-v6"):
+        raise ValueError("task-local probe policy requires policy-level ablation")
     identity = config["provider_public_identity"]
     if identity is None and config["user_execution_authorized"] is False:
         return config
@@ -712,6 +749,19 @@ def _run_comparison_variant(project_root, workspace, row, data, config, provider
     return comparison
 
 
+def _bound_agent_config(config, seed, data, skill_reliability,
+                        skill_policy_identity, probe_skill_model,
+                        probe_skill_policy_identity):
+    return replace(
+        DiscoveryAgentConfig(**config["agent"]),
+        random_seed=seed,
+        skill_reliability=skill_reliability,
+        skill_policy_identity=skill_policy_identity,
+        probe_skill_model=probe_skill_model,
+        probe_skill_policy_identity=probe_skill_policy_identity,
+        dataset_family=data.manifest["family"])
+
+
 def execute_registered_system(project_root, root, config, expected_freeze, *, execution_role,
                               measurement_authorized=True):
     config = json.loads(json.dumps(config, allow_nan=False))
@@ -729,6 +779,8 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
     verify_system_freeze(project_root, config, expected_freeze)
     skill_reliability, skill_policy_identity = (
         _load_skill_policy_certificate(config))
+    probe_skill_model, probe_skill_policy_identity = (
+        _load_probe_skill_policy_certificate(config))
     provider = verify_registered_provider(project_root, config)
     source_identity = _digest(expected_freeze)
     root.mkdir(parents=True, exist_ok=True)
@@ -749,11 +801,10 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
                 workspace = root / dataset / str(seed)
                 workspace.mkdir(parents=True, exist_ok=True)
                 _publish(workspace / "DATA_MANIFEST.json", data.manifest)
-                agent_config = replace(
-                    DiscoveryAgentConfig(**config["agent"]),
-                    random_seed=seed,
-                    skill_reliability=skill_reliability,
-                    skill_policy_identity=skill_policy_identity)
+                agent_config = _bound_agent_config(
+                    config, seed, data, skill_reliability,
+                    skill_policy_identity, probe_skill_model,
+                    probe_skill_policy_identity)
                 print(f"system exploration: {coordinate}", flush=True)
                 exploration = run_exploration_ablations(workspace / "exploration", data.selection,
                     dataset=dataset, config=agent_config, provider_settings=provider,
