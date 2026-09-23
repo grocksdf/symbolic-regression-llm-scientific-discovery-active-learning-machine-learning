@@ -30,16 +30,36 @@ class SkillProbeEvidence:
 
 
 def _read_engine_report(source, dataset, seed):
-    path = (Path(source) / dataset / str(seed) /
+    workspace = Path(source) / dataset / str(seed)
+    path = (workspace /
             "exploration/full/evidence_registry.jsonl")
     events = [json.loads(line) for line in path.read_text(
         encoding="utf-8").splitlines() if line.strip()]
     reports = [row["payload"] for row in events
                if "engine_report" in row.get("payload", {})]
-    if not reports:
-        raise ValueError("skill probe source has no engine report")
-    reports.sort(key=lambda row: int(row.get("cycle", 0)))
-    return reports[0]["engine_report"]
+    if reports:
+        reports.sort(key=lambda row: int(row.get("cycle", 0)))
+        report = dict(reports[0]["engine_report"])
+        report["probe_reconstruction"] = "repeat-zero-run-record"
+        return report
+    result = json.loads((workspace / "exploration/full/RESULT.json").read_text(
+        encoding="utf-8"))
+    candidates = result["hypothesis_provenance"]["raw_engine_candidates"]
+    primary = {}
+    for row in candidates:
+        engine = str(row["engine"])
+        rank = int(row.get("diagnostics", {}).get("candidate_rank", 0))
+        current = primary.get(engine)
+        key = (rank, float(row["score"]), str(row["expression"]))
+        if current is None or key < current[0]:
+            primary[engine] = (key, row)
+    records = [{"engine": engine, "repeat": 0, "attempt": 0,
+        "seed": int(row.get("diagnostics", {}).get("seed", 0)),
+        "status": "succeeded", "expression": row["expression"]}
+        for engine, (_, row) in sorted(primary.items())]
+    return {"all_results": candidates, "run_records": records,
+        "failures": [], "probe_reconstruction":
+            "legacy-candidate-rank-zero-fallback"}
 
 
 def _first_result(report, engine):
