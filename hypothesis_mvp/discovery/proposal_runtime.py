@@ -48,6 +48,13 @@ class ScientistReviewProtocolError(ValueError):
         self.public_diagnostic = diagnostic
 
 
+class ProviderInfrastructureError(RuntimeError):
+    """Sanitized provider failure safe to cross the process boundary."""
+    def __init__(self, diagnostic: str) -> None:
+        super().__init__(diagnostic)
+        self.public_diagnostic = diagnostic
+
+
 
 def _unique_object(pairs: Sequence[tuple[str, Any]]) -> dict[str, Any]:
     value: dict[str, Any] = {}
@@ -392,7 +399,21 @@ class ProposalRuntime:
             "provider_final_outcome": dict(outcomes[-1]),
             "provider_all_attempts_preserved": True,
         })
-        raise RuntimeError(f"LLM provider exhausted: {outcomes[-1]['provider_error']}")
+        last_error = outcomes[-1]["provider_error"]
+        code = "unknown"
+        if "Timeout" in last_error:
+            code = "timeout"
+        elif "ConnectionError" in last_error:
+            code = "connection-error"
+        else:
+            match = re.search(r'"provider_http_status":\s*(\d+)', last_error)
+            if match:
+                code = f"http-{match.group(1)}"
+            elif "provider_content_missing" in last_error:
+                code = "provider-content-missing"
+        raise ProviderInfrastructureError(
+            f"provider-infrastructure-failure:{code}:"
+            f"attempts={len(outcomes)}")
 
     def complete_json(
         self, *, system_message: str, payload: Mapping[str, Any]
