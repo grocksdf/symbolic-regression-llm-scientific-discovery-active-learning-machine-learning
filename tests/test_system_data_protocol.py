@@ -62,6 +62,43 @@ def test_ccpp_outer_partition_preserves_historical_sealed_boundary(monkeypatch):
     assert not set(captured) & set(order[90:])
 
 
+def test_airfoil_streams_only_registered_rows(tmp_path):
+    path = tmp_path / "airfoil_self_noise.dat"
+    path.write_text(
+        "1 2 3 4 5 6\n"
+        "DO NOT PARSE EXCLUDED RESPONSE\n"
+        "7 8 9 10 11 12\n",
+        encoding="utf-8")
+    assert protocol._airfoil_open_rows(path, {0, 2}) == {
+        0: [1., 2., 3., 4., 5., 6.],
+        2: [7., 8., 9., 10., 11., 12.],
+    }
+
+
+def test_airfoil_outer_partition_preserves_sealed_boundary(monkeypatch):
+    from hypothesis_mvp.data.real_protocol import SPLIT_SEED
+    monkeypatch.setattr(
+        protocol, "_verify_hash", lambda path, expected, verify: expected)
+    spec = replace(protocol.REAL_DATASET_SPECS["uci_airfoil"],
+                   expected_rows=100)
+    monkeypatch.setitem(protocol.REAL_DATASET_SPECS, "uci_airfoil", spec)
+    captured = []
+
+    def read(source, selected):
+        captured.extend(selected)
+        return {i: [i, i + 1, i + 2, i + 3, i + 4, i + 5]
+                for i in selected}
+
+    monkeypatch.setattr(protocol, "_airfoil_open_rows", read)
+    protocol.load_registered_system_data(_registration("uci_airfoil"))
+    order = sorted(
+        range(100), key=lambda i:
+        sha256(f"{SPLIT_SEED}:uci_airfoil:{i:06d}".encode()).digest())
+    assert not set(captured) & set(order[90:])
+    assert (protocol.PUBLIC_SCIENTIFIC_CONTEXT["uci_airfoil"][
+        "feature_names"])
+
+
 def test_unknown_roles_reject_before_file_access(monkeypatch):
     def forbidden(*args): raise AssertionError("no file access allowed")
     monkeypatch.setattr(protocol, "_verify_hash", forbidden)
