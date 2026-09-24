@@ -729,8 +729,11 @@ def test_scientist_extra_budget_allocation_is_executable(monkeypatch):
         available_engines=("polynomial_lasso", "mcts"), total_jobs=4)
     assert [(call.engine, call.jobs) for call in plan.engine_calls] == [
         ("polynomial_lasso", 3), ("mcts", 1)]
-    assert "forced_coverage_dispatch_projection" not in telemetry.get(
-        "plan_contract_projection", {})
+    projection = telemetry["plan_contract_projection"][
+        "forced_coverage_dispatch_projection"]
+    assert projection["bound_jobs"] == {
+        "polynomial_lasso": 3, "mcts": 1}
+    assert len(projection["skill_operation_projections"]) == 2
 
 
 def test_scientist_invalid_extra_budget_is_projected_from_preferences(monkeypatch):
@@ -782,7 +785,8 @@ def test_forced_full_coverage_compiles_missing_registered_skill(monkeypatch):
         "forced_coverage_dispatch_projection"]
     assert projection["synthesized_required_calls"] == [
         "polynomial_lasso"]
-    assert plan.engine_calls[0].requested_operations == ()
+    assert plan.engine_calls[0].requested_operations == (
+        "linear", "quadratic", "cubic", "quartic", "interactions")
 
 
 def test_forced_full_coverage_rejects_entirely_unusable_dispatch(monkeypatch):
@@ -806,8 +810,8 @@ def test_forced_full_coverage_rejects_entirely_unusable_dispatch(monkeypatch):
             available_engines=("polynomial_lasso", "mcts"), total_jobs=2)
 
 
-def test_multi_engine_plan_remains_fail_closed_after_invalid_repair(monkeypatch):
-    from hypothesis_mvp.discovery.proposal_runtime import ScientistPlanProtocolError
+def test_multi_engine_plan_projects_operations_to_registered_capabilities(
+        monkeypatch):
     runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
     invalid = {"protocol_id": RESEARCH_PLAN_PROTOCOL,
         "mechanisms": ["fixture"],
@@ -823,15 +827,22 @@ def test_multi_engine_plan_remains_fail_closed_after_invalid_repair(monkeypatch)
         "comparison_questions": ["which support generalizes"],
         "synthesis_goal": "retain falsifiable structure",
         "stop_conditions": ["budget"]}
-    responses = iter([invalid, invalid])
+    calls = []
     monkeypatch.setattr(runtime, "complete_json",
-        lambda **kwargs: (next(responses), {"fixture": True}))
-    with pytest.raises(
-            ScientistPlanProtocolError,
-            match="scientist-plan-invalid-after-one-provider-repair"
-    ):
-        runtime.plan_research(task_context={"description": "fixture"},
-            available_engines=("polynomial_lasso", "mcts"), total_jobs=2)
+        lambda **kwargs: (calls.append(kwargs) or invalid, {"fixture": True}))
+    plan, telemetry = runtime.plan_research(
+        task_context={"description": "fixture"},
+        available_engines=("polynomial_lasso", "mcts"), total_jobs=2)
+    assert len(calls) == 1
+    assert plan.engine_calls[0].requested_operations == (
+        "linear", "quadratic", "cubic", "quartic", "interactions")
+    assert plan.engine_calls[1].requested_operations == (
+        "monomials", "trigonometric", "saturating")
+    projections = telemetry["plan_contract_projection"][
+        "forced_coverage_dispatch_projection"][
+            "skill_operation_projections"]
+    assert {row["engine"] for row in projections} == {
+        "polynomial_lasso", "mcts"}
 
 
 def test_explicit_skill_control_protocol_is_required_when_registered(monkeypatch):
@@ -857,10 +868,8 @@ def test_explicit_skill_control_protocol_is_required_when_registered(monkeypatch
     assert plan.engine_calls[1].requested_operations == ("saturating",)
 
 
-def test_missing_explicit_skill_controls_fail_after_one_repair(monkeypatch):
-    from hypothesis_mvp.discovery.proposal_runtime import (
-        ScientistPlanProtocolError,
-    )
+def test_missing_explicit_skill_controls_use_registered_capability_sets(
+        monkeypatch):
     invalid = {"protocol_id": RESEARCH_PLAN_PROTOCOL,
         "mechanisms": ["fixture"],
         "engine_calls": [
@@ -870,14 +879,14 @@ def test_missing_explicit_skill_controls_fail_after_one_repair(monkeypatch):
              "objective": "search", "expected_evidence": "frontier"}],
         "comparison_questions": ["compare"], "synthesis_goal": "synthesize",
         "stop_conditions": ["budget"]}
-    responses = iter([invalid, invalid])
     runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
     monkeypatch.setattr(runtime, "complete_json",
-        lambda **kwargs: (next(responses), {"fixture": True}))
-    with pytest.raises(
-            ScientistPlanProtocolError,
-            match="missing-explicit-skill-controls"):
-        runtime.plan_research(
-            task_context={"description": "fixture",
-                          "require_explicit_skill_controls": True},
-            available_engines=("polynomial_lasso", "mcts"), total_jobs=2)
+        lambda **kwargs: (invalid, {"fixture": True}))
+    plan, telemetry = runtime.plan_research(
+        task_context={"description": "fixture",
+                      "require_explicit_skill_controls": True},
+        available_engines=("polynomial_lasso", "mcts"), total_jobs=2)
+    assert all(call.requested_operations for call in plan.engine_calls)
+    assert len(telemetry["plan_contract_projection"][
+        "forced_coverage_dispatch_projection"][
+            "skill_operation_projections"]) == 2

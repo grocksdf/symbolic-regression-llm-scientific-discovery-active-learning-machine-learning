@@ -475,7 +475,8 @@ class ProposalRuntime:
         if not by_engine:
             return None, None
         skills = {skill.name: skill for skill in REGISTERED_ENGINE_SKILLS}
-        compiled_rows, synthesized, supplied_jobs, structured_fields = [], [], {}, []
+        compiled_rows, synthesized, supplied_jobs = [], [], {}
+        structured_fields, operation_projections = [], []
         for name in available:
             row = by_engine.get(name)
             if row is None:
@@ -498,6 +499,11 @@ class ProposalRuntime:
                     if count:
                         structured_fields.append({
                             "engine": name, "field": field})
+            operations, operation_projection = self._compile_skill_operations(
+                name, row.get("requested_operations"))
+            row["requested_operations"] = operations
+            if operation_projection is not None:
+                operation_projections.append(operation_projection)
             supplied_jobs[name] = row.get("jobs")
             compiled_rows.append({**row, "engine": name})
         bound_jobs, bayesian, exact = self._bind_dispatch_jobs(
@@ -508,7 +514,7 @@ class ProposalRuntime:
             {**row, "jobs": bound_jobs[row["engine"]]}
             for row in compiled_rows]
         if (not synthesized and not discarded
-                and not structured_fields
+                and not structured_fields and not operation_projections
                 and exact and bayesian is None):
             return compiled, None
         projection = {"engines": list(available),
@@ -517,12 +523,36 @@ class ProposalRuntime:
             "synthesized_required_calls": synthesized,
             "discarded_calls": discarded,
             "structured_engine_text_fields": structured_fields,
+            "skill_operation_projections": operation_projections,
             "bayesian_skill_allocation": bayesian,
             "skill_policy_identity": self.skill_policy_identity,
             "reason": (
                 "one-job-per-registered-skill-is-the-only-feasible-"
                 "full-coverage-allocation")}
         return compiled, projection
+
+    @staticmethod
+    def _compile_skill_operations(name: str, supplied: Any):
+        skill = next(skill for skill in REGISTERED_ENGINE_SKILLS
+                     if skill.name == name)
+        raw = list(supplied) if isinstance(supplied, (list, tuple)) else []
+        retained, discarded = [], []
+        for value in raw:
+            operation = str(value)
+            if operation in skill.capabilities and operation not in retained:
+                retained.append(operation)
+            else:
+                discarded.append(operation)
+        fallback = not retained
+        if fallback:
+            retained = list(skill.capabilities)
+        if not discarded and not fallback and tuple(retained) == tuple(raw):
+            return retained, None
+        return retained, {
+            "engine": name, "supplied": [str(value) for value in raw],
+            "retained": retained, "discarded": discarded,
+            "fallback_to_registered_capabilities": fallback,
+            "reason": "engine-capability-set-is-code-owned"}
 
     @staticmethod
     def _compile_statement_collection(
@@ -599,6 +629,8 @@ class ProposalRuntime:
                         and calls and isinstance(calls[0], Mapping) else {})
             skill = next(skill for skill in REGISTERED_ENGINE_SKILLS
                          if skill.name == available[0])
+            operations, operation_projection = self._compile_skill_operations(
+                skill.name, original.get("requested_operations"))
             candidate["engine_calls"] = [{
                 "engine": skill.name, "jobs": total_jobs,
                 "objective": (
@@ -607,8 +639,7 @@ class ProposalRuntime:
                 "expected_evidence": (
                     "Validated expressions, predictive scores, complexity, "
                     "lineage, and registered engine diagnostics."),
-                "requested_operations": list(
-                    original.get("requested_operations", []))}]
+                "requested_operations": operations}]
             singleton_dispatch_projection = {
                 "applied": True, "engine": available[0],
                 "jobs": total_jobs,
@@ -621,6 +652,9 @@ class ProposalRuntime:
                     "singleton-skill-dispatch-and-executable-contract-"
                     "are-code-owned-not-policy-decision-variables")}
             projection.update(singleton_dispatch_projection)
+            if operation_projection is not None:
+                projection["skill_operation_projection"] = (
+                    operation_projection)
         elif total_jobs >= len(available):
             compiled, coverage_projection = (
                 self._compile_forced_coverage_calls(
