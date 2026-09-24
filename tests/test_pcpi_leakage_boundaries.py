@@ -157,3 +157,49 @@ def test_target_staging_does_not_write_reusable_memory(tmp_path: Path) -> None:
     assert retrieved[0]["candidate_response_accessed"] is False
     assert retrieved[0]["heldout_opened"] is False
     assert runtime.retrieve(("high_validation_error",), topk=8) == []
+
+
+def test_task_local_memory_stages_validated_nonfinal_improvement(
+        tmp_path: Path) -> None:
+    from hypothesis_mvp.discovery.scientific_runtime import (
+        ScientificDiscoveryRuntime,
+    )
+    runtime = KnowledgeRuntime(
+        tmp_path / "structure_library.jsonl",
+        tmp_path / "runtime_ledger.jsonl",
+    )
+    before_metrics = {
+        "val_nmse": 1.0, "val_p99": 1.0, "val_strict": 1.0,
+        "complexity": 1.0,
+    }
+    after_metrics = {
+        "val_nmse": 0.5, "val_p99": 0.5, "val_strict": 0.5,
+        "complexity": 2.0, "stress_nmse": 0.6, "stress_p99": 0.6,
+        "stress_strict": 0.6, "ood_proxy_nmse": 0.7,
+        "ood_proxy_strict": 0.7, "ood_stability_penalty": 0.1,
+    }
+    step = LineageStep(
+        "llm", 1, "balanced", "accepted-lineage", "parent", "parent-hash",
+        "candidate", "x0+x1", "x0", "x0+x1", "REPLACE", "REPLACE",
+        "validated improvement", "0" * 64, "1" * 64, {},
+        before_metrics, after_metrics, {}, {},
+    )
+    deterministic = SimpleNamespace(
+        is_llm=False, lineage=(), lineage_id="",
+        dag=SimpleNamespace(canonical_hash="deterministic"))
+    accepted = SimpleNamespace(
+        is_llm=True, lineage=(step,), lineage_id="accepted-lineage",
+        dag=SimpleNamespace(canonical_hash="accepted"))
+    controller = SimpleNamespace(
+        config=SimpleNamespace(
+            structure_library_write=False,
+            task_local_memory_write=True),
+        knowledge=runtime,
+        evaluation=SimpleNamespace(
+            failure_signature=lambda state: ("high_validation_error",)))
+    staged = ScientificDiscoveryRuntime._stage(
+        controller, deterministic, deterministic, (accepted,))
+    assert staged["staged_lineage_count"] == 1
+    assert runtime.library_size() == 0
+    assert runtime.retrieve_task_local(
+        ("high_validation_error",), topk=8)[0]["entry_id"]

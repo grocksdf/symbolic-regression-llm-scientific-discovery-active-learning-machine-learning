@@ -137,7 +137,8 @@ def _engine_evidence(result: Any) -> list[dict[str, Any]]:
         "diagnostics": {
             key: value for key, value in dict(row.diagnostics).items()
             if key in {"candidate_rank", "candidate_count", "search_score_method",
-                       "search_score_folds", "candidate_set_method"}
+                       "search_score_folds", "candidate_set_method",
+                       "skill_controls", "job_control_variants"}
         }} for row in result.all_results]
 
 

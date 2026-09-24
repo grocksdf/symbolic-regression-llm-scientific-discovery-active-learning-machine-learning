@@ -210,6 +210,42 @@ def test_engine_scheduler_executes_nonuniform_scientist_allocation(monkeypatch):
     assert result.evaluations_used == 3
 
 
+def test_engine_scheduler_compiles_requested_operations_into_job_matrix(
+        monkeypatch):
+    scheduler = EngineScheduler()
+    seen = []
+
+    def execute(job, *args):
+        seen.append(job.controls)
+        result = SimpleNamespace(
+            engine=job.engine, expression=f"x0+{job.repeat}",
+            mse_val=float(job.repeat + 1), complexity=1.,
+            score=float(job.repeat + 1),
+            diagnostics={"skill_controls": list(job.controls)},
+            repeats=(), lineage_id=f"{job.engine}-{job.repeat}")
+        record = SimpleNamespace(
+            engine=job.engine, repeat=job.repeat, attempt=0,
+            seed=job.seed, status="succeeded", elapsed_seconds=0.,
+            lineage_id=result.lineage_id, expression=result.expression,
+            error_type="", error_message="", controls=job.controls)
+        return (result,), record
+
+    monkeypatch.setattr(
+        "hypothesis_mvp.symbolic.scheduler._execute", execute)
+    scheduler.run_allocated(
+        allocations={"polynomial_lasso": 6},
+        engine_controls={"polynomial_lasso": (
+            "linear", "quadratic", "cubic", "quartic", "interactions")},
+        config=SymbolicConfig(), X_train=np.ones((4, 1)), y_train=np.ones(4),
+        X_val=np.ones((4, 1)), y_val=np.ones(4), evaluation_budget=6,
+        parallel=False)
+    assert seen[:5] == [
+        ("linear",), ("quadratic",), ("cubic",), ("quartic",),
+        ("interactions",)]
+    assert seen[5] == (
+        "linear", "quadratic", "cubic", "quartic", "interactions")
+
+
 def test_scientist_state_carries_prior_evidence_into_replanning():
     plan = deterministic_plan(("polynomial_lasso", "mcts"), 2)
     review = review_from_json({

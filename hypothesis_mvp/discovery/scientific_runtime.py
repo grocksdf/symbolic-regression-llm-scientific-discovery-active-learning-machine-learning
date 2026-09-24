@@ -422,15 +422,39 @@ class ScientificDiscoveryRuntime:
             "metrics": row.metrics.as_dict(),
         } for index, row in enumerate(ordered[:self.config.final_topk], 1)]
 
-    def _stage(self, final: EquationState, deterministic: EquationState) -> Mapping[str, Any]:
-        is_llm = final.is_llm and final.dag.canonical_hash != deterministic.dag.canonical_hash
-        return self.knowledge.stage_final_lineage(
-            final, self.evaluation.failure_signature(deterministic),
-            enabled=bool(
-                is_llm and final.lineage and (
-                    self.config.structure_library_write
-                    or self.config.task_local_memory_write)),
-        )
+    def _stage(
+        self, final: EquationState, deterministic: EquationState,
+        accepted: Sequence[EquationState],
+    ) -> Mapping[str, Any]:
+        """Stage every validated task-local improvement, not only the winner."""
+        targets: list[EquationState] = []
+        if (self.config.structure_library_write and final.is_llm
+                and final.dag.canonical_hash != deterministic.dag.canonical_hash):
+            targets.append(final)
+        if self.config.task_local_memory_write:
+            targets.extend(
+                row for row in accepted
+                if row.is_llm
+                and row.dag.canonical_hash != deterministic.dag.canonical_hash)
+        unique = {row.dag.canonical_hash: row for row in targets}
+        records = [
+            self.knowledge.stage_final_lineage(
+                row, self.evaluation.failure_signature(deterministic),
+                enabled=bool(row.lineage))
+            for row in unique.values()
+        ]
+        staged = [row for row in records if row.get("status") == "staged"]
+        rejected = [item for row in records
+                    for item in row.get("rejections", ())]
+        return {
+            "status": ("staged" if staged else
+                       "rejected" if rejected else "not_staged"),
+            "stage_id": str(staged[0].get("stage_id") or "") if staged else "",
+            "stage_ids": [str(row.get("stage_id") or "") for row in staged],
+            "staged_lineage_count": len(staged),
+            "entries": [item for row in staged for item in row.get("entries", ())],
+            "rejections": rejected,
+        }
 
     def _report(
         self, *, anchor: EquationState, deterministic: EquationState,
@@ -491,6 +515,9 @@ class ScientificDiscoveryRuntime:
                 if self.orchestration_context else None),
             "knowledge_stage_status": staged.get("status", "not_staged"),
             "knowledge_stage_id": staged.get("stage_id", ""),
+            "knowledge_stage_ids": list(staged.get("stage_ids", ())),
+            "task_local_staged_lineage_count": int(
+                staged.get("staged_lineage_count", 0)),
             "rejected_candidate_count": len(self.evaluation.rejections),
             "rejected_candidates": list(self.evaluation.rejections),
             "evaluation_budget_limit": self.evaluation.budget.limit,
@@ -536,7 +563,7 @@ class ScientificDiscoveryRuntime:
             self.evaluation.budget.begin_llm_phase()
             state, llm_states, llm_rounds = self._llm_search(state, arrays)
         final, gate = self._select_final(deterministic, llm_states)
-        staged = self._stage(final, deterministic)
+        staged = self._stage(final, deterministic, state.accepted)
         self._transition(state, DiscoveryPhase.DONE, "run_completed")
         report = self._report(
             anchor=anchor, deterministic=deterministic, final=final, seeds=seeds,

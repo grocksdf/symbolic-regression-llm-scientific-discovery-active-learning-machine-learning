@@ -16,7 +16,12 @@ experimental authority.
 2. The plan allocates the exact registered engine-job budget across available
    skills.
 3. `EngineScheduler.run_allocated` executes those jobs with deterministic
-   lineage, timeout, failure and budget accounting.
+   lineage, timeout, failure and budget accounting.  A call that requests
+   several registered operations is compiled into a job-level evidence
+   matrix: singleton operation jobs are executed first, followed by the
+   complete requested operation set when budget remains.  Jobs may not all
+   receive the same union of operations, because that would erase the
+   Scientist's requested comparison.
 4. Only expression, development-validation score, complexity, lineage and
    registered engine diagnostics enter `review_engine_evidence`.
 5. The typed `ScientistReview` records supported and contradicted mechanisms,

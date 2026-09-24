@@ -10,7 +10,9 @@ from typing import Any, Mapping
 from .agent import DiscoveryAgentConfig
 from .contracts import DiscoveryConfig, LineageStep
 from .knowledge_runtime import KnowledgeRuntime
+from .scientific_runtime import ScientificDiscoveryRuntime
 from .system_executor import validate_system_registration
+from hypothesis_mvp.symbolic.scheduler import _expand_job_controls
 
 
 def _memory_fixture() -> Mapping[str, Any]:
@@ -39,8 +41,18 @@ def _memory_fixture() -> Mapping[str, Any]:
         runtime = KnowledgeRuntime(
             root / "structure_library.jsonl", root / "runtime_ledger.jsonl")
         before = runtime.library_digest()
-        staged = runtime.stage_final_lineage(
-            final, ("high_validation_error",), enabled=True)
+        deterministic = SimpleNamespace(
+            is_llm=False, lineage=(), lineage_id="",
+            dag=SimpleNamespace(canonical_hash="deterministic"))
+        controller = SimpleNamespace(
+            config=SimpleNamespace(
+                structure_library_write=False,
+                task_local_memory_write=True),
+            knowledge=runtime,
+            evaluation=SimpleNamespace(
+                failure_signature=lambda state: ("high_validation_error",)))
+        staged = ScientificDiscoveryRuntime._stage(
+            controller, deterministic, deterministic, (final,))
         local = runtime.retrieve_task_local(
             ("high_validation_error",), topk=8)
         confirmed = runtime.retrieve(("high_validation_error",), topk=8)
@@ -85,6 +97,13 @@ def run_scientist_closed_loop_gate(config: Mapping[str, Any]) -> dict[str, Any]:
         "multiple_outer_cycles": agent.cycles >= 2,
         "multiple_discovery_islands": len(agent.discovery_islands) >= 3,
         "multiple_inner_refinement_rounds": resolved.max_rounds >= 2,
+        "job_level_skill_evidence_matrix": (
+            _expand_job_controls((
+                "linear", "quadratic", "cubic", "quartic", "interactions"), 6)
+            == (("linear",), ("quadratic",), ("cubic",), ("quartic",),
+                ("interactions",),
+                ("linear", "quadratic", "cubic", "quartic",
+                 "interactions"))),
         "bounded_candidates_per_island": 1 <= resolved.candidates_per_island <= 4,
         "task_local_memory_enabled": (
             resolved.task_local_memory_read
@@ -96,6 +115,8 @@ def run_scientist_closed_loop_gate(config: Mapping[str, Any]) -> dict[str, Any]:
             len(local) == 1
             and local[0].get("memory_scope")
                 == "task-local-development-staged"),
+        "validated_nonfinal_improvements_staged": (
+            memory["staged"].get("staged_lineage_count") == 1),
         "staged_memory_not_promoted": (
             memory["library_unchanged"]
             and not memory["confirmed"]),

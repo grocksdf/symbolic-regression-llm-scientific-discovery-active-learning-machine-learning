@@ -38,6 +38,7 @@ class EngineRunRecord:
     expression: str = ""
     error_type: str = ""
     error_message: str = ""
+    controls: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,31 @@ def _stable_seed(base: int, engine: str, repeat: int, attempt: int) -> int:
     return int.from_bytes(
         sha256(f"{base}|{engine}|{repeat}|{attempt}".encode()).digest()[:4], "little"
     )
+
+
+def _expand_job_controls(
+    controls: Sequence[str], job_count: int,
+) -> tuple[tuple[str, ...], ...]:
+    """Compile one engine call into auditable, nonidentical skill jobs.
+
+    A Scientist call with several requested operations is an experimental
+    comparison, not permission to collapse all operations into one maximal
+    search space.  Cover every requested operation with a singleton job first;
+    any remaining jobs execute the complete requested operation set.
+    """
+    count = int(job_count)
+    values = tuple(dict.fromkeys(str(value) for value in controls if str(value)))
+    if count < 1:
+        raise ValueError("job_count must be positive")
+    if not values:
+        return tuple(() for _ in range(count))
+    if count >= len(values):
+        return tuple((value,) for value in values) + tuple(
+            values for _ in range(count - len(values)))
+    partitions = [[] for _ in range(count)]
+    for index, value in enumerate(values):
+        partitions[index % count].append(value)
+    return tuple(tuple(row) for row in partitions)
 
 
 def _normalize_expression(expression: str) -> str:
@@ -150,6 +176,7 @@ def _execute(
         return tuple(results), EngineRunRecord(
             job.engine, job.repeat, job.attempt, job.seed,
             "succeeded", elapsed, lineage, primary,
+            controls=job.controls,
         )
     except Exception as error:
         elapsed = time.monotonic() - started
@@ -158,6 +185,7 @@ def _execute(
             job.engine, job.repeat, job.attempt, job.seed,
             "failed", elapsed, lineage,
             error_type=type(error).__name__, error_message=str(error),
+            controls=job.controls,
         )
 
 
@@ -181,6 +209,7 @@ def _run_jobs(
                     job.engine, job.repeat, job.attempt, job.seed,
                     "timeout", timeout_s, lineage,
                     error_type="TimeoutError", error_message="engine timeout exceeded",
+                    controls=job.controls,
                 )))
     return output
 
@@ -199,9 +228,14 @@ def _aggregate(results: Sequence[EngineResult], budget: int, used: int) -> tuple
             ordered = sorted(matches, key=lambda item: (item.score, item.lineage_id))
             best = ordered[0]
             diagnostics = {**dict(best.diagnostics), "budget": budget,
-                           "evaluations_used": used}
+                           "evaluations_used": used,
+                           "job_control_variants": sorted({
+                               tuple(row.diagnostics.get("skill_controls", ()))
+                               for row in matches})}
             repeats = tuple({"score": row.score, "mse_val": row.mse_val,
-                "complexity": row.complexity, "lineage_id": row.lineage_id}
+                "complexity": row.complexity, "lineage_id": row.lineage_id,
+                "skill_controls": list(
+                    row.diagnostics.get("skill_controls", ()))}
                 for row in ordered)
             candidates.append(EngineResult(
                 engine, expression, best.mse_val, best.complexity,
@@ -235,9 +269,14 @@ class EngineScheduler:
         controls = {name: tuple(str(value) for value in
                     (engine_controls or {}).get(name, ()))
                     for name in plan}
-        pending = [_Job(name, repeat, 0,
-            _stable_seed(base_seed, name, repeat, 0), controls[name])
-            for name, count in plan.items() for repeat in range(count)]
+        pending = [
+            _Job(name, repeat, 0,
+                 _stable_seed(base_seed, name, repeat, 0),
+                 job_controls)
+            for name, count in plan.items()
+            for repeat, job_controls in enumerate(
+                _expand_job_controls(controls[name], count))
+        ]
         arrays = tuple(np.asarray(value, dtype=float)
             for value in (X_train, y_train, X_val, y_val))
         return self._execute_plan(
