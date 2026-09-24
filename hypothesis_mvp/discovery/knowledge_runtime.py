@@ -15,6 +15,8 @@ from typing import Any, Callable, Mapping, Optional, Sequence
 import numpy as np
 import sympy as sp
 
+from hypothesis_mvp.hypotheses import EvidenceEventType, EvidenceRegistry
+
 from .contracts import EquationState, LineageStep, RuntimeEvent, DISCOVERY_RUNTIME_ID, json_safe
 
 KNOWLEDGE_VALIDATOR_ID = "confirmed-knowledge-edit-validator"
@@ -210,9 +212,51 @@ class KnowledgeRuntime:
         }
 
     def retrieve(self, failure_signature: Sequence[str], topk: int = 8) -> list[dict[str, Any]]:
+        return self._retrieve_rows(
+            self.library.read(), failure_signature, topk,
+            memory_scope="confirmed-cross-task")
+
+    def retrieve_task_local(
+        self, failure_signature: Sequence[str], topk: int = 8,
+    ) -> list[dict[str, Any]]:
+        """Read validated staged entries without promoting reusable knowledge.
+
+        Staged entries live inside the task-bound knowledge namespace.  They may
+        guide later rounds of that same frozen task, but they never enter the
+        reusable library and therefore carry no cross-task or confirmation
+        claim.
+        """
+        entries: dict[str, dict[str, Any]] = {}
+        stage_ids: dict[str, str] = {}
+        for stage in self.staging.read():
+            if stage.get("status") not in {"staged", "promoted"}:
+                continue
+            stage_id = str(stage.get("stage_id") or "")
+            for raw in stage.get("entries") or ():
+                if not isinstance(raw, Mapping):
+                    continue
+                entry = dict(raw)
+                entry_id = str(entry.get("entry_id") or "")
+                if not entry_id:
+                    continue
+                entries[entry_id] = entry
+                stage_ids[entry_id] = stage_id
+        result = self._retrieve_rows(
+            entries.values(), failure_signature, topk,
+            memory_scope="task-local-development-staged")
+        for row in result:
+            row["stage_id"] = stage_ids.get(str(row.get("entry_id") or ""), "")
+        return result
+
+    def _retrieve_rows(
+        self, rows: Sequence[Mapping[str, Any]],
+        failure_signature: Sequence[str], topk: int,
+        *, memory_scope: str,
+    ) -> list[dict[str, Any]]:
         query = {str(v) for v in failure_signature if v}
         scored: list[tuple[float, dict[str, Any]]] = []
-        for row in self.library.read():
+        for raw in rows:
+            row = dict(raw)
             try:
                 self._validate_entry(row)
             except Exception:
@@ -226,7 +270,14 @@ class KnowledgeRuntime:
             stability = float(evidence.get("ood_proxy_stability") or 0.0)
             scored.append((overlap + 0.20 * gain + 0.05 * stability, row))
         scored.sort(key=lambda item: item[0], reverse=True)
-        return [self._prompt_view(row) for _, row in scored[:max(0, int(topk))]]
+        result = []
+        for _, row in scored[:max(0, int(topk))]:
+            prompt = self._prompt_view(row)
+            prompt["memory_scope"] = memory_scope
+            prompt["candidate_response_accessed"] = False
+            prompt["heldout_opened"] = False
+            result.append(prompt)
+        return result
 
     @staticmethod
     def _ordered_variables(before: str, after: str) -> list[str]:

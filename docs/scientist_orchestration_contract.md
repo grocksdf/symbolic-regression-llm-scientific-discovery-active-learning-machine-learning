@@ -35,6 +35,27 @@ Registered cycle count remains an exact matched-compute contract. A Scientist
 may request stopping, but formal ablations do not silently save compute for one
 variant; the request is recorded and the remaining registered rounds continue.
 
+## Task-local structural memory
+
+The production closed loop may stage a validated LLM lineage for later rounds
+of the same frozen task namespace.  This memory is development-only: it is
+validated before retrieval, records its stage identity and failure signature,
+and is exposed to later proposal prompts as
+`task-local-development-staged`.  It cannot enter the reusable cross-task
+structure library, cannot change the registered compute budget, and never
+contains acquisition-pool, reporting-validation or held-out responses.
+
+Reusable cross-task knowledge remains a separate capability.  Promotion still
+requires a verified passing independent untouched confirmation.  Enabling
+task-local memory therefore does not enable `use_knowledge`, weaken promotion,
+or create a confirmation claim.
+
+The paper-faithful production profile uses multiple registered outer cycles,
+multiple structural objective islands and multiple bounded inner refinement
+rounds.  Every value is frozen before data access.  A no-LLM ablation receives
+the same engine and candidate-evaluation budget but cannot read or write LLM
+lineage memory because it has no provider proposal phase.
+
 ## Inference routing
 
 Finite frozen hypothesis banks use the exact conjugate posterior. An open or

@@ -247,6 +247,7 @@ def validate_system_registration(config):
             or agent.llm_evaluation_reserve >= agent.discovery_budget
             or type(agent.scientist_orchestration) is not bool):
         raise ValueError("unmatched or unsupported internal-engine registration")
+    _validate_closed_loop_agent_registration(agent)
     if type(agent.require_explicit_skill_controls) is not bool:
         raise ValueError("invalid explicit skill-control registration")
     if (not agent.discovery_islands or len(set(agent.discovery_islands)) != len(agent.discovery_islands)
@@ -289,6 +290,20 @@ def validate_system_registration(config):
     if not isinstance(identity, str) or len(identity) != 64 or any(c not in "0123456789abcdef" for c in identity):
         raise ValueError("public provider identity must be registered SHA-256")
     return config
+
+
+def _validate_closed_loop_agent_registration(agent):
+    if type(agent.task_local_memory) is not bool:
+        raise ValueError("invalid task-local memory registration")
+    if agent.task_local_memory and not agent.scientist_orchestration:
+        raise ValueError("task-local memory requires scientist orchestration")
+    if (type(agent.discovery_rounds) is not int
+            or not 1 <= agent.discovery_rounds <= 8
+            or type(agent.candidates_per_island) is not int
+            or not 1 <= agent.candidates_per_island <= 8
+            or type(agent.task_local_memory_topk) is not int
+            or not 1 <= agent.task_local_memory_topk <= 64):
+        raise ValueError("invalid registered closed-loop search controls")
 
 
 def public_provider_identity(settings):

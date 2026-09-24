@@ -69,7 +69,8 @@ def test_provider_calls_and_acquisition_ablation_are_audited(monkeypatch, tmp_pa
     ]
 
 
-def test_scientist_stop_condition_terminates_before_next_plan(monkeypatch, tmp_path):
+def test_scientist_stop_condition_is_recorded_but_matched_cycles_continue(
+        monkeypatch, tmp_path):
     agent = DiscoveryAgent(DiscoveryAgentConfig(
         engines=("polynomial_lasso",), engine_repeats=1, engine_budget=1,
         engine_workers=1, cycles=3, acquisition_enabled=False,
@@ -103,10 +104,12 @@ def test_scientist_stop_condition_terminates_before_next_plan(monkeypatch, tmp_p
         selection=_selection(), task_name="stop_test",
         task_description="stop test", output_dir=tmp_path / "output",
         knowledge_dir=tmp_path / "knowledge", variable_metadata={})
-    assert calls == {"orchestration": 1, "discovery": 1}
-    assert len(result.cycles) == 1
-    assert result.cycles[0].scientist_review["stop"] is True
+    assert calls == {"orchestration": 3, "discovery": 3}
+    assert len(result.cycles) == 3
+    assert all(cycle.scientist_review["stop"] is True for cycle in result.cycles)
     assert result.cycles[0].acquisition == {
         "reason": "scientist_stop_condition",
         "stop_reason": "registered evidence stop condition met",
-        "cycle_continues_without_labels": False}
+        "cycle_continues_without_labels": True,
+        "registered_cycles_continue": True}
+    assert result.cycles[-1].acquisition == {"reason": "final_cycle"}

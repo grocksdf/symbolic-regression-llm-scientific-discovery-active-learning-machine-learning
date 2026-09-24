@@ -287,16 +287,12 @@ def test_compute_and_engine_failures_block_analysis():
     with pytest.raises(ValueError): audit_usage(config, result, 1., 100., 3)
 
 
-def test_registered_scientist_stop_reduces_actual_usage_without_failure():
+def test_registered_scientist_stop_cannot_reduce_matched_compute():
     _, base = _inputs()
     config = __import__("dataclasses").replace(base, cycles=2)
     result = _result(config)
     result.cycles[0].scientist_review = {"stop": True}
     result.cycles[0].acquisition = {"reason": "scientist_stop_condition"}
-    usage = audit_usage(config, result, 1., 100., 3)
-    assert usage["cycles_completed"] == 1
-    assert usage["scientist_early_stop"] is True
-    result.cycles[0].scientist_review = {"stop": False}
     with pytest.raises(ValueError, match="unregistered early"):
         audit_usage(config, result, 1., 100., 3)
 

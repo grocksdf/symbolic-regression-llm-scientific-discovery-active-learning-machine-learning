@@ -116,6 +116,8 @@ class DiscoveryConfig:
     structure_library_max_entries: int = 64
     structure_library_read: bool = False
     structure_library_write: bool = False
+    task_local_memory_read: bool = False
+    task_local_memory_write: bool = False
     final_topk: int = 6
     memory_distill_tolerance: float = 0.005
     memory_distill_max_terms: int = 16
@@ -144,6 +146,8 @@ class DiscoveryConfig:
             "HYPOTHESIS_DISCOVERY_LIBRARY_WRITE",
             bool(_pick(m, "structure_library_write", library_enabled)),
         )
+        task_local_memory_read = bool(_pick(m, "task_local_memory_read", False))
+        task_local_memory_write = bool(_pick(m, "task_local_memory_write", False))
         raw_budget = _pick_first(m, ("evaluation_budget", "budget"), None)
         evaluation_budget = None
         if raw_budget is not None:
@@ -186,10 +190,15 @@ class DiscoveryConfig:
             llm_temperature=max(0.0, min(1.5, _env_float("HYPOTHESIS_DISCOVERY_LLM_TEMPERATURE", float(_pick(m, "llm_temperature", 0.25))))),
             llm_max_tokens=max(700, _env_int("HYPOTHESIS_DISCOVERY_LLM_MAX_TOKENS", int(_pick(m, "llm_max_tokens", 1800)))),
             llm_timeout_s=max(10.0, _env_float("HYPOTHESIS_DISCOVERY_LLM_TIMEOUT_S", float(_pick(m, "llm_timeout_s", 150.0)))),
-            structure_library_topk=(max(0, _env_int("HYPOTHESIS_DISCOVERY_LIBRARY_TOPK", int(_pick(m, "structure_library_topk", 8)))) if library_read else 0),
+            structure_library_topk=(max(0, _env_int(
+                "HYPOTHESIS_DISCOVERY_LIBRARY_TOPK",
+                int(_pick(m, "structure_library_topk", 8))))
+                if library_read or task_local_memory_read else 0),
             structure_library_max_entries=max(8, _env_int("HYPOTHESIS_DISCOVERY_LIBRARY_MAX_ENTRIES", int(_pick(m, "structure_library_max_entries", 64)))),
             structure_library_read=library_read,
             structure_library_write=library_write,
+            task_local_memory_read=task_local_memory_read,
+            task_local_memory_write=task_local_memory_write,
             final_topk=max(1, _env_int("HYPOTHESIS_DISCOVERY_FINAL_TOPK", int(_pick(m, "top_k_results", 6)))),
             memory_distill_tolerance=max(0.0, _env_float("HYPOTHESIS_DISCOVERY_MEMORY_DISTILL_TOL", float(_pick(m, "memory_distill_tolerance", 0.005)))),
             memory_distill_max_terms=max(2, _env_int("HYPOTHESIS_DISCOVERY_MEMORY_DISTILL_MAX_TERMS", int(_pick(m, "memory_distill_max_terms", 16)))),

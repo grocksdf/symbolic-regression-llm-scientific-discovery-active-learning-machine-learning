@@ -150,3 +150,10 @@ def test_target_staging_does_not_write_reusable_memory(tmp_path: Path) -> None:
     assert staged["status"] == "staged"
     assert runtime.library_digest() == before
     assert runtime.library_size() == 0
+    retrieved = runtime.retrieve_task_local(("high_validation_error",), topk=8)
+    assert len(retrieved) == 1
+    assert retrieved[0]["memory_scope"] == "task-local-development-staged"
+    assert retrieved[0]["stage_id"] == staged["stage_id"]
+    assert retrieved[0]["candidate_response_accessed"] is False
+    assert retrieved[0]["heldout_opened"] is False
+    assert runtime.retrieve(("high_validation_error",), topk=8) == []

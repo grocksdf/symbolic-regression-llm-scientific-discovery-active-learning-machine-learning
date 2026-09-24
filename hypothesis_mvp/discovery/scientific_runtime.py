@@ -196,33 +196,70 @@ class ScientificDiscoveryRuntime:
         self, islands: Mapping[str, EquationState], round_id: int,
         arrays: tuple[np.ndarray, ...],
         refinements: Sequence[Mapping[str, Any]],
-    ) -> tuple[dict[str, ProposalBatch], dict[str, ExplorationProgram]]:
+    ) -> tuple[
+        dict[str, ProposalBatch], dict[str, ExplorationProgram],
+        dict[str, Mapping[str, Any]],
+    ]:
         explorations = {
             island: self._explore(current, arrays[0], arrays[1], island)
             for island, current in islands.items()
         }
 
-        def request(island: str) -> tuple[str, ProposalBatch]:
+        def request(island: str) -> tuple[str, ProposalBatch, Mapping[str, Any]]:
             current = islands[island]
             failure = self.evaluation.failure_signature(current, explorations[island])
-            library = self.knowledge.retrieve(failure, self.config.structure_library_topk)
+            confirmed = (
+                self.knowledge.retrieve(
+                    failure, self.config.structure_library_topk)
+                if self.config.structure_library_read else [])
+            task_local = (
+                self.knowledge.retrieve_task_local(
+                    failure, self.config.structure_library_topk)
+                if self.config.task_local_memory_read else [])
+            combined, seen = [], set()
+            for row in (*task_local, *confirmed):
+                entry_id = str(row.get("entry_id") or "")
+                if not entry_id or entry_id in seen:
+                    continue
+                seen.add(entry_id)
+                combined.append(row)
+                if len(combined) >= self.config.structure_library_topk:
+                    break
             task = self.task_context.prompt_payload(self.proposal.n_features)
-            return island, self.proposal.propose(
+            batch = self.proposal.propose(
                 task_name=task["name"],
                 task_desc=task["description"],
                 round_id=round_id, island=island,
                 parent_hash=current.dag.canonical_hash,
                 island_context={**self._proposal_context(current, explorations[island], island),
                                 "registered_task_context": task},
-                library_rows=library, ephemeral_refinements=refinements[-12:],
+                library_rows=combined, ephemeral_refinements=refinements[-12:],
             )
+            audit = {
+                "confirmed_count": len(confirmed),
+                "task_local_count": len(task_local),
+                "supplied_count": len(combined),
+                "entry_ids": [row["entry_id"] for row in combined],
+                "scopes": sorted({str(row.get("memory_scope") or "")
+                                  for row in combined}),
+                "candidate_response_accessed": False,
+                "heldout_opened": False,
+            }
+            return island, batch, audit
 
         workers = min(len(islands), self.config.island_provider_parallelism)
         if workers <= 1:
-            return dict(request(island) for island in islands), explorations
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-            pairs = [executor.submit(request, island) for island in islands]
-            return dict(future.result() for future in concurrent.futures.as_completed(pairs)), explorations
+            rows = [request(island) for island in islands]
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = [executor.submit(request, island) for island in islands]
+                rows = [future.result()
+                        for future in concurrent.futures.as_completed(futures)]
+        return (
+            {island: batch for island, batch, _ in rows},
+            explorations,
+            {island: audit for island, _, audit in rows},
+        )
 
     def _evaluate_batch(
         self, batch: ProposalBatch, current: EquationState,
@@ -282,7 +319,7 @@ class ScientificDiscoveryRuntime:
         arrays: tuple[np.ndarray, ...],
         refinements: list[dict[str, Any]],
     ) -> tuple[dict[str, EquationState], list[EquationState], list[EquationState], dict[str, Any]]:
-        batches, explorations = self._request_batches(
+        batches, explorations, memory_audits = self._request_batches(
             islands, round_id, arrays, refinements
         )
         next_islands, accepted, exploratory, records = dict(islands), [], [], []
@@ -305,6 +342,7 @@ class ScientificDiscoveryRuntime:
                 "telemetry": json_safe(batch.telemetry),
                 "candidate_audit": audit,
                 "exploration": explorations[island].as_audit_dict(),
+                "memory": dict(memory_audits[island]),
             })
         return next_islands, accepted, exploratory, {
             "round_id": round_id, "accepted_transition_count": len(accepted),
@@ -388,7 +426,10 @@ class ScientificDiscoveryRuntime:
         is_llm = final.is_llm and final.dag.canonical_hash != deterministic.dag.canonical_hash
         return self.knowledge.stage_final_lineage(
             final, self.evaluation.failure_signature(deterministic),
-            enabled=bool(is_llm and final.lineage and self.config.structure_library_write),
+            enabled=bool(
+                is_llm and final.lineage and (
+                    self.config.structure_library_write
+                    or self.config.task_local_memory_write)),
         )
 
     def _report(

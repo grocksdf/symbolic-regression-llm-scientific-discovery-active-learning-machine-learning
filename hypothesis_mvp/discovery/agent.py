@@ -51,6 +51,10 @@ class DiscoveryAgentConfig:
     mcts_score_folds: int = 2
     acquisition_enabled: bool = False
     use_knowledge: bool = False
+    task_local_memory: bool = False
+    discovery_rounds: int = 3
+    candidates_per_island: int = 4
+    task_local_memory_topk: int = 8
     llm_evaluation_reserve: int = 0
     refit_policy: str = "global-constants"
     discovery_islands: tuple[str, ...] = ("low_complexity", "nmse", "tail", "novelty")
@@ -318,6 +322,11 @@ class DiscoveryAgent:
                 "islands": self.config.discovery_islands,
                 "random_seed": self.config.random_seed,
                 "use_library": self.config.use_knowledge,
+                "task_local_memory_read": self.config.task_local_memory,
+                "task_local_memory_write": self.config.task_local_memory,
+                "structure_library_topk": self.config.task_local_memory_topk,
+                "max_rounds": self.config.discovery_rounds,
+                "candidates_per_island": self.config.candidates_per_island,
             }),
             provider_settings=self.provider_settings,
             variable_metadata=dict(variable_metadata),
@@ -408,10 +417,11 @@ class DiscoveryAgent:
                 attach_scientist_policy_evidence(
                     final, cycle, state_before, scientist_state.to_dict(),
                     plan.to_dict(), review.to_dict())
-            if review.stop:
+            if review.stop and cycle + 1 < self.config.cycles:
                 acquisition = {"reason": "scientist_stop_condition",
                     "stop_reason": review.stop_reason,
-                    "cycle_continues_without_labels": False}
+                    "cycle_continues_without_labels": True,
+                    "registered_cycles_continue": True}
             elif cycle + 1 >= self.config.cycles:
                 acquisition = {"reason": "final_cycle"}
             else:
@@ -429,8 +439,6 @@ class DiscoveryAgent:
                 state_before, scientist_state.to_dict(),
                 dict(getattr(self, "_last_probe_allocation", {})),
             ))
-            if review.stop:
-                break
         if final is None:
             raise RuntimeError("discovery agent executed no cycle")
         remaining = (len(selection.acquisition_pool.X)

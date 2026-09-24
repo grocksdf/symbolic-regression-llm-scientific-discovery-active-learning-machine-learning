@@ -81,6 +81,21 @@ def test_registration_accepts_policy_level_scientist_ablation():
     assert executor.validate_system_registration(config) is config
 
 
+def test_registration_accepts_task_local_memory_only_for_scientist_policy():
+    config = _config()
+    config["agent"]["scientist_orchestration"] = True
+    config["agent"]["task_local_memory"] = True
+    gate = config["marginal_influence_gate"]
+    gate["schema"] = "scientific-policy-and-source-influence-gate-v6"
+    gate["required_contributions"] = ["scientist_policy", "engine:mcts"]
+    gate["required_active_contributions"] = ["scientist_policy"]
+    gate["scientist_policy_ablation"] = "full-vs-no_llm-matched-budget-v1"
+    assert executor.validate_system_registration(config) is config
+    config["agent"]["scientist_orchestration"] = False
+    with pytest.raises(ValueError, match="task-local memory"):
+        executor.validate_system_registration(config)
+
+
 def test_bayesian_skill_policy_certificate_is_hash_and_replay_bound(tmp_path):
     reliability = {
         name: {"posterior_mean": .5, "lower_credible_bound": .2}
