@@ -9,8 +9,10 @@ from typing import Any, Mapping
 
 from .agent import DiscoveryAgentConfig
 from .contracts import DiscoveryConfig, LineageStep
+from .evidence_synthesis import compile_evidence_synthesis
 from .knowledge_runtime import KnowledgeRuntime
 from .scientific_runtime import ScientificDiscoveryRuntime
+from .scientist_policy import SynthesisDirective
 from .system_executor import validate_system_registration
 from hypothesis_mvp.symbolic.scheduler import _expand_job_controls
 
@@ -91,8 +93,20 @@ def run_scientist_closed_loop_gate(config: Mapping[str, Any]) -> dict[str, Any]:
     })
     memory = _memory_fixture()
     local = list(memory["local"])
+    synthesized, synthesis_audit = compile_evidence_synthesis(
+        (SynthesisDirective(
+            "UNION_SUPPORTS", ("linear", "nonlinear"),
+            "compile complementary registered evidence"),),
+        (
+            {"engine": "polynomial_lasso", "expression": "1+x0+x1",
+             "lineage_id": "linear"},
+            {"engine": "sparse_library", "expression": "1+x0+sin(x2)",
+             "lineage_id": "nonlinear"},
+        ), 3)
     checks = {
         "scientist_policy_enabled": agent.scientist_orchestration is True,
+        "typed_evidence_synthesis_enabled":
+            agent.typed_evidence_synthesis is True,
         "four_or_more_registered_engine_skills": len(agent.engines) >= 4,
         "multiple_outer_cycles": agent.cycles >= 2,
         "multiple_discovery_islands": len(agent.discovery_islands) >= 3,
@@ -117,6 +131,11 @@ def run_scientist_closed_loop_gate(config: Mapping[str, Any]) -> dict[str, Any]:
                 == "task-local-development-staged"),
         "validated_nonfinal_improvements_staged": (
             memory["staged"].get("staged_lineage_count") == 1),
+        "typed_synthesis_compiler_lineage_bound": bool(
+            len(synthesized) == 1
+            and synthesized[0]["parent_lineage_ids"]
+                == ["linear", "nonlinear"]
+            and synthesis_audit["candidate_response_accessed"] is False),
         "staged_memory_not_promoted": (
             memory["library_unchanged"]
             and not memory["confirmed"]),

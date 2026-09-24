@@ -73,8 +73,8 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
         raise ExplorationProtocolError(
             "provider-or-protocol-failure-blocks-exploration")
     if provider_settings is not None and (
-            int(report.get("llm_call_count", 0)) < 1
-            or int(report.get("llm_attempt_count", 0)) < 1):
+            sum(c.provider_calls for c in result.cycles) < 1
+            or sum(c.provider_attempts for c in result.cycles) < 1):
         raise ExplorationProtocolError("llm-enabled-exploration-had-zero-provider-attempts")
     # Retain every candidate that is both discovery-valid and representable by
     # the frozen PCPI closed basis.  The latter is a response-free protocol
@@ -334,7 +334,9 @@ def _run_scientist_ablations(root, selection, dataset, config, provider_settings
     _publish(root / "ABLATION_CONTRACT.json", contract)
     variants = {
         "full": (config, provider_settings),
-        "no_llm": (replace(config, scientist_orchestration=False), None),
+        "no_llm": (replace(
+            config, scientist_orchestration=False,
+            typed_evidence_synthesis=False), None),
         "single_engine": (replace(
             config, engines=(single_engine,), engine_repeats=total_jobs,
             engine_budget=total_jobs), provider_settings),

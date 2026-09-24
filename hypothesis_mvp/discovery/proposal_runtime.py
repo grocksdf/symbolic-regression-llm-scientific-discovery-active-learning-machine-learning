@@ -19,7 +19,8 @@ from .contracts import DISCOVERY_RUNTIME_ID, json_safe
 from .equation_runtime import EquationRuntime, sha256_text
 from .scientist_policy import (
     ENGINE_REVIEW_PROTOCOL, RESEARCH_PLAN_PROTOCOL, REGISTERED_ENGINE_SKILLS,
-    ResearchPlan, ScientistReview, plan_from_json, review_from_json,
+    ResearchPlan, ScientistReview, SYNTHESIS_OPERATIONS,
+    plan_from_json, review_from_json,
 )
 from .skill_policy import allocate_bayesian_skill_jobs
 
@@ -721,6 +722,8 @@ class ProposalRuntime:
     @staticmethod
     def _normalize_scientist_review(
         raw_review: Mapping[str, Any],
+        *, require_typed_synthesis: bool = False,
+        allowed_lineages: Sequence[str] = (),
     ) -> tuple[ScientistReview, Mapping[str, Any] | None]:
         candidate, projection = dict(raw_review), {}
         supplied_protocol = str(candidate.get("protocol_id", ""))
@@ -756,7 +759,14 @@ class ProposalRuntime:
                 "reason": "stop-decision-must-be-a-typed-boolean"}
         else:
             raise ValueError("scientist stop decision must be boolean")
-        return review_from_json(candidate), projection or None
+        review = review_from_json(candidate)
+        if require_typed_synthesis and not review.synthesis_directives:
+            raise ValueError("scientist review omits typed synthesis directives")
+        allowed = {str(value) for value in allowed_lineages if str(value)}
+        if any(set(row.lineage_ids) - allowed
+               for row in review.synthesis_directives):
+            raise ValueError("scientist synthesis references unknown evidence")
+        return review, projection or None
 
     @staticmethod
     def _scientist_review_error_code(error: ValueError) -> str:
@@ -770,11 +780,21 @@ class ProposalRuntime:
                 "empty-required-review-field",
             "scientist stop decision must be boolean":
                 "invalid-stop-decision",
+            "scientist review omits typed synthesis directives":
+                "missing-typed-synthesis",
+            "scientist synthesis references unknown evidence":
+                "unknown-synthesis-lineage",
+            "invalid scientist synthesis directive":
+                "invalid-synthesis-directive",
         }.get(str(error), "invalid-typed-review")
 
     def review_engine_evidence(
         self, *, plan: ResearchPlan, engine_evidence: Sequence[Mapping[str, Any]],
+        require_typed_synthesis: bool = False,
     ) -> tuple[ScientistReview, Mapping[str, Any]]:
+        lineages = tuple(str(row.get("lineage_id") or "")
+                         for row in engine_evidence
+                         if str(row.get("lineage_id") or ""))
         payload = {"protocol_id": ENGINE_REVIEW_PROTOCOL,
             "research_plan": plan.to_dict(),
             "engine_evidence": [dict(row) for row in engine_evidence],
@@ -784,15 +804,30 @@ class ProposalRuntime:
                 "may_access_pool_responses": False,
                 "may_access_heldout": False,
             }}
+        if require_typed_synthesis:
+            payload["typed_synthesis_contract"] = {
+                "required": True,
+                "allowed_operations": list(SYNTHESIS_OPERATIONS),
+                "allowed_lineage_ids": list(lineages),
+                "minimum_parent_lineages": 2,
+                "instruction": (
+                    "Return synthesis_directives as JSON objects with operation, "
+                    "lineage_ids and rationale. Reference only supplied lineage IDs. "
+                    "Do not emit equations or coefficients.")}
         system = (
             "Act as a scientific evidence reviewer. Return one unfenced JSON object. "
             f"Use protocol_id='{ENGINE_REVIEW_PROTOCOL}'. Provide supported_mechanisms, "
             "contradicted_mechanisms, cross_engine_conflicts, synthesis_instructions, "
             "stop and stop_reason. Base every statement only on supplied engine evidence. "
-            "Do not certify efficacy, posterior correctness, or hidden-data performance.")
+            "Do not certify efficacy, posterior correctness, or hidden-data performance. "
+            + ("Provide at least one typed synthesis_directive and do not write a "
+               "new equation; executable structure is compiled by code."
+               if require_typed_synthesis else ""))
         raw, telemetry = self.complete_json(system_message=system, payload=payload)
         try:
-            review, projection = self._normalize_scientist_review(raw)
+            review, projection = self._normalize_scientist_review(
+                raw, require_typed_synthesis=require_typed_synthesis,
+                allowed_lineages=lineages)
             result = dict(telemetry)
             if projection is not None:
                 result["review_contract_projection"] = projection
@@ -804,9 +839,14 @@ class ProposalRuntime:
                     "instruction": (
                         "Return a complete replacement evidence review. Evidence "
                         "collections may contain strings or structured JSON "
-                        "objects; stop must be a JSON boolean.")}})
+                        "objects; stop must be a JSON boolean. "
+                        + ("Include at least one synthesis_directives object using "
+                           "only allowed lineage IDs and operations."
+                           if require_typed_synthesis else ""))}})
             try:
-                review, projection = self._normalize_scientist_review(repaired)
+                review, projection = self._normalize_scientist_review(
+                    repaired, require_typed_synthesis=require_typed_synthesis,
+                    allowed_lineages=lineages)
             except (TypeError, ValueError) as repaired_error:
                 reason = self._scientist_review_error_code(repaired_error)
                 raise ScientistReviewProtocolError(

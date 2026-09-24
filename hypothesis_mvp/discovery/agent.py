@@ -20,6 +20,7 @@ from .contracts import DiscoveryConfig
 from .proposal_runtime import ProviderSettings
 from .proposal_runtime import ProposalRuntime
 from .equation_runtime import EquationRuntime
+from .evidence_synthesis import compile_evidence_synthesis
 from .initializer import generic_deterministic_candidates
 from .scientist_policy import (
     ResearchPlan, ScientistReview, ScientistState, allocated_plan,
@@ -60,6 +61,7 @@ class DiscoveryAgentConfig:
     discovery_islands: tuple[str, ...] = ("low_complexity", "nmse", "tail", "novelty")
     scientist_orchestration: bool = False
     require_explicit_skill_controls: bool = False
+    typed_evidence_synthesis: bool = False
     skill_reliability: Mapping[str, Mapping[str, float]] = field(
         default_factory=dict)
     skill_policy_identity: str = ""
@@ -142,7 +144,8 @@ def _engine_evidence(result: Any) -> list[dict[str, Any]]:
         }} for row in result.all_results]
 
 
-def _bounded_seed_bank(engine_result, previous, selection, config):
+def _bounded_seed_bank(
+        engine_result, previous, selection, config, synthesized=()):
     engine_rows = [{"expression": row.expression,
         "source": f"engine:{row.engine}", "lineage_id": row.lineage_id}
         for row in engine_result.all_results]
@@ -168,7 +171,9 @@ def _bounded_seed_bank(engine_result, previous, selection, config):
         match = next((row for row in generic if row["source"] == marker), None)
         if match is not None:
             priority.append(match)
-    ordered = [*priority, *engine_rows, *previous_rows, *generic]
+    synthesis_rows = [dict(row) for row in synthesized]
+    ordered = [
+        *priority, *synthesis_rows, *engine_rows, *previous_rows, *generic]
     selected, seen = [], set()
     for row in ordered:
         key = str(row["expression"]).replace(" ", "")
@@ -180,6 +185,7 @@ def _bounded_seed_bank(engine_result, previous, selection, config):
     return selected, {"schema": "scientific-bounded-cross-round-seed-bank-v1",
         "limit": limit, "input_engine_candidates": len(engine_rows),
         "input_previous_survivors": len(previous_rows),
+        "input_evidence_synthesis_candidates": len(synthesis_rows),
         "input_generic_candidates": len(generic), "selected_count": len(selected),
         "candidate_response_accessed": False, "heldout_opened": False}
 
@@ -305,9 +311,11 @@ class DiscoveryAgent:
         previous: Sequence[str], task_name: str, task_description: str,
         output_dir: Path, knowledge_dir: Path, variable_metadata: Mapping[str, Any],
         cycle: int = 0, orchestration_context: Mapping[str, Any] | None = None,
+        synthesized_candidates: Sequence[Mapping[str, Any]] = (),
     ) -> DiscoveryRunResult:
         seeds, seed_audit = _bounded_seed_bank(
-            engine_result, previous, selection, self.config)
+            engine_result, previous, selection, self.config,
+            synthesized_candidates)
         context = dict(orchestration_context or {})
         context["seed_bank"] = seed_audit
         discovery = discover_from_selection(
@@ -329,7 +337,9 @@ class DiscoveryAgent:
                 "max_rounds": self.config.discovery_rounds,
                 "candidates_per_island": self.config.candidates_per_island,
             }),
-            provider_settings=self.provider_settings,
+            provider_settings=(
+                None if self.config.typed_evidence_synthesis
+                else self.provider_settings),
             variable_metadata=dict(variable_metadata),
             orchestration_context=context,
             refinement_enabled=True, include_generic_candidates=False,
@@ -358,7 +368,8 @@ class DiscoveryAgent:
         evidence = _engine_evidence(engines)
         if planner.enabled and self.config.scientist_orchestration:
             review, review_telemetry = planner.review_engine_evidence(
-                plan=plan, engine_evidence=evidence)
+                plan=plan, engine_evidence=evidence,
+                require_typed_synthesis=self.config.typed_evidence_synthesis)
         else:
             review = ScientistReview(
                 ("deterministic engine evidence available",), (), (),
@@ -376,6 +387,20 @@ class DiscoveryAgent:
                  planner.attempt_count - counters[1],
                  len(planner.errors) - counters[2])
         return plan, review, engines, evidence, orchestration, usage
+
+    def _compile_cycle_synthesis(self, review, evidence, n_features):
+        audit = {
+            "schema": "scientific-evidence-conditioned-synthesis-v1",
+            "directive_count": 0, "compiled_candidate_count": 0,
+            "records": [], "candidate_response_accessed": False,
+            "heldout_opened": False}
+        if not self.config.typed_evidence_synthesis:
+            return [], audit
+        candidates, audit = compile_evidence_synthesis(
+            review.synthesis_directives, evidence, n_features)
+        if not candidates:
+            raise ValueError("typed Scientist synthesis produced no candidate")
+        return candidates, audit
 
     def run(
         self, *, selection: SelectionData,
@@ -405,10 +430,15 @@ class DiscoveryAgent:
             context = {**base_task_context, "scientist_state": state_before}
             plan, review, engines, evidence, orchestration, usage = (
                 self._orchestrate_cycle(selection, cycle, planner, context))
+            synthesized, synthesis_audit = self._compile_cycle_synthesis(
+                review, evidence, selection.development.X.shape[1])
+            orchestration = {
+                **orchestration, "evidence_synthesis": synthesis_audit}
             final = self._discover(
                 selection, engines, previous, task_name, task_description,
                 output, knowledge, variable_metadata, cycle=cycle,
                 orchestration_context=orchestration,
+                synthesized_candidates=synthesized,
             )
             previous = _survivors(final.report, final.expression)
             scientist_state = scientist_state.advance(

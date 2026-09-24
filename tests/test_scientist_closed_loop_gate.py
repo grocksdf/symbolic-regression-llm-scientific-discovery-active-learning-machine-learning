@@ -24,6 +24,7 @@ def _closed_loop_config():
         discovery_islands=("low_complexity", "nmse", "novelty"),
         scientist_orchestration=True,
         require_explicit_skill_controls=True,
+        typed_evidence_synthesis=True,
     ))
     config["single_engine"] = "polynomial_lasso"
     gate = config["marginal_influence_gate"]

@@ -250,6 +250,10 @@ def validate_system_registration(config):
     _validate_closed_loop_agent_registration(agent)
     if type(agent.require_explicit_skill_controls) is not bool:
         raise ValueError("invalid explicit skill-control registration")
+    if (type(agent.typed_evidence_synthesis) is not bool
+            or (agent.typed_evidence_synthesis
+                and not agent.scientist_orchestration)):
+        raise ValueError("invalid typed evidence-synthesis registration")
     if (not agent.discovery_islands or len(set(agent.discovery_islands)) != len(agent.discovery_islands)
             or any(value not in {"balanced", "low_complexity", "nmse", "tail", "novelty"}
                    for value in agent.discovery_islands)):

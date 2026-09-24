@@ -15,6 +15,8 @@ from hypothesis_mvp.symbolic.registry import REGISTERED_SYMBOLIC_ENGINES
 
 RESEARCH_PLAN_PROTOCOL = "scientific-research-plan-v1"
 ENGINE_REVIEW_PROTOCOL = "scientific-engine-evidence-review-v1"
+SYNTHESIS_OPERATIONS = (
+    "UNION_SUPPORTS", "INTERSECTION_SUPPORTS", "AUGMENT_BASE")
 
 
 def _identity(value: Mapping[str, Any]) -> str:
@@ -63,6 +65,26 @@ class EngineCall:
                 "objective": self.objective,
                 "expected_evidence": self.expected_evidence,
                 "requested_operations": list(self.requested_operations)}
+
+
+@dataclass(frozen=True)
+class SynthesisDirective:
+    operation: str
+    lineage_ids: tuple[str, ...]
+    rationale: str
+
+    def __post_init__(self):
+        if (self.operation not in SYNTHESIS_OPERATIONS
+                or len(self.lineage_ids) < 2
+                or len(set(self.lineage_ids)) != len(self.lineage_ids)
+                or any(not value.strip() for value in self.lineage_ids)
+                or not self.rationale.strip()):
+            raise ValueError("invalid scientist synthesis directive")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"operation": self.operation,
+                "lineage_ids": list(self.lineage_ids),
+                "rationale": self.rationale}
 
 
 @dataclass(frozen=True)
@@ -115,6 +137,7 @@ class ScientistReview:
     stop: bool
     stop_reason: str
     protocol_id: str = ENGINE_REVIEW_PROTOCOL
+    synthesis_directives: tuple[SynthesisDirective, ...] = ()
 
     def __post_init__(self):
         if (self.protocol_id != ENGINE_REVIEW_PROTOCOL
@@ -129,7 +152,9 @@ class ScientistReview:
             "contradicted_mechanisms": list(self.contradicted_mechanisms),
             "cross_engine_conflicts": list(self.cross_engine_conflicts),
             "synthesis_instructions": list(self.synthesis_instructions),
-            "stop": self.stop, "stop_reason": self.stop_reason}
+            "stop": self.stop, "stop_reason": self.stop_reason,
+            "synthesis_directives": [
+                row.to_dict() for row in self.synthesis_directives]}
 
     @property
     def stable_hash(self) -> str:
@@ -238,13 +263,19 @@ def plan_from_json(raw: Mapping[str, Any], engines: Sequence[str],
 
 
 def review_from_json(raw: Mapping[str, Any]) -> ScientistReview:
+    directives = tuple(SynthesisDirective(
+        str(row.get("operation", "")),
+        tuple(str(value) for value in row.get("lineage_ids", ())),
+        str(row.get("rationale", "")))
+        for row in raw.get("synthesis_directives", ())
+        if isinstance(row, Mapping))
     return ScientistReview(
         _strings(raw.get("supported_mechanisms"), allow_empty=True),
         _strings(raw.get("contradicted_mechanisms"), allow_empty=True),
         _strings(raw.get("cross_engine_conflicts"), allow_empty=True),
         _strings(raw.get("synthesis_instructions")),
         bool(raw.get("stop", False)), str(raw.get("stop_reason", "")),
-        str(raw.get("protocol_id", "")))
+        str(raw.get("protocol_id", "")), directives)
 
 
 def _strings(value: Any, *, allow_empty: bool = False) -> tuple[str, ...]:
@@ -265,6 +296,7 @@ def _strings(value: Any, *, allow_empty: bool = False) -> tuple[str, ...]:
 
 __all__ = [
     "ENGINE_REVIEW_PROTOCOL", "EngineCall", "EngineSkill", "ResearchPlan",
+    "SYNTHESIS_OPERATIONS", "SynthesisDirective",
     "ScientistReview", "ScientistState", "REGISTERED_ENGINE_SKILLS",
     "RESEARCH_PLAN_PROTOCOL",
     "allocated_plan", "deterministic_plan", "plan_from_json",

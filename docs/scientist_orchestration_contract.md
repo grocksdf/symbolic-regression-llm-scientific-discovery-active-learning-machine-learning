@@ -6,6 +6,14 @@ The production LLM is a bounded scientific policy, not another formula source.
 It may formulate mechanisms, select registered engine skills, allocate a fixed
 job budget, compare engine evidence and issue synthesis instructions.
 
+Under the typed evidence-synthesis profile, those synthesis instructions are
+not executable equation text.  They are lineage-bound directives over
+registered operations (`UNION_SUPPORTS`, `INTERSECTION_SUPPORTS`, or
+`AUGMENT_BASE`).  The deterministic compiler resolves the referenced engine
+expressions, constructs one closed-basis support, and leaves all coefficients
+to the existing global refit.  Unknown lineage, duplicate parents, unsupported
+operations, unchanged support and adapter-incompatible output fail closed.
+
 It may not access acquisition-pool responses, reporting-validation responses,
 held-out objects, Bayesian target internals, confirmation outcomes or
 experimental authority.
