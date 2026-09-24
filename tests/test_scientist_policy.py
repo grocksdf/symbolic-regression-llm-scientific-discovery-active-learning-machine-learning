@@ -868,6 +868,38 @@ def test_explicit_skill_control_protocol_is_required_when_registered(monkeypatch
     assert plan.engine_calls[1].requested_operations == ("saturating",)
 
 
+def test_missing_typed_review_directives_use_lineage_bound_fallback(
+        monkeypatch):
+    runtime = ProposalRuntime(EquationRuntime(2), 2, None, 1)
+    raw = {
+        "protocol_id": ENGINE_REVIEW_PROTOCOL,
+        "supported_mechanisms": ["complementary structures"],
+        "contradicted_mechanisms": [],
+        "cross_engine_conflicts": [],
+        "synthesis_instructions": ["compile validated evidence"],
+        "stop": False, "stop_reason": "continue registered cycle"}
+    calls = []
+    monkeypatch.setattr(
+        runtime, "complete_json",
+        lambda **kwargs: (calls.append(kwargs) or raw, {"fixture": True}))
+    review, telemetry = runtime.review_engine_evidence(
+        plan=deterministic_plan(("polynomial_lasso", "mcts"), 2),
+        engine_evidence=[
+            {"engine": "polynomial_lasso", "expression": "1+x0",
+             "selection_score": 1.0, "complexity": 2.,
+             "lineage_id": "linear"},
+            {"engine": "mcts", "expression": "1+sin(x1)",
+             "selection_score": 1.1, "complexity": 3.,
+             "lineage_id": "nonlinear"}],
+        require_typed_synthesis=True)
+    assert len(calls) == 1
+    assert [row.operation for row in review.synthesis_directives] == [
+        "UNION_SUPPORTS", "INTERSECTION_SUPPORTS"]
+    projection = telemetry["review_contract_projection"][
+        "synthesis_directive_projection"]
+    assert projection["fallback_applied"] is True
+
+
 def test_missing_explicit_skill_controls_use_registered_capability_sets(
         monkeypatch):
     invalid = {"protocol_id": RESEARCH_PLAN_PROTOCOL,
