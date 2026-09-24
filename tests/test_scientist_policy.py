@@ -900,6 +900,34 @@ def test_missing_typed_review_directives_use_lineage_bound_fallback(
     assert projection["fallback_applied"] is True
 
 
+def test_single_lineage_review_records_typed_synthesis_unavailable(
+        monkeypatch):
+    runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
+    raw = {
+        "protocol_id": ENGINE_REVIEW_PROTOCOL,
+        "supported_mechanisms": ["one validated structure"],
+        "contradicted_mechanisms": [],
+        "cross_engine_conflicts": [],
+        "synthesis_instructions": ["retain the control structure"],
+        "stop": False, "stop_reason": "control evidence recorded"}
+    calls = []
+    monkeypatch.setattr(
+        runtime, "complete_json",
+        lambda **kwargs: (calls.append(kwargs) or raw, {"fixture": True}))
+    review, telemetry = runtime.review_engine_evidence(
+        plan=deterministic_plan(("polynomial_lasso",), 1),
+        engine_evidence=[{
+            "engine": "polynomial_lasso", "expression": "1+x0",
+            "selection_score": 1.0, "complexity": 2.,
+            "lineage_id": "only"}],
+        require_typed_synthesis=True)
+    assert len(calls) == 1
+    assert review.synthesis_directives == ()
+    assert telemetry["typed_synthesis_availability"] == {
+        "requested": True, "available": False,
+        "distinct_parent_lineages_required": 2}
+
+
 def test_missing_explicit_skill_controls_use_registered_capability_sets(
         monkeypatch):
     invalid = {"protocol_id": RESEARCH_PLAN_PROTOCOL,

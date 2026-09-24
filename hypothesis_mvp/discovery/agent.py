@@ -399,6 +399,12 @@ class DiscoveryAgent:
         candidates, audit = compile_evidence_synthesis(
             review.synthesis_directives, evidence, n_features)
         if not candidates:
+            if len(self.config.engines) == 1:
+                return [], {
+                    **audit,
+                    "synthesis_unavailable": True,
+                    "unavailable_reason":
+                        "single-engine-control-has-fewer-than-two-distinct-lineages"}
             raise ValueError("typed Scientist synthesis produced no candidate")
         return candidates, audit
 

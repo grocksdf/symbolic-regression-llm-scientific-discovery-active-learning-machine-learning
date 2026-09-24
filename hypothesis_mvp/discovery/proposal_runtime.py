@@ -931,6 +931,23 @@ class ProposalRuntime:
                 "invalid-synthesis-directive",
         }.get(str(error), "invalid-typed-review")
 
+    @staticmethod
+    def _review_telemetry(
+        first: Mapping[str, Any], projection: Mapping[str, Any] | None,
+        requested: bool, available: bool,
+        second: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        result = (
+            dict(first) if second is None else {
+                "protocol_repair_attempted": True,
+                "provider_requests": [dict(first), dict(second)]})
+        result["typed_synthesis_availability"] = {
+            "requested": requested, "available": available,
+            "distinct_parent_lineages_required": 2}
+        if projection is not None:
+            result["review_contract_projection"] = projection
+        return result
+
     def review_engine_evidence(
         self, *, plan: ResearchPlan, engine_evidence: Sequence[Mapping[str, Any]],
         require_typed_synthesis: bool = False,
@@ -940,6 +957,9 @@ class ProposalRuntime:
                          if str(row.get("lineage_id") or ""))
         fallback_directives = self._fallback_synthesis_directives(
             engine_evidence)
+        typed_synthesis_available = bool(fallback_directives)
+        typed_synthesis_required = bool(
+            require_typed_synthesis and typed_synthesis_available)
         payload = {"protocol_id": ENGINE_REVIEW_PROTOCOL,
             "research_plan": plan.to_dict(),
             "engine_evidence": [dict(row) for row in engine_evidence],
@@ -951,14 +971,17 @@ class ProposalRuntime:
             }}
         if require_typed_synthesis:
             payload["typed_synthesis_contract"] = {
-                "required": True,
+                "required": typed_synthesis_required,
                 "allowed_operations": list(SYNTHESIS_OPERATIONS),
                 "allowed_lineage_ids": list(lineages),
                 "minimum_parent_lineages": 2,
                 "instruction": (
-                    "Return synthesis_directives as JSON objects with operation, "
-                    "lineage_ids and rationale. Reference only supplied lineage IDs. "
-                    "Do not emit equations or coefficients.")}
+                    ("Return synthesis_directives as JSON objects with operation, "
+                     "lineage_ids and rationale. Reference only supplied lineage IDs. "
+                     "Do not emit equations or coefficients.")
+                    if typed_synthesis_available else
+                    ("No two distinct evidence lineages are available. Omit "
+                     "synthesis_directives and report the evidence limitation."))}
         system = (
             "Act as a scientific evidence reviewer. Return one unfenced JSON object. "
             f"Use protocol_id='{ENGINE_REVIEW_PROTOCOL}'. Provide supported_mechanisms, "
@@ -967,17 +990,16 @@ class ProposalRuntime:
             "Do not certify efficacy, posterior correctness, or hidden-data performance. "
             + ("Provide at least one typed synthesis_directive and do not write a "
                "new equation; executable structure is compiled by code."
-               if require_typed_synthesis else ""))
+               if typed_synthesis_required else ""))
         raw, telemetry = self.complete_json(system_message=system, payload=payload)
         try:
             review, projection = self._normalize_scientist_review(
-                raw, require_typed_synthesis=require_typed_synthesis,
+                raw, require_typed_synthesis=typed_synthesis_required,
                 allowed_lineages=lineages,
                 fallback_directives=fallback_directives)
-            result = dict(telemetry)
-            if projection is not None:
-                result["review_contract_projection"] = projection
-            return review, result
+            return review, self._review_telemetry(
+                telemetry, projection, require_typed_synthesis,
+                typed_synthesis_available)
         except (TypeError, ValueError) as error:
             repaired, second = self.complete_json(
                 system_message=system, payload={**payload, "protocol_repair": {
@@ -988,10 +1010,10 @@ class ProposalRuntime:
                         "objects; stop must be a JSON boolean. "
                         + ("Include at least one synthesis_directives object using "
                            "only allowed lineage IDs and operations."
-                           if require_typed_synthesis else ""))}})
+                           if typed_synthesis_required else ""))}})
             try:
                 review, projection = self._normalize_scientist_review(
-                    repaired, require_typed_synthesis=require_typed_synthesis,
+                    repaired, require_typed_synthesis=typed_synthesis_required,
                     allowed_lineages=lineages,
                     fallback_directives=fallback_directives)
             except (TypeError, ValueError) as repaired_error:
@@ -999,11 +1021,9 @@ class ProposalRuntime:
                 raise ScientistReviewProtocolError(
                     "scientist-review-invalid-after-one-provider-repair:"
                     + reason) from repaired_error
-            result = {"protocol_repair_attempted": True,
-                "provider_requests": [dict(telemetry), dict(second)]}
-            if projection is not None:
-                result["review_contract_projection"] = projection
-            return review, result
+            return review, self._review_telemetry(
+                telemetry, projection, require_typed_synthesis,
+                typed_synthesis_available, second)
 
     def _proposal_payload(
         self, task_name: str, task_desc: str, context: ProposalContext,
