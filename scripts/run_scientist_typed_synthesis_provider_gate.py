@@ -20,9 +20,10 @@ from hypothesis_mvp.hypotheses.source_identity import verify_clean_git_source
 
 
 def main() -> int:
+    source = verify_clean_git_source(ROOT)
     provider = registered_provider_settings(ROOT)
     result = run_typed_synthesis_provider_gate(provider)
-    result["source"] = verify_clean_git_source(ROOT)
+    result["source"] = source
     result["provider_public_identity"] = public_provider_identity(provider)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result["passed"] else 1
