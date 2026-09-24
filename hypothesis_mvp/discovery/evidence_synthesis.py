@@ -71,22 +71,33 @@ def compile_evidence_synthesis(
     evidence = {
         str(row.get("lineage_id") or ""): dict(row)
         for row in engine_evidence if str(row.get("lineage_id") or "")}
-    candidates, records, seen = [], [], set()
+    candidates, records, rejections, seen = [], [], [], set()
     for directive in directives:
-        missing = [value for value in directive.lineage_ids
-                   if value not in evidence]
-        if missing:
-            raise ValueError("synthesis directive references unknown lineage")
-        rows = [evidence[value] for value in directive.lineage_ids]
-        expression, supports = _compile_expression(
-            directive.operation,
-            [str(row["expression"]) for row in rows], n_features)
-        source_supports = {
-            tuple(structural_terms(str(row["expression"]), n_features))
-            for row in rows}
-        support = tuple(structural_terms(expression, n_features))
-        if support in source_supports:
-            raise ValueError("synthesis directive produced no structural novelty")
+        try:
+            missing = [value for value in directive.lineage_ids
+                       if value not in evidence]
+            if missing:
+                raise ValueError(
+                    "synthesis directive references unknown lineage")
+            rows = [evidence[value] for value in directive.lineage_ids]
+            expression, supports = _compile_expression(
+                directive.operation,
+                [str(row["expression"]) for row in rows], n_features)
+            source_supports = {
+                tuple(structural_terms(str(row["expression"]), n_features))
+                for row in rows}
+            support = tuple(structural_terms(expression, n_features))
+            if support in source_supports:
+                raise ValueError(
+                    "synthesis directive produced no structural novelty")
+        except (KeyError, RuntimeError, TypeError, ValueError) as error:
+            rejections.append({
+                "operation": directive.operation,
+                "lineage_ids": list(directive.lineage_ids),
+                "reason": str(error),
+                "candidate_response_accessed": False,
+                "heldout_opened": False})
+            continue
         identity_payload = {
             "operation": directive.operation,
             "lineage_ids": list(directive.lineage_ids),
@@ -114,8 +125,11 @@ def compile_evidence_synthesis(
     return candidates, {
         "schema": "scientific-evidence-conditioned-synthesis-v1",
         "directive_count": len(directives),
+        "passed_directive_count": len(records),
+        "rejected_directive_count": len(rejections),
         "compiled_candidate_count": len(candidates),
         "records": records,
+        "rejections": rejections,
         "candidate_response_accessed": False,
         "heldout_opened": False,
     }

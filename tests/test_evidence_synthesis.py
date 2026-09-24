@@ -52,16 +52,37 @@ def test_review_parses_typed_synthesis_without_equation_text():
 
 
 def test_unknown_lineage_and_non_novel_synthesis_fail_closed():
-    with pytest.raises(ValueError, match="unknown lineage"):
-        compile_evidence_synthesis(
-            (SynthesisDirective(
-                "UNION_SUPPORTS", ("linear", "missing"), "invalid"),),
-            _evidence(), 3)
+    candidates, audit = compile_evidence_synthesis(
+        (SynthesisDirective(
+            "UNION_SUPPORTS", ("linear", "missing"), "invalid"),),
+        _evidence(), 3)
+    assert candidates == []
+    assert audit["rejected_directive_count"] == 1
+    assert "unknown lineage" in audit["rejections"][0]["reason"]
     duplicate = [
         {"engine": "a", "expression": "1+x0+x1", "lineage_id": "a"},
         {"engine": "b", "expression": "2+2*x0+3*x1", "lineage_id": "b"}]
-    with pytest.raises(ValueError, match="no structural novelty"):
-        compile_evidence_synthesis(
-            (SynthesisDirective(
-                "UNION_SUPPORTS", ("a", "b"), "duplicate"),),
-            duplicate, 2)
+    candidates, audit = compile_evidence_synthesis(
+        (SynthesisDirective(
+            "UNION_SUPPORTS", ("a", "b"), "duplicate"),),
+        duplicate, 2)
+    assert candidates == []
+    assert "no structural novelty" in audit["rejections"][0]["reason"]
+
+
+def test_invalid_intersection_does_not_discard_valid_union():
+    evidence = [
+        {"engine": "a", "expression": "1+x0", "lineage_id": "a"},
+        {"engine": "b", "expression": "1+sin(x1)", "lineage_id": "b"}]
+    directives = (
+        SynthesisDirective("INTERSECTION_SUPPORTS", ("a", "b"),
+                           "common support may be degenerate"),
+        SynthesisDirective("UNION_SUPPORTS", ("a", "b"),
+                           "retain complementary evidence"))
+    candidates, audit = compile_evidence_synthesis(
+        directives, evidence, 2)
+    assert len(candidates) == 1
+    assert candidates[0]["synthesis_operation"] == "UNION_SUPPORTS"
+    assert audit["passed_directive_count"] == 1
+    assert audit["rejected_directive_count"] == 1
+    assert "fewer than two supports" in audit["rejections"][0]["reason"]
