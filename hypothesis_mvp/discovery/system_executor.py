@@ -356,14 +356,22 @@ def _variant_composition(variant, candidates, candidate_admission=None,
         [] if candidate_admission is None
         else list(candidate_admission.get("candidate_certificates", []))
     )
+    conditional = (
+        [] if candidate_admission is None else list(
+            candidate_admission.get(
+                "conditional_engine_complementarity", {}
+            ).get("candidate_certificates", []))
+    )
     if not optional_engine_families:
         optional_engine_families = tuple(sorted({
             *engines, *(str(row.get("family", "")) for row in certificates
                         if str(row.get("family", "")).startswith("engine:"))}))
     optional_decisions = {}
     for family in optional_engine_families:
-        relevant = [row for row in certificates
-                    if row.get("family") == family]
+        conditional_relevant = [
+            row for row in conditional if row.get("family") == family]
+        relevant = conditional_relevant or [
+            row for row in certificates if row.get("family") == family]
         safely_rejected = bool(relevant and all(
             row.get("admitted") is False
             and (row.get("negative_transfer_certified") is True
@@ -373,6 +381,9 @@ def _variant_composition(variant, candidates, candidate_admission=None,
         required = family in required_active_contributions
         optional_decisions[family] = {
             "retained": retained, "safely_rejected": safely_rejected,
+            "certificate_stage": (
+                "conditional-complementarity" if conditional_relevant
+                else "independent-sourcewise"),
             "required_active": required,
             "passed": (True if variant != "full" else
                        retained or (safely_rejected and not required))}

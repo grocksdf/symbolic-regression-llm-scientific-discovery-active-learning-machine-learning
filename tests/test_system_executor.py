@@ -408,6 +408,28 @@ def test_full_composition_audits_multiple_optional_engine_families():
     assert details["engine:additive_mechanisms"]["safely_rejected"] is True
 
 
+def test_conditional_complementarity_certificate_overrides_earlier_admission():
+    candidates = [
+        {"source": "engine:polynomial_lasso", "origin": "deterministic"},
+        {"source": "llm_evidence_synthesis", "origin": "llm"}]
+    admission = {
+        "candidate_certificates": [{
+            "family": "engine:additive_mechanisms", "admitted": True,
+            "negative_transfer_certified": False}],
+        "conditional_engine_complementarity": {
+            "candidate_certificates": [{
+                "family": "engine:additive_mechanisms", "admitted": False,
+                "negative_transfer_certified": True}]}}
+    decisions = executor._variant_composition(
+        "full", candidates, admission,
+        optional_engine_families=("engine:additive_mechanisms",))
+    detail = decisions["optional_engine_decisions"][
+        "engine:additive_mechanisms"]
+    assert detail["passed"] is True
+    assert detail["safely_rejected"] is True
+    assert detail["certificate_stage"] == "conditional-complementarity"
+
+
 def test_policy_level_composition_does_not_require_llm_formula_retention():
     candidates = [
         {"source": "engine:polynomial_lasso", "origin": "deterministic"},
