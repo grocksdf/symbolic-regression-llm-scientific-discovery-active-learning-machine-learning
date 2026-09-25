@@ -23,3 +23,9 @@ loader on controlled fixtures. Real VED execution remains blocked until that
 loader proves exact column binding, deterministic row selection, disjoint
 roles, archive/member identity, and non-access to the reserved confirmation
 member.
+
+The loader ranks complete rows only by `SHA256(seed, member, row_index)`.
+Observed feature and response magnitudes do not enter row ranking. Missingness
+may make a row unavailable but cannot change the ordering of other available
+rows. Authorization of the member precedes process creation, so a reserved or
+unregistered member cannot start the extractor.
