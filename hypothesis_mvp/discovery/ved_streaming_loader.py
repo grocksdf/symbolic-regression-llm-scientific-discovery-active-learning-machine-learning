@@ -71,6 +71,39 @@ def select_ved_rows(
         (f"{member}:{index}", values) for _, index, values in selected)
 
 
+def audit_ved_stream_completeness(
+    lines: Iterable[str], *, features: Sequence[str], target: str,
+) -> dict:
+    """Count parse eligibility only; never retain or summarize numeric values."""
+    columns = (*features, target)
+    reader = csv.DictReader(lines)
+    if reader.fieldnames is None or any(
+            column not in reader.fieldnames for column in columns):
+        raise ValueError("VED stream is missing a registered column")
+    total, complete = 0, 0
+    unavailable = {column: 0 for column in columns}
+    for row in reader:
+        total += 1
+        valid = True
+        for column in columns:
+            text = str(row.get(column, "")).strip()
+            try:
+                value = float(text)
+            except ValueError:
+                value = float("nan")
+            if text.lower() in MISSING or not math.isfinite(value):
+                unavailable[column] += 1
+                valid = False
+        complete += int(valid)
+    return {
+        "total_row_count": total,
+        "complete_registered_row_count": complete,
+        "unavailable_row_count_by_registered_column": unavailable,
+        "observed_values_retained": False,
+        "observed_value_statistics_computed": False,
+    }
+
+
 def assert_member_authorized(
     member: str, open_members: Mapping[str, str],
     reserved_confirmation_member_sha256: str,
@@ -170,6 +203,7 @@ def run_ved_loader_correctness_gate() -> dict:
 
 
 __all__ = [
-    "assert_member_authorized", "run_ved_loader_correctness_gate",
-    "select_ved_rows", "stream_ved_archive_member",
+    "assert_member_authorized", "audit_ved_stream_completeness",
+    "run_ved_loader_correctness_gate", "select_ved_rows",
+    "stream_ved_archive_member",
 ]
