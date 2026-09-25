@@ -1,0 +1,14 @@
+{
+  "schema": "scientific-ved-independent-confirmation-integration-v1",
+  "source_gate": "D:/01/666/outputs/scientific_ved_confirmation_source_gate_20260925/VED_SOURCE_GATE.json",
+  "source_gate_sha256": "6e4e415aed5b837be003aa6789397fd6a74fddd9876ca920459e878f1b4f9638",
+  "loader_gate": "D:/01/666/outputs/scientific_ved_loader_correctness_gate_20260925/VED_LOADER_CORRECTNESS_GATE.json",
+  "loader_gate_sha256": "63ae669b3fc8ffbb0401e5406be904dd337f08a643f0def6a4eae51bd9bf2aa4",
+  "endpoint_gate": "D:/01/666/outputs/scientific_typed_synthesis_independent_confirmation_freeze_20260925/CONFIRMATION_FREEZE_GATE.json",
+  "endpoint_gate_sha256": "1d16168e71bd1b64a4c9594fa4a47b313636d2bfd285ae64b9bfbc663376f5c8",
+  "system_config": "D:/01/666/hypothesis_mvp/configs/scientific_system_ved_typed_synthesis_confirmation.json",
+  "system_config_sha256": "934a7600a5357d95ee8cdd532a2a0c58af52b95d19c4718a4c12a3d83a2a4905",
+  "eligible_dataset_family": "ved_vehicle_energy",
+  "execution_authorized": false,
+  "claim_boundary": "Identity binding only. VED becomes an eligible untouched family, but real open-week loading and confirmation execution remain unauthorized."
+}
