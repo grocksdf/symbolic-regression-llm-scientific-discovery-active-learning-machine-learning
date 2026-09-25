@@ -1,0 +1,26 @@
+{
+  "schema": "scientific-typed-synthesis-independent-confirmation-v1",
+  "method": "readiness-then-proper-log-score-lexicographic-v1",
+  "source_case_certificate": "D:/01/666/outputs/scientific_system_gas_nox_typed_synthesis_structural_case_20260925/STRUCTURAL_CASE_CERTIFICATE.json",
+  "source_case_certificate_sha256": "e3157b21b3989af918d814a2079b2022771bfe36a8b755ce7862399af0843e73",
+  "development_exclusions": [
+    "uci_ccpp:any-coordinate-used-during-method-development",
+    "uci_airfoil:any-coordinate-used-during-method-development",
+    "uci_gas_turbine_co:any-coordinate-used-during-method-development",
+    "uci_gas_turbine_nox:2026092403"
+  ],
+  "eligible_dataset_families": [],
+  "incompatible_dataset_families": {
+    "nist_asd_alkali_ns": "requires reciprocal and shifted-power grammar absent from the frozen closed basis"
+  },
+  "primary_endpoint": {
+    "full_must_be_operationally_ready": true,
+    "llm_source_must_be_admitted": true,
+    "all_llm_fold_gains_must_exceed_numerical_tolerance": true,
+    "no_llm_collapse_is_control_failure_not_exclusion": true,
+    "if_both_ready_require_positive_proper_log_score_gain": true,
+    "heldout_opened": false
+  },
+  "execution_authorized": false,
+  "claim_boundary": "Prospective metric identity only. No current dataset family is both untouched by typed-synthesis development and compatible with the frozen closed basis; confirmation remains blocked."
+}
