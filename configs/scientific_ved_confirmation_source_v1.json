@@ -27,7 +27,7 @@
     "MAF[g/sec]",
     "Engine RPM[RPM]",
     "Absolute Load[%]",
-    "Outside Air Temperature[DegC]"
+    "OAT[DegC]"
   ],
   "target": "Fuel Rate[L/hr]",
   "grammar_contract": "pcpi-closed-basis-v1",

@@ -14,6 +14,10 @@ The source Gate binds:
 - a reserved confirmation week represented only by its member-name SHA-256;
 - the exact five feature columns and fuel-rate target.
 
+The official dynamic CSV abbreviation `OAT[DegC]` is the exact bound column
+identity for outside-air temperature. The README's expanded prose label is
+scientific context only and is not used as a parser key.
+
 The source Gate lists archive metadata only. It does not extract a CSV, count
 rows, inspect missingness, observe a feature or response, or reveal the
 reserved confirmation member name.

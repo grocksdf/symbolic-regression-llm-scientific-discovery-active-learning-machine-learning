@@ -21,6 +21,7 @@ def test_ved_source_registration_is_closed_and_grammar_compatible():
     assert registration["execution_authorized"] is False
     assert registration["grammar_contract"] == "pcpi-closed-basis-v1"
     assert registration["target"] not in registration["features"]
+    assert registration["features"][-1] == "OAT[DegC]"
 
 
 def test_ved_source_registration_rejects_open_confirmation_identity():
