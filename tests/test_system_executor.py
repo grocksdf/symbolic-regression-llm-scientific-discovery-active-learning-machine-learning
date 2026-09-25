@@ -430,6 +430,23 @@ def test_conditional_complementarity_certificate_overrides_earlier_admission():
     assert detail["certificate_stage"] == "conditional-complementarity"
 
 
+def test_source_admission_uses_final_conditional_candidate_certificate(
+        tmp_path, monkeypatch):
+    candidate_report = {
+        "candidate_certificates": [{
+            "family": "engine:additive_mechanisms", "admitted": True,
+            "negative_transfer_certified": False}],
+        "conditional_engine_complementarity": {
+            "candidate_certificates": [{
+                "family": "engine:additive_mechanisms", "admitted": False,
+                "negative_transfer_certified": True}]}}
+    relevant, stage = executor._final_candidate_family_certificates(
+        candidate_report, "engine:additive_mechanisms")
+    assert stage == "conditional-complementarity"
+    assert len(relevant) == 1
+    assert relevant[0]["negative_transfer_certified"] is True
+
+
 def test_policy_level_composition_does_not_require_llm_formula_retention():
     candidates = [
         {"source": "engine:polynomial_lasso", "origin": "deterministic"},

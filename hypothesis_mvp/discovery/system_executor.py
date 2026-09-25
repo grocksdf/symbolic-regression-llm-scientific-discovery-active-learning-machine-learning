@@ -343,6 +343,20 @@ def verify_registered_provider(project_root, config):
     return provider
 
 
+def _final_candidate_family_certificates(candidate_admission, family):
+    if candidate_admission is None:
+        return [], "none"
+    conditional = list(candidate_admission.get(
+        "conditional_engine_complementarity", {}
+    ).get("candidate_certificates", []))
+    relevant = [row for row in conditional if row.get("family") == family]
+    if relevant:
+        return relevant, "conditional-complementarity"
+    rows = list(candidate_admission.get("candidate_certificates", []))
+    return ([row for row in rows if row.get("family") == family],
+            "independent-sourcewise")
+
+
 def _variant_composition(variant, candidates, candidate_admission=None,
                          *, optional_engine_families=(),
                          required_active_contributions=(),
@@ -356,22 +370,14 @@ def _variant_composition(variant, candidates, candidate_admission=None,
         [] if candidate_admission is None
         else list(candidate_admission.get("candidate_certificates", []))
     )
-    conditional = (
-        [] if candidate_admission is None else list(
-            candidate_admission.get(
-                "conditional_engine_complementarity", {}
-            ).get("candidate_certificates", []))
-    )
     if not optional_engine_families:
         optional_engine_families = tuple(sorted({
             *engines, *(str(row.get("family", "")) for row in certificates
                         if str(row.get("family", "")).startswith("engine:"))}))
     optional_decisions = {}
     for family in optional_engine_families:
-        conditional_relevant = [
-            row for row in conditional if row.get("family") == family]
-        relevant = conditional_relevant or [
-            row for row in certificates if row.get("family") == family]
+        relevant, certificate_stage = _final_candidate_family_certificates(
+            candidate_admission, family)
         safely_rejected = bool(relevant and all(
             row.get("admitted") is False
             and (row.get("negative_transfer_certified") is True
@@ -381,9 +387,7 @@ def _variant_composition(variant, candidates, candidate_admission=None,
         required = family in required_active_contributions
         optional_decisions[family] = {
             "retained": retained, "safely_rejected": safely_rejected,
-            "certificate_stage": (
-                "conditional-complementarity" if conditional_relevant
-                else "independent-sourcewise"),
+            "certificate_stage": certificate_stage,
             "required_active": required,
             "passed": (True if variant != "full" else
                        retained or (safely_rejected and not required))}
@@ -586,11 +590,11 @@ def _prepare_source_admission(workspace, exploration, data, config, arbitration)
             if name != "scientist_policy"}
             if variant == "full" else set())
         rejected = set(gate["rejectable_contributions"]) if variant == "full" else set()
-        candidate_rows = candidate_family["variants"][variant][
-            "candidate_certificates"]
+        candidate_report = candidate_family["variants"][variant]
         for name in rejected - set(sources):
-            relevant = [item for item in candidate_rows
-                        if item.get("family") == name]
+            relevant, certificate_stage = (
+                _final_candidate_family_certificates(
+                    candidate_report, name))
             safe = bool(relevant and all(
                 item.get("admitted") is False and (
                     item.get("negative_transfer_certified") is True
@@ -606,6 +610,7 @@ def _prepare_source_admission(workspace, exploration, data, config, arbitration)
                     "redundant_support_certified": bool(any(
                         item.get("redundant_support_certified") is True
                         for item in relevant)),
+                    "certificate_stage": certificate_stage,
                     "candidatewise_safe_rejection_certified": True}
         decisions = {
             "core_reserve_satisfied": bool(
