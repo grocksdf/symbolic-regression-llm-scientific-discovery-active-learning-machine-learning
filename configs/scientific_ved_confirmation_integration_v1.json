@@ -1,7 +1,7 @@
 {
   "schema": "scientific-ved-independent-confirmation-integration-v1",
-  "source_gate": "D:/01/666/outputs/scientific_ved_confirmation_source_gate_20260925/VED_SOURCE_GATE.json",
-  "source_gate_sha256": "6e4e415aed5b837be003aa6789397fd6a74fddd9876ca920459e878f1b4f9638",
+  "source_gate": "D:/01/666/outputs/scientific_ved_confirmation_source_gate_r1_20260925/VED_SOURCE_GATE.json",
+  "source_gate_sha256": "2674995518694e7147acb646f0d17aa6647f07da1fd365adeb3c0ec3eb98be33",
   "loader_gate": "D:/01/666/outputs/scientific_ved_loader_correctness_gate_20260925/VED_LOADER_CORRECTNESS_GATE.json",
   "loader_gate_sha256": "63ae669b3fc8ffbb0401e5406be904dd337f08a643f0def6a4eae51bd9bf2aa4",
   "endpoint_gate": "D:/01/666/outputs/scientific_typed_synthesis_independent_confirmation_freeze_20260925/CONFIRMATION_FREEZE_GATE.json",
