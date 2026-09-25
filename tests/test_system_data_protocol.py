@@ -1,6 +1,7 @@
 """Role/parse correctness fixtures only; no real observational source opened."""
 from dataclasses import replace
 from hashlib import sha256
+import json
 from pathlib import Path
 from zipfile import ZipFile
 import numpy as np
@@ -113,3 +114,56 @@ def test_official_hash_mismatch_blocks_before_data_parse(monkeypatch):
     monkeypatch.setattr(protocol.pd, "read_csv", forbidden)
     with pytest.raises(ValueError, match="official hash"):
         protocol.load_registered_system_data(_registration())
+
+
+def test_ved_system_entry_uses_only_registered_open_members(
+        tmp_path, monkeypatch):
+    source = {
+        "schema": "scientific-ved-confirmation-source-registration-v1",
+        "source_name": "fixture", "source_citation": "fixture",
+        "archives": {
+            "part1": {"path": str(tmp_path / "a.7z"), "sha256": "a" * 64},
+            "part2": {"path": str(tmp_path / "b.7z"), "sha256": "b" * 64}},
+        "extractor": {"path": str(tmp_path / "7z.exe"), "sha256": "c" * 64},
+        "open_members": {
+            "development": "development.csv",
+            "validation": "validation.csv",
+            "acquisition_pool": "pool.csv"},
+        "reserved_confirmation_member_sha256": "d" * 64,
+        "features": ["f0", "f1", "f2", "f3", "f4"],
+        "target": "y", "grammar_contract": "pcpi-closed-basis-v1",
+        "execution_authorized": False, "claim_boundary": "fixture"}
+    source_path = tmp_path / "source.json"
+    source_path.write_text(json.dumps(source), encoding="utf-8")
+    monkeypatch.setattr(
+        protocol, "run_ved_source_gate",
+        lambda registration: {
+            "passed": True, "archive_sha256": {"part1": "a", "part2": "b"},
+            "extractor_sha256": "c"})
+    monkeypatch.setattr(
+        protocol, "_member_names",
+        lambda extractor, archive: (
+            ("development.csv", "validation.csv")
+            if archive.name == "a.7z" else ("pool.csv",)))
+    opened_members = []
+
+    def stream(**kwargs):
+        opened_members.append(kwargs["member"])
+        header = "f0,f1,f2,f3,f4,y\n"
+        rows = ["0,1,2,3,4,5\n" for _ in range(30)]
+        return iter([header, *rows])
+
+    monkeypatch.setattr(protocol, "stream_ved_archive_member", stream)
+    registration = {
+        "dataset": "ved_fuel_rate", "source": str(source_path),
+        "split_seed": 7,
+        "counts": {
+            "exploration_development": 4, "exploration_validation": 3,
+            "inference_initial": 2, "development_evaluation": 5,
+            "acquisition_pool": 2}}
+    data = protocol.load_registered_system_data(registration)
+    assert opened_members == [
+        "development.csv", "validation.csv", "pool.csv"]
+    assert data.manifest["family"] == "ved_vehicle_energy"
+    assert data.manifest["reserved_confirmation_member_opened"] is False
+    assert data.initial.X.shape == (2, 5)

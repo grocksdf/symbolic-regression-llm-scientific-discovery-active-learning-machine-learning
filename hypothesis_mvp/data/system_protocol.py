@@ -20,6 +20,12 @@ from .real_registry import (
 )
 from .roles import SelectionData, RoleDataset, DataRole
 from .oracle import PoolOracle
+from hypothesis_mvp.discovery.ved_confirmation_source import (
+    _member_names, run_ved_source_gate, validate_ved_source_registration,
+)
+from hypothesis_mvp.discovery.ved_streaming_loader import (
+    select_ved_rows, stream_ved_archive_member,
+)
 
 
 ROLE_NAMES = ("exploration_development", "exploration_validation", "inference_initial",
@@ -30,6 +36,20 @@ ROLE_NAMES = ("exploration_development", "exploration_validation", "inference_in
 # registry.  Symbols remain x0..xd in executable equations; this map gives the
 # scientist-facing meaning of each symbol to proposal engines.
 PUBLIC_SCIENTIFIC_CONTEXT = {
+    "ved_fuel_rate": {
+        "task_name": "vehicle_instantaneous_fuel_rate_law",
+        "task_description": (
+            "Propose falsifiable structural laws for instantaneous vehicle "
+            "fuel rate from speed, mass-air flow, engine speed, absolute "
+            "load and outside-air temperature."
+        ),
+        "feature_names": [
+            "vehicle_speed", "mass_air_flow", "engine_rpm",
+            "absolute_load", "outside_air_temperature"],
+        "feature_units": ["km_per_h", "g_per_s", "rpm", "percent", "degree_C"],
+        "target_name": "fuel_rate", "target_unit": "L_per_h",
+        "source_url": "https://doi.org/10.1109/TITS.2020.3035596",
+    },
     "uci_airfoil": {
         "task_name": "airfoil_self_noise_law",
         "task_description": (
@@ -108,7 +128,7 @@ def _ordered(ids, seed):
 def validate_data_registration(registration):
     if (set(registration) != {"dataset", "source", "split_seed", "counts"}
             or registration["dataset"] not in {
-                "uci_airfoil", "uci_ccpp", "uci_gas_turbine_co",
+                "ved_fuel_rate", "uci_airfoil", "uci_ccpp", "uci_gas_turbine_co",
                 "uci_gas_turbine_nox"}
             or type(registration["split_seed"]) is not int or registration["split_seed"] < 0
             or not isinstance(registration["source"], str) or not Path(registration["source"]).is_absolute()
@@ -174,6 +194,90 @@ def _ccpp_open_rows(source, selected):
     return values
 
 
+def _load_ved_system_data(registration):
+    source_path = Path(registration["source"])
+    source_registration = json.loads(source_path.read_text(encoding="utf-8"))
+    validate_ved_source_registration(source_registration)
+    source_gate = run_ved_source_gate(source_registration)
+    if source_gate["passed"] is not True:
+        raise ValueError("VED source identity Gate failed")
+    extractor = source_registration["extractor"]["path"]
+    archives = {
+        name: Path(row["path"])
+        for name, row in source_registration["archives"].items()}
+    member_archive = {}
+    for archive in archives.values():
+        for member in _member_names(Path(extractor), archive):
+            member_archive[member] = archive
+    open_members = source_registration["open_members"]
+    features = tuple(source_registration["features"])
+    target = source_registration["target"]
+    seed, counts = registration["split_seed"], registration["counts"]
+
+    def selected(role, count):
+        member = open_members[role]
+        archive = member_archive.get(member)
+        if archive is None:
+            raise ValueError("registered VED member is absent from archives")
+        lines = stream_ved_archive_member(
+            extractor=extractor, archive=archive, member=member,
+            open_members=open_members,
+            reserved_confirmation_member_sha256=source_registration[
+                "reserved_confirmation_member_sha256"])
+        return select_ved_rows(
+            lines, member=member, seed=seed, count=count,
+            features=features, target=target)
+
+    development_count = sum(
+        counts[role] for role in (
+            "exploration_development", "inference_initial",
+            "development_evaluation"))
+    development = selected("development", development_count)
+    validation = selected(
+        "validation", counts["exploration_validation"])
+    pool = selected("acquisition_pool", counts["acquisition_pool"])
+    offsets, assigned = 0, {}
+    for role in (
+            "exploration_development", "inference_initial",
+            "development_evaluation"):
+        end = offsets + counts[role]
+        assigned[role] = development[offsets:end]
+        offsets = end
+    assigned["exploration_validation"] = validation
+    assigned["acquisition_pool"] = pool
+    arrays = {
+        role: np.asarray([row[1] for row in rows], dtype=float)
+        for role, rows in assigned.items()}
+    opened = lambda role, data_role: RoleDataset(
+        data_role, arrays[role][:, :-1], arrays[role][:, -1])
+    discovery = opened("exploration_development", DataRole.DEVELOPMENT)
+    evaluation = opened("exploration_validation", DataRole.VALIDATION)
+    initial = opened("inference_initial", DataRole.DEVELOPMENT)
+    reporting = opened("development_evaluation", DataRole.VALIDATION)
+    source_identity = sha256(source_path.read_bytes()).hexdigest()
+    manifest = {
+        "schema": "scientific-open-development-data-v1",
+        "dataset": "ved_fuel_rate", "family": "ved_vehicle_energy",
+        "source_registration_sha256": source_identity,
+        "archive_sha256": source_gate["archive_sha256"],
+        "extractor_sha256": source_gate["extractor_sha256"],
+        "split_seed": seed, "registered_counts": counts,
+        "role_row_id_hashes": {
+            role: sha256(json.dumps(
+                [row[0] for row in rows]).encode()).hexdigest()
+            for role, rows in assigned.items()},
+        "scientific_context": PUBLIC_SCIENTIFIC_CONTEXT["ved_fuel_rate"],
+        "scientific_context_role":
+            "public-source-metadata-no-observed-values",
+        "heldout_opened": False, "formula_generated": False,
+        "noise_added": False,
+        "reserved_confirmation_member_opened": False}
+    pool_values = arrays["acquisition_pool"]
+    return OpenSystemData(
+        SelectionData(discovery, evaluation, None, ()), initial, reporting,
+        PoolOracle(pool_values[:, :-1], pool_values[:, -1]), manifest)
+
+
 def _airfoil_open_rows(source, selected):
     """Decode only the prospectively registered Airfoil row identities."""
     selected = set(selected)
@@ -194,6 +298,8 @@ def _airfoil_open_rows(source, selected):
 def load_registered_system_data(registration):
     validate_data_registration(registration)
     dataset, seed = registration["dataset"], registration["split_seed"]
+    if dataset == "ved_fuel_rate":
+        return _load_ved_system_data(registration)
     source = Path(registration["source"])
     spec = REAL_DATASET_SPECS[dataset]
     hashes = {}
