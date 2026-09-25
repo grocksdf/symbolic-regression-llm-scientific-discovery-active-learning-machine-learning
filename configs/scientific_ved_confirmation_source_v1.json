@@ -1,0 +1,36 @@
+{
+  "schema": "scientific-ved-confirmation-source-registration-v1",
+  "source_name": "Vehicle Energy Dataset",
+  "source_citation": "Oh, LeBlanc, and Peng, IEEE T-ITS 2020, DOI 10.1109/TITS.2020.3035596",
+  "archives": {
+    "part1": {
+      "path": "D:/01/666/hypothesis_mvp/data/ved/VED/Data/VED_DynamicData_Part1.7z",
+      "sha256": "44d53754fd39e196171ec09f123604375d0248d5c06a97d6695ef0e22a948c61"
+    },
+    "part2": {
+      "path": "D:/01/666/hypothesis_mvp/data/ved/VED/Data/VED_DynamicData_Part2.7z",
+      "sha256": "a235c894e619a9e06b6c28c6e68593e26f4b168265cd2c45a0f3a43e646bc701"
+    }
+  },
+  "extractor": {
+    "path": "C:/Program Files/7-Zip/7z.exe",
+    "sha256": "83967f1b02b43c4efeda302795722c809e0e81b8307de73558d10484d5676a7d"
+  },
+  "open_members": {
+    "development": "VED_171101_week.csv",
+    "validation": "VED_171108_week.csv",
+    "acquisition_pool": "VED_171115_week.csv"
+  },
+  "reserved_confirmation_member_sha256": "680ffc3fae30a2cc3934269cf3d421287f5800f6ee5f7b6c9dffc3b3e633c0f3",
+  "features": [
+    "Vehicle Speed[km/h]",
+    "MAF[g/sec]",
+    "Engine RPM[RPM]",
+    "Absolute Load[%]",
+    "Outside Air Temperature[DegC]"
+  ],
+  "target": "Fuel Rate[L/hr]",
+  "grammar_contract": "pcpi-closed-basis-v1",
+  "execution_authorized": false,
+  "claim_boundary": "Metadata-only source registration. CSV observations and the reserved confirmation member remain unopened; loader and experiment execution are unauthorized."
+}
