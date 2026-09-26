@@ -34,7 +34,8 @@ from .marginal_influence import (
 )
 from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target
 from .bank_selection import (
-    DIVERSITY_CAPACITY_METHOD, select_operational_capacity_bank,
+    DIVERSITY_CAPACITY_METHOD, PORTFOLIO_CAPACITY_METHOD,
+    select_operational_capacity_bank,
 )
 from .source_stacking import (
     DIVERSITY_METHOD, METHOD as SOURCE_STACKING_METHOD,
@@ -268,7 +269,7 @@ def validate_system_registration(config):
             or gate["maximum_candidates"] != 2 * config["measurement_budget"]
             or gate["selection_rule"] not in {
                 "two-fold-safe-half-core-source-stacking-operational-entropy-v3",
-                DIVERSITY_CAPACITY_METHOD}
+                DIVERSITY_CAPACITY_METHOD, PORTFOLIO_CAPACITY_METHOD}
             or gate["source_safety_folds"] != 2
             or gate["source_stacking_baseline"] != "core"
             or gate["source_stacking_dyadic_depth"] != 8
@@ -300,10 +301,10 @@ def _validate_source_stacking_registration(config, gate):
     policy = config.get("source_stacking_policy", SOURCE_STACKING_METHOD)
     if policy not in {SOURCE_STACKING_METHOD, DIVERSITY_METHOD}:
         raise ValueError("invalid source stacking policy")
-    expected = (
-        DIVERSITY_CAPACITY_METHOD if policy == DIVERSITY_METHOD
-        else "two-fold-safe-half-core-source-stacking-operational-entropy-v3")
-    if gate["selection_rule"] != expected:
+    expected = ({"two-fold-safe-half-core-source-stacking-operational-entropy-v3"}
+        if policy == SOURCE_STACKING_METHOD
+        else {DIVERSITY_CAPACITY_METHOD, PORTFOLIO_CAPACITY_METHOD})
+    if gate["selection_rule"] not in expected:
         raise ValueError(
             "source stacking and capacity selection identities differ")
 
@@ -377,6 +378,7 @@ def _final_candidate_family_certificates(candidate_admission, family):
 
 def _variant_composition(variant, candidates, candidate_admission=None,
                          *, optional_engine_families=(),
+                         capacity_excluded_families=(),
                          required_active_contributions=(),
                          scientist_policy_mode=False,
                          scientist_policy_trace=(),
@@ -402,13 +404,16 @@ def _variant_composition(variant, candidates, candidate_admission=None,
                  or row.get("redundant_support_certified") is True)
             for row in relevant))
         retained = family in engines
+        capacity_pruned = family in capacity_excluded_families
         required = family in required_active_contributions
         optional_decisions[family] = {
             "retained": retained, "safely_rejected": safely_rejected,
+            "capacity_pruned": capacity_pruned,
             "certificate_stage": certificate_stage,
             "required_active": required,
             "passed": (True if variant != "full" else
-                       retained or (safely_rejected and not required))}
+                       retained or ((safely_rejected or capacity_pruned)
+                                    and not required))}
     decisions = {
         "full_optional_engine_retained_or_candidatewise_safe_rejection_certified": (
             all(row["passed"] for row in optional_decisions.values())
@@ -449,7 +454,8 @@ def _prepare_hypothesis_bank_viability(
             source_safety_roles=(),
             source_safety_folds=config["hypothesis_bank_gate"]["source_safety_folds"],
             source_stacking_method=config.get(
-                "source_stacking_policy", SOURCE_STACKING_METHOD))
+                "source_stacking_policy", SOURCE_STACKING_METHOD),
+            selection_method=config["hypothesis_bank_gate"]["selection_rule"])
         row["candidates"] = list(selected)
         row["source_prior_weights"] = selection["source_prior_weights"]
         row["hypothesis_provenance"] = {
@@ -486,6 +492,8 @@ def _prepare_hypothesis_bank_viability(
         composition = _variant_composition(
             variant, row["candidates"], variant_candidate_admission,
             optional_engine_families=optional_families,
+            capacity_excluded_families=tuple(
+                selection.get("capacity_excluded_source_families", ())),
             required_active_contributions=tuple(config[
                 "marginal_influence_gate"]["required_active_contributions"]),
             scientist_policy_mode=(config["marginal_influence_gate"]["schema"]

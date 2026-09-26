@@ -2,7 +2,10 @@
 import numpy as np
 
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
-from hypothesis_mvp.discovery.bank_selection import select_operational_capacity_bank
+from hypothesis_mvp.discovery.bank_selection import (
+    PORTFOLIO_CAPACITY_METHOD, select_operational_capacity_bank,
+)
+from hypothesis_mvp.discovery.source_stacking import DIVERSITY_METHOD, source_family
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
 
 
@@ -56,3 +59,38 @@ def test_capacity_bank_rejects_unmatched_capacity():
             exploration_identity="a" * 64,
             coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
             measurement_budget=2, maximum_candidates=5)
+
+
+def test_portfolio_capacity_is_variable_cardinality_and_protects_core():
+    X = np.column_stack((np.linspace(-1, 1, 12), np.linspace(-1, 1, 12) ** 2))
+    y = 1 + X[:, 0] - .5 * X[:, 1]
+    initial = RoleDataset(DataRole.DEVELOPMENT, X, y)
+    actions = np.array([[-1., 1.], [-.5, .25], [.5, .25], [1., 1.]])
+    candidates = [
+        {"expression": "x0", "source": "engine:polynomial_lasso",
+         "origin": "deterministic"},
+        {"expression": "1", "source": "deterministic_constant_anchor",
+         "origin": "deterministic"},
+        {"expression": "x0 + x1", "source": "deterministic_linear_anchor",
+         "origin": "deterministic"},
+        {"expression": "x1", "source": "engine:mcts",
+         "origin": "deterministic"},
+        {"expression": "x0**2", "source": "engine:sparse_library",
+         "origin": "deterministic"},
+        {"expression": "x0*x1", "source": "llm_proposal", "origin": "llm"},
+    ]
+    selected, report = select_operational_capacity_bank(
+        candidates, initial, actions,
+        n_features=2, prior=NormalInverseGammaPrior(),
+        exploration_identity="b" * 64,
+        coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
+        measurement_budget=2, maximum_candidates=4,
+        source_safety_folds=2, source_stacking_method=DIVERSITY_METHOD,
+        selection_method=PORTFOLIO_CAPACITY_METHOD)
+    assert 3 <= len(selected) <= 4
+    assert sum(source_family(row) == "core" for row in selected) >= 2
+    assert report["capacity_is_upper_bound"] is True
+    assert report["protected_core_support_count"] >= 2
+    assert report["selection_method"] == PORTFOLIO_CAPACITY_METHOD
+    assert set(report["capacity_excluded_source_families"]) <= {
+        "engine:mcts", "engine:sparse_library", "llm"}

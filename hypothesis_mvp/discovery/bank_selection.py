@@ -22,6 +22,8 @@ SCHEMA = "scientific-predictive-safe-operational-capacity-bank-v2"
 METHOD = "two-fold-safe-half-core-source-stacking-operational-entropy-v3"
 DIVERSITY_CAPACITY_METHOD = (
     "two-fold-safe-diversity-preserving-half-core-operational-entropy-v4")
+PORTFOLIO_CAPACITY_METHOD = (
+    "fold-safe-protected-core-variable-cardinality-operational-entropy-v5")
 
 
 def _identity(candidate):
@@ -50,6 +52,34 @@ def _without_role(rows, role):
     if role == "origin:llm":
         return tuple(row for row in rows if str(row.get("origin", "")) != "llm")
     return tuple(row for row in rows if str(row.get("source", "")) != role)
+
+
+def _candidate_portfolios(pool, target_size, maximum_candidates,
+                          selection_method, available_roles, safety_roles):
+    if selection_method == PORTFOLIO_CAPACITY_METHOD:
+        sizes = range(min(3, target_size), target_size + 1)
+        return [
+            tuple(rows)
+            for size in sizes
+            for rows in combinations(pool, size)
+            if sum(source_family(row) == "core" for row in rows)
+                >= max(2, (size + 1) // 2)
+            and set(safety_roles).issubset(
+                set().union(*(_roles(row) for row in rows)))
+        ], safety_roles
+    if maximum_candidates < len(available_roles):
+        raise ValueError("bank capacity cannot preserve required provenance roles")
+    return [
+        tuple(rows) for rows in combinations(pool, target_size)
+        if set(available_roles).issubset(
+            set().union(*(_roles(row) for row in rows)))
+    ], available_roles
+
+
+def _excluded_families(pool, selected):
+    available = {source_family(row) for row in pool}
+    retained = {source_family(row) for row in selected}
+    return sorted(family for family in available - retained if family != "core")
 
 
 @dataclass
@@ -126,7 +156,8 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
                                      coefficient_policy, measurement_budget,
                                      maximum_candidates, source_safety_roles=(),
                                      source_safety_folds=2,
-                                     source_stacking_method=SOURCE_STACKING_METHOD):
+                                     source_stacking_method=SOURCE_STACKING_METHOD,
+                                     selection_method=None):
     """Select the highest-entropy bank whose registered sources are predictive-safe.
 
     Safety is a paired two-fold posterior-predictive log score computed only on
@@ -139,6 +170,16 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
         raise ValueError("bank capacity must equal twice the measurement budget")
     if source_safety_folds != 2:
         raise ValueError("operational bank source safety requires two folds")
+    if selection_method is None:
+        selection_method = (
+            DIVERSITY_CAPACITY_METHOD
+            if source_stacking_method == DIVERSITY_METHOD else METHOD)
+    if selection_method not in {
+            METHOD, DIVERSITY_CAPACITY_METHOD, PORTFOLIO_CAPACITY_METHOD}:
+        raise ValueError("unknown operational-capacity selection method")
+    if ((source_stacking_method == SOURCE_STACKING_METHOD)
+            != (selection_method == METHOD)):
+        raise ValueError("source stacking and capacity selection differ")
     if initial_data.role is not DataRole.DEVELOPMENT or len(initial_data.X) < 4:
         raise ValueError("source safety requires registered initial development data")
     unique = {}
@@ -146,15 +187,18 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
         support = tuple(structural_terms(str(row["expression"]), n_features))
         unique.setdefault(support, dict(row))
     pool = tuple(sorted(unique.values(), key=_identity))
-    required = _required_roles(pool)
+    available_roles = _required_roles(pool)
     safety_roles = tuple(sorted(set(source_safety_roles)))
-    if (len(pool) < 2 or maximum_candidates < len(required)
-            or any(role not in required for role in safety_roles)):
+    if (len(pool) < 2 or any(role not in available_roles
+                             for role in safety_roles)):
         raise ValueError("bank capacity cannot preserve required provenance roles")
 
     target_size = min(len(pool), maximum_candidates)
-    candidate_sets = [tuple(rows) for rows in combinations(pool, target_size)
-                      if set(required).issubset(set().union(*(_roles(row) for row in rows)))]
+    # In v5 capacity is an upper bound: a scientific-core backbone is
+    # protected while optional proposal sources compete for remaining slots.
+    candidate_sets, required = _candidate_portfolios(
+        pool, target_size, maximum_candidates, selection_method,
+        available_roles, safety_roles)
     if not candidate_sets:
         raise ValueError("no capacity bank preserves registered provenance")
 
@@ -179,14 +223,19 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
     chosen = min(ranked, key=lambda item: (
         -item[1][0] if feasible else -item[2], -item[1][1], item[3]))
     passed, final_score, _, _, selected, audits, certificate = chosen
+    capacity_excluded = _excluded_families(pool, selected)
     return tuple(selected), {
         "schema": SCHEMA,
-        "selection_method": (
-            DIVERSITY_CAPACITY_METHOD
-            if source_stacking_method == DIVERSITY_METHOD else METHOD),
+        "selection_method": selection_method,
         "input_support_count": len(pool), "selected_support_count": len(selected),
         "evaluated_capacity_bank_count": len(candidate_sets),
-        "maximum_candidates": maximum_candidates, "required_roles": list(required),
+        "maximum_candidates": maximum_candidates,
+        "capacity_is_upper_bound": selection_method == PORTFOLIO_CAPACITY_METHOD,
+        "protected_core_support_count": sum(
+            source_family(row) == "core" for row in selected),
+        "available_roles": list(available_roles),
+        "required_roles": list(required),
+        "capacity_excluded_source_families": capacity_excluded,
         "source_safety_roles": list(safety_roles), "source_safety_folds": 2,
         "source_safety": audits, "source_safety_passed": passed,
         "source_stacking": certificate.to_dict(),
@@ -203,4 +252,5 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
 
 
 __all__ = [
-    "DIVERSITY_CAPACITY_METHOD", "select_operational_capacity_bank"]
+    "DIVERSITY_CAPACITY_METHOD", "PORTFOLIO_CAPACITY_METHOD",
+    "select_operational_capacity_bank"]

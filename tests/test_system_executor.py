@@ -383,6 +383,26 @@ def test_full_composition_accepts_certified_optional_engine_rejection():
         "full_optional_engine_retained_or_candidatewise_safe_rejection_certified"]
 
 
+def test_full_composition_accepts_nonrequired_capacity_pruning():
+    candidates = [
+        {"source": "engine:polynomial_lasso", "origin": "deterministic"},
+        {"source": "llm_proposal", "origin": "llm"},
+    ]
+    admission = {"candidate_certificates": [{
+        "family": "engine:sparse_library", "admitted": True,
+        "negative_transfer_certified": False,
+        "redundant_support_certified": False}]}
+    decisions = executor._variant_composition(
+        "full", candidates, admission,
+        optional_engine_families=("engine:sparse_library",),
+        capacity_excluded_families=("engine:sparse_library",),
+        required_active_contributions=("scientist_policy",))
+    detail = decisions["optional_engine_decisions"]["engine:sparse_library"]
+    assert detail["retained"] is False
+    assert detail["capacity_pruned"] is True
+    assert detail["passed"] is True
+
+
 def test_full_composition_audits_multiple_optional_engine_families():
     candidates = [
         {"source": "engine:polynomial_lasso", "origin": "deterministic"},
