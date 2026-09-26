@@ -26,6 +26,7 @@ from hypothesis_mvp.discovery.ved_confirmation_source import (
 from hypothesis_mvp.discovery.ved_streaming_loader import (
     select_ved_rows, stream_ved_archive_member,
 )
+from hypothesis_mvp.discovery.yacht_download_gate import _group_id
 
 
 ROLE_NAMES = ("exploration_development", "exploration_validation", "inference_initial",
@@ -36,6 +37,23 @@ ROLE_NAMES = ("exploration_development", "exploration_validation", "inference_in
 # registry.  Symbols remain x0..xd in executable equations; this map gives the
 # scientist-facing meaning of each symbol to proposal engines.
 PUBLIC_SCIENTIFIC_CONTEXT = {
+    "yacht_hydrodynamics": {
+        "task_name": "yacht_hull_residuary_resistance_law",
+        "task_description": (
+            "Propose falsifiable structural laws for residuary resistance "
+            "of systematic yacht hulls from hull geometry and Froude number."
+        ),
+        "feature_names": [
+            "longitudinal_center_of_buoyancy", "prismatic_coefficient",
+            "length_displacement_ratio", "beam_draught_ratio",
+            "length_beam_ratio", "froude_number"],
+        "feature_units": ["dimensionless"] * 6,
+        "target_name": "residuary_resistance",
+        "target_unit": "dimensionless",
+        "source_url": (
+            "https://archive.ics.uci.edu/static/public/243/"
+            "yacht+hydrodynamics.zip"),
+    },
     "ved_fuel_rate": {
         "task_name": "vehicle_instantaneous_fuel_rate_law",
         "task_description": (
@@ -128,7 +146,7 @@ def _ordered(ids, seed):
 def validate_data_registration(registration):
     if (set(registration) != {"dataset", "source", "split_seed", "counts"}
             or registration["dataset"] not in {
-                "ved_fuel_rate", "uci_airfoil", "uci_ccpp", "uci_gas_turbine_co",
+                "yacht_hydrodynamics", "ved_fuel_rate", "uci_airfoil", "uci_ccpp", "uci_gas_turbine_co",
                 "uci_gas_turbine_nox"}
             or type(registration["split_seed"]) is not int or registration["split_seed"] < 0
             or not isinstance(registration["source"], str) or not Path(registration["source"]).is_absolute()
@@ -278,6 +296,74 @@ def _load_ved_system_data(registration):
         PoolOracle(pool_values[:, :-1], pool_values[:, -1]), manifest)
 
 
+def _load_yacht_system_data(registration):
+    source = Path(registration["source"])
+    data_path = source / "yacht_hydrodynamics.data"
+    gate = json.loads(Path(registration["schema_gate"]).read_text(
+        encoding="utf-8"))
+    source_config = json.loads(Path(registration["source_registration"])
+                               .read_text(encoding="utf-8"))
+    raw_groups = {}
+    rows = []
+    for index, raw in enumerate(data_path.read_text(
+            encoding="utf-8").splitlines()):
+        if not raw.strip():
+            continue
+        pieces = raw.split()
+        if len(pieces) != 7:
+            raise ValueError("registered Yacht row is not seven fields")
+        values = tuple(float(value) for value in pieces)
+        group = _group_id(values[:5])
+        raw_groups.setdefault(group, []).append((index, values))
+        rows.append(values)
+    if len(rows) != gate["row_count"]:
+        raise ValueError("Yacht downloaded row identity changed")
+    assignments = gate["role_group_commitments"]
+    role_rows = {
+        role: [row for group in groups for _, row in raw_groups[group]]
+        for role, groups in assignments.items()}
+    counts = registration["counts"]
+    roles = {}
+    for role in ("exploration_development", "inference_initial",
+                 "development_evaluation", "exploration_validation",
+                 "acquisition_pool"):
+        source_role = (
+            "development" if role in {
+                "exploration_development", "inference_initial",
+                "development_evaluation"} else role)
+        selected = role_rows[source_role]
+        if role in {"exploration_development", "inference_initial",
+                    "development_evaluation"}:
+            selected = selected[:counts[role]]
+        else:
+            selected = selected[:counts[role]]
+        roles[role] = np.asarray(selected, dtype=float)
+    opened = lambda role, data_role: RoleDataset(
+        data_role, roles[role][:, :-1], roles[role][:, -1])
+    manifest = {
+        "schema": "scientific-open-development-data-v1",
+        "dataset": "yacht_hydrodynamics", "family": "yacht_hydrodynamics",
+        "download_schema_gate_sha256": sha256(
+            Path(registration["schema_gate"]).read_bytes()).hexdigest(),
+        "source_registration_sha256": sha256(
+            Path(registration["source_registration"]).read_bytes()).hexdigest(),
+        "split_seed": registration["split_seed"],
+        "registered_counts": counts,
+        "scientific_context": PUBLIC_SCIENTIFIC_CONTEXT[
+            "yacht_hydrodynamics"],
+        "scientific_context_role":
+            "public-source-metadata-no-observed-values",
+        "heldout_opened": False, "reserved_confirmation_groups_opened": False}
+    pool = roles["acquisition_pool"]
+    return OpenSystemData(
+        SelectionData(
+            opened("exploration_development", DataRole.DEVELOPMENT),
+            opened("exploration_validation", DataRole.VALIDATION), None, ()),
+        opened("inference_initial", DataRole.DEVELOPMENT),
+        opened("development_evaluation", DataRole.VALIDATION),
+        PoolOracle(pool[:, :-1], pool[:, -1]), manifest)
+
+
 def _airfoil_open_rows(source, selected):
     """Decode only the prospectively registered Airfoil row identities."""
     selected = set(selected)
@@ -300,6 +386,8 @@ def load_registered_system_data(registration):
     dataset, seed = registration["dataset"], registration["split_seed"]
     if dataset == "ved_fuel_rate":
         return _load_ved_system_data(registration)
+    if dataset == "yacht_hydrodynamics":
+        return _load_yacht_system_data(registration)
     source = Path(registration["source"])
     spec = REAL_DATASET_SPECS[dataset]
     hashes = {}
