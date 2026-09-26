@@ -144,7 +144,10 @@ def _ordered(ids, seed):
 
 
 def validate_data_registration(registration):
-    if (set(registration) != {"dataset", "source", "split_seed", "counts"}
+    allowed = {"dataset", "source", "split_seed", "counts"}
+    if registration.get("dataset") == "yacht_hydrodynamics":
+        allowed |= {"source_registration", "schema_gate"}
+    if (set(registration) != allowed
             or registration["dataset"] not in {
                 "yacht_hydrodynamics", "ved_fuel_rate", "uci_airfoil", "uci_ccpp", "uci_gas_turbine_co",
                 "uci_gas_turbine_nox"}
@@ -153,6 +156,12 @@ def validate_data_registration(registration):
             or set(registration["counts"]) != set(ROLE_NAMES)
             or any(type(n) is not int or n < 2 for n in registration["counts"].values())):
         raise ValueError("invalid registered open-development roles")
+    if registration["dataset"] == "yacht_hydrodynamics":
+        for key in ("source_registration", "schema_gate"):
+            if (not isinstance(registration[key], str)
+                    or not Path(registration[key]).is_absolute()
+                    or not Path(registration[key]).is_file()):
+                raise ValueError("invalid Yacht source identity path")
     return registration
 
 
