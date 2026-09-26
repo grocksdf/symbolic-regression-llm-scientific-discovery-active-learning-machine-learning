@@ -76,26 +76,10 @@ def _memory_fixture() -> Mapping[str, Any]:
         }
 
 
-def run_scientist_closed_loop_gate(config: Mapping[str, Any]) -> dict[str, Any]:
-    """Validate registered wiring without opening any dataset or response."""
-    validated = validate_system_registration(dict(config))
-    agent = DiscoveryAgentConfig(**validated["agent"])
-    resolved = DiscoveryConfig.from_mapping({
-        "evaluation_budget": agent.discovery_budget,
-        "llm_evaluation_reserve": agent.llm_evaluation_reserve,
-        "refit_policy": agent.refit_policy,
-        "islands": agent.discovery_islands,
-        "use_library": agent.use_knowledge,
-        "task_local_memory_read": agent.task_local_memory,
-        "task_local_memory_write": agent.task_local_memory,
-        "structure_library_topk": agent.task_local_memory_topk,
-        "max_rounds": agent.discovery_rounds,
-        "candidates_per_island": agent.candidates_per_island,
-    })
-    memory = _memory_fixture()
-    local = list(memory["local"])
+def _synthesis_portfolio_check() -> bool:
     from types import SimpleNamespace
     import numpy as np
+    from .agent import _bounded_seed_bank
     engine_fixture = SimpleNamespace(all_results=tuple(
         SimpleNamespace(
             expression=f"x{index}", engine=(
@@ -114,6 +98,31 @@ def run_scientist_closed_loop_gate(config: Mapping[str, Any]) -> dict[str, Any]:
         seed_config, synthesized=(
             {"expression": "x0+x1",
              "source": "llm_evidence_synthesis", "origin": "llm"},))
+    return (
+        seed_audit["synthesis_is_non_destructive"] is True
+        and not any(
+            row["source"] == "llm_evidence_synthesis"
+            for row in seed_rows[:5]))
+
+
+def run_scientist_closed_loop_gate(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate registered wiring without opening any dataset or response."""
+    validated = validate_system_registration(dict(config))
+    agent = DiscoveryAgentConfig(**validated["agent"])
+    resolved = DiscoveryConfig.from_mapping({
+        "evaluation_budget": agent.discovery_budget,
+        "llm_evaluation_reserve": agent.llm_evaluation_reserve,
+        "refit_policy": agent.refit_policy,
+        "islands": agent.discovery_islands,
+        "use_library": agent.use_knowledge,
+        "task_local_memory_read": agent.task_local_memory,
+        "task_local_memory_write": agent.task_local_memory,
+        "structure_library_topk": agent.task_local_memory_topk,
+        "max_rounds": agent.discovery_rounds,
+        "candidates_per_island": agent.candidates_per_island,
+    })
+    memory = _memory_fixture()
+    local = list(memory["local"])
     synthesized, synthesis_audit = compile_evidence_synthesis(
         (SynthesisDirective(
             "UNION_SUPPORTS", ("linear", "nonlinear"),
@@ -140,10 +149,7 @@ def run_scientist_closed_loop_gate(config: Mapping[str, Any]) -> dict[str, Any]:
                 ("linear", "quadratic", "cubic", "quartic",
                  "interactions"))),
         "synthesis_is_non_destructive": (
-            seed_audit["synthesis_is_non_destructive"] is True
-            and not any(
-                row["source"] == "llm_evidence_synthesis"
-                for row in seed_rows[:5])),
+            _synthesis_portfolio_check()),
         "bounded_candidates_per_island": 1 <= resolved.candidates_per_island <= 4,
         "task_local_memory_enabled": (
             resolved.task_local_memory_read
