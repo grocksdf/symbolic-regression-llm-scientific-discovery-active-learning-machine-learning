@@ -321,15 +321,18 @@ def _load_yacht_system_data(registration):
         pieces = raw.split()
         if len(pieces) != 7:
             raise ValueError("registered Yacht row is not seven fields")
-        values = tuple(float(value) for value in pieces)
-        group = _group_id(values[:5])
-        raw_groups.setdefault(group, []).append((index, values))
-        rows.append(values)
+        inputs = tuple(float(value) for value in pieces[:6])
+        if not all(np.isfinite(value) for value in inputs):
+            raise ValueError("registered Yacht input is nonfinite")
+        group = _group_id(inputs[:5])
+        raw_groups.setdefault(group, []).append((index, inputs, pieces[6]))
+        rows.append((group, index, inputs, pieces[6]))
     if len(rows) != gate["row_count"]:
         raise ValueError("Yacht downloaded row identity changed")
     assignments = gate["role_group_commitments"]
     role_rows = {
-        role: [row for group in groups for _, row in raw_groups[group]]
+        role: [(inputs, target) for group in groups
+               for _, inputs, target in raw_groups[group]]
         for role, groups in assignments.items()}
     counts = registration["counts"]
     roles = {}
@@ -346,7 +349,9 @@ def _load_yacht_system_data(registration):
             selected = selected[:counts[role]]
         else:
             selected = selected[:counts[role]]
-        roles[role] = np.asarray(selected, dtype=float)
+        roles[role] = np.asarray(
+            [(*inputs, float(target)) for inputs, target in selected],
+            dtype=float)
     opened = lambda role, data_role: RoleDataset(
         data_role, roles[role][:, :-1], roles[role][:, -1])
     manifest = {
@@ -362,7 +367,9 @@ def _load_yacht_system_data(registration):
             "yacht_hydrodynamics"],
         "scientific_context_role":
             "public-source-metadata-no-observed-values",
-        "heldout_opened": False, "reserved_confirmation_groups_opened": False}
+        "heldout_opened": False, "reserved_confirmation_groups_opened": False,
+        "reserved_confirmation_target_decoded": False,
+        "unused_open_target_decoded": False}
     pool = roles["acquisition_pool"]
     return OpenSystemData(
         SelectionData(
