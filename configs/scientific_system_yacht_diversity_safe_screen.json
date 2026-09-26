@@ -17,7 +17,7 @@
     }
   ],
   "seeds": [
-    2026092603
+    2026092602
   ],
   "agent": {
     "engines": [
@@ -33,7 +33,7 @@
     "engine_retries": 0,
     "cycles": 2,
     "discovery_budget": 48,
-    "random_seed": 2026092603,
+    "random_seed": 2026092602,
     "search_iterations": 12,
     "mcts_frontier_size": 3,
     "mcts_score_folds": 2,
