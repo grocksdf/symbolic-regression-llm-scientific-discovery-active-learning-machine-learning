@@ -491,6 +491,29 @@ def test_cross_round_seed_bank_respects_fixed_deterministic_budget():
         "deterministic_constant_anchor"}
 
 
+def test_evidence_synthesis_cannot_evict_engine_frontier_or_anchors():
+    engine = SimpleNamespace(all_results=tuple(
+        SimpleNamespace(
+            expression=f"x{index}", engine=("polynomial_lasso"
+            if index == 0 else "mcts"), lineage_id=str(index))
+        for index in range(4)))
+    selection = SimpleNamespace(development=SimpleNamespace(
+        X=np.arange(64., dtype=float).reshape(32, 2),
+        y=np.arange(32., dtype=float)))
+    config = DiscoveryAgentConfig(
+        engines=("polynomial_lasso", "mcts"), engine_budget=2,
+        discovery_budget=8, llm_evaluation_reserve=2,
+        discovery_islands=("balanced",))
+    rows, audit = _bounded_seed_bank(
+        engine, (), selection, config,
+        synthesized=({"expression": "x0+x1", "source":
+                      "llm_evidence_synthesis", "origin": "llm"},))
+    assert rows[0]["source"].startswith("engine:")
+    assert not any(
+        row["source"] == "llm_evidence_synthesis" for row in rows[:5])
+    assert audit["synthesis_is_non_destructive"] is True
+
+
 def test_cross_round_survivor_preserves_source_origin_and_lineage():
     survivor = _survivors({"final_topk": [{
         "expression": "x0**2", "source": "llm_round_1",

@@ -172,8 +172,11 @@ def _bounded_seed_bank(
         if match is not None:
             priority.append(match)
     synthesis_rows = [dict(row) for row in synthesized]
+    # Evidence-conditioned synthesis is an additional proposal family.  It
+    # may not evict a registered engine frontier or the deterministic anchors
+    # from the fixed seed budget; this is a task-independent portfolio rule.
     ordered = [
-        *priority, *synthesis_rows, *engine_rows, *previous_rows, *generic]
+        *priority, *engine_rows, *synthesis_rows, *previous_rows, *generic]
     selected, seen = [], set()
     for row in ordered:
         key = str(row["expression"]).replace(" ", "")
@@ -186,6 +189,7 @@ def _bounded_seed_bank(
         "limit": limit, "input_engine_candidates": len(engine_rows),
         "input_previous_survivors": len(previous_rows),
         "input_evidence_synthesis_candidates": len(synthesis_rows),
+        "synthesis_is_non_destructive": True,
         "input_generic_candidates": len(generic), "selected_count": len(selected),
         "candidate_response_accessed": False, "heldout_opened": False}
 

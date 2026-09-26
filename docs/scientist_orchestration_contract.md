@@ -69,6 +69,13 @@ rounds.  Every value is frozen before data access.  A no-LLM ablation receives
 the same engine and candidate-evaluation budget but cannot read or write LLM
 lineage memory because it has no provider proposal phase.
 
+Evidence-conditioned synthesis is a non-destructive portfolio family.  The
+fixed seed compiler preserves one frontier member from every registered engine,
+the previous survivor and the deterministic anchors before admitting synthesized
+lineages.  Synthesis may add candidates within the remaining budget but cannot
+evict those coverage roles.  This is an algorithmic resource invariant, not a
+dataset-specific repair.
+
 ## Inference routing
 
 Finite frozen hypothesis banks use the exact conjugate posterior. An open or
