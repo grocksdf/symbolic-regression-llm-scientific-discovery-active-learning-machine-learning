@@ -34,7 +34,8 @@ from .marginal_influence import (
 )
 from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target
 from .bank_selection import (
-    DIVERSITY_CAPACITY_METHOD, PORTFOLIO_CAPACITY_METHOD,
+    DECISION_RISK_CAPACITY_METHOD, DIVERSITY_CAPACITY_METHOD,
+    PORTFOLIO_CAPACITY_METHOD,
     select_operational_capacity_bank,
 )
 from .source_stacking import (
@@ -269,7 +270,8 @@ def validate_system_registration(config):
             or gate["maximum_candidates"] != 2 * config["measurement_budget"]
             or gate["selection_rule"] not in {
                 "two-fold-safe-half-core-source-stacking-operational-entropy-v3",
-                DIVERSITY_CAPACITY_METHOD, PORTFOLIO_CAPACITY_METHOD}
+                DIVERSITY_CAPACITY_METHOD, PORTFOLIO_CAPACITY_METHOD,
+                DECISION_RISK_CAPACITY_METHOD}
             or gate["source_safety_folds"] != 2
             or gate["source_stacking_baseline"] != "core"
             or gate["source_stacking_dyadic_depth"] != 8
@@ -303,7 +305,8 @@ def _validate_source_stacking_registration(config, gate):
         raise ValueError("invalid source stacking policy")
     expected = ({"two-fold-safe-half-core-source-stacking-operational-entropy-v3"}
         if policy == SOURCE_STACKING_METHOD
-        else {DIVERSITY_CAPACITY_METHOD, PORTFOLIO_CAPACITY_METHOD})
+        else {DIVERSITY_CAPACITY_METHOD, PORTFOLIO_CAPACITY_METHOD,
+              DECISION_RISK_CAPACITY_METHOD})
     if gate["selection_rule"] not in expected:
         raise ValueError(
             "source stacking and capacity selection identities differ")
@@ -455,7 +458,8 @@ def _prepare_hypothesis_bank_viability(
             source_safety_folds=config["hypothesis_bank_gate"]["source_safety_folds"],
             source_stacking_method=config.get(
                 "source_stacking_policy", SOURCE_STACKING_METHOD),
-            selection_method=config["hypothesis_bank_gate"]["selection_rule"])
+            selection_method=config["hypothesis_bank_gate"]["selection_rule"],
+            exact_eig_epsabs=config["hypothesis_bank_gate"]["exact_eig_epsabs"])
         row["candidates"] = list(selected)
         row["source_prior_weights"] = selection["source_prior_weights"]
         row["hypothesis_provenance"] = {

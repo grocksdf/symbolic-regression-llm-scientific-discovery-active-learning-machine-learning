@@ -3,7 +3,8 @@ import numpy as np
 
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.discovery.bank_selection import (
-    PORTFOLIO_CAPACITY_METHOD, select_operational_capacity_bank,
+    DECISION_RISK_CAPACITY_METHOD, PORTFOLIO_CAPACITY_METHOD,
+    _choose_portfolio, select_operational_capacity_bank,
 )
 from hypothesis_mvp.discovery.source_stacking import DIVERSITY_METHOD, source_family
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
@@ -94,3 +95,20 @@ def test_portfolio_capacity_is_variable_cardinality_and_protects_core():
     assert report["selection_method"] == PORTFOLIO_CAPACITY_METHOD
     assert set(report["capacity_excluded_source_families"]) <= {
         "engine:mcts", "engine:sparse_library", "llm"}
+
+
+def test_v6_ranks_certified_decision_risk_before_entropy():
+    high_entropy = (
+        True, (.8, 3, "model-a", "target-a"),
+        {"selected_lower_bound": .01}, float("inf"), ("a",),
+        ("high-entropy",), {}, object())
+    high_decision_value = (
+        True, (.2, 2, "model-b", "target-b"),
+        {"selected_lower_bound": .2}, float("inf"), ("b",),
+        ("high-decision-value",), {}, object())
+    evaluated = [high_entropy, high_decision_value]
+    assert _choose_portfolio(
+        evaluated, PORTFOLIO_CAPACITY_METHOD)[5] == ("high-entropy",)
+    assert _choose_portfolio(
+        evaluated, DECISION_RISK_CAPACITY_METHOD)[5] == (
+            "high-decision-value",)

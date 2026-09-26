@@ -24,6 +24,8 @@ DIVERSITY_CAPACITY_METHOD = (
     "two-fold-safe-diversity-preserving-half-core-operational-entropy-v4")
 PORTFOLIO_CAPACITY_METHOD = (
     "fold-safe-protected-core-variable-cardinality-operational-entropy-v5")
+DECISION_RISK_CAPACITY_METHOD = (
+    "fold-safe-protected-core-certified-decision-risk-lower-bound-v6")
 
 
 def _identity(candidate):
@@ -56,7 +58,8 @@ def _without_role(rows, role):
 
 def _candidate_portfolios(pool, target_size, maximum_candidates,
                           selection_method, available_roles, safety_roles):
-    if selection_method == PORTFOLIO_CAPACITY_METHOD:
+    if selection_method in {
+            PORTFOLIO_CAPACITY_METHOD, DECISION_RISK_CAPACITY_METHOD}:
         sizes = range(min(3, target_size), target_size + 1)
         return [
             tuple(rows)
@@ -151,13 +154,56 @@ class _CapacityEvaluator:
         return audits, certificate
 
 
+def _decision_risk_report(evaluator, rows, source_weights, exact_epsabs):
+    from .system_run import audit_frozen_decision_risk_utility
+    return audit_frozen_decision_risk_utility(
+        rows, evaluator.initial_data, evaluator.action_domain,
+        n_features=evaluator.n_features, prior=evaluator.prior,
+        exploration_identity=evaluator.exploration_identity,
+        coefficient_policy=evaluator.coefficient_policy,
+        measurement_budget=evaluator.measurement_budget,
+        exact_epsabs=exact_epsabs, source_prior_weights=source_weights)
+
+
+def _choose_portfolio(evaluated, selection_method):
+    feasible = [item for item in evaluated if item[0]]
+    ranked = feasible if feasible else evaluated
+    if selection_method == DECISION_RISK_CAPACITY_METHOD:
+        return min(ranked, key=lambda item: (
+            -item[2]["selected_lower_bound"] if feasible else -item[3],
+            -item[1][0], -item[1][1], item[4]))
+    return min(ranked, key=lambda item: (
+        -item[1][0] if feasible else -item[3], -item[1][1], item[4]))
+
+
+def _evaluate_portfolios(candidate_sets, evaluator, selection_method,
+                         exact_eig_epsabs):
+    evaluated = []
+    for rows in candidate_sets:
+        audits, certificate = evaluator.safety(rows)
+        passed = all(audit["passed"] for audit in audits.values())
+        weights = certificate.source_weights if passed else None
+        cap = evaluator.capacity(rows, weights)
+        utility = (
+            _decision_risk_report(
+                evaluator, rows, weights, exact_eig_epsabs)
+            if selection_method == DECISION_RISK_CAPACITY_METHOD else None)
+        margin = min((audit["stacking_weight"] for audit in audits.values()),
+                     default=float("inf"))
+        identity = tuple(sorted(_identity(row) for row in rows))
+        evaluated.append((
+            passed, cap, utility, margin, identity, rows, audits, certificate))
+    return evaluated
+
+
 def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
                                      n_features, prior, exploration_identity,
                                      coefficient_policy, measurement_budget,
                                      maximum_candidates, source_safety_roles=(),
                                      source_safety_folds=2,
                                      source_stacking_method=SOURCE_STACKING_METHOD,
-                                     selection_method=None):
+                                     selection_method=None,
+                                     exact_eig_epsabs=1e-10):
     """Select the highest-entropy bank whose registered sources are predictive-safe.
 
     Safety is a paired two-fold posterior-predictive log score computed only on
@@ -175,7 +221,8 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
             DIVERSITY_CAPACITY_METHOD
             if source_stacking_method == DIVERSITY_METHOD else METHOD)
     if selection_method not in {
-            METHOD, DIVERSITY_CAPACITY_METHOD, PORTFOLIO_CAPACITY_METHOD}:
+            METHOD, DIVERSITY_CAPACITY_METHOD, PORTFOLIO_CAPACITY_METHOD,
+            DECISION_RISK_CAPACITY_METHOD}:
         raise ValueError("unknown operational-capacity selection method")
     if ((source_stacking_method == SOURCE_STACKING_METHOD)
             != (selection_method == METHOD)):
@@ -206,23 +253,10 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
         exploration_identity, coefficient_policy, measurement_budget,
         safety_roles, source_stacking_method)
 
-    evaluated = []
-    for rows in candidate_sets:
-        audits, certificate = evaluator.safety(rows)
-        passed = all(audit["passed"] for audit in audits.values())
-        # A rejected set may collapse to one support family.  Its capacity is
-        # diagnostic under the unchanged finite-bank prior; only admitted sets
-        # are scored under the hierarchical source prior used in production.
-        cap = evaluator.capacity(rows, certificate.source_weights if passed else None)
-        minimum_margin = min((audit["stacking_weight"]
-                              for audit in audits.values()), default=float("inf"))
-        identity = tuple(sorted(_identity(row) for row in rows))
-        evaluated.append((passed, cap, minimum_margin, identity, rows, audits, certificate))
-    feasible = [item for item in evaluated if item[0]]
-    ranked = feasible if feasible else evaluated
-    chosen = min(ranked, key=lambda item: (
-        -item[1][0] if feasible else -item[2], -item[1][1], item[3]))
-    passed, final_score, _, _, selected, audits, certificate = chosen
+    evaluated = _evaluate_portfolios(
+        candidate_sets, evaluator, selection_method, exact_eig_epsabs)
+    chosen = _choose_portfolio(evaluated, selection_method)
+    passed, final_score, utility, _, _, selected, audits, certificate = chosen
     capacity_excluded = _excluded_families(pool, selected)
     return tuple(selected), {
         "schema": SCHEMA,
@@ -230,7 +264,8 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
         "input_support_count": len(pool), "selected_support_count": len(selected),
         "evaluated_capacity_bank_count": len(candidate_sets),
         "maximum_candidates": maximum_candidates,
-        "capacity_is_upper_bound": selection_method == PORTFOLIO_CAPACITY_METHOD,
+        "capacity_is_upper_bound": selection_method in {
+            PORTFOLIO_CAPACITY_METHOD, DECISION_RISK_CAPACITY_METHOD},
         "protected_core_support_count": sum(
             source_family(row) == "core" for row in selected),
         "available_roles": list(available_roles),
@@ -243,6 +278,7 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
         "source_prior_weights": certificate.source_weights,
         "class_entropy_nats": final_score[0], "operational_class_count": final_score[1],
         "model": final_score[2], "target": final_score[3],
+        "decision_risk_utility": utility,
         "initial_development_response_accessed": True,
         "candidate_response_accessed": False,
         "source_arbitration_validation_response_accessed": False,
@@ -253,4 +289,5 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
 
 __all__ = [
     "DIVERSITY_CAPACITY_METHOD", "PORTFOLIO_CAPACITY_METHOD",
+    "DECISION_RISK_CAPACITY_METHOD",
     "select_operational_capacity_bank"]
