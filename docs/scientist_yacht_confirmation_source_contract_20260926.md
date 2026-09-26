@@ -28,3 +28,8 @@ The source candidate Gate performs no download. The next Gate may download the
 official ZIP and verify bytes, seven numeric columns, 308 rows, 22 geometry
 groups and 14 rows per group. It may not publish values or open confirmation
 responses.
+
+During byte/schema inspection, all six input columns may be decoded to assign
+hull groups. The target column is numerically decoded only for development,
+validation and acquisition-pool groups. Target tokens belonging to unused-open
+or reserved-confirmation groups are not numerically decoded or summarized.
