@@ -54,6 +54,26 @@ PUBLIC_SCIENTIFIC_CONTEXT = {
             "https://archive.ics.uci.edu/static/public/243/"
             "yacht+hydrodynamics.zip"),
     },
+    "energy_efficiency": {
+        "task_name": "building_heating_load_law",
+        "task_description": (
+            "Propose falsifiable structural laws for building heating load "
+            "from compactness, envelope geometry, height, orientation and "
+            "glazing design."
+        ),
+        "feature_names": [
+            "relative_compactness", "surface_area", "wall_area", "roof_area",
+            "overall_height", "orientation", "glazing_area",
+            "glazing_area_distribution"],
+        "feature_units": [
+            "dimensionless", "m2", "m2", "m2", "m", "category",
+            "fraction", "category"],
+        "target_name": "heating_load",
+        "target_unit": "kWh_per_m2",
+        "source_url": (
+            "https://archive.ics.uci.edu/static/public/242/"
+            "energy+efficiency.zip"),
+    },
     "ved_fuel_rate": {
         "task_name": "vehicle_instantaneous_fuel_rate_law",
         "task_description": (
@@ -145,18 +165,21 @@ def _ordered(ids, seed):
 
 def validate_data_registration(registration):
     allowed = {"dataset", "source", "split_seed", "counts"}
-    if registration.get("dataset") == "yacht_hydrodynamics":
+    if registration.get("dataset") in {
+            "yacht_hydrodynamics", "energy_efficiency"}:
         allowed |= {"source_registration", "schema_gate"}
     if (set(registration) != allowed
             or registration["dataset"] not in {
-                "yacht_hydrodynamics", "ved_fuel_rate", "uci_airfoil", "uci_ccpp", "uci_gas_turbine_co",
+                "yacht_hydrodynamics", "energy_efficiency", "ved_fuel_rate",
+                "uci_airfoil", "uci_ccpp", "uci_gas_turbine_co",
                 "uci_gas_turbine_nox"}
             or type(registration["split_seed"]) is not int or registration["split_seed"] < 0
             or not isinstance(registration["source"], str) or not Path(registration["source"]).is_absolute()
             or set(registration["counts"]) != set(ROLE_NAMES)
             or any(type(n) is not int or n < 2 for n in registration["counts"].values())):
         raise ValueError("invalid registered open-development roles")
-    if registration["dataset"] == "yacht_hydrodynamics":
+    if registration["dataset"] in {
+            "yacht_hydrodynamics", "energy_efficiency"}:
         for key in ("source_registration", "schema_gate"):
             if (not isinstance(registration[key], str)
                     or not Path(registration[key]).is_absolute()
@@ -382,6 +405,116 @@ def _load_yacht_system_data(registration):
         PoolOracle(pool[:, :-1], pool[:, -1]), manifest)
 
 
+def _energy_efficiency_open_rows(source, selected):
+    """Decode eight inputs and heating load only for registered open rows."""
+    selected = set(selected)
+    values = {}
+
+    class OpenRows(handler.ContentHandler):
+        def __init__(self):
+            self.row = self.column = None
+            self.collect = False
+            self.text = []
+
+        def startElement(self, name, attrs):
+            if name == "row":
+                index = int(attrs["r"]) - 2
+                self.row = index if index in selected else None
+                if self.row is not None:
+                    values[self.row] = [None] * 9
+            elif name == "c" and self.row is not None:
+                letter = attrs["r"].rstrip("0123456789")
+                self.column = "ABCDEFGHI".find(letter)
+                if (attrs.get("t", "n") != "n"
+                        and self.column in range(9)):
+                    raise ValueError(
+                        "registered Energy Efficiency cell is not numeric")
+            elif name == "v" and self.row is not None and self.column in range(9):
+                self.collect = True
+                self.text = []
+
+        def characters(self, content):
+            if self.collect:
+                self.text.append(content)
+
+        def endElement(self, name):
+            if name == "v" and self.collect:
+                values[self.row][self.column] = float("".join(self.text))
+                self.collect = False
+            elif name == "c":
+                self.column = None
+            elif name == "row":
+                self.row = None
+
+    parser = make_parser()
+    parser.setFeature(handler.feature_external_ges, False)
+    parser.setContentHandler(OpenRows())
+    with ZipFile(source) as workbook:
+        with workbook.open("xl/worksheets/sheet1.xml") as stream:
+            parser.parse(stream)
+    if (set(values) != selected
+            or any(any(value is None for value in row)
+                   for row in values.values())):
+        raise ValueError("registered Energy Efficiency open rows are incomplete")
+    return values
+
+
+def _load_energy_efficiency_system_data(registration):
+    source_root = Path(registration["source"])
+    source_config_path = Path(registration["source_registration"])
+    gate_path = Path(registration["schema_gate"])
+    source_config = json.loads(source_config_path.read_text(encoding="utf-8"))
+    gate = json.loads(gate_path.read_text(encoding="utf-8"))
+    if (source_config.get("dataset_id") != "uci_energy_efficiency"
+            or gate.get("passed") is not True
+            or gate.get("reserved_confirmation_target_values_decoded") != 0
+            or gate.get("unused_open_target_values_decoded") != 0
+            or gate.get("sealed_secondary_target_values_decoded") != 0):
+        raise ValueError("Energy Efficiency source Gate is invalid")
+    data_path = source_root / source_config["data_member"]
+    if sha256(data_path.read_bytes()).hexdigest() != gate["data_member_sha256"]:
+        raise ValueError("Energy Efficiency workbook identity changed")
+    role_rows = gate["role_row_indices"]
+    counts = registration["counts"]
+    if any(len(role_rows[role]) != counts[role] for role in ROLE_NAMES):
+        raise ValueError("Energy Efficiency registered role counts changed")
+    selected = {index for role in ROLE_NAMES for index in role_rows[role]}
+    values = _energy_efficiency_open_rows(data_path, selected)
+    arrays = {
+        role: np.asarray([values[index] for index in role_rows[role]], dtype=float)
+        for role in ROLE_NAMES}
+    opened = lambda role, data_role: RoleDataset(
+        data_role, arrays[role][:, :-1], arrays[role][:, -1])
+    manifest = {
+        "schema": "scientific-open-development-data-v1",
+        "dataset": "energy_efficiency", "family": "building_energy",
+        "download_schema_gate_sha256": sha256(gate_path.read_bytes()).hexdigest(),
+        "source_registration_sha256":
+            sha256(source_config_path.read_bytes()).hexdigest(),
+        "data_member_sha256": gate["data_member_sha256"],
+        "split_seed": registration["split_seed"],
+        "registered_counts": counts,
+        "role_row_id_hashes": {
+            role: sha256(json.dumps(role_rows[role]).encode()).hexdigest()
+            for role in ROLE_NAMES},
+        "scientific_context": PUBLIC_SCIENTIFIC_CONTEXT["energy_efficiency"],
+        "scientific_context_role":
+            "public-source-metadata-no-observed-values",
+        "heldout_opened": False,
+        "reserved_confirmation_target_decoded": False,
+        "unused_open_target_decoded": False,
+        "sealed_secondary_target_decoded": False,
+    }
+    pool = arrays["acquisition_pool"]
+    return OpenSystemData(
+        SelectionData(
+            opened("exploration_development", DataRole.DEVELOPMENT),
+            opened("exploration_validation", DataRole.VALIDATION), None, ()),
+        opened("inference_initial", DataRole.DEVELOPMENT),
+        opened("development_evaluation", DataRole.VALIDATION),
+        PoolOracle(pool[:, :-1], pool[:, -1]), manifest)
+
+
 def _airfoil_open_rows(source, selected):
     """Decode only the prospectively registered Airfoil row identities."""
     selected = set(selected)
@@ -406,6 +539,8 @@ def load_registered_system_data(registration):
         return _load_ved_system_data(registration)
     if dataset == "yacht_hydrodynamics":
         return _load_yacht_system_data(registration)
+    if dataset == "energy_efficiency":
+        return _load_energy_efficiency_system_data(registration)
     source = Path(registration["source"])
     spec = REAL_DATASET_SPECS[dataset]
     hashes = {}

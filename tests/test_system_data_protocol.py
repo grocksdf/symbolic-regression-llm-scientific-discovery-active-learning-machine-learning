@@ -100,6 +100,54 @@ def test_airfoil_outer_partition_preserves_sealed_boundary(monkeypatch):
         "feature_names"])
 
 
+def test_energy_efficiency_loader_decodes_only_registered_open_rows(
+        tmp_path):
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    workbook = data_root / "ENB2012_data.xlsx"
+    rows = ['<row r="1"></row>']
+    for index in range(10):
+        cells = "".join(
+            f'<c r="{letter}{index + 2}"><v>{index + column}</v></c>'
+            for column, letter in enumerate("ABCDEFGHI"))
+        cells += f'<c r="J{index + 2}"><v>SEALED_SECONDARY</v></c>'
+        rows.append(f'<row r="{index + 2}">{cells}</row>')
+    with ZipFile(workbook, "w") as archive:
+        archive.writestr(
+            "xl/worksheets/sheet1.xml",
+            "<worksheet><sheetData>" + "".join(rows) +
+            "</sheetData></worksheet>")
+    source_config = {
+        "dataset_id": "uci_energy_efficiency",
+        "data_member": "ENB2012_data.xlsx"}
+    source_path = tmp_path / "source.json"
+    source_path.write_text(json.dumps(source_config), encoding="utf-8")
+    roles = {
+        "exploration_development": [0, 1],
+        "exploration_validation": [2, 3],
+        "inference_initial": [4, 5],
+        "development_evaluation": [6, 7],
+        "acquisition_pool": [8, 9]}
+    gate = {
+        "passed": True,
+        "data_member_sha256": sha256(workbook.read_bytes()).hexdigest(),
+        "role_row_indices": roles,
+        "reserved_confirmation_target_values_decoded": 0,
+        "unused_open_target_values_decoded": 0,
+        "sealed_secondary_target_values_decoded": 0}
+    gate_path = tmp_path / "gate.json"
+    gate_path.write_text(json.dumps(gate), encoding="utf-8")
+    registration = {
+        "dataset": "energy_efficiency", "source": str(data_root),
+        "source_registration": str(source_path),
+        "schema_gate": str(gate_path), "split_seed": 7,
+        "counts": {role: 2 for role in protocol.ROLE_NAMES}}
+    data = protocol.load_registered_system_data(registration)
+    assert data.initial.X.shape == (2, 8)
+    assert data.manifest["reserved_confirmation_target_decoded"] is False
+    assert data.manifest["sealed_secondary_target_decoded"] is False
+
+
 def test_unknown_roles_reject_before_file_access(monkeypatch):
     def forbidden(*args): raise AssertionError("no file access allowed")
     monkeypatch.setattr(protocol, "_verify_hash", forbidden)

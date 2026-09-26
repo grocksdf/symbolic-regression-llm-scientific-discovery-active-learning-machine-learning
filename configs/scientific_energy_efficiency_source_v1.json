@@ -1,0 +1,45 @@
+{
+  "schema": "scientific-energy-efficiency-source-registration-v1",
+  "dataset_id": "uci_energy_efficiency",
+  "official_url": "https://archive.ics.uci.edu/static/public/242/energy+efficiency.zip",
+  "official_doi": "10.24432/C51307",
+  "license": "CC-BY-4.0",
+  "download_sha256": "499441eee27929a4b00417f58fd8c63c9cc14b8a71520cd0dd27fcb626738351",
+  "data_member": "ENB2012_data.xlsx",
+  "published_instances": 768,
+  "published_features": 8,
+  "missing_values": false,
+  "feature_columns": [
+    "relative_compactness",
+    "surface_area",
+    "wall_area",
+    "roof_area",
+    "overall_height",
+    "orientation",
+    "glazing_area",
+    "glazing_area_distribution"
+  ],
+  "target": "heating_load",
+  "sealed_secondary_target": "cooling_load",
+  "split_seed": 20260926,
+  "role_counts": {
+    "exploration_development": 64,
+    "exploration_validation": 64,
+    "inference_initial": 32,
+    "development_evaluation": 64,
+    "acquisition_pool": 16,
+    "reserved_confirmation": 154,
+    "unused_open": 374
+  },
+  "grammar_contract": "pcpi-closed-basis-v1",
+  "github_evidence": [
+    {
+      "repository": "MachineLearning-Nerd/icml26-joint-ard-sparsification",
+      "commit": "424aea05bf907a05de2bc7353b173b10c77c46f6",
+      "path": "repro/src/claim1_datasets.py",
+      "role": "official UCI URL construction, archive SHA-256, member name, row count, feature count and heating-load target parser"
+    }
+  ],
+  "execution_authorized": false,
+  "claim_boundary": "No-download source registration. Published metadata and a pinned public implementation only; no Energy Efficiency data bytes or observed values have been accessed."
+}
