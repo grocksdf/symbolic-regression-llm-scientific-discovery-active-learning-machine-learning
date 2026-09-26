@@ -343,6 +343,8 @@ def _load_yacht_system_data(registration):
             "development" if role in {
                 "exploration_development", "inference_initial",
                 "development_evaluation"} else role)
+        if role == "exploration_validation":
+            source_role = "validation"
         selected = role_rows[source_role]
         if role in {"exploration_development", "inference_initial",
                     "development_evaluation"}:
