@@ -12,12 +12,16 @@ from hypothesis_mvp.data.roles import DataRole, RoleDataset
 
 from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target, structural_terms
 from .source_stacking import (
+    DIVERSITY_METHOD,
+    METHOD as SOURCE_STACKING_METHOD,
     crossfit_source_log_predictive, safe_source_stacking, source_family,
 )
 
 
 SCHEMA = "scientific-predictive-safe-operational-capacity-bank-v2"
 METHOD = "two-fold-safe-half-core-source-stacking-operational-entropy-v3"
+DIVERSITY_CAPACITY_METHOD = (
+    "two-fold-safe-diversity-preserving-half-core-operational-entropy-v4")
 
 
 def _identity(candidate):
@@ -58,6 +62,7 @@ class _CapacityEvaluator:
     coefficient_policy: str
     measurement_budget: int
     safety_roles: tuple[str, ...]
+    source_stacking_method: str = SOURCE_STACKING_METHOD
     target_cache: dict = field(default_factory=dict)
     profile_cache: dict = field(default_factory=dict)
 
@@ -105,7 +110,8 @@ class _CapacityEvaluator:
             coefficient_policy=self.coefficient_policy,
             measurement_budget=self.measurement_budget)
         certificate = safe_source_stacking(
-            profile, folds, sources, baseline_source="core")
+            profile, folds, sources, baseline_source="core",
+            method=self.source_stacking_method)
         audits = {}
         for role in self.safety_roles:
             family = "llm" if role == "origin:llm" else role
@@ -119,7 +125,8 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
                                      n_features, prior, exploration_identity,
                                      coefficient_policy, measurement_budget,
                                      maximum_candidates, source_safety_roles=(),
-                                     source_safety_folds=2):
+                                     source_safety_folds=2,
+                                     source_stacking_method=SOURCE_STACKING_METHOD):
     """Select the highest-entropy bank whose registered sources are predictive-safe.
 
     Safety is a paired two-fold posterior-predictive log score computed only on
@@ -152,7 +159,8 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
         raise ValueError("no capacity bank preserves registered provenance")
 
     evaluator = _CapacityEvaluator(initial_data, action_domain, n_features, prior,
-        exploration_identity, coefficient_policy, measurement_budget, safety_roles)
+        exploration_identity, coefficient_policy, measurement_budget,
+        safety_roles, source_stacking_method)
 
     evaluated = []
     for rows in candidate_sets:
@@ -173,7 +181,9 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
     passed, final_score, _, _, selected, audits, certificate = chosen
     return tuple(selected), {
         "schema": SCHEMA,
-        "selection_method": METHOD,
+        "selection_method": (
+            DIVERSITY_CAPACITY_METHOD
+            if source_stacking_method == DIVERSITY_METHOD else METHOD),
         "input_support_count": len(pool), "selected_support_count": len(selected),
         "evaluated_capacity_bank_count": len(candidate_sets),
         "maximum_candidates": maximum_candidates, "required_roles": list(required),
@@ -192,4 +202,5 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
     }
 
 
-__all__ = ["select_operational_capacity_bank"]
+__all__ = [
+    "DIVERSITY_CAPACITY_METHOD", "select_operational_capacity_bank"]

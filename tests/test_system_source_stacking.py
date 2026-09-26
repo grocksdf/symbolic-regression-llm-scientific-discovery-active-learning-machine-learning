@@ -4,6 +4,7 @@ import pytest
 
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.discovery.source_stacking import (
+    DIVERSITY_METHOD,
     calibrate_source_admission, filter_fold_safe_source_candidates,
     filter_conditionally_complementary_engine_candidates,
     safe_source_stacking, source_family,
@@ -39,6 +40,21 @@ def test_negative_transfer_falls_back_without_hiding_source_scores():
     assert result.passed and result.fallback_to_baseline
     assert result.weights == (1.0, 0.0)
     assert result.unconstrained_weights[0] > result.unconstrained_weights[1]
+
+
+def test_diversity_preserving_policy_balances_safe_optional_sources():
+    baseline = np.full(8, -2.0)
+    first = baseline + np.array([.4, .1, .4, .1, .4, .1, .4, .1])
+    second = baseline + np.array([.1, .4, .1, .4, .1, .4, .1, .4])
+    result = safe_source_stacking(
+        np.column_stack((baseline, first, second)),
+        np.arange(8) % 2, ("core", "engine:mcts", "llm"),
+        baseline_source="core", method=DIVERSITY_METHOD)
+    assert result.method == DIVERSITY_METHOD
+    assert result.dyadic_alpha == .5
+    assert result.source_weights == {
+        "core": .5, "engine:mcts": .25, "llm": .25}
+    assert result.passed and not result.fallback_to_baseline
 
 
 def test_one_fold_gain_cannot_mask_negative_transfer_in_other_fold():

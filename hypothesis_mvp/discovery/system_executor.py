@@ -33,8 +33,11 @@ from .marginal_influence import (
     leave_one_source_out_candidates, predictive_quality_profile,
 )
 from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target
-from .bank_selection import select_operational_capacity_bank
+from .bank_selection import (
+    DIVERSITY_CAPACITY_METHOD, select_operational_capacity_bank,
+)
 from .source_stacking import (
+    DIVERSITY_METHOD, METHOD as SOURCE_STACKING_METHOD,
     calibrate_source_admission, filter_fold_safe_source_candidates,
     filter_conditionally_complementary_engine_candidates, source_family,
 )
@@ -202,7 +205,8 @@ def validate_system_registration(config):
     if (not required <= set(config)
             or set(config) - required > {
                 "targeted_query_policy", "inference_mode", "skill_policy",
-                "probe_skill_policy", "llm_preference_policy"}
+                "probe_skill_policy", "llm_preference_policy",
+                "source_stacking_policy"}
             or config["schema"] != "scientific-system-development-registration-v1"):
         raise ValueError("unknown or incomplete scientific system registration")
     if config.get("targeted_query_policy", "class_eig") not in {
@@ -248,12 +252,6 @@ def validate_system_registration(config):
             or type(agent.scientist_orchestration) is not bool):
         raise ValueError("unmatched or unsupported internal-engine registration")
     _validate_closed_loop_agent_registration(agent)
-    if type(agent.require_explicit_skill_controls) is not bool:
-        raise ValueError("invalid explicit skill-control registration")
-    if (type(agent.typed_evidence_synthesis) is not bool
-            or (agent.typed_evidence_synthesis
-                and not agent.scientist_orchestration)):
-        raise ValueError("invalid typed evidence-synthesis registration")
     if (not agent.discovery_islands or len(set(agent.discovery_islands)) != len(agent.discovery_islands)
             or any(value not in {"balanced", "low_complexity", "nmse", "tail", "novelty"}
                    for value in agent.discovery_islands)):
@@ -268,14 +266,16 @@ def validate_system_registration(config):
             or gate["schema"] != "scientific-hypothesis-bank-gate-v4"
             or gate["exact_eig_epsabs"] != 1e-10
             or gate["maximum_candidates"] != 2 * config["measurement_budget"]
-            or gate["selection_rule"] !=
-                "two-fold-safe-half-core-source-stacking-operational-entropy-v3"
+            or gate["selection_rule"] not in {
+                "two-fold-safe-half-core-source-stacking-operational-entropy-v3",
+                DIVERSITY_CAPACITY_METHOD}
             or gate["source_safety_folds"] != 2
             or gate["source_stacking_baseline"] != "core"
             or gate["source_stacking_dyadic_depth"] != 8
             or gate["source_stacking_max_optional_mass"] != 0.5
             or gate["require_all_variants"] is not True):
         raise ValueError("invalid hypothesis-bank viability registration")
+    _validate_source_stacking_registration(config, gate)
     _validate_influence_registration(config, agent)
     if (config.get("skill_policy") is not None
             and config["marginal_influence_gate"]["schema"]
@@ -296,7 +296,25 @@ def validate_system_registration(config):
     return config
 
 
+def _validate_source_stacking_registration(config, gate):
+    policy = config.get("source_stacking_policy", SOURCE_STACKING_METHOD)
+    if policy not in {SOURCE_STACKING_METHOD, DIVERSITY_METHOD}:
+        raise ValueError("invalid source stacking policy")
+    expected = (
+        DIVERSITY_CAPACITY_METHOD if policy == DIVERSITY_METHOD
+        else "two-fold-safe-half-core-source-stacking-operational-entropy-v3")
+    if gate["selection_rule"] != expected:
+        raise ValueError(
+            "source stacking and capacity selection identities differ")
+
+
 def _validate_closed_loop_agent_registration(agent):
+    if type(agent.require_explicit_skill_controls) is not bool:
+        raise ValueError("invalid explicit skill-control registration")
+    if (type(agent.typed_evidence_synthesis) is not bool
+            or (agent.typed_evidence_synthesis
+                and not agent.scientist_orchestration)):
+        raise ValueError("invalid typed evidence-synthesis registration")
     if type(agent.task_local_memory) is not bool:
         raise ValueError("invalid task-local memory registration")
     if agent.task_local_memory and not agent.scientist_orchestration:
@@ -429,7 +447,9 @@ def _prepare_hypothesis_bank_viability(
             measurement_budget=config["measurement_budget"],
             maximum_candidates=config["hypothesis_bank_gate"]["maximum_candidates"],
             source_safety_roles=(),
-            source_safety_folds=config["hypothesis_bank_gate"]["source_safety_folds"])
+            source_safety_folds=config["hypothesis_bank_gate"]["source_safety_folds"],
+            source_stacking_method=config.get(
+                "source_stacking_policy", SOURCE_STACKING_METHOD))
         row["candidates"] = list(selected)
         row["source_prior_weights"] = selection["source_prior_weights"]
         row["hypothesis_provenance"] = {
@@ -501,7 +521,9 @@ def _prepare_candidate_admission(workspace, exploration, data, config, arbitrati
             exploration_identity=_digest(row),
             coefficient_policy=config["coefficient_policy"],
             measurement_budget=config["measurement_budget"],
-            action_domain=data.pool.X_pool)
+            action_domain=data.pool.X_pool,
+            stacking_method=config.get(
+                "source_stacking_policy", SOURCE_STACKING_METHOD))
         if row["variant"] == "full":
             retained, complementarity = (
                 filter_conditionally_complementary_engine_candidates(

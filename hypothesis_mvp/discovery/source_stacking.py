@@ -19,6 +19,7 @@ from hypothesis_mvp.symbolic.registry import baseline_engine_name
 
 SCHEMA = "scientific-safe-source-stacking-v1"
 METHOD = "oof-log-score-stacking-half-core-reserve-dyadic-fold-safe-v2"
+DIVERSITY_METHOD = "diversity-preserving-half-core-dyadic-fold-safe-v1"
 
 
 def source_family(candidate) -> str:
@@ -61,7 +62,7 @@ class SafeSourceStackingCertificate:
                 or np.any(arrays[3] < 0.0)
                 or self.dyadic_alpha not in {0.0, *(2.0 ** -k for k in range(1, 9))}
                 or self.maximum_optional_mass != 0.5
-                or self.method != METHOD):
+                or self.method not in {METHOD, DIVERSITY_METHOD}):
             raise ValueError("invalid safe source-stacking certificate")
         safe = bool(np.all(arrays[2] + arrays[3] >= 0.0))
         baseline = np.zeros(len(self.sources)); baseline[self.sources.index(self.baseline_source)] = 1.0
@@ -110,7 +111,10 @@ def _stacking_weights(log_density: np.ndarray) -> np.ndarray:
     return weights / np.sum(weights)
 
 
-def safe_source_stacking(log_predictive_density, fold_ids, sources, *, baseline_source):
+def safe_source_stacking(
+    log_predictive_density, fold_ids, sources, *, baseline_source,
+    method=METHOD,
+):
     """Stack predictive sources and certify non-inferiority on every fold."""
     values = np.asarray(log_predictive_density, dtype=float)
     folds = np.asarray(fold_ids)
@@ -120,8 +124,18 @@ def safe_source_stacking(log_predictive_density, fold_ids, sources, *, baseline_
             or len(np.unique(folds)) < 2 or any(np.sum(folds == fold) < 2 for fold in np.unique(folds))
             or len(set(names)) != len(names) or baseline_source not in names):
         raise ValueError("invalid out-of-fold source predictive profile")
-    unconstrained = _stacking_weights(values)
     baseline = np.zeros(len(names)); baseline[names.index(baseline_source)] = 1.0
+    if method == METHOD:
+        unconstrained = _stacking_weights(values)
+    elif method == DIVERSITY_METHOD:
+        optional = [index for index, name in enumerate(names)
+                    if name != baseline_source]
+        unconstrained = baseline.copy()
+        if optional:
+            unconstrained[:] = 0.0
+            unconstrained[optional] = 1.0 / len(optional)
+    else:
+        raise ValueError("unknown source stacking method")
     chosen = baseline.copy(); chosen_alpha = 0.0; chosen_gains = None; chosen_tolerances = None
     # At least half of the production prior remains on the registered core.
     # This fixed safeguard prevents a finite calibration sample from replacing
@@ -150,7 +164,8 @@ def safe_source_stacking(log_predictive_density, fold_ids, sources, *, baseline_
         tuple(float(value) for value in unconstrained),
         tuple(float(value) for value in chosen), chosen_alpha,
         tuple(chosen_gains), tuple(chosen_tolerances), True,
-        bool(np.allclose(chosen, baseline, rtol=0.0, atol=2e-12)), 0.5)
+        bool(np.allclose(chosen, baseline, rtol=0.0, atol=2e-12)), 0.5,
+        method)
 
 
 def arbitration_source_log_predictive(candidates, initial_data, arbitration, *,
@@ -199,7 +214,10 @@ def arbitration_source_log_predictive(candidates, initial_data, arbitration, *,
     return profile, np.arange(len(arbitration.X)) % 2, families
 
 
-def calibrate_source_admission(candidates, initial_data, arbitration, **kwargs):
+def calibrate_source_admission(
+    candidates, initial_data, arbitration, *,
+    stacking_method=METHOD, **kwargs,
+):
     """Return a fold-safe source prior and per-source admission certificates."""
     values, folds, families = arbitration_source_log_predictive(
         candidates, initial_data, arbitration, **kwargs)
@@ -220,7 +238,8 @@ def calibrate_source_admission(candidates, initial_data, arbitration, **kwargs):
         for gain, tolerance in zip(*diagnostics[family])))
     indices = [families.index(family) for family in eligible]
     admitted_certificate = safe_source_stacking(
-        values[:, indices], folds, eligible, baseline_source="core")
+        values[:, indices], folds, eligible, baseline_source="core",
+        method=stacking_method)
     admitted_weights = admitted_certificate.source_weights
     weights = tuple(float(admitted_weights.get(family, 0.0)) for family in families)
     unconstrained_map = dict(zip(admitted_certificate.sources,
@@ -233,7 +252,8 @@ def calibrate_source_admission(candidates, initial_data, arbitration, **kwargs):
         admitted_certificate.fold_numerical_tolerances,
         admitted_certificate.passed,
         admitted_certificate.fallback_to_baseline,
-        admitted_certificate.maximum_optional_mass)
+        admitted_certificate.maximum_optional_mass,
+        admitted_certificate.method)
     sources = {}
     for family in families:
         gains, tolerances = diagnostics[family]
@@ -465,6 +485,7 @@ def crossfit_source_log_predictive(candidates, initial_data, action_domain, *,
 
 __all__ = ["SafeSourceStackingCertificate", "arbitration_source_log_predictive",
            "calibrate_source_admission", "filter_fold_safe_source_candidates",
+           "DIVERSITY_METHOD",
            "filter_conditionally_complementary_engine_candidates",
            "crossfit_source_log_predictive",
            "safe_source_stacking", "source_family"]
