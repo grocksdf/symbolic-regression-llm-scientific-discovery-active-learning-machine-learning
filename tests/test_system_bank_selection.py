@@ -1,10 +1,13 @@
 """Response-free operational-capacity bank correctness fixtures."""
+from types import SimpleNamespace
+
 import numpy as np
 
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.discovery.bank_selection import (
     DECISION_RISK_CAPACITY_METHOD, PORTFOLIO_CAPACITY_METHOD,
-    _choose_portfolio, select_operational_capacity_bank,
+    _choose_portfolio, _evaluate_portfolios,
+    select_operational_capacity_bank,
 )
 from hypothesis_mvp.discovery.source_stacking import DIVERSITY_METHOD, source_family
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
@@ -112,3 +115,33 @@ def test_v6_ranks_certified_decision_risk_before_entropy():
     assert _choose_portfolio(
         evaluated, DECISION_RISK_CAPACITY_METHOD)[5] == (
             "high-decision-value",)
+
+
+def test_v6_branch_and_bound_matches_exhaustive_ranking():
+    rows = [
+        ({"expression": "x0", "source": "anchor:a"},),
+        ({"expression": "x0**2", "source": "anchor:b"},),
+        ({"expression": "x0**3", "source": "anchor:c"},),
+    ]
+
+    class Evaluator:
+        risks = {"x0": .5, "x0**2": .3, "x0**3": .1}
+        lowers = {"x0": .4, "x0**2": .2, "x0**3": .05}
+
+        def safety(self, selected):
+            return {}, SimpleNamespace(source_weights={"core": 1.0})
+
+        def capacity(self, selected, weights):
+            expression = selected[0]["expression"]
+            return (.2, 2, expression, expression, self.risks[expression])
+
+        def decision_risk(self, selected, weights, exact_epsabs):
+            return {"selected_lower_bound":
+                    self.lowers[selected[0]["expression"]]}
+
+    evaluated, exact_count, pruned_count = _evaluate_portfolios(
+        rows, Evaluator(), DECISION_RISK_CAPACITY_METHOD, 1e-10)
+    chosen = _choose_portfolio(evaluated, DECISION_RISK_CAPACITY_METHOD)
+    assert chosen[5][0]["expression"] == "x0"
+    assert exact_count == 1 and pruned_count == 2
+    assert sum(item[2]["evaluated"] for item in evaluated) == 1

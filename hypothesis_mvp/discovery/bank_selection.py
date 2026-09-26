@@ -115,8 +115,18 @@ class _CapacityEvaluator:
 
     def capacity(self, rows, source_weights):
         model, frozen = self.target(rows, self.initial_data, source_weights)
+        probabilities = np.asarray(
+            frozen.partition.class_probabilities, dtype=float)
         return (float(frozen.partition.entropy), len(frozen.partition.class_ids),
-                model.stable_hash, frozen.stable_hash)
+                model.stable_hash, frozen.stable_hash,
+                float(1.0 - np.max(probabilities)))
+
+    def decision_risk(self, rows, source_weights, exact_epsabs):
+        from .system_run import audit_decision_risk_target
+        model, frozen = self.target(
+            rows, self.initial_data, source_weights)
+        return audit_decision_risk_target(
+            model, frozen, self.action_domain, exact_epsabs)
 
     def crossfit_profile(self, rows):
         key = tuple(sorted(_identity(row) for row in rows))
@@ -154,17 +164,6 @@ class _CapacityEvaluator:
         return audits, certificate
 
 
-def _decision_risk_report(evaluator, rows, source_weights, exact_epsabs):
-    from .system_run import audit_frozen_decision_risk_utility
-    return audit_frozen_decision_risk_utility(
-        rows, evaluator.initial_data, evaluator.action_domain,
-        n_features=evaluator.n_features, prior=evaluator.prior,
-        exploration_identity=evaluator.exploration_identity,
-        coefficient_policy=evaluator.coefficient_policy,
-        measurement_budget=evaluator.measurement_budget,
-        exact_epsabs=exact_epsabs, source_prior_weights=source_weights)
-
-
 def _choose_portfolio(evaluated, selection_method):
     feasible = [item for item in evaluated if item[0]]
     ranked = feasible if feasible else evaluated
@@ -184,16 +183,39 @@ def _evaluate_portfolios(candidate_sets, evaluator, selection_method,
         passed = all(audit["passed"] for audit in audits.values())
         weights = certificate.source_weights if passed else None
         cap = evaluator.capacity(rows, weights)
-        utility = (
-            _decision_risk_report(
-                evaluator, rows, weights, exact_eig_epsabs)
-            if selection_method == DECISION_RISK_CAPACITY_METHOD else None)
         margin = min((audit["stacking_weight"] for audit in audits.values()),
                      default=float("inf"))
         identity = tuple(sorted(_identity(row) for row in rows))
         evaluated.append((
-            passed, cap, utility, margin, identity, rows, audits, certificate))
-    return evaluated
+            passed, cap, None, margin, identity, rows, audits, certificate))
+    evaluated_count = pruned_count = 0
+    if selection_method == DECISION_RISK_CAPACITY_METHOD:
+        best_lower = -1.0
+        order = sorted(
+            (index for index, item in enumerate(evaluated) if item[0]),
+            key=lambda index: (-evaluated[index][1][4],
+                               -evaluated[index][1][0],
+                               evaluated[index][4]))
+        for index in order:
+            item = evaluated[index]
+            if item[1][4] <= best_lower:
+                utility = {
+                    "evaluated": False,
+                    "pruned_by_prior_bayes_risk_upper_bound": True,
+                    "prior_bayes_risk_upper_bound": item[1][4],
+                    "selected_lower_bound": -1.0}
+                pruned_count += 1
+            else:
+                utility = evaluator.decision_risk(
+                    item[5], item[7].source_weights, exact_eig_epsabs)
+                utility["evaluated"] = True
+                utility["pruned_by_prior_bayes_risk_upper_bound"] = False
+                utility["prior_bayes_risk_upper_bound"] = item[1][4]
+                best_lower = max(
+                    best_lower, float(utility["selected_lower_bound"]))
+                evaluated_count += 1
+            evaluated[index] = (*item[:2], utility, *item[3:])
+    return evaluated, evaluated_count, pruned_count
 
 
 def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
@@ -253,7 +275,7 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
         exploration_identity, coefficient_policy, measurement_budget,
         safety_roles, source_stacking_method)
 
-    evaluated = _evaluate_portfolios(
+    evaluated, utility_evaluated_count, utility_pruned_count = _evaluate_portfolios(
         candidate_sets, evaluator, selection_method, exact_eig_epsabs)
     chosen = _choose_portfolio(evaluated, selection_method)
     passed, final_score, utility, _, _, selected, audits, certificate = chosen
@@ -279,6 +301,10 @@ def select_operational_capacity_bank(candidates, initial_data, action_domain, *,
         "class_entropy_nats": final_score[0], "operational_class_count": final_score[1],
         "model": final_score[2], "target": final_score[3],
         "decision_risk_utility": utility,
+        "decision_risk_utility_evaluated_portfolio_count":
+            utility_evaluated_count,
+        "decision_risk_utility_pruned_portfolio_count":
+            utility_pruned_count,
         "initial_development_response_accessed": True,
         "candidate_response_accessed": False,
         "source_arbitration_validation_response_accessed": False,

@@ -82,16 +82,10 @@ def audit_frozen_hypothesis_bank(candidates, initial_data, actions, *, n_feature
     }
 
 
-def audit_frozen_decision_risk_utility(candidates, initial_data, actions, *, n_features,
-                                       prior, exploration_identity, coefficient_policy,
-                                       measurement_budget, exact_epsabs,
-                                       source_prior_weights=None):
-    """Certify a nontrivial initial-prefix decision-risk utility without responses."""
+def audit_decision_risk_target(model, target, actions, exact_epsabs):
+    """Certify decision-risk utility for one already-frozen target."""
     if exact_epsabs != EXACT_CLASS_EIG_EPSABS:
         raise ValueError("decision-risk Gate must match registered absolute tolerance")
-    model, target = _freeze_comparison(
-        candidates, n_features, prior, exploration_identity, coefficient_policy,
-        initial_data, actions, measurement_budget, source_prior_weights)
     engine = model.engine(target.model_identity)
     components = predictive_components_for_partition(
         engine, target.initial_posterior, target.partition, actions)
@@ -123,6 +117,17 @@ def audit_frozen_decision_risk_utility(candidates, initial_data, actions, *, n_f
         "passed": all(decisions.values()), "candidate_response_accessed": False,
         "heldout_opened": False,
     }
+
+
+def audit_frozen_decision_risk_utility(candidates, initial_data, actions, *, n_features,
+                                       prior, exploration_identity, coefficient_policy,
+                                       measurement_budget, exact_epsabs,
+                                       source_prior_weights=None):
+    """Certify a nontrivial initial-prefix decision-risk utility without responses."""
+    model, target = _freeze_comparison(
+        candidates, n_features, prior, exploration_identity, coefficient_policy,
+        initial_data, actions, measurement_budget, source_prior_weights)
+    return audit_decision_risk_target(model, target, actions, exact_epsabs)
 def _execute_policy(root, model, target, actions, controls, source_identity,
                     policy, random_seed, pool, ids, evaluation):
     transaction = DiscoveryTransaction(root, model, target, actions,

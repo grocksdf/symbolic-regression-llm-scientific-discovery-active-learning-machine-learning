@@ -6,6 +6,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -13,7 +14,7 @@ if str(ROOT) not in sys.path:
 
 from hypothesis_mvp.discovery.bank_selection import (
     DECISION_RISK_CAPACITY_METHOD, PORTFOLIO_CAPACITY_METHOD,
-    _choose_portfolio,
+    _choose_portfolio, _evaluate_portfolios,
 )
 from hypothesis_mvp.hypotheses.source_identity import verify_clean_git_source
 from hypothesis_mvp.pcpi.discovery_transaction import _publish
@@ -25,6 +26,33 @@ def _item(name, *, safe=True, entropy=0.0, classes=2, lower=0.0, margin=0.0):
         {"selected_lower_bound": lower}, margin, (name,), (name,), {}, object())
 
 
+def _branch_and_bound_fixture():
+    rows = [
+        ({"expression": "x0", "source": "anchor:a"},),
+        ({"expression": "x0**2", "source": "anchor:b"},),
+        ({"expression": "x0**3", "source": "anchor:c"},)]
+
+    class Evaluator:
+        risks = {"x0": .5, "x0**2": .3, "x0**3": .1}
+        lowers = {"x0": .4, "x0**2": .2, "x0**3": .05}
+
+        def safety(self, selected):
+            return {}, SimpleNamespace(source_weights={"core": 1.0})
+
+        def capacity(self, selected, weights):
+            expression = selected[0]["expression"]
+            return (.2, 2, expression, expression, self.risks[expression])
+
+        def decision_risk(self, selected, weights, exact_epsabs):
+            return {"selected_lower_bound":
+                    self.lowers[selected[0]["expression"]]}
+
+    evaluated, exact_count, pruned_count = _evaluate_portfolios(
+        rows, Evaluator(), DECISION_RISK_CAPACITY_METHOD, 1e-10)
+    chosen = _choose_portfolio(evaluated, DECISION_RISK_CAPACITY_METHOD)
+    return chosen[5][0]["expression"], exact_count, pruned_count
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path)
@@ -34,6 +62,7 @@ def main(argv=None) -> int:
     unsafe_bank = _item(
         "unsafe", safe=False, entropy=2., classes=5, lower=.8, margin=-.1)
     tie_risk = _item("tie-risk", entropy=.4, classes=3, lower=.2)
+    branch_choice, exact_count, pruned_count = _branch_and_bound_fixture()
     decisions = {
         "v5_prefers_entropy":
             _choose_portfolio(
@@ -51,9 +80,13 @@ def main(argv=None) -> int:
             _choose_portfolio(
                 [risk_bank, tie_risk], DECISION_RISK_CAPACITY_METHOD)[5]
             == ("tie-risk",),
+        "bayes_risk_upper_bound_preserves_exact_choice":
+            branch_choice == "x0",
+        "branch_and_bound_reduces_exact_integrals":
+            exact_count == 1 and pruned_count == 2,
     }
     result = {
-        "schema": "scientific-decision-risk-aligned-portfolio-gate-v1",
+        "schema": "scientific-decision-risk-aligned-portfolio-gate-v2",
         "method": DECISION_RISK_CAPACITY_METHOD,
         "decisions": decisions,
         "passed": all(decisions.values()),
