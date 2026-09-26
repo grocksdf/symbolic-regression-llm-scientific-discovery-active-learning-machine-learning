@@ -1,0 +1,60 @@
+{
+  "schema": "scientific-yacht-confirmation-source-registration-v1",
+  "dataset_id": "uci_yacht_hydrodynamics",
+  "official_url": "https://archive.ics.uci.edu/static/public/243/yacht+hydrodynamics.zip",
+  "official_doi": "10.24432/C5XG7R",
+  "license": "CC-BY-4.0",
+  "download_md5": "4e6727f462779e2d396e8f7d2ddb79a3",
+  "published_instances": 308,
+  "published_features": 6,
+  "missing_values": false,
+  "observation_type": "Delft systematic yacht hull series resistance experiment",
+  "columns": [
+    "longitudinal_center_of_buoyancy",
+    "prismatic_coefficient",
+    "length_displacement_ratio",
+    "beam_draught_ratio",
+    "length_beam_ratio",
+    "froude_number",
+    "residuary_resistance"
+  ],
+  "hull_group_columns": [
+    "longitudinal_center_of_buoyancy",
+    "prismatic_coefficient",
+    "length_displacement_ratio",
+    "beam_draught_ratio",
+    "length_beam_ratio"
+  ],
+  "speed_column": "froude_number",
+  "target": "residuary_resistance",
+  "group_split": {
+    "development": 8,
+    "validation": 4,
+    "acquisition_pool": 2,
+    "unused_open": 3,
+    "reserved_confirmation": 5
+  },
+  "grammar_contract": "pcpi-closed-basis-v1",
+  "github_evidence": [
+    {
+      "repository": "torch-uncertainty/torch-uncertainty",
+      "commit": "3f82fe5d15a7bf877a821731baadef1e4731c31d",
+      "path": "src/torch_uncertainty/datasets/regression/tabular/yacht.py",
+      "role": "official UCI ZIP URL, filename, parser and MD5"
+    },
+    {
+      "repository": "GPflow/GPflow",
+      "commit": "7c294618e9ea721e62fbd5449971c43d02107ab4",
+      "path": "benchmark/datasets.py",
+      "role": "independent REAL_DATA REGRESSION classification and numeric parser"
+    },
+    {
+      "repository": "SkafteNicki/py_uci",
+      "commit": "cc66a43711b66a93fdd903cc1cfb1b885e6bff12",
+      "path": "py_uci/datasets/yacht_hydrodynamics.py",
+      "role": "independent seven-column semantic identity"
+    }
+  ],
+  "execution_authorized": false,
+  "claim_boundary": "No-download source candidate registration. Published metadata and pinned implementations only; no Yacht data bytes or values have been accessed."
+}
