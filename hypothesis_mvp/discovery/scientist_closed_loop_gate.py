@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Any, Mapping
 
 from .agent import DiscoveryAgentConfig
+from .agent import _bounded_seed_bank
 from .contracts import DiscoveryConfig, LineageStep
 from .evidence_synthesis import compile_evidence_synthesis
 from .knowledge_runtime import KnowledgeRuntime
@@ -93,6 +94,26 @@ def run_scientist_closed_loop_gate(config: Mapping[str, Any]) -> dict[str, Any]:
     })
     memory = _memory_fixture()
     local = list(memory["local"])
+    from types import SimpleNamespace
+    import numpy as np
+    engine_fixture = SimpleNamespace(all_results=tuple(
+        SimpleNamespace(
+            expression=f"x{index}", engine=(
+                "polynomial_lasso" if index == 0 else "mcts"),
+            lineage_id=str(index))
+        for index in range(4)))
+    seed_config = DiscoveryAgentConfig(
+        engines=("polynomial_lasso", "mcts"), engine_budget=2,
+        discovery_budget=8, llm_evaluation_reserve=2,
+        discovery_islands=("balanced",))
+    seed_rows, seed_audit = _bounded_seed_bank(
+        engine_fixture, (), SimpleNamespace(
+            development=SimpleNamespace(
+                X=np.arange(64., dtype=float).reshape(32, 2),
+                y=np.arange(32., dtype=float))),
+        seed_config, synthesized=(
+            {"expression": "x0+x1",
+             "source": "llm_evidence_synthesis", "origin": "llm"},))
     synthesized, synthesis_audit = compile_evidence_synthesis(
         (SynthesisDirective(
             "UNION_SUPPORTS", ("linear", "nonlinear"),
@@ -118,6 +139,11 @@ def run_scientist_closed_loop_gate(config: Mapping[str, Any]) -> dict[str, Any]:
                 ("interactions",),
                 ("linear", "quadratic", "cubic", "quartic",
                  "interactions"))),
+        "synthesis_is_non_destructive": (
+            seed_audit["synthesis_is_non_destructive"] is True
+            and not any(
+                row["source"] == "llm_evidence_synthesis"
+                for row in seed_rows[:5])),
         "bounded_candidates_per_island": 1 <= resolved.candidates_per_island <= 4,
         "task_local_memory_enabled": (
             resolved.task_local_memory_read
