@@ -1,0 +1,11 @@
+{
+  "schema": "scientific-ved-confirmation-eligibility-resolution-v1",
+  "source_gate": "D:/01/666/outputs/scientific_ved_confirmation_source_gate_r1_20260925/VED_SOURCE_GATE.json",
+  "source_gate_sha256": "2674995518694e7147acb646f0d17aa6647f07da1fd365adeb3c0ec3eb98be33",
+  "integration_gate": "D:/01/666/outputs/scientific_ved_confirmation_integration_gate_r1_20260925/VED_CONFIRMATION_INTEGRATION_GATE.json",
+  "integration_gate_sha256": "5a3b1f3dc54ef7c18fb24a0d19453a948a5d3054af664f8c675030db07c61126",
+  "availability_audit": "D:/01/666/outputs/scientific_ved_fuel_feature_availability_20260926/VED_FUEL_FEATURE_AVAILABILITY.json",
+  "availability_audit_sha256": "9542ad9ff5e096d74c424afa409a1b96d9ae88ea407c5028d1b2063183cd3363",
+  "execution_authorized": false,
+  "claim_boundary": "Artifact-only data-eligibility resolution. No target, feature set, week, threshold or method may be changed in response to this audit."
+}

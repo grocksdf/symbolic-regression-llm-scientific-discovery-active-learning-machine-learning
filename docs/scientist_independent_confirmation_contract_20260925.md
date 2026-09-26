@@ -23,3 +23,15 @@ Consequently no current real execution is authorized. Confirmation remains
 blocked until an untouched real-data family compatible with the frozen method
 is registered, or until a new method is developed and evaluated under a new
 claim rather than this confirmation contract.
+
+## VED eligibility resolution
+
+VED subsequently passed archive, extractor, schema and loader-correctness
+Gates. A user-only missingness audit then found zero jointly complete rows for
+Fuel Rate and every preregistered nested feature set in all three open weeks.
+No observation values or value statistics were retained and the reserved
+confirmation member stayed closed.
+
+VED Fuel Rate is therefore ineligible for this frozen confirmation. Changing
+the target, searching arbitrary feature subsets or replacing weeks after this
+audit is not authorized under the confirmation claim.
