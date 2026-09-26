@@ -521,9 +521,7 @@ def _prepare_candidate_admission(workspace, exploration, data, config, arbitrati
             exploration_identity=_digest(row),
             coefficient_policy=config["coefficient_policy"],
             measurement_budget=config["measurement_budget"],
-            action_domain=data.pool.X_pool,
-            stacking_method=config.get(
-                "source_stacking_policy", SOURCE_STACKING_METHOD))
+            action_domain=data.pool.X_pool)
         if row["variant"] == "full":
             retained, complementarity = (
                 filter_conditionally_complementary_engine_candidates(
@@ -604,7 +602,9 @@ def _prepare_source_admission(workspace, exploration, data, config, arbitration)
             exploration_identity=_digest(row),
             coefficient_policy=config["coefficient_policy"],
             measurement_budget=config["measurement_budget"],
-            action_domain=data.pool.X_pool)
+            action_domain=data.pool.X_pool,
+            stacking_method=config.get(
+                "source_stacking_policy", SOURCE_STACKING_METHOD))
         row["source_prior_weights"] = certificate.source_weights
         variant = row["variant"]
         required = ({
