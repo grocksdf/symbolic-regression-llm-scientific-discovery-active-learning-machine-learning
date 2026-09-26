@@ -586,6 +586,38 @@ def _split_source_arbitration(evaluation, fraction):
     return arbitration, reporting
 
 
+def _supplement_rejected_sources(
+        sources, rejected, candidate_report, capacity_excluded):
+    for name in rejected - set(sources):
+        relevant, certificate_stage = _final_candidate_family_certificates(
+            candidate_report, name)
+        safe = bool(relevant and all(
+            item.get("admitted") is False and (
+                item.get("negative_transfer_certified") is True
+                or item.get("redundant_support_certified") is True)
+            for item in relevant))
+        if safe:
+            sources[name] = {"weight": 0.0, "admitted": False,
+                "fold_log_score_gains_vs_core": [],
+                "fold_numerical_tolerances": [],
+                "negative_transfer_certified": bool(all(
+                    item.get("negative_transfer_certified") is True
+                    for item in relevant)),
+                "redundant_support_certified": bool(any(
+                    item.get("redundant_support_certified") is True
+                    for item in relevant)),
+                "certificate_stage": certificate_stage,
+                "candidatewise_safe_rejection_certified": True}
+        elif name in capacity_excluded:
+            sources[name] = {"weight": 0.0, "admitted": False,
+                "fold_log_score_gains_vs_core": [],
+                "fold_numerical_tolerances": [],
+                "negative_transfer_certified": False,
+                "redundant_support_certified": False,
+                "certificate_stage": "operational-capacity-selection",
+                "capacity_pruned": True}
+
+
 def _renormalized_source_weights(weights, candidates):
     """Condition one frozen hierarchical prior on sources retained by an ablation."""
     available = {source_family(row) for row in candidates}
@@ -621,27 +653,11 @@ def _prepare_source_admission(workspace, exploration, data, config, arbitration)
             if variant == "full" else set())
         rejected = set(gate["rejectable_contributions"]) if variant == "full" else set()
         candidate_report = candidate_family["variants"][variant]
-        for name in rejected - set(sources):
-            relevant, certificate_stage = (
-                _final_candidate_family_certificates(
-                    candidate_report, name))
-            safe = bool(relevant and all(
-                item.get("admitted") is False and (
-                    item.get("negative_transfer_certified") is True
-                    or item.get("redundant_support_certified") is True)
-                for item in relevant))
-            if safe:
-                sources[name] = {"weight": 0.0, "admitted": False,
-                    "fold_log_score_gains_vs_core": [],
-                    "fold_numerical_tolerances": [],
-                    "negative_transfer_certified": bool(all(
-                        item.get("negative_transfer_certified") is True
-                        for item in relevant)),
-                    "redundant_support_certified": bool(any(
-                        item.get("redundant_support_certified") is True
-                        for item in relevant)),
-                    "certificate_stage": certificate_stage,
-                    "candidatewise_safe_rejection_certified": True}
+        capacity_excluded = set(row.get("hypothesis_provenance", {}).get(
+            "operational_capacity_selection", {}).get(
+                "capacity_excluded_source_families", ()))
+        _supplement_rejected_sources(
+            sources, rejected, candidate_report, capacity_excluded)
         decisions = {
             "core_reserve_satisfied": bool(
                 certificate.source_weights.get("core", 0.0) >= 0.5 - 2e-12),
@@ -652,6 +668,7 @@ def _prepare_source_admission(workspace, exploration, data, config, arbitration)
                 or sources.get(name, {}).get("negative_transfer_certified")
                 or sources.get(name, {}).get(
                     "candidatewise_safe_rejection_certified")
+                or sources.get(name, {}).get("capacity_pruned")
                 for name in rejected),
         }
         report = {"schema": "scientific-independent-sourcewise-admission-v2",
@@ -708,11 +725,14 @@ def _bind_source_admission_to_influence(report, admission):
         if not source["admitted"]:
             comparison["pre_admission_influence_passed"] = comparison["passed"]
             comparison["accepted_contribution_role"] = (
-                "rejected-safe-before-influence")
+                "capacity-pruned-before-influence"
+                if source.get("capacity_pruned")
+                else "rejected-safe-before-influence")
             comparison["passed"] = bool(source["weight"] <= 2e-12
                 and (source.get("negative_transfer_certified")
                      or source.get("redundant_support_certified")
-                     or source.get("candidatewise_safe_rejection_certified")))
+                     or source.get("candidatewise_safe_rejection_certified")
+                     or source.get("capacity_pruned")))
     report["schema"] = "scientific-source-admission-and-influence-family-gate-v1"
     report["passed"] = all(row["passed"] for row in report["comparisons"].values())
     report["source_admission_identity"] = _digest(full)

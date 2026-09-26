@@ -403,6 +403,20 @@ def test_full_composition_accepts_nonrequired_capacity_pruning():
     assert detail["passed"] is True
 
 
+def test_capacity_pruned_source_is_safe_for_downstream_influence():
+    report = {"comparisons": {"engine:sparse_library": {
+        "passed": False}}}
+    admission = {"variants": {"full": {"sources": {
+        "engine:sparse_library": {
+            "weight": 0.0, "admitted": False,
+            "capacity_pruned": True}}}}}
+    executor._bind_source_admission_to_influence(report, admission)
+    comparison = report["comparisons"]["engine:sparse_library"]
+    assert comparison["passed"] is True
+    assert comparison["accepted_contribution_role"] == (
+        "capacity-pruned-before-influence")
+
+
 def test_full_composition_audits_multiple_optional_engine_families():
     candidates = [
         {"source": "engine:polynomial_lasso", "origin": "deterministic"},
