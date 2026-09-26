@@ -104,6 +104,31 @@ def audit_ved_stream_completeness(
     }
 
 
+def audit_ved_feature_set_completeness(
+    lines: Iterable[str], *, feature_sets: Mapping[str, Sequence[str]],
+    target: str,
+) -> dict:
+    """Count complete rows for a frozen nested feature hierarchy."""
+    reader = csv.DictReader(lines)
+    required = {target, *(
+        feature for features in feature_sets.values() for feature in features)}
+    if reader.fieldnames is None or not required <= set(reader.fieldnames):
+        raise ValueError("VED stream is missing a registered hierarchy column")
+    counts = {name: 0 for name in feature_sets}
+    total = 0
+    for row in reader:
+        total += 1
+        for name, features in feature_sets.items():
+            if _numeric_row(row, (*features, target)) is not None:
+                counts[name] += 1
+    return {
+        "total_row_count": total,
+        "complete_row_count_by_feature_set": counts,
+        "observed_values_retained": False,
+        "observed_value_statistics_computed": False,
+    }
+
+
 def assert_member_authorized(
     member: str, open_members: Mapping[str, str],
     reserved_confirmation_member_sha256: str,
@@ -203,7 +228,8 @@ def run_ved_loader_correctness_gate() -> dict:
 
 
 __all__ = [
-    "assert_member_authorized", "audit_ved_stream_completeness",
+    "assert_member_authorized", "audit_ved_feature_set_completeness",
+    "audit_ved_stream_completeness",
     "run_ved_loader_correctness_gate", "select_ved_rows",
     "stream_ved_archive_member",
 ]
