@@ -23,7 +23,23 @@ def _case(
     full_v = viability["variants"]["full"]
     no_v = viability["variants"]["no_llm"]
     full_a = admission["variants"]["full"]
-    llm = full_a["sources"].get("llm", {})
+    source_rows = full_a.get("sources", {})
+    llm = source_rows.get("llm", {})
+    if not llm:
+        llm_rows = [
+            row for row in full_a.get("candidate_certificates", [])
+            if row.get("family") == "llm"]
+        admitted = [row for row in llm_rows if row.get("admitted") is True]
+        llm = {
+            "admitted": bool(admitted),
+            "weight": None,
+            "fold_log_score_gains_vs_core": [
+                value for row in admitted
+                for value in row.get("fold_log_score_gains_vs_core", [])],
+            "fold_numerical_tolerances": [
+                value for row in admitted
+                for value in row.get("fold_numerical_tolerances", [])],
+        }
     gains = list(llm.get("fold_log_score_gains_vs_core", ()))
     tolerances = list(llm.get("fold_numerical_tolerances", ()))
     return {
