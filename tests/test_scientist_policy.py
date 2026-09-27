@@ -923,6 +923,41 @@ def test_missing_typed_review_directives_use_lineage_bound_fallback(
     assert projection["fallback_applied"] is True
 
 
+def test_missing_review_audit_text_is_code_projected_without_changing_stop(
+        monkeypatch):
+    runtime = ProposalRuntime(EquationRuntime(2), 2, None, 1)
+    raw = {
+        "protocol_id": ENGINE_REVIEW_PROTOCOL,
+        "supported_mechanisms": ["complementary structures"],
+        "contradicted_mechanisms": [],
+        "cross_engine_conflicts": [],
+        "synthesis_instructions": [],
+        "stop": False,
+        "stop_reason": "",
+        "synthesis_directives": []}
+    monkeypatch.setattr(
+        runtime, "complete_json",
+        lambda **kwargs: (raw, {"fixture": True}))
+    review, telemetry = runtime.review_engine_evidence(
+        plan=deterministic_plan(("polynomial_lasso", "mcts"), 2),
+        engine_evidence=[
+            {"engine": "polynomial_lasso", "expression": "1+x0",
+             "selection_score": 1.0, "complexity": 2.,
+             "lineage_id": "linear"},
+            {"engine": "mcts", "expression": "1+sin(x1)",
+             "selection_score": 1.1, "complexity": 3.,
+             "lineage_id": "nonlinear"}],
+        require_typed_synthesis=True)
+    assert review.stop is False
+    assert review.stop_reason == (
+        "continue the registered cycle after evidence review")
+    assert review.synthesis_instructions
+    projection = telemetry["review_contract_projection"]
+    assert "required_instruction_projection" in projection
+    assert "stop_reason_projection" in projection
+    assert len(review.synthesis_directives) == 2
+
+
 def test_single_lineage_review_records_typed_synthesis_unavailable(
         monkeypatch):
     runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)

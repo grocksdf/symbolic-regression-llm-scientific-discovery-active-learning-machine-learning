@@ -793,6 +793,20 @@ class ProposalRuntime:
             "contradicted_mechanisms": True,
             "cross_engine_conflicts": True,
             "synthesis_instructions": False}
+        supplied_instructions = candidate.get("synthesis_instructions")
+        if (supplied_instructions is None
+                or supplied_instructions == ""
+                or supplied_instructions == []):
+            candidate["synthesis_instructions"] = [
+                ("Compile only the code-owned lineage-bound synthesis "
+                 "directives from validated engine evidence.")
+                if require_typed_synthesis else
+                "Retain and compare only validated engine evidence."]
+            projection["required_instruction_projection"] = {
+                "supplied": supplied_instructions,
+                "reason": (
+                    "review-instruction-text-is-audit-only-and-does-not-"
+                    "control-code-owned-synthesis")}
         structured = {}
         for field, allow_empty in fields.items():
             value, count = ProposalRuntime._compile_statement_collection(
@@ -815,6 +829,18 @@ class ProposalRuntime:
                 "reason": "stop-decision-must-be-a-typed-boolean"}
         else:
             raise ValueError("scientist stop decision must be boolean")
+        supplied_reason = str(candidate.get("stop_reason") or "").strip()
+        if not supplied_reason:
+            candidate["stop_reason"] = (
+                "provider requested stop under the registered evidence review"
+                if candidate["stop"] else
+                "continue the registered cycle after evidence review")
+            projection["stop_reason_projection"] = {
+                "supplied": supplied_reason,
+                "bound": candidate["stop_reason"],
+                "reason": (
+                    "stop-reason-is-audit-text-and-cannot-change-the-"
+                    "provider-stop-boolean")}
         if require_typed_synthesis:
             compiled, directive_projection = (
                 ProposalRuntime._compile_review_directives(
