@@ -25,6 +25,7 @@ dependencies = [
 [project.optional-dependencies]
 symbolic = ["pysr>=0.15.1"]
 test = ["pytest>=7.4"]
+benchmark = ["h5py>=3.10,<4"]
 
 [project.scripts]
 hypothesis-discover = "scripts.run_real_discovery:main"

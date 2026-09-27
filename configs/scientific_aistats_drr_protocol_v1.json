@@ -1,0 +1,86 @@
+{
+  "schema": "scientific-aistats-drr-protocol-v1",
+  "benchmark_name": "LLM-SRBench",
+  "benchmark_root": "D:/01/666/llm-srbench-data",
+  "benchmark_repository": "D:/01/666/llm-srbench",
+  "hdf5_member": "lsr_bench_data.hdf5",
+  "selection_seed": "pcpi-aistats-drr-v1-20260927",
+  "family_quotas": {
+    "lsr_transform": 8,
+    "bio_pop_growth": 7,
+    "chem_react": 8,
+    "matsci": 7
+  },
+  "excluded_families": {
+    "phys_osc": "All 44 tasks have historical PCPI cross-task artifacts."
+  },
+  "excluded_tasks": {
+    "bio_pop_growth": [
+      "BPG2",
+      "BPG12",
+      "BPG18",
+      "BPG20"
+    ]
+  },
+  "conditions": [
+    "full_scientist_v6",
+    "no_llm_v6",
+    "single_engine_v6",
+    "entropy_portfolio_v5"
+  ],
+  "primary_comparison": [
+    "full_scientist_v6",
+    "no_llm_v6"
+  ],
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "budget": {
+    "evaluated_hypotheses_per_condition_task_seed": 256,
+    "maximum_llm_calls_per_condition_task_seed": 64,
+    "wall_time_seconds_per_condition_task_seed": 900,
+    "bank_capacity": 4,
+    "measurement_budget": 2,
+    "failure_policy": "no-retry-failure-counts-as-not-ready"
+  },
+  "primary_metric": {
+    "name": "decision_readiness_rate",
+    "abbreviation": "DRR",
+    "task_seed_indicator": "one iff the frozen bank is viable and its certified expected Bayes zero-one decision-risk-reduction lower bound exceeds the action-family numerical resolution; zero for unresolved ranks, abstentions, timeouts, provider failures, invalid outputs, or any protocol failure",
+    "task_score": "arithmetic mean of the three fixed-seed indicators",
+    "estimand": "unweighted arithmetic mean of task scores over every registered task",
+    "paired_effect": "full_scientist_v6 task score minus no_llm_v6 task score",
+    "uncertainty": {
+      "method": "task-level paired percentile bootstrap",
+      "resamples": 10000,
+      "seed": 20260927,
+      "confidence_level": 0.95
+    },
+    "success_rule": "paired mean DRR improvement at least 0.10 and the lower endpoint of the 95 percent paired task-bootstrap interval is strictly greater than zero",
+    "all_registered_tasks_in_denominator": true,
+    "best_95_percent_filter_forbidden": true,
+    "metric_switching_forbidden": true
+  },
+  "secondary_metrics": [
+    "certified_decision_risk_lower_bound",
+    "id_nmse",
+    "ood_nmse",
+    "accuracy_at_relative_tolerance_0.1",
+    "predictive_log_score",
+    "evaluated_hypothesis_count",
+    "llm_call_count",
+    "wall_time_seconds",
+    "exact_integral_count",
+    "branch_and_bound_pruning_fraction"
+  ],
+  "heldout_policy": {
+    "task_manifest_frozen_before_execution": true,
+    "test_and_ood_forbidden_for_prompt_selection_gating_and_tuning": true,
+    "test_and_ood_opened_once_for_final_reporting_only": true,
+    "development_failures_cannot_replace_tasks_or_seeds": true
+  },
+  "execution_authorized": false,
+  "claim_boundary": "This protocol freezes task selection, the sole primary metric, denominator, budgets, failures and statistical decision before benchmark execution. It does not authorize LLM calls, task-array loading, test or OOD access, efficacy claims, or superiority claims."
+}
