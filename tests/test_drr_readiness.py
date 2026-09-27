@@ -12,7 +12,8 @@ def test_drr_api_has_no_action_response_test_or_ood_surface():
     assert set(parameters) == {
         "candidates", "initial_X", "initial_y", "action_X", "condition",
         "exploration_identity", "coefficient_policy", "measurement_budget",
-        "maximum_candidates", "exact_eig_epsabs", "prior"}
+        "maximum_candidates", "exact_eig_epsabs", "prior",
+        "selection_method"}
     assert not any(token in name for name in parameters
                    for token in ("action_y", "test", "ood", "heldout"))
 

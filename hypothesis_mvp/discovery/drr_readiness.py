@@ -11,7 +11,8 @@ from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.pcpi import NormalInverseGammaPrior
 
 from .bank_selection import (
-    DECISION_RISK_CAPACITY_METHOD, select_operational_capacity_bank,
+    DECISION_RISK_CAPACITY_METHOD, PORTFOLIO_CAPACITY_METHOD,
+    select_operational_capacity_bank,
 )
 from .source_stacking import DIVERSITY_METHOD
 from .system_run import audit_frozen_hypothesis_bank
@@ -48,7 +49,8 @@ def _vector(values, name):
 
 def _evaluate(candidates, initial_X, initial_y, action_X, *, condition,
               exploration_identity, coefficient_policy, measurement_budget,
-              maximum_candidates, exact_eig_epsabs, prior):
+              maximum_candidates, exact_eig_epsabs, prior,
+              selection_method):
     X_initial = _matrix(initial_X, "initial_X")
     y_initial = _vector(initial_y, "initial_y")
     X_actions = _matrix(action_X, "action_X")
@@ -66,7 +68,7 @@ def _evaluate(candidates, initial_X, initial_y, action_X, *, condition,
         maximum_candidates=maximum_candidates,
         source_safety_roles=(), source_safety_folds=2,
         source_stacking_method=DIVERSITY_METHOD,
-        selection_method=DECISION_RISK_CAPACITY_METHOD,
+        selection_method=selection_method,
         exact_eig_epsabs=exact_eig_epsabs)
     viability = audit_frozen_hypothesis_bank(
         selected, initial, X_actions,
@@ -79,7 +81,8 @@ def _evaluate(candidates, initial_X, initial_y, action_X, *, condition,
     utility = selection["decision_risk_utility"]
     decisions = {
         "selection_method_is_v6":
-            selection["selection_method"] == DECISION_RISK_CAPACITY_METHOD,
+            (selection["selection_method"] == DECISION_RISK_CAPACITY_METHOD
+             if selection_method == DECISION_RISK_CAPACITY_METHOD else True),
         "source_safety_passed": selection["source_safety_passed"] is True,
         "bank_viability_passed": viability["passed"] is True,
         "decision_risk_utility_passed": utility["passed"] is True,
@@ -109,9 +112,13 @@ def evaluate_drr_readiness(
     maximum_candidates: int = 4,
     exact_eig_epsabs: float = 1e-10,
     prior: NormalInverseGammaPrior | None = None,
+    selection_method: str = DECISION_RISK_CAPACITY_METHOD,
 ) -> DRRReadinessResult:
     """Return one task-seed DRR indicator; every error is a counted zero."""
     try:
+        if selection_method not in {
+                DECISION_RISK_CAPACITY_METHOD, PORTFOLIO_CAPACITY_METHOD}:
+            raise ValueError("DRR selection method is not registered")
         return _evaluate(
             candidates, initial_X, initial_y, action_X,
             condition=condition,
@@ -120,7 +127,8 @@ def evaluate_drr_readiness(
             measurement_budget=measurement_budget,
             maximum_candidates=maximum_candidates,
             exact_eig_epsabs=exact_eig_epsabs,
-            prior=prior or NormalInverseGammaPrior())
+            prior=prior or NormalInverseGammaPrior(),
+            selection_method=selection_method)
     except Exception as exc:
         return DRRReadinessResult(condition, False, 0, {
             "schema": "scientific-drr-readiness-certificate-v1",
