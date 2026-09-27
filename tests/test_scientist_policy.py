@@ -7,7 +7,7 @@ import pytest
 from hypothesis_mvp.config import SymbolicConfig
 from hypothesis_mvp.discovery.equation_runtime import EquationRuntime
 from hypothesis_mvp.discovery.agent import (
-    DiscoveryAgentConfig, _bounded_seed_bank, _survivors,
+    DiscoveryAgent, DiscoveryAgentConfig, _bounded_seed_bank, _survivors,
 )
 from hypothesis_mvp.discovery.contracts import DiscoveryConfig
 from hypothesis_mvp.discovery.evaluation_runtime import EvaluationRuntime
@@ -16,7 +16,8 @@ from hypothesis_mvp.discovery.proposal_runtime import ProposalRuntime
 from hypothesis_mvp.discovery.proposal_runtime import ProposalContext
 from hypothesis_mvp.discovery.scientist_policy import (
     ENGINE_REVIEW_PROTOCOL, RESEARCH_PLAN_PROTOCOL,
-    ScientistState, deterministic_plan, plan_from_json, review_from_json,
+    ScientistReview, ScientistState, deterministic_plan, plan_from_json,
+    review_from_json,
 )
 from hypothesis_mvp.discovery.inference_router import route_inference
 from hypothesis_mvp.discovery.skill_policy import (
@@ -512,6 +513,28 @@ def test_evidence_synthesis_cannot_evict_engine_frontier_or_anchors():
     assert not any(
         row["source"] == "llm_evidence_synthesis" for row in rows[:5])
     assert audit["synthesis_is_non_destructive"] is True
+
+
+def test_empty_typed_synthesis_abstains_without_discarding_engines(
+        monkeypatch):
+    agent = DiscoveryAgent(DiscoveryAgentConfig(
+        engines=("polynomial_lasso", "mcts"),
+        typed_evidence_synthesis=True))
+    review = ScientistReview(
+        ("validated evidence",), (), (),
+        ("compile only validated evidence",), False, "continue")
+    monkeypatch.setattr(
+        "hypothesis_mvp.discovery.agent.compile_evidence_synthesis",
+        lambda *args, **kwargs: ([], {
+            "schema": "scientific-evidence-conditioned-synthesis-v1",
+            "directive_count": 2, "compiled_candidate_count": 0}))
+    candidates, audit = agent._compile_cycle_synthesis(
+        review, [{"lineage_id": "a"}, {"lineage_id": "b"}], 2)
+    assert candidates == []
+    assert audit["synthesis_unavailable"] is True
+    assert audit["engine_candidates_preserved"] is True
+    assert audit["candidate_admission"] == (
+        "abstain-no-synthetic-candidate-added")
 
 
 def test_cross_round_survivor_preserves_source_origin_and_lineage():
