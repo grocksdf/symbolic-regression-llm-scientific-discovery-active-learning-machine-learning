@@ -37,6 +37,15 @@
     1,
     2
   ],
+  "selection_roles": {
+    "ordering": "ascending SHA-256 of task_name:seed:row_index",
+    "discovery_development_fraction": 0.50,
+    "discovery_validation_fraction": 0.20,
+    "inference_initial_fraction": 0.20,
+    "action_covariate_fraction": 0.10,
+    "action_targets_exposed_to_selection": false,
+    "test_or_ood_exposed_to_selection": false
+  },
   "budget": {
     "evaluated_hypotheses_per_condition_task_seed": 256,
     "maximum_llm_calls_per_condition_task_seed": 64,
