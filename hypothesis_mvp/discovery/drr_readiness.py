@@ -15,7 +15,9 @@ from .bank_selection import (
     select_operational_capacity_bank,
 )
 from .source_stacking import DIVERSITY_METHOD
-from .system_run import audit_frozen_hypothesis_bank
+from .system_run import (
+    audit_frozen_decision_risk_utility, audit_frozen_hypothesis_bank,
+)
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,15 @@ def _evaluate(candidates, initial_X, initial_y, action_X, *, condition,
         exact_eig_epsabs=exact_eig_epsabs,
         source_prior_weights=selection["source_prior_weights"])
     utility = selection["decision_risk_utility"]
+    if utility is None:
+        utility = audit_frozen_decision_risk_utility(
+            selected, initial, X_actions,
+            n_features=X_initial.shape[1], prior=prior,
+            exploration_identity=exploration_identity,
+            coefficient_policy=coefficient_policy,
+            measurement_budget=measurement_budget,
+            exact_epsabs=exact_eig_epsabs,
+            source_prior_weights=selection["source_prior_weights"])
     decisions = {
         "selection_method_is_v6":
             (selection["selection_method"] == DECISION_RISK_CAPACITY_METHOD
