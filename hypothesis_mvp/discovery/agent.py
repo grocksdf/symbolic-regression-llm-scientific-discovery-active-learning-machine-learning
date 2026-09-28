@@ -17,8 +17,10 @@ from hypothesis_mvp.symbolic import EngineScheduler, merge_multi_engine_results
 
 from .api import DiscoveryRunResult, discover_from_selection
 from .contracts import DiscoveryConfig
-from .proposal_runtime import ProviderSettings
-from .proposal_runtime import ProposalRuntime
+from .proposal_runtime import (
+    ProviderInfrastructureError, ProviderSettings, ProposalRuntime,
+    ScientistPlanProtocolError, ScientistReviewProtocolError,
+)
 from .equation_runtime import EquationRuntime
 from .evidence_synthesis import compile_evidence_synthesis
 from .initializer import generic_deterministic_candidates
@@ -71,6 +73,7 @@ class DiscoveryAgentConfig:
     llm_preference_policy_identity: str = ""
     dataset_family: str = ""
     protected_counterfactual_backbone: bool = False
+    provider_failure_mode: str = "abort"
 
 
 @dataclass(frozen=True)
@@ -91,6 +94,8 @@ class DiscoveryCycle:
     scientist_state_after: Mapping[str, Any] = field(default_factory=dict)
     probe_allocation: Mapping[str, Any] = field(default_factory=dict)
     counterfactual_backbone: Mapping[str, Any] = field(default_factory=dict)
+    provider_failure_abstention: Mapping[str, Any] = field(
+        default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -426,35 +431,78 @@ class DiscoveryAgent:
         attach_system_evidence(discovery, _engine_payload(engine_result), cycle)
         return discovery
 
-    def _orchestrate_cycle(self, selection, cycle, planner, task_context):
-        counters = (planner.call_count, planner.attempt_count, len(planner.errors))
+    def _provider_abstention(self, phase, error):
+        if self.config.provider_failure_mode != (
+                "audited-deterministic-abstention"):
+            raise error
+        return {
+            "phase": phase, "error_type": type(error).__name__,
+            "message": str(error),
+            "mode": self.config.provider_failure_mode}
+
+    def _resolve_plan(self, planner, task_context):
         if planner.enabled and self.config.scientist_orchestration:
-            plan, plan_telemetry = planner.plan_research(
-                task_context=task_context, available_engines=self.config.engines,
-                total_jobs=self.config.engine_budget)
-        elif self.config.skill_reliability:
+            try:
+                plan, telemetry = planner.plan_research(
+                    task_context=task_context,
+                    available_engines=self.config.engines,
+                    total_jobs=self.config.engine_budget)
+            except (ProviderInfrastructureError,
+                    ScientistPlanProtocolError) as error:
+                fallback = self._provider_abstention("plan", error)
+                plan = deterministic_plan(
+                    self.config.engines, self.config.engine_budget)
+                telemetry = {"provider_failure_abstention": fallback}
+                return plan, telemetry, fallback, 1
+            return plan, telemetry, None, 1
+        if self.config.skill_reliability:
             allocation = allocate_bayesian_skill_jobs(
                 self.config.engines, self.config.engine_budget,
                 self.config.skill_reliability)
             plan = allocated_plan(allocation["allocated_jobs"])
-            plan_telemetry = {"bayesian_skill_allocation": allocation,
+            telemetry = {"bayesian_skill_allocation": allocation,
                 "skill_policy_identity": self.config.skill_policy_identity}
-        else:
-            plan, plan_telemetry = deterministic_plan(
-                self.config.engines, self.config.engine_budget), {}
+            return plan, telemetry, None, 0
+        return deterministic_plan(
+            self.config.engines, self.config.engine_budget), {}, None, 0
+
+    @staticmethod
+    def _abstention_review(fallback):
+        return ScientistReview(
+            ("provider abstained; deterministic evidence retained",),
+            (), (), ("retain all validated engine candidates",),
+            False, "audited provider abstention"), {
+                "provider_failure_abstention": fallback}
+
+    def _resolve_review(self, planner, plan, evidence, fallback):
+        if not (planner.enabled and self.config.scientist_orchestration):
+            return ScientistReview(
+                ("deterministic engine evidence available",), (), (),
+                ("compare all registered engine candidates",), False,
+                "provider-free deterministic orchestration"), {}, fallback, 0
+        if fallback is not None:
+            review, telemetry = self._abstention_review(fallback)
+            return review, telemetry, fallback, 0
+        try:
+            review, telemetry = planner.review_engine_evidence(
+                plan=plan, engine_evidence=evidence,
+                require_typed_synthesis=self.config.typed_evidence_synthesis)
+            return review, telemetry, None, 1
+        except (ProviderInfrastructureError,
+                ScientistReviewProtocolError) as error:
+            fallback = self._provider_abstention("review", error)
+            review, telemetry = self._abstention_review(fallback)
+            return review, telemetry, fallback, 1
+
+    def _orchestrate_cycle(self, selection, cycle, planner, task_context):
+        counters = (planner.call_count, planner.attempt_count, len(planner.errors))
+        plan, plan_telemetry, fallback, plan_calls = self._resolve_plan(
+            planner, task_context)
         self._active_research_plan = plan
         engines = self._run_engines(selection, cycle)
         evidence = _engine_evidence(engines)
-        if planner.enabled and self.config.scientist_orchestration:
-            review, review_telemetry = planner.review_engine_evidence(
-                plan=plan, engine_evidence=evidence,
-                require_typed_synthesis=self.config.typed_evidence_synthesis)
-        else:
-            review = ScientistReview(
-                ("deterministic engine evidence available",), (), (),
-                ("compare all registered engine candidates",), False,
-                "provider-free deterministic orchestration")
-            review_telemetry = {}
+        review, review_telemetry, fallback, review_calls = (
+            self._resolve_review(planner, plan, evidence, fallback))
         orchestration = {"schema": "scientific-llm-engine-orchestration-v1",
             "scientist_state_before": task_context["scientist_state"],
             "research_plan": plan.to_dict(), "research_plan_identity": plan.stable_hash,
@@ -463,8 +511,9 @@ class DiscoveryAgent:
             "provider_telemetry": [dict(plan_telemetry), dict(review_telemetry)],
             "protected_counterfactual_backbone": dict(getattr(
                 self, "_last_counterfactual_backbone", {})),
+            "provider_failure_abstention": fallback,
             "candidate_response_accessed": False, "heldout_opened": False}
-        usage = (planner.call_count - counters[0],
+        usage = (plan_calls + review_calls,
                  planner.attempt_count - counters[1],
                  len(planner.errors) - counters[2])
         return plan, review, engines, evidence, orchestration, usage
@@ -561,6 +610,8 @@ class DiscoveryAgent:
                 dict(getattr(self, "_last_probe_allocation", {})),
                 dict(getattr(
                     self, "_last_counterfactual_backbone", {})),
+                dict(orchestration.get(
+                    "provider_failure_abstention") or {}),
             ))
         if final is None:
             raise RuntimeError("discovery agent executed no cycle")

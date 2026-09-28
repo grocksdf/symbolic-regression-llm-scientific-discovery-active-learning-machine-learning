@@ -84,13 +84,14 @@ def test_scientist_review_schema_is_strict():
         "stop": False, "stop_reason": "continue"})
     assert scalar.synthesis_instructions == (
         "retain the simpler falsifiable law",)
-    with pytest.raises(ValueError, match="items must be strings"):
-        review_from_json({
-            "protocol_id": ENGINE_REVIEW_PROTOCOL,
-            "supported_mechanisms": [{"name": "not-a-string"}],
-            "contradicted_mechanisms": [], "cross_engine_conflicts": [],
-            "synthesis_instructions": ["retain"], "stop": False,
-            "stop_reason": "continue"})
+    structured = review_from_json({
+        "protocol_id": ENGINE_REVIEW_PROTOCOL,
+        "supported_mechanisms": [{"name": "structured-evidence"}],
+        "contradicted_mechanisms": [], "cross_engine_conflicts": [],
+        "synthesis_instructions": ["retain"], "stop": False,
+        "stop_reason": "continue"})
+    assert structured.supported_mechanisms == (
+        '{"name":"structured-evidence"}',)
 
 
 def test_review_compiler_preserves_structured_evidence_and_typed_stop(monkeypatch):
@@ -587,6 +588,40 @@ def test_empty_typed_synthesis_abstains_without_discarding_engines(
     assert audit["engine_candidates_preserved"] is True
     assert audit["candidate_admission"] == (
         "abstain-no-synthetic-candidate-added")
+
+
+def test_provider_failure_is_audited_deterministic_abstention(
+        monkeypatch):
+    from hypothesis_mvp.discovery.proposal_runtime import (
+        ProviderInfrastructureError,
+    )
+    agent = DiscoveryAgent(DiscoveryAgentConfig(
+        engines=("polynomial_lasso", "mcts"), engine_budget=2,
+        scientist_orchestration=True,
+        provider_failure_mode="audited-deterministic-abstention"))
+    planner = SimpleNamespace(
+        enabled=True, call_count=0, attempt_count=1,
+        errors=("provider-content-missing",))
+
+    def fail(**kwargs):
+        planner.attempt_count += 1
+        planner.errors = (*planner.errors, "provider-content-missing")
+        raise ProviderInfrastructureError(
+            "provider-infrastructure-failure:provider-content-missing:"
+            "attempts=1")
+
+    planner.plan_research = fail
+    monkeypatch.setattr(
+        agent, "_run_engines",
+        lambda selection, cycle: SimpleNamespace(all_results=()))
+    plan, review, _, _, audit, usage = agent._orchestrate_cycle(
+        SimpleNamespace(), 0, planner, {
+            "scientist_state": {}, "description": "fixture"})
+    assert {call.engine for call in plan.engine_calls} == {
+        "polynomial_lasso", "mcts"}
+    assert review.stop is False
+    assert audit["provider_failure_abstention"]["phase"] == "plan"
+    assert usage == (1, 1, 1)
 
 
 def test_cross_round_survivor_preserves_source_origin_and_lineage():

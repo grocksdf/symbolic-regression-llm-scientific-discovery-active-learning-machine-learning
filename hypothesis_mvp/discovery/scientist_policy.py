@@ -279,12 +279,21 @@ def review_from_json(raw: Mapping[str, Any]) -> ScientistReview:
 
 
 def _strings(value: Any, *, allow_empty: bool = False) -> tuple[str, ...]:
+    def text(item: Any) -> str:
+        if isinstance(item, str):
+            return item.strip()
+        if isinstance(item, Mapping):
+            return json.dumps(
+                item, sort_keys=True, separators=(",", ":"),
+                ensure_ascii=True)
+        raise ValueError("scientist text array items must be strings or objects")
+
     if isinstance(value, str):
         rows = (value.strip(),)
+    elif isinstance(value, Mapping):
+        rows = (text(value),)
     elif isinstance(value, (list, tuple)):
-        if any(not isinstance(item, str) for item in value):
-            raise ValueError("scientist text array items must be strings")
-        rows = tuple(item.strip() for item in value)
+        rows = tuple(text(item) for item in value)
     elif value is None and allow_empty:
         rows = ()
     else:
