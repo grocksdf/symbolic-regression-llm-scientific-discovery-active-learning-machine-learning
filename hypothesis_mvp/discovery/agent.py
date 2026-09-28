@@ -103,6 +103,7 @@ class DiscoveryCycle:
         default_factory=dict)
     conservative_allocation_decision: Mapping[str, Any] = field(
         default_factory=dict)
+    evidence_synthesis: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -609,6 +610,7 @@ class DiscoveryAgent:
             dict(getattr(self, "_last_counterfactual_backbone", {})),
             dict(orchestration.get("provider_failure_abstention") or {}),
             dict(allocation or {}),
+            dict(orchestration.get("evidence_synthesis") or {}),
         )
 
     def run(
