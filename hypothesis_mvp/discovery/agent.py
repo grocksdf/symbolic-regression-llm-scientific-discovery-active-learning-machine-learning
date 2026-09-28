@@ -90,6 +90,7 @@ class DiscoveryCycle:
     scientist_state_before: Mapping[str, Any] = field(default_factory=dict)
     scientist_state_after: Mapping[str, Any] = field(default_factory=dict)
     probe_allocation: Mapping[str, Any] = field(default_factory=dict)
+    counterfactual_backbone: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -553,6 +554,8 @@ class DiscoveryAgent:
                 plan.to_dict(), review.to_dict(),
                 state_before, scientist_state.to_dict(),
                 dict(getattr(self, "_last_probe_allocation", {})),
+                dict(getattr(
+                    self, "_last_counterfactual_backbone", {})),
             ))
         if final is None:
             raise RuntimeError("discovery agent executed no cycle")
