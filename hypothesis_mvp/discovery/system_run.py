@@ -114,6 +114,8 @@ def audit_decision_risk_target(model, target, actions, exact_epsabs):
         "model": model.stable_hash, "target": target.stable_hash,
         "utility": "expected-bayes-zero-one-operational-class-risk-reduction-v1",
         "candidate_action_count": len(actions), "selected_action_index": leader,
+        "action_lower_bounds": lower.tolist(),
+        "action_upper_bounds": upper.tolist(),
         "selected_score": float(exact.scores[leader]),
         "selected_lower_bound": float(lower[leader]),
         "selected_upper_bound": float(upper[leader]),
