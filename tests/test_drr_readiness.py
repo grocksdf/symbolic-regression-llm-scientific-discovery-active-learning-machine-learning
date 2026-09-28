@@ -63,3 +63,6 @@ def test_v5_uses_same_post_selection_decision_risk_audit(monkeypatch):
         selection_method=drr.PORTFOLIO_CAPACITY_METHOD)
     assert result.indicator == 1
     assert len(calls) == 1
+    assert result.certificate["decision_risk_utility"]["passed"] is True
+    assert result.certificate["decisions"][
+        "selection_method_matches_request"] is True

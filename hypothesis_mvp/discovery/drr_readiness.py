@@ -91,9 +91,8 @@ def _evaluate(candidates, initial_X, initial_y, action_X, *, condition,
             exact_epsabs=exact_eig_epsabs,
             source_prior_weights=selection["source_prior_weights"])
     decisions = {
-        "selection_method_is_v6":
-            (selection["selection_method"] == DECISION_RISK_CAPACITY_METHOD
-             if selection_method == DECISION_RISK_CAPACITY_METHOD else True),
+        "selection_method_matches_request":
+            selection["selection_method"] == selection_method,
         "source_safety_passed": selection["source_safety_passed"] is True,
         "bank_viability_passed": viability["passed"] is True,
         "decision_risk_utility_passed": utility["passed"] is True,
@@ -104,6 +103,7 @@ def _evaluate(candidates, initial_X, initial_y, action_X, *, condition,
     return DRRReadinessResult(condition, ready, int(ready), {
         "schema": "scientific-drr-readiness-certificate-v1",
         "selection": selection, "viability": viability,
+        "decision_risk_utility": utility,
         "decisions": decisions,
         "candidate_response_accessed": False,
         "action_response_accessed": False,
