@@ -515,6 +515,52 @@ def test_evidence_synthesis_cannot_evict_engine_frontier_or_anchors():
     assert audit["synthesis_is_non_destructive"] is True
 
 
+def test_protected_counterfactual_backbone_precedes_adaptive_jobs(
+        monkeypatch):
+    config = DiscoveryAgentConfig(
+        engines=("polynomial_lasso", "mcts", "sparse_library",
+                 "additive_mechanisms"),
+        engine_budget=6, engine_workers=1,
+        protected_counterfactual_backbone=True)
+    agent = DiscoveryAgent(config)
+    selection = SimpleNamespace(
+        development=SimpleNamespace(
+            X=np.arange(64., dtype=float).reshape(32, 2),
+            y=np.arange(32., dtype=float)),
+        validation=SimpleNamespace(
+            X=np.arange(32., dtype=float).reshape(16, 2),
+            y=np.arange(16., dtype=float)))
+    calls = []
+
+    def run_allocated(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(tag=len(calls))
+
+    monkeypatch.setattr(agent.scheduler, "run_allocated", run_allocated)
+    monkeypatch.setattr(
+        "hypothesis_mvp.discovery.agent.merge_multi_engine_results",
+        lambda results, evaluation_budget: SimpleNamespace(
+            results=results, evaluation_budget=evaluation_budget))
+    result = agent._run_protected_backbone(
+        selection, 0, SimpleNamespace(),
+        {"polynomial_lasso": 2, "mcts": 1,
+         "sparse_library": 2, "additive_mechanisms": 1},
+        {"polynomial_lasso": ("quadratic",),
+         "sparse_library": ("interactions",)})
+    assert calls[0]["allocations"] == {
+        name: 1 for name in config.engines}
+    assert calls[0]["engine_controls"] == {}
+    assert calls[0]["evaluation_budget"] == 4
+    assert calls[1]["allocations"] == {
+        "polynomial_lasso": 1, "sparse_library": 1}
+    assert calls[1]["engine_controls"] == {
+        "polynomial_lasso": ("quadratic",),
+        "sparse_library": ("interactions",)}
+    assert result.evaluation_budget == 6
+    assert agent._last_counterfactual_backbone["backbone_jobs"] == 4
+    assert agent._last_counterfactual_backbone["adaptive_jobs"] == 2
+
+
 def test_empty_typed_synthesis_abstains_without_discarding_engines(
         monkeypatch):
     agent = DiscoveryAgent(DiscoveryAgentConfig(

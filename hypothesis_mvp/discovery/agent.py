@@ -70,6 +70,7 @@ class DiscoveryAgentConfig:
     probe_allocation_mode: str = "llm-preference-enabled"
     llm_preference_policy_identity: str = ""
     dataset_family: str = ""
+    protected_counterfactual_backbone: bool = False
 
 
 @dataclass(frozen=True)
@@ -259,6 +260,68 @@ class DiscoveryAgent:
         return merge_multi_engine_results(
             (first, second), evaluation_budget=self.config.engine_budget)
 
+    def _run_protected_backbone(
+            self, selection, cycle, symbolic, allocations, controls):
+        """Run one immutable default-control job per engine before adaptation.
+
+        The backbone consumes part of the same registered engine budget.  LLM
+        planning can allocate and control only the remaining jobs, so it cannot
+        erase the matched provider-free counterfactual evidence.
+        """
+        baseline_jobs = len(self.config.engines)
+        if (self.config.engine_budget < baseline_jobs
+                or set(allocations) != set(self.config.engines)
+                or any(type(allocations[name]) is not int
+                       or allocations[name] < 1
+                       for name in self.config.engines)
+                or sum(allocations.values()) != self.config.engine_budget):
+            raise ValueError(
+                "protected backbone requires full engine coverage within budget")
+        first = self.scheduler.run_allocated(
+            allocations={name: 1 for name in self.config.engines},
+            config=symbolic, X_train=selection.development.X,
+            y_train=selection.development.y,
+            X_val=selection.validation.X, y_val=selection.validation.y,
+            base_seed=self.config.random_seed + cycle,
+            max_retries=self.config.engine_retries,
+            evaluation_budget=baseline_jobs,
+            parallel=self.config.engine_workers > 1,
+            max_workers=self.config.engine_workers,
+            timeout_s=self.config.engine_timeout_s,
+            engine_controls={})
+        extras = {
+            name: allocations[name] - 1 for name in self.config.engines
+            if allocations[name] > 1}
+        self._last_counterfactual_backbone = {
+            "schema":
+                "scientific-protected-counterfactual-engine-backbone-v1",
+            "engines": list(self.config.engines),
+            "backbone_jobs": baseline_jobs,
+            "adaptive_jobs": sum(extras.values()),
+            "total_jobs": self.config.engine_budget,
+            "backbone_controls": "registered-engine-defaults",
+            "adaptive_allocations": extras,
+            "candidate_response_accessed": False,
+            "heldout_opened": False,
+        }
+        if not extras:
+            return first
+        second = self.scheduler.run_allocated(
+            allocations=extras, config=symbolic,
+            X_train=selection.development.X,
+            y_train=selection.development.y,
+            X_val=selection.validation.X, y_val=selection.validation.y,
+            base_seed=self.config.random_seed + cycle + 1000003,
+            max_retries=self.config.engine_retries,
+            evaluation_budget=sum(extras.values()),
+            parallel=self.config.engine_workers > 1,
+            max_workers=self.config.engine_workers,
+            timeout_s=self.config.engine_timeout_s,
+            engine_controls={
+                name: controls.get(name, ()) for name in extras})
+        return merge_multi_engine_results(
+            (first, second), evaluation_budget=self.config.engine_budget)
+
     def _run_engines(self, selection: SelectionData, cycle: int) -> Any:
         symbolic = SymbolicConfig(
             niterations=self.config.search_iterations,
@@ -278,6 +341,12 @@ class DiscoveryAgent:
         controls = ({call.engine: call.requested_operations
                      for call in resolved.engine_calls}
                     if resolved is not None else {})
+        self._last_counterfactual_backbone = {}
+        if (resolved is not None
+                and self.config.protected_counterfactual_backbone):
+            self._last_probe_allocation = {}
+            return self._run_protected_backbone(
+                selection, cycle, symbolic, allocations, controls)
         if (self.config.probe_skill_model
                 and len(self.config.engines) > 1
                 and self.config.engine_budget > len(self.config.engines)):
@@ -386,6 +455,8 @@ class DiscoveryAgent:
             "engine_evidence": evidence, "scientist_review": review.to_dict(),
             "scientist_review_identity": review.stable_hash,
             "provider_telemetry": [dict(plan_telemetry), dict(review_telemetry)],
+            "protected_counterfactual_backbone": dict(getattr(
+                self, "_last_counterfactual_backbone", {})),
             "candidate_response_accessed": False, "heldout_opened": False}
         usage = (planner.call_count - counters[0],
                  planner.attempt_count - counters[1],
