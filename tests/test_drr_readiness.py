@@ -66,3 +66,32 @@ def test_v5_uses_same_post_selection_decision_risk_audit(monkeypatch):
     assert result.certificate["decision_risk_utility"]["passed"] is True
     assert result.certificate["decisions"][
         "selection_method_matches_request"] is True
+
+
+def test_drr_exact_fixture_has_positive_and_negative_resolution():
+    candidates = [
+        {"expression": "1", "source": "deterministic_constant_anchor",
+         "origin": "deterministic"},
+        {"expression": "x0", "source": "engine:polynomial_lasso",
+         "origin": "deterministic"},
+        {"expression": "x0**2", "source": "deterministic_linear_anchor",
+         "origin": "deterministic"},
+        {"expression": "sin(x0)", "source": "llm_evidence_synthesis",
+         "origin": "llm"},
+    ]
+    X = np.linspace(-.5, .5, 6)[:, None]
+    y = np.sin(3.0 * X[:, 0]) + .05 * np.arange(len(X))
+    informative_actions = np.array([[-3.], [-2.], [-1.], [1.], [2.], [3.]])
+    positive = drr.evaluate_drr_readiness(
+        candidates, X, y, informative_actions,
+        condition="positive-correctness-fixture",
+        exploration_identity="c" * 64)
+    negative = drr.evaluate_drr_readiness(
+        candidates[:1], X, y, informative_actions,
+        condition="negative-correctness-fixture",
+        exploration_identity="d" * 64)
+    assert positive.indicator == 1 and positive.ready is True
+    assert positive.certificate["candidate_response_accessed"] is False
+    assert positive.certificate["decision_risk_utility"]["passed"] is True
+    assert negative.indicator == 0 and negative.ready is False
+    assert negative.certificate["failure_counts_as_not_ready"] is True
