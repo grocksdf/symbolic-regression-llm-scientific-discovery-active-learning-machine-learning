@@ -63,6 +63,25 @@ class ExactPosterior:
     def map_structure_id(self) -> str:
         return max(self.members, key=lambda member: member.probability).structure.structure_id
 
+    @property
+    def log_probabilities(self) -> np.ndarray:
+        """Return normalized structure log masses without exponentiation.
+
+        ``member.probability`` remains the public finite-vector interface, but
+        source restriction and predictive mixtures must not reconstruct log
+        mass with ``log(probability)`` after a long prefix has underflowed.
+        """
+
+        log_joints = np.asarray([
+            math.log(member.structure.prior_probability)
+            + member.log_marginal_likelihood
+            for member in self.members
+        ], dtype=float)
+        values = log_joints - logsumexp(log_joints)
+        if not np.all(np.isfinite(values)):
+            raise FloatingPointError("posterior log probabilities are non-finite")
+        return values
+
 
 def _initial_state(
     structure: ReferenceStructure,
@@ -414,7 +433,8 @@ class SequentialReferencePosterior:
     ) -> np.ndarray:
         action_values, target_values = self._validated_data(actions, targets)
         components: list[np.ndarray] = []
-        for member in posterior.members:
+        for member, log_probability in zip(
+                posterior.members, posterior.log_probabilities, strict=True):
             rows = self._design(action_values, member.structure)
             mean, covariance_factor, alpha, beta = _posterior_parameters(member.state)
             locations = rows @ mean
@@ -427,7 +447,7 @@ class SequentialReferencePosterior:
                 loc=locations,
                 scale=np.sqrt(scale_squared),
             )
-            components.append(math.log(member.probability) + log_density)
+            components.append(float(log_probability) + log_density)
         return logsumexp(np.vstack(components), axis=0)
 
     def posterior_randomized_log_loss(
@@ -477,7 +497,15 @@ class SequentialReferencePosterior:
             ]
         )
         log_evidence = float(logsumexp(log_joints))
-        probabilities = np.exp(log_joints - log_evidence)
+        log_probabilities = log_joints - log_evidence
+        probabilities = np.exp(log_probabilities)
+        # Preserve every finite-support atom in the public probability vector.
+        # The added mass is at most K * nextafter(0, 1), while exact log masses
+        # remain available above for predictive/source calculations.
+        if np.any(probabilities <= 0.0):
+            probabilities = np.maximum(
+                probabilities, np.nextafter(0.0, 1.0))
+            probabilities = probabilities / np.sum(probabilities)
         members = tuple(
             StructurePosterior(structure, state, log_marginal, float(probability))
             for structure, state, log_marginal, probability in zip(

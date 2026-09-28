@@ -16,6 +16,9 @@ from .source_stacking import (
     METHOD as SOURCE_STACKING_METHOD,
     crossfit_source_log_predictive, safe_source_stacking, source_family,
 )
+from hypothesis_mvp.pcpi.action_conditional_residual import (
+    bayes_zero_one_decision_risk,
+)
 
 
 SCHEMA = "scientific-predictive-safe-operational-capacity-bank-v2"
@@ -119,7 +122,7 @@ class _CapacityEvaluator:
             frozen.partition.class_probabilities, dtype=float)
         return (float(frozen.partition.entropy), len(frozen.partition.class_ids),
                 model.stable_hash, frozen.stable_hash,
-                float(1.0 - np.max(probabilities)))
+                bayes_zero_one_decision_risk(probabilities))
 
     def decision_risk(self, rows, source_weights, exact_epsabs):
         from .system_run import audit_decision_risk_target

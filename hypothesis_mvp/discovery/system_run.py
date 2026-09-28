@@ -15,6 +15,9 @@ from hypothesis_mvp.pcpi.acquisition import (
     EXACT_CLASS_EIG_EPSABS, exact_class_decision_risk_reduction_shared_actions,
     predictive_components_for_partition,
 )
+from hypothesis_mvp.pcpi.action_conditional_residual import (
+    bayes_zero_one_decision_risk,
+)
 from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target
 from .inference_router import route_inference
 from .system_evidence import validate_system_pairs
@@ -49,7 +52,7 @@ def audit_frozen_hypothesis_bank(candidates, initial_data, actions, *, n_feature
     inference = route_inference(model)
     probabilities = np.asarray(target.partition.class_probabilities, dtype=float)
     entropy = float(target.partition.entropy)
-    bayes_risk = float(1.0 - np.max(probabilities))
+    bayes_risk = bayes_zero_one_decision_risk(probabilities)
     familywise_resolution = float(len(actions) * exact_eig_epsabs)
     decisions = {
         "multiple_operational_classes": len(probabilities) >= 2,
@@ -102,7 +105,8 @@ def audit_decision_risk_target(model, target, actions, exact_epsabs):
         "maximum_lower_bound_exceeds_familywise_resolution": bool(
             lower[leader] > resolution),
         "selected_upper_bound_within_prior_bayes_risk": bool(
-            upper[leader] <= 1.0 - max(target.partition.class_probabilities)
+            upper[leader] <= bayes_zero_one_decision_risk(
+                np.asarray(target.partition.class_probabilities))
             + exact.quadrature_errors[leader] + 32.0 * np.finfo(float).eps),
     }
     return {

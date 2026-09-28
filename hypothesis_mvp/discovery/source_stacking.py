@@ -32,6 +32,29 @@ def source_family(candidate) -> str:
     return source if source.startswith("engine:") else "core"
 
 
+def _restricted_posterior(posterior, indices):
+    """Normalize a finite posterior subset from exact log masses."""
+    from dataclasses import replace
+    from hypothesis_mvp.pcpi.reference import ExactPosterior
+
+    selected = tuple(int(index) for index in indices)
+    if not selected:
+        raise ValueError("posterior restriction cannot be empty")
+    logs = posterior.log_probabilities[np.asarray(selected, dtype=int)]
+    normalizer = float(logsumexp(logs))
+    probabilities = np.exp(logs - normalizer)
+    probabilities = np.maximum(
+        probabilities, np.nextafter(0.0, 1.0))
+    probabilities = probabilities / np.sum(probabilities)
+    members = tuple(
+        replace(posterior.members[index], probability=float(probability))
+        for index, probability in zip(selected, probabilities, strict=True)
+    )
+    return ExactPosterior(
+        members, posterior.log_evidence + normalizer,
+        posterior.bank_hash, posterior.likelihood_power)
+
+
 @dataclass(frozen=True)
 class SafeSourceStackingCertificate:
     sources: tuple[str, ...]
@@ -199,16 +222,13 @@ def arbitration_source_log_predictive(candidates, initial_data, arbitration, *,
             raise ValueError("one structural support crossed source families")
     profile = np.empty((len(arbitration.X), len(families)), dtype=float)
     for column, family in enumerate(families):
-        members = [member for member in target.initial_posterior.members
-                   if identifier_family[member.structure.structure_id] == family]
-        mass = float(sum(member.probability for member in members))
-        if not members or mass <= 0.0:
+        indices = [index for index, member in enumerate(
+            target.initial_posterior.members)
+            if identifier_family[member.structure.structure_id] == family]
+        if not indices:
             raise ValueError("source family has no calibration predictive mass")
-        normalized = tuple(replace(member, probability=member.probability / mass)
-                           for member in members)
-        posterior = ExactPosterior(normalized, 0.0,
-            target.initial_posterior.bank_hash,
-            target.initial_posterior.likelihood_power)
+        posterior = _restricted_posterior(
+            target.initial_posterior, indices)
         profile[:, column] = model.engine(model.stable_hash).predictive_logpdf(
             posterior, arbitration.X, arbitration.y)
     return profile, np.arange(len(arbitration.X)) % 2, families
@@ -468,16 +488,13 @@ def crossfit_source_log_predictive(candidates, initial_data, action_domain, *,
             if previous != family:
                 raise ValueError("one structural support crossed source families")
         for column, family in enumerate(families):
-            members = [member for member in target.initial_posterior.members
-                       if identifier_family[member.structure.structure_id] == family]
-            mass = float(sum(member.probability for member in members))
-            if not members or mass <= 0.0:
+            indices = [index for index, member in enumerate(
+                target.initial_posterior.members)
+                if identifier_family[member.structure.structure_id] == family]
+            if not indices:
                 raise ValueError("source family has no posterior predictive mass")
-            normalized = tuple(replace(member, probability=member.probability / mass)
-                               for member in members)
-            posterior = ExactPosterior(normalized, 0.0,
-                target.initial_posterior.bank_hash,
-                target.initial_posterior.likelihood_power)
+            posterior = _restricted_posterior(
+                target.initial_posterior, indices)
             profile[held, column] = model.engine(model.stable_hash).predictive_logpdf(
                 posterior, initial_data.X[held], initial_data.y[held])
     return profile, fold_ids, families

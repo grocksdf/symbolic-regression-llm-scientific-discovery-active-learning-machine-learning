@@ -5,6 +5,7 @@ import inspect
 import numpy as np
 
 from hypothesis_mvp.discovery import drr_readiness as drr
+from hypothesis_mvp.discovery.drr_prefix import evaluate_drr_prefix_curve
 
 
 def test_drr_api_has_no_action_response_test_or_ood_surface():
@@ -95,3 +96,29 @@ def test_drr_exact_fixture_has_positive_and_negative_resolution():
     assert positive.certificate["decision_risk_utility"]["passed"] is True
     assert negative.indicator == 0 and negative.ready is False
     assert negative.certificate["failure_counts_as_not_ready"] is True
+
+
+def test_fixed_short_prefix_curve_is_continuous_and_response_free():
+    candidates = [
+        {"expression": "1", "source": "deterministic_constant_anchor",
+         "origin": "deterministic"},
+        {"expression": "x0", "source": "engine:polynomial_lasso",
+         "origin": "deterministic"},
+        {"expression": "x0**2", "source": "deterministic_linear_anchor",
+         "origin": "deterministic"},
+        {"expression": "sin(x0)", "source": "llm_evidence_synthesis",
+         "origin": "llm"},
+    ]
+    X = np.linspace(-.5, .5, 32)[:, None]
+    y = np.sin(3.0 * X[:, 0]) + .03 * np.arange(len(X))
+    actions = np.array([[-3.], [-2.], [-1.], [1.], [2.], [3.]])
+    curve = evaluate_drr_prefix_curve(
+        candidates, X, y, actions, condition="fixture",
+        exploration_identity="e" * 64,
+        selection_method=drr.DECISION_RISK_CAPACITY_METHOD)
+    assert curve.prefixes == (8, 16, 32)
+    assert all(0.0 <= value <= 1.0
+               for value in curve.normalized_lower_bounds)
+    assert 0.0 <= curve.normalized_aulc <= 1.0
+    assert curve.positive_prefix_count >= 1
+    assert curve.to_dict()["candidate_response_accessed"] is False

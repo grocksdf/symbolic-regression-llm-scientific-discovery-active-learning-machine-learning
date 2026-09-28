@@ -88,7 +88,10 @@ def bayes_zero_one_decision_risk(probabilities: np.ndarray) -> float:
         or not np.isclose(float(np.sum(values)), 1.0, rtol=0.0, atol=2e-13)
     ):
         raise ValueError("Bayes decision-risk posterior is invalid")
-    return 1.0 - float(np.max(values))
+    leader = int(np.argmax(values))
+    return float(math.fsum(
+        float(value) for index, value in enumerate(values)
+        if index != leader))
 
 
 def bayes_zero_one_decision_gains(
@@ -108,7 +111,12 @@ def bayes_zero_one_decision_gains(
         or not np.allclose(np.sum(posterior, axis=0), 1.0, rtol=0.0, atol=2e-13)
     ):
         raise ValueError("Bayes decision-risk posterior matrix is invalid")
-    return prior_risk - (1.0 - np.max(posterior, axis=0))
+    posterior_risk = np.asarray([
+        math.fsum(float(value) for index, value in enumerate(posterior[:, column])
+                  if index != int(np.argmax(posterior[:, column])))
+        for column in range(posterior.shape[1])
+    ])
+    return prior_risk - posterior_risk
 
 
 def action_matrix_hash(actions: np.ndarray) -> str:
