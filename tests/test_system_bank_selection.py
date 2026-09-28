@@ -49,6 +49,14 @@ def test_capacity_bank_is_deterministic_bounded_and_preserves_sources():
     assert report["source_safety"]["origin:llm"]["passed"] is True
 
 
+def test_protected_counterfactual_sources_are_core_family():
+    assert source_family({
+        "expression": "x0",
+        "source": "protected_counterfactual_backbone:engine:mcts",
+        "origin": "deterministic",
+    }) == "core"
+
+
 def test_capacity_bank_rejects_unmatched_capacity():
     X = np.arange(6.0)[:, None]
     initial = RoleDataset(DataRole.DEVELOPMENT, X, X[:, 0])

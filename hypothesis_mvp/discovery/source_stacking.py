@@ -27,6 +27,8 @@ def source_family(candidate) -> str:
     if str(candidate.get("origin", "")) == "llm":
         return "llm"
     source = str(candidate.get("source", ""))
+    if source.startswith("protected_counterfactual_backbone:"):
+        return "core"
     if source == f"engine:{baseline_engine_name()}":
         return "core"
     return source if source.startswith("engine:") else "core"

@@ -534,7 +534,11 @@ def test_protected_counterfactual_backbone_precedes_adaptive_jobs(
 
     def run_allocated(**kwargs):
         calls.append(kwargs)
-        return SimpleNamespace(tag=len(calls))
+        return SimpleNamespace(tag=len(calls), all_results=(
+            SimpleNamespace(
+                engine=name, expression=f"{name}(x0)",
+                lineage_id=f"{len(calls)}-{name}")
+            for name in kwargs["allocations"]))
 
     monkeypatch.setattr(agent.scheduler, "run_allocated", run_allocated)
     monkeypatch.setattr(
@@ -559,6 +563,8 @@ def test_protected_counterfactual_backbone_precedes_adaptive_jobs(
     assert result.evaluation_budget == 6
     assert agent._last_counterfactual_backbone["backbone_jobs"] == 4
     assert agent._last_counterfactual_backbone["adaptive_jobs"] == 2
+    assert len(agent._last_counterfactual_backbone[
+        "backbone_candidates"]) == 4
 
 
 def test_empty_typed_synthesis_abstains_without_discarding_engines(

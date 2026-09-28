@@ -301,6 +301,11 @@ class DiscoveryAgent:
             "adaptive_jobs": sum(extras.values()),
             "total_jobs": self.config.engine_budget,
             "backbone_controls": "registered-engine-defaults",
+            "backbone_candidates": [{
+                "engine": str(row.engine),
+                "expression": str(row.expression),
+                "lineage_id": str(row.lineage_id),
+            } for row in first.all_results],
             "adaptive_allocations": extras,
             "candidate_response_accessed": False,
             "heldout_opened": False,
