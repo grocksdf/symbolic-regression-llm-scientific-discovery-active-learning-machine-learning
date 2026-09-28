@@ -21,7 +21,9 @@ from hypothesis_mvp.discovery.scientist_policy import (
 )
 from hypothesis_mvp.discovery.inference_router import route_inference
 from hypothesis_mvp.discovery.skill_policy import (
-    SkillTaskEvidence, allocate_bayesian_skill_jobs, fit_skill_reliability,
+    AllocationTaskEvidence, SkillTaskEvidence,
+    allocate_bayesian_skill_jobs, conservative_allocation_decision,
+    fit_conservative_allocation_policy, fit_skill_reliability,
     leave_one_task_out_contextual_skill_policy,
     leave_one_task_out_skill_policy, leave_one_task_out_skill_policy_v2,
 )
@@ -344,6 +346,49 @@ def test_bayesian_skill_allocator_combines_reliability_and_llm_preference():
     assert result["allocated_jobs"]["sparse_library"] >= 2
     assert result["allocated_jobs"]["mcts"] == 1
     assert result["candidate_response_accessed"] is False
+
+
+def test_conservative_allocation_requires_global_and_family_lower_bounds():
+    rows = tuple(
+        AllocationTaskEvidence(
+            f"{family}-{index}", family, 1.0, .01)
+        for family in ("a", "b", "c", "d")
+        for index in range(2))
+    policy = fit_conservative_allocation_policy(rows)
+    assert policy["passed"]
+    accepted = conservative_allocation_decision(
+        {"p": 2, "m": 2, "s": 1, "a": 1},
+        {"p": 1, "m": 1, "s": 2, "a": 2},
+        policy, "a")
+    assert accepted["challenger_certified"]
+    assert accepted["selected_allocation"] == {
+        "p": 1, "m": 1, "s": 2, "a": 2}
+    rejected = conservative_allocation_decision(
+        {"p": 2, "m": 2, "s": 1, "a": 1},
+        {"p": 1, "m": 1, "s": 2, "a": 2},
+        None, "a")
+    assert rejected["fallback_to_baseline"]
+    assert rejected["selected_allocation"] == {
+        "p": 2, "m": 2, "s": 1, "a": 1}
+
+
+def test_conservative_allocation_rejects_familywise_negative_transfer():
+    rows = tuple([
+        *(
+            AllocationTaskEvidence(f"a-{index}", "a", -1.0, .01)
+            for index in range(2)),
+        *(
+            AllocationTaskEvidence(f"{family}-{index}", family, 1.0, .01)
+            for family in ("b", "c", "d", "e")
+            for index in range(3)),
+    ])
+    policy = fit_conservative_allocation_policy(rows)
+    assert policy["passed"]
+    decision = conservative_allocation_decision(
+        {"p": 2, "m": 2, "s": 1, "a": 1},
+        {"p": 1, "m": 1, "s": 2, "a": 2},
+        policy, "a")
+    assert decision["fallback_to_baseline"]
 
 
 def test_contextual_skill_replay_improves_family_specific_prediction():

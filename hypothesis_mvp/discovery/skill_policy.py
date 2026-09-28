@@ -65,6 +65,139 @@ class SkillReliability:
             "lower_credible_bound": self.lower_credible_bound}
 
 
+@dataclass(frozen=True)
+class AllocationTaskEvidence:
+    task_identity: str
+    dataset_family: str
+    gain: float
+    numerical_tolerance: float
+
+    def __post_init__(self):
+        if (not self.task_identity or not self.dataset_family
+                or not np.isfinite(self.gain)
+                or not np.isfinite(self.numerical_tolerance)
+                or self.numerical_tolerance < 0.0):
+            raise ValueError("invalid allocation task evidence")
+
+    @property
+    def outcome(self) -> str:
+        if self.gain > self.numerical_tolerance:
+            return "success"
+        if self.gain < -self.numerical_tolerance:
+            return "failure"
+        return "unresolved"
+
+
+def _allocation_posterior(rows, credible_level):
+    outcomes = [row.outcome for row in rows]
+    success, failure = (
+        outcomes.count("success"), outcomes.count("failure"))
+    alpha, beta = success + 0.5, failure + 0.5
+    return {
+        "successes": success, "failures": failure,
+        "unresolved": outcomes.count("unresolved"),
+        "posterior_alpha": alpha, "posterior_beta": beta,
+        "posterior_mean": alpha / (alpha + beta),
+        "lower_credible_bound": float(beta_distribution.ppf(
+            1.0 - credible_level, alpha, beta)),
+    }
+
+
+def fit_conservative_allocation_policy(
+        evidence: Sequence[AllocationTaskEvidence], *,
+        credible_level: float = 0.9,
+        minimum_tasks: int = 8,
+        minimum_families: int = 3,
+        minimum_family_tasks: int = 2,
+) -> dict[str, Any]:
+    """Certify an allocation challenger from independent task outcomes."""
+    tasks = {row.task_identity for row in evidence}
+    families = sorted({row.dataset_family for row in evidence})
+    if (not 0.5 < credible_level < 1.0 or minimum_tasks < 2
+            or minimum_families < 2 or minimum_family_tasks < 1
+            or len(tasks) != len(evidence)):
+        raise ValueError("invalid conservative allocation calibration")
+    global_posterior = _allocation_posterior(evidence, credible_level)
+    family_posteriors = {
+        family: {
+            **_allocation_posterior([
+                row for row in evidence
+                if row.dataset_family == family], credible_level),
+            "task_count": sum(
+                row.dataset_family == family for row in evidence),
+        }
+        for family in families
+    }
+    coverage = (
+        len(tasks) >= minimum_tasks and len(families) >= minimum_families)
+    global_safe = global_posterior["lower_credible_bound"] > 0.5
+    result = {
+        "schema": "scientific-conservative-allocation-policy-v1",
+        "credible_level": credible_level,
+        "minimum_tasks": minimum_tasks,
+        "minimum_families": minimum_families,
+        "minimum_family_tasks": minimum_family_tasks,
+        "task_count": len(tasks), "dataset_families": families,
+        "global_posterior": global_posterior,
+        "family_posteriors": family_posteriors,
+        "coverage_passed": coverage,
+        "global_safety_passed": global_safe,
+        "passed": bool(coverage and global_safe),
+        "candidate_response_accessed": False, "heldout_opened": False,
+        "claim_boundary": (
+            "response-free task-level allocation calibration only")}
+    result["identity"] = sha256(json.dumps(
+        result, sort_keys=True, separators=(",", ":"),
+        allow_nan=False).encode()).hexdigest()
+    return result
+
+
+def conservative_allocation_decision(
+        baseline: Mapping[str, int], challenger: Mapping[str, int],
+        policy: Mapping[str, Any] | None, dataset_family: str,
+) -> dict[str, Any]:
+    """Deploy a challenger only under global and familywise certification."""
+    baseline_jobs = {str(key): int(value) for key, value in baseline.items()}
+    challenger_jobs = {
+        str(key): int(value) for key, value in challenger.items()}
+    if (not baseline_jobs or set(baseline_jobs) != set(challenger_jobs)
+            or any(value < 1 for value in baseline_jobs.values())
+            or any(value < 1 for value in challenger_jobs.values())
+            or sum(baseline_jobs.values()) != sum(challenger_jobs.values())
+            or not dataset_family):
+        raise ValueError("invalid conservative allocation decision inputs")
+    equivalent = baseline_jobs == challenger_jobs
+    certificate = dict(policy or {})
+    family = dict(certificate.get(
+        "family_posteriors", {}).get(dataset_family, {}))
+    eligible = bool(
+        certificate.get("schema")
+            == "scientific-conservative-allocation-policy-v1"
+        and certificate.get("passed") is True
+        and certificate.get("global_posterior", {}).get(
+            "lower_credible_bound", 0.0) > 0.5
+        and family.get("task_count", 0)
+            >= certificate.get("minimum_family_tasks", 2)
+        and family.get("lower_credible_bound", 0.0) > 0.5)
+    selected = challenger_jobs if (equivalent or eligible) else baseline_jobs
+    result = {
+        "schema": "scientific-conservative-allocation-decision-v1",
+        "dataset_family": dataset_family,
+        "baseline_allocation": baseline_jobs,
+        "challenger_allocation": challenger_jobs,
+        "selected_allocation": selected,
+        "allocations_equivalent": equivalent,
+        "challenger_certified": eligible,
+        "fallback_to_baseline": not equivalent and not eligible,
+        "policy_identity": str(certificate.get("identity") or ""),
+        "candidate_response_accessed": False, "heldout_opened": False,
+    }
+    result["identity"] = sha256(json.dumps(
+        result, sort_keys=True, separators=(",", ":"),
+        allow_nan=False).encode()).hexdigest()
+    return result
+
+
 def fit_skill_reliability(evidence: Sequence[SkillTaskEvidence],
                           *, credible_level: float = 0.9) -> tuple[SkillReliability, ...]:
     if not 0.5 < credible_level < 1.0:
@@ -370,7 +503,9 @@ def leave_one_task_out_contextual_skill_policy(
 
 
 __all__ = [
-    "allocate_bayesian_skill_jobs",
+    "AllocationTaskEvidence", "allocate_bayesian_skill_jobs",
+    "conservative_allocation_decision",
+    "fit_conservative_allocation_policy",
     "fit_contextual_skill_reliability",
     "SkillReliability", "SkillTaskEvidence", "fit_skill_reliability",
     "leave_one_task_out_contextual_skill_policy",

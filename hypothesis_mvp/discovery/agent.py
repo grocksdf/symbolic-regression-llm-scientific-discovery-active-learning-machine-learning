@@ -28,7 +28,9 @@ from .scientist_policy import (
     ResearchPlan, ScientistReview, ScientistState, allocated_plan,
     deterministic_plan,
 )
-from .skill_policy import allocate_bayesian_skill_jobs
+from .skill_policy import (
+    allocate_bayesian_skill_jobs, conservative_allocation_decision,
+)
 from .skill_probe_policy import (
     allocate_task_local_probe_jobs, predict_probe_skill_model,
     probe_features_from_engine_results,
@@ -74,6 +76,8 @@ class DiscoveryAgentConfig:
     dataset_family: str = ""
     protected_counterfactual_backbone: bool = False
     provider_failure_mode: str = "abort"
+    conservative_allocation_policy: Mapping[str, Any] = field(
+        default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -95,6 +99,8 @@ class DiscoveryCycle:
     probe_allocation: Mapping[str, Any] = field(default_factory=dict)
     counterfactual_backbone: Mapping[str, Any] = field(default_factory=dict)
     provider_failure_abstention: Mapping[str, Any] = field(
+        default_factory=dict)
+    conservative_allocation_decision: Mapping[str, Any] = field(
         default_factory=dict)
 
 
@@ -454,6 +460,21 @@ class DiscoveryAgent:
                     self.config.engines, self.config.engine_budget)
                 telemetry = {"provider_failure_abstention": fallback}
                 return plan, telemetry, fallback, 1
+            baseline = deterministic_plan(
+                self.config.engines, self.config.engine_budget)
+            baseline_jobs = {
+                call.engine: call.jobs for call in baseline.engine_calls}
+            challenger_jobs = {
+                call.engine: call.jobs for call in plan.engine_calls}
+            decision = conservative_allocation_decision(
+                baseline_jobs, challenger_jobs,
+                self.config.conservative_allocation_policy,
+                self.config.dataset_family)
+            if decision["selected_allocation"] != challenger_jobs:
+                plan = allocated_plan(decision["selected_allocation"])
+            telemetry = {
+                **dict(telemetry),
+                "conservative_allocation_decision": decision}
             return plan, telemetry, None, 1
         if self.config.skill_reliability:
             allocation = allocate_bayesian_skill_jobs(
@@ -541,6 +562,29 @@ class DiscoveryAgent:
                 "engine_candidates_preserved": True}
         return candidates, audit
 
+    def _cycle_record(
+            self, cycle, final, selection, engines, acquisition, usage,
+            plan, review, state_before, state_after, orchestration):
+        telemetry = orchestration.get("provider_telemetry") or ()
+        allocation = next((
+            row.get("conservative_allocation_decision")
+            for row in telemetry
+            if isinstance(row, Mapping)
+            and row.get("conservative_allocation_decision")), {})
+        return DiscoveryCycle(
+            cycle, final.expression, final.hypothesis.hypothesis_id,
+            len(selection.development.X), _engine_payload(engines),
+            acquisition, int(final.report.get("llm_call_count", 0)) + usage[0],
+            int(final.report["evaluation_budget_used"]),
+            int(final.report["llm_attempt_count"]) + usage[1],
+            int(final.report.get("llm_error_count", 0)) + usage[2],
+            plan.to_dict(), review.to_dict(), state_before, state_after,
+            dict(getattr(self, "_last_probe_allocation", {})),
+            dict(getattr(self, "_last_counterfactual_backbone", {})),
+            dict(orchestration.get("provider_failure_abstention") or {}),
+            dict(allocation or {}),
+        )
+
     def run(
         self, *, selection: SelectionData,
         task_name: str, task_description: str, output_dir: str | Path,
@@ -598,21 +642,10 @@ class DiscoveryAgent:
                 acquisition = {
                     "reason": "canonical_p3b_acquisition_required",
                     "cycle_continues_without_labels": True}
-            history.append(DiscoveryCycle(
-                cycle, final.expression, final.hypothesis.hypothesis_id,
-                len(selection.development.X), _engine_payload(engines),
-                acquisition, int(final.report.get("llm_call_count", 0)) + usage[0],
-                int(final.report["evaluation_budget_used"]),
-                int(final.report["llm_attempt_count"]) + usage[1],
-                int(final.report.get("llm_error_count", 0)) + usage[2],
-                plan.to_dict(), review.to_dict(),
-                state_before, scientist_state.to_dict(),
-                dict(getattr(self, "_last_probe_allocation", {})),
-                dict(getattr(
-                    self, "_last_counterfactual_backbone", {})),
-                dict(orchestration.get(
-                    "provider_failure_abstention") or {}),
-            ))
+            history.append(self._cycle_record(
+                cycle, final, selection, engines, acquisition, usage,
+                plan, review, state_before, scientist_state.to_dict(),
+                orchestration))
         if final is None:
             raise RuntimeError("discovery agent executed no cycle")
         remaining = (len(selection.acquisition_pool.X)
