@@ -409,6 +409,34 @@ def test_paired_calibration_role_is_isolated_from_production_synthesis():
             allocation_calibration_role="paired-challenger"))
 
 
+def test_uncertified_equivalent_allocation_strips_llm_controls(monkeypatch):
+    agent = DiscoveryAgent(DiscoveryAgentConfig(
+        engines=("polynomial_lasso", "mcts"), engine_budget=2,
+        scientist_orchestration=True, dataset_family="fixture"))
+    raw = {
+        "protocol_id": RESEARCH_PLAN_PROTOCOL,
+        "mechanisms": ["fixture"],
+        "engine_calls": [
+            {"engine": "polynomial_lasso", "jobs": 1,
+             "objective": "fixture", "expected_evidence": "fixture",
+             "requested_operations": ["quadratic"]},
+            {"engine": "mcts", "jobs": 1,
+             "objective": "fixture", "expected_evidence": "fixture",
+             "requested_operations": ["trigonometric"]}],
+        "comparison_questions": ["compare"],
+        "synthesis_goal": "retain", "stop_conditions": ["budget"]}
+    planner = SimpleNamespace(
+        enabled=True,
+        plan_research=lambda **kwargs: (
+            plan_from_json(raw, ("polynomial_lasso", "mcts"), 2),
+            {"fixture": True}))
+    plan, telemetry, _, _ = agent._resolve_plan(
+        planner, {"description": "fixture"})
+    assert all(not call.requested_operations for call in plan.engine_calls)
+    decision = telemetry["conservative_allocation_decision"]
+    assert decision["controls_fallback_to_baseline"] is True
+
+
 def test_contextual_skill_replay_improves_family_specific_prediction():
     rows = tuple(
         SkillTaskEvidence(

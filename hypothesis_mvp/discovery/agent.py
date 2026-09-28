@@ -18,7 +18,7 @@ from hypothesis_mvp.symbolic import EngineScheduler, merge_multi_engine_results
 from .api import DiscoveryRunResult, discover_from_selection
 from .contracts import DiscoveryConfig
 from .proposal_runtime import (
-    ProviderInfrastructureError, ProviderSettings, ProposalRuntime,
+    ProtocolError, ProviderInfrastructureError, ProviderSettings, ProposalRuntime,
     ScientistPlanProtocolError, ScientistReviewProtocolError,
 )
 from .equation_runtime import EquationRuntime
@@ -463,7 +463,7 @@ class DiscoveryAgent:
                     task_context=task_context,
                     available_engines=self.config.engines,
                     total_jobs=self.config.engine_budget)
-            except (ProviderInfrastructureError,
+            except (ProtocolError, ProviderInfrastructureError,
                     ScientistPlanProtocolError) as error:
                 fallback = self._provider_abstention("plan", error)
                 plan = deterministic_plan(
@@ -489,8 +489,18 @@ class DiscoveryAgent:
                     "calibration_override": True,
                     "execution_role": "paired-calibration-only",
                 }
-            elif decision["selected_allocation"] != challenger_jobs:
-                plan = allocated_plan(decision["selected_allocation"])
+            elif not decision["challenger_certified"]:
+                plan = allocated_plan(baseline_jobs)
+                decision = {
+                    **decision,
+                    "selected_allocation": baseline_jobs,
+                    "controls_fallback_to_baseline": True,
+                }
+            else:
+                decision = {
+                    **decision,
+                    "controls_fallback_to_baseline": False,
+                }
             telemetry = {
                 **dict(telemetry),
                 "conservative_allocation_decision": decision}
@@ -528,7 +538,7 @@ class DiscoveryAgent:
                 plan=plan, engine_evidence=evidence,
                 require_typed_synthesis=self.config.typed_evidence_synthesis)
             return review, telemetry, None, 1
-        except (ProviderInfrastructureError,
+        except (ProtocolError, ProviderInfrastructureError,
                 ScientistReviewProtocolError) as error:
             fallback = self._provider_abstention("review", error)
             review, telemetry = self._abstention_review(fallback)
