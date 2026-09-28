@@ -391,6 +391,24 @@ def test_conservative_allocation_rejects_familywise_negative_transfer():
     assert decision["fallback_to_baseline"]
 
 
+def test_paired_calibration_role_is_isolated_from_production_synthesis():
+    agent = DiscoveryAgent(DiscoveryAgentConfig(
+        scientist_orchestration=True, typed_evidence_synthesis=True,
+        allocation_calibration_role="paired-challenger"))
+    candidates, audit = agent._compile_cycle_synthesis(
+        ScientistReview(
+            ("fixture",), (), (), ("synthesize",), False, "continue"),
+        (), 2)
+    assert candidates == []
+    assert audit["candidate_admission"] == (
+        "disabled-by-calibration-contract")
+    assert audit["engine_candidates_preserved"] is True
+    with pytest.raises(ValueError, match="requires typed"):
+        DiscoveryAgent(DiscoveryAgentConfig(
+            scientist_orchestration=True,
+            allocation_calibration_role="paired-challenger"))
+
+
 def test_contextual_skill_replay_improves_family_specific_prediction():
     rows = tuple(
         SkillTaskEvidence(

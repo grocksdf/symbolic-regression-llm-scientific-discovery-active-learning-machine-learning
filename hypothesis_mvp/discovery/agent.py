@@ -78,6 +78,7 @@ class DiscoveryAgentConfig:
     provider_failure_mode: str = "abort"
     conservative_allocation_policy: Mapping[str, Any] = field(
         default_factory=dict)
+    allocation_calibration_role: str = "production"
 
 
 @dataclass(frozen=True)
@@ -214,6 +215,14 @@ class DiscoveryAgent:
     ) -> None:
         self.config = config
         self.provider_settings = provider_settings
+        if config.allocation_calibration_role not in {
+                "production", "paired-challenger"}:
+            raise ValueError("invalid allocation calibration role")
+        if (config.allocation_calibration_role == "paired-challenger"
+                and (not config.scientist_orchestration
+                     or not config.typed_evidence_synthesis)):
+            raise ValueError(
+                "paired challenger requires typed Scientist orchestration")
         if config.acquisition_enabled:
             raise ValueError(
                 "DiscoveryAgent acquisition was removed; run the canonical P3B "
@@ -470,7 +479,16 @@ class DiscoveryAgent:
                 baseline_jobs, challenger_jobs,
                 self.config.conservative_allocation_policy,
                 self.config.dataset_family)
-            if decision["selected_allocation"] != challenger_jobs:
+            if self.config.allocation_calibration_role == "paired-challenger":
+                decision = {
+                    **decision,
+                    "selected_allocation": challenger_jobs,
+                    "challenger_certified": False,
+                    "fallback_to_baseline": False,
+                    "calibration_override": True,
+                    "execution_role": "paired-calibration-only",
+                }
+            elif decision["selected_allocation"] != challenger_jobs:
                 plan = allocated_plan(decision["selected_allocation"])
             telemetry = {
                 **dict(telemetry),
@@ -545,6 +563,14 @@ class DiscoveryAgent:
             "directive_count": 0, "compiled_candidate_count": 0,
             "records": [], "candidate_response_accessed": False,
             "heldout_opened": False}
+        if self.config.allocation_calibration_role == "paired-challenger":
+            return [], {
+                **audit,
+                "synthesis_unavailable": True,
+                "unavailable_reason":
+                    "paired-allocation-calibration-isolates-engine-scheduling",
+                "candidate_admission": "disabled-by-calibration-contract",
+                "engine_candidates_preserved": True}
         if not self.config.typed_evidence_synthesis:
             return [], audit
         candidates, audit = compile_evidence_synthesis(
