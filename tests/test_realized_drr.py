@@ -31,4 +31,8 @@ def test_realized_drr_selects_before_response_and_preserves_budget():
     assert all(row["response_opened_after_selection"]
                for row in result["queries"])
     assert 0.0 <= result["normalized_realized_risk_aulc"] <= 1.0
+    assert np.isfinite(result["absolute_realized_risk_aulc"])
+    assert -1.0 <= result["symmetric_realized_risk_aulc"] <= 1.0
+    assert all(-1.0 <= value <= 1.0
+               for value in result["symmetric_risk_change_curve"])
     assert result["heldout_opened"] is False

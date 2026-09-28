@@ -41,6 +41,32 @@ def _vector(values, name):
     return array
 
 
+def _risk_curve_metrics(risks, measurement_budget):
+    values = np.asarray(risks, dtype=float)
+    initial = float(values[0])
+    normalized = (
+        np.zeros(len(values), dtype=float) if initial <= 0.0
+        else (initial - values) / initial)
+    absolute = initial - values
+    denominators = initial + values
+    symmetric = np.divide(
+        absolute, denominators, out=np.zeros_like(absolute),
+        where=denominators > 0.0)
+    symmetric = np.clip(symmetric, -1.0, 1.0)
+    x = np.arange(len(values))
+    return {
+        "normalized_risk_reduction_curve": normalized.tolist(),
+        "normalized_realized_risk_aulc": float(
+            np.trapezoid(normalized, x) / measurement_budget),
+        "absolute_risk_reduction_curve": absolute.tolist(),
+        "absolute_realized_risk_aulc": float(
+            np.trapezoid(absolute, x) / measurement_budget),
+        "symmetric_risk_change_curve": symmetric.tolist(),
+        "symmetric_realized_risk_aulc": float(
+            np.trapezoid(symmetric, x) / measurement_budget),
+    }
+
+
 def run_realized_drr_trajectory(
     candidates: Sequence[Mapping[str, Any]],
     initial_X, initial_y, action_X, action_y, *, condition: str,
@@ -114,19 +140,14 @@ def run_realized_drr_trajectory(
         })
         risks.append(after)
         remaining = np.delete(remaining, local)
-    normalized = (
-        np.zeros(len(risks), dtype=float) if initial_risk <= 0.0
-        else (initial_risk - np.asarray(risks)) / initial_risk)
-    aulc = float(np.trapezoid(
-        normalized, np.arange(len(normalized))) / measurement_budget)
+    metrics = _risk_curve_metrics(risks, measurement_budget)
     payload = {
         "schema": "scientific-realized-drr-trajectory-v1",
         "condition": condition, "policy": policy,
         "measurement_budget": measurement_budget,
         "initial_bayes_risk": initial_risk,
         "risk_curve": risks,
-        "normalized_risk_reduction_curve": normalized.tolist(),
-        "normalized_realized_risk_aulc": aulc,
+        **metrics,
         "queries": queries,
         "selected_bank_identity": selection["target"],
         "candidate_response_accessed": True,
