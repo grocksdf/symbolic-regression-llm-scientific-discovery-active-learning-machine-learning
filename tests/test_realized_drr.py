@@ -3,6 +3,7 @@
 import numpy as np
 
 from hypothesis_mvp.discovery.realized_drr import (
+    _select_realized_action,
     run_realized_drr_trajectory,
 )
 
@@ -36,3 +37,38 @@ def test_realized_drr_selects_before_response_and_preserves_budget():
     assert all(-1.0 <= value <= 1.0
                for value in result["symmetric_risk_change_curve"])
     assert result["heldout_opened"] is False
+
+
+def test_uncertified_decision_risk_uses_matched_random_fallback():
+    remaining = np.array([0, 1, 2, 3])
+    random_order = np.array([2, 0, 3, 1])
+    targeted = _select_realized_action(
+        np.zeros(4), np.full(4, 1e-12), remaining, random_order,
+        policy="decision_risk", resolution=4e-10)
+    random = _select_realized_action(
+        np.zeros(4), np.full(4, 1e-12), remaining, random_order,
+        policy="random", resolution=4e-10)
+    assert targeted == (2, "matched-random-fallback", False)
+    assert random == (2, "registered-random", False)
+
+
+def test_only_interval_separated_positive_utility_is_targeted():
+    remaining = np.array([3, 5, 8])
+    random_order = np.array([8, 5, 3])
+    selected = _select_realized_action(
+        np.array([0.01, 0.30, 0.02]),
+        np.array([0.02, 0.31, 0.04]),
+        remaining, random_order, policy="decision_risk",
+        resolution=3e-10)
+    assert selected == (1, "certified-decision-risk", True)
+
+
+def test_overlapping_intervals_fail_closed_even_with_positive_scores():
+    remaining = np.array([3, 5, 8])
+    random_order = np.array([8, 5, 3])
+    selected = _select_realized_action(
+        np.array([0.10, 0.11, 0.02]),
+        np.array([0.12, 0.13, 0.04]),
+        remaining, random_order, policy="decision_risk",
+        resolution=3e-10)
+    assert selected == (2, "matched-random-fallback", False)

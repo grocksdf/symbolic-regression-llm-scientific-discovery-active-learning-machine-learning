@@ -19,6 +19,7 @@ from hypothesis_mvp.pcpi.acquisition import (
 from hypothesis_mvp.pcpi.action_conditional_residual import (
     bayes_zero_one_decision_risk,
 )
+from hypothesis_mvp.pcpi.dcca import select_by_certified_interval
 
 from .bank_selection import (
     DECISION_RISK_CAPACITY_METHOD, select_operational_capacity_bank,
@@ -67,6 +68,38 @@ def _risk_curve_metrics(risks, measurement_budget):
     }
 
 
+def _select_realized_action(
+    lower, upper, remaining, random_order, *, policy, resolution,
+):
+    """Select a certified leader or fail closed to a frozen random order."""
+    lo = np.asarray(lower, dtype=float).reshape(-1)
+    hi = np.asarray(upper, dtype=float).reshape(-1)
+    active = np.asarray(remaining, dtype=int).reshape(-1)
+    order = np.asarray(random_order, dtype=int).reshape(-1)
+    if (policy not in {"decision_risk", "random"}
+            or not len(lo) or hi.shape != lo.shape
+            or active.shape != lo.shape
+            or len(set(active.tolist())) != len(active)
+            or set(active.tolist()) - set(order.tolist())
+            or not np.all(np.isfinite(lo)) or not np.all(np.isfinite(hi))
+            or np.any(lo > hi) or not np.isfinite(resolution)
+            or resolution < 0.0):
+        raise ValueError("realized action selection inputs are invalid")
+    if policy == "decision_risk" and float(np.max(lo)) > resolution:
+        try:
+            local = select_by_certified_interval(lo, hi)
+            return int(local), "certified-decision-risk", True
+        except RuntimeError:
+            pass
+    chosen_global = next(
+        int(index) for index in order if int(index) in set(active.tolist()))
+    local = int(np.flatnonzero(active == chosen_global)[0])
+    mode = (
+        "registered-random" if policy == "random"
+        else "matched-random-fallback")
+    return local, mode, False
+
+
 def run_realized_drr_trajectory(
     candidates: Sequence[Mapping[str, Any]],
     initial_X, initial_y, action_X, action_y, *, condition: str,
@@ -108,6 +141,7 @@ def run_realized_drr_trajectory(
     partition = target.partition
     remaining = np.arange(len(actions), dtype=int)
     rng = np.random.default_rng(int(random_seed))
+    random_order = rng.permutation(len(actions))
     initial_risk = bayes_zero_one_decision_risk(
         np.asarray(partition.class_probabilities))
     risks, queries = [initial_risk], []
@@ -118,10 +152,11 @@ def run_realized_drr_trajectory(
         exact = exact_class_decision_risk_reduction_shared_actions(
             components, epsabs=EXACT_CLASS_EIG_EPSABS)
         lower = np.maximum(0.0, exact.scores - exact.quadrature_errors)
-        if policy == "decision_risk":
-            local = int(np.argmax(lower))
-        else:
-            local = int(rng.integers(len(remaining)))
+        upper = exact.scores + exact.quadrature_errors
+        resolution = float(len(available) * EXACT_CLASS_EIG_EPSABS)
+        local, selection_mode, certified = _select_realized_action(
+            lower, upper, remaining, random_order, policy=policy,
+            resolution=resolution)
         global_index = int(remaining[local])
         predicted = float(lower[local])
         response = float(responses[global_index])
@@ -134,6 +169,10 @@ def run_realized_drr_trajectory(
         queries.append({
             "step": step + 1, "action_index": global_index,
             "predicted_lower_bound": predicted,
+            "predicted_upper_bound": float(upper[local]),
+            "familywise_resolution": resolution,
+            "selection_mode": selection_mode,
+            "certified_targeted_selection": certified,
             "realized_risk_reduction": float(before - after),
             "risk_before": before, "risk_after": after,
             "response_opened_after_selection": True,
