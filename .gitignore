@@ -52,6 +52,8 @@ paper_locked_outputs/
 *.out
 *.synctex.gz
 texput.log
+paper/pcpi_aistats_main.pdf
+paper/figures/*.png
 # Ignore only local repository-level measured datasets; the
 # hypothesis_mvp/data Python package is canonical source.
 /data/

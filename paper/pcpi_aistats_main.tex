@@ -1,844 +1,584 @@
-\documentclass[10pt,twocolumn]{article}
+\documentclass[twoside]{article}
 
-% Development wrapper. Replace with the official AISTATS style only after the
-% target-year author kit is frozen. Page compliance is not claimed here.
-\usepackage[letterpaper,margin=0.72in,columnsep=0.24in]{geometry}
+\usepackage{aistats2027}
 \usepackage{amsmath,amssymb,amsfonts,amsthm}
 \usepackage{booktabs}
 \usepackage{enumitem}
+\usepackage{graphicx}
 \usepackage{microtype}
 \usepackage{xcolor}
 \usepackage{hyperref}
+\usepackage{url}
 
 \newcommand{\method}{PCPI}
 \newcommand{\E}{\mathbb E}
-\newcommand{\Var}{\mathrm{Var}}
-\newcommand{\KL}{\mathrm{KL}}
-\newcommand{\evidencegate}[1]{\textcolor{red}{[Evidence gate: #1]}}
+\newcommand{\R}{\mathcal R}
+\newcommand{\Acal}{\mathcal A}
+\newcommand{\Dcal}{\mathcal D}
+\newcommand{\ours}{\textsc{Full}}
+\newcommand{\nollm}{\textsc{No-LLM}}
+\newcommand{\single}{\textsc{Single}}
 \newtheorem{proposition}{Proposition}
-\newtheorem{assumption}{Assumption}
-
-\title{\method: Targeted Bayesian Experimental Design for Symbolic Discovery}
-\author{Anonymous Authors}
-\date{}
 
 \begin{document}
-\maketitle
+
+\twocolumn[
+\aistatstitle{Protected Bayesian Discovery with Lineage-Bound LLM Synthesis}
+\aistatsauthor{Anonymous Authors}
+\aistatsaddress{Anonymous Institution}
+]
 
 \begin{abstract}
-Scientific laws are rarely identifiable from a single observational fit:
-distinct symbolic structures can be predictively equivalent on the available
-domain, while equally accurate interpolants can disagree under a targeted
-measurement. We formulate symbolic scientific discovery as sequential
-Bayesian discrimination among operational predictive-equivalence classes.
-The inferential target is a joint posterior over symbolic structure,
-continuous parameters, and observation-noise parameters. \method{} is designed
-to approximate this posterior with target-correct sequential Monte Carlo and
-to select measurements by their expected information about predictive
-classes. An exactly enumerable finite bank supplies a reference posterior on
-provenance-verified measured observations. A fixed-universe resample--move SMC
-implementation is compared with that reference before any open-grammar claim.
-The original 72-run CCPP and grouped Gas Turbine CO/NOX finite-bank check passed
-its preregistered exact-posterior thresholds but exposed severe long-horizon
-particle genealogy coalescence. A Rao--Blackwellized, adaptively tempered
-implementation repairs that failure mode, and an exact-reference diagnostic
-validates an explicit proposal-corrected collapsed trans-dimensional kernel.
-We validate a Student-t-measure Gauss--Jacobi class-EIG estimator against
-independent quadrature under the repaired operational-class definition. The
-latest 96-run measured-pool reference-dominance experiment passed every
-protocol and evidence check but did not establish predictive or structural
-advantage. On CCPP, frozen-class gain relative to random acquisition was
-$-0.2538$ (95\% interval $[-0.4830,-0.0247]$), with negative transfer in 6/8
-seeds; the grouped Gas Turbine interval crossed zero. The audit also exposes a
-decision-semantics mismatch: when the calibrated generalized-posterior power
-$\eta<1$, ordinary class mutual information is not the expected entropy change
-of the implemented power-likelihood update. An exactly enumerable diagnostic
-repairs this loss/update alignment and adds a positive-gain floor, but CCPP
-remains negative with $\eta=1$ in every seed. A subsequent diagnostic
-constructs a response-free discrepancy basis orthogonal to the union of
-candidate designs and couples its exact marginal likelihood to a prequential
-Bayes-factor e-process. On the frozen initial-development-only UCI CCPP audit,
-all eight registered seeds completed without crossing the $E_t\ge100$
-boundary at $\alpha=0.01$; the untouched held-out role was never opened and
-no acquisition policy was compared. This is non-rejection against one
-registered discrepancy alternative, not a posterior-adequacy certificate or
-validation of an augmented posterior. Gas Turbine is excluded because its
-$\eta<1$ branches require a separate update-coherent adequacy contract. Real
-posterior adequacy, superiority, motif transfer, and held-out effectiveness
-claims therefore remain blocked. A separate PIT predictive-calibration
-correctness fixture passes five registered decisions, but its returned
-CCPP-only validation-role audit rejects three of eight seed-wise PIT
-sequences; only five seeds retain a proper nominal-marginal interpretation and
-the global eligibility Gate fails. We therefore introduce a response-blind
-model-class repair: structure-wise projected discrepancy inside a proper
-generative posterior, a countably-open typed AST prior, exact prior-mass-aware
-equivalence aggregation, and a collapsed sequential SMC/RJMCMC reference. The
-open-target reference passes normalization, detailed-balance, stationarity,
-evidence-telescoping, and proposal-invariance checks. These are correctness
-results only; a scalable open-grammar approximation and new predictive-
-calibration evidence remain absent.
+Large language models can propose scientific hypotheses, but a fluent proposal
+is not evidence that a model should enter a scientific posterior or control the
+next experiment. We introduce \method{}, a protected Bayesian framework for
+combining heterogeneous symbolic-discovery engines with a language model.
+The language model cannot freely author an accepted law: it emits typed
+composition directives that reference immutable engine lineages, and a
+deterministic compiler constructs the resulting support. Candidate sources
+are admitted by out-of-fold predictive evidence, with at least half of the
+prior mass reserved for a registered core and automatic fallback whenever any
+arbitration fold indicates negative transfer. The admitted bank is partitioned
+into operational predictive-equivalence classes and measurements are ranked by
+certified reduction in Bayes decision risk, not expression novelty or
+predictive variance alone.
+
+Two fresh, matched-engine synthesis screens over four symbolic-regression
+families complete all 32 condition runs without failure. Holding engine
+execution fixed, lineage-bound synthesis improves normalized expected-risk
+AULC by \(0.0192\) and \(0.0328\), with nonnegative family effects in both
+screens and positive effects in two and three families, respectively. On a
+measured gas-turbine source screen, protected stacking assigns weights
+\(0.511/0.489/{\approx}0\) to core/LLM/MCTS sources and rejects the redundant
+engine. A fixed-prefix replay produces 23 positive and 23 distinct risk-AULC
+values among 32 completed rows, resolving an earlier zero-signal metric.
+Crucially, a matched-budget realized pilot is negative
+(predicted--realized correlation \(-0.575\)); the calibrated deployment policy
+therefore authorizes acquisition only for the material-science family and
+authorizes no family for unconditional LLM synthesis. These results support
+selective hypothesis synthesis and fail-closed deployment, not universal LLM
+superiority.
 \end{abstract}
 
 \section{Introduction}
 
-Symbolic regression is often evaluated as one-shot expression fitting. That
-view hides two statistical difficulties. First, algebraic syntax is not the
-scientific estimand: several structures may induce the same predictions over
-the domain where decisions are made. Second, new measurements are chosen
-adaptively, so uncertainty must be updated along the realized action--outcome
-history rather than recomputed from an opaque fitness population.
+Modern scientific-discovery systems can call symbolic regression engines,
+program synthesizers, and large language models (LLMs) to generate candidate
+laws. This expands the search space, but also creates a statistical problem:
+adding a seemingly intelligent source can degrade the hypothesis bank,
+collapse useful uncertainty, or select an experiment whose modeled value does
+not materialize. Standard leaderboards largely evaluate the final equation;
+they do not specify when a new proposal source should be trusted, how
+conflicting sources should be combined, or when the system should abstain.
 
-We instead treat discovery as sequential Bayesian discrimination. At each
-round the learner maintains uncertainty over symbolic structure, coefficients,
-and nuisance parameters; maps structure mass to predictive classes; selects an
-action intended to separate posterior-supported classes; and incorporates only
-the newly observed likelihood factor. The terminal output is a Bayes decision
-over predictive classes. Posterior predictive risk is reported separately as
-external validity.
+We study a narrower and testable notion of an AI scientist. Multiple engines
+produce auditable candidate lineages. An LLM may synthesize structures across
+these lineages, but it cannot directly assign posterior mass or authorize an
+experiment. A protected Bayesian layer decides which sources enter the bank,
+and a decision-theoretic layer decides whether the bank supports a
+measurement. We call the resulting framework \method{}.
 
-The paper is organized around three primary contributions.
-\begin{itemize}[leftmargin=*,itemsep=1pt,topsep=2pt]
-  \item A sequential Bayesian formulation whose primary estimand is an
-  operational predictive-equivalence class rather than an expression string.
-  \item A target-correct SMC construction over symbolic structures,
-  coefficients, discrepancy, and noise parameters, together with a proper
-  countably-open typed prior whose finite conditional slice supplies an exact
-  posterior and collapsed RJMCMC reference. \evidencegate{P2/P3F}
-  \item A target-aware acquisition audit that separates numerical containment,
-  registered-reference dominance, and posterior-update/loss alignment; an
-  uncertified or nonpositive decision returns to the registered policy instead
-  of switching scientific objectives. \evidencegate{P3}
-\end{itemize}
+The central distinction is between \emph{proposal intelligence} and
+\emph{statistical authority}. The LLM is useful when it composes complementary
+structural evidence that individual engines miss. Statistical authority
+remains with a normalized finite posterior, out-of-fold source admission, and
+a registered Bayes-risk objective. This separation also makes negative
+evidence actionable: a source can remain in the provenance ledger while
+receiving zero production mass.
 
-Reliability-gated motif proposals are optional. They enter the paper only if
-their complete proposal correction preserves the posterior target. LLMs and
-multi-engine orchestration remain proposal and systems mechanisms, not parts
-of the statistical target.
+Our contributions are:
+\begin{enumerate}[leftmargin=*,itemsep=2pt,topsep=3pt]
+  \item \textbf{Lineage-bound LLM synthesis.} The LLM emits typed set
+  operations over verified parent lineages. A deterministic compiler rejects
+  unknown parents, unsupported grammar, duplicate support, and synthesis
+  without structural novelty.
+  \item \textbf{Protected Bayesian source admission.} Sources are evaluated
+  on independent arbitration folds. Harmful sources are removed before
+  stacking, at least half of production prior mass remains on a registered
+  core, and a dyadic shrinkage path returns to the core until every fold is
+  noninferior.
+  \item \textbf{Operational decision-risk design.} The scientific estimand is
+  a frozen predictive-equivalence class. Candidate measurements are selected
+  by a certified lower bound on expected reduction in Bayes class-decision
+  risk. Unresolved ranking or a nonviable bank stops measurement.
+  \item \textbf{Claim-calibrated evaluation.} Matched-engine screens isolate
+  the synthesis contribution. Response-free replay tests risk resolution;
+  realized trajectories separately test deployment. The resulting policy is
+  deliberately selective: strong expected-risk evidence does not override
+  negative realized evidence.
+\end{enumerate}
+
+This is not a claim that an LLM should generally schedule more engines. Our
+allocation experiments do not establish that claim. Instead, the current
+evidence supports a more specific mechanism: an LLM can synthesize useful
+cross-engine hypotheses, while a protected statistical layer decides whether
+those hypotheses are safe to use.
 
 \section{Related Work}
 
-\paragraph{Bayesian symbolic inference.}
-Bayesian symbolic regression and probabilistic program induction place priors
-over structured programs and integrate or sample their parameters. Our focus
-is the adaptive sequence of posterior targets and the pushforward from
-structures to predictive classes, while distinguishing a normalized posterior
-from heuristic fitness normalization.
+\paragraph{Symbolic scientific discovery.}
+Genetic programming, physics-guided decomposition, neural symbolic regression,
+and modern systems such as PySR search over expressions using predictive fit
+and complexity \cite{koza1992gp,udrescu2020aifeynman,
+petersen2021deepsymbolic,cranmer2023pysr}. Our focus is not a new base search
+engine. We combine heterogeneous engines while preserving source identity and
+make the downstream scientific decision depend on operational behavior rather
+than expression syntax.
 
-\paragraph{Sequential Monte Carlo.}
-SMC combines incremental importance weights, unbiased resampling, and
-target-invariant move kernels for a sequence of distributions
-\cite{doucet2001smc,delmoral2006smc}. We use these results only after the
-symbolic implementation verifies support, correction, and genealogy.
+\paragraph{LLMs for equation and program discovery.}
+LLM-SR uses language models to generate executable equation-discovery
+programs \cite{shojaee2024llmsr}; FunSearch couples language-model proposals
+with an automatic evaluator \cite{romeraparedes2024funsearch}; broader AI
+scientist systems use language models for planning and iterative research
+\cite{lu2024aiscientist,gotts2025coscientist}. These works demonstrate that
+language models can be productive proposal mechanisms. \method{} addresses a
+different question: how can an LLM combine evidence from multiple registered
+engines without becoming the authority that accepts its own hypothesis?
+Our typed compiler only permits operations over supplied lineage identifiers,
+and survival is decided by independent predictive evidence.
+
+\paragraph{Stacking and safe improvement.}
+Predictive stacking combines models by optimizing out-of-sample log score
+\cite{yao2018stacking}; hierarchical variants allow context-dependent
+combinations \cite{yao2022hierarchical}. Conservative policy-improvement
+methods retain a baseline unless an alternative is sufficiently supported
+\cite{laroche2019spibb,katariya2019interleaving}. We combine these ideas at
+the \emph{proposal-source} level: individually harmful sources are removed,
+the core retains a fixed reserve, and all admitted candidates remain discrete
+scientific hypotheses rather than being averaged into one predictor.
 
 \paragraph{Bayesian experimental design.}
-Expected information gain provides a decision-theoretic reference for
-measurement selection \cite{chaloner1995bayesian,foster2021bax}. Predictive
-uncertainty is not generally equivalent to structural information: high
-aleatoric noise can increase the former without separating symbolic laws.
-Robust BED instead optimizes information under an explicit ambiguity set
-\cite{go2022robust,abdulsamad2026maximin}; this is distinct from treating a
-small collection of likelihood powers as a universal misspecification model.
+Bayesian experimental design selects actions by expected utility
+\cite{chaloner1995bayesian}. Prediction-oriented active learning emphasizes
+that model information and predictive value need not coincide
+\cite{bickfordsmith2023prediction}. We use expected reduction in Bayes
+decision risk for a frozen operational-class estimand and require a numerical
+ranking certificate before a candidate response can be opened.
 
-\paragraph{Reference-relative decisions.}
-Conservative exploration and safe policy improvement return to a registered
-baseline when an alternative is not sufficiently supported
-\cite{katariya2019interleaving,laroche2019spibb}. Our use is narrower: the
-reference is an acquisition policy over the same visible pool, and the
-handover certificate concerns model-based information about the frozen
-scientific estimand. It is not a physical-safety or misspecification-robustness
-guarantee.
-
-\paragraph{Model discrepancy and anytime-valid evidence.}
-Orthogonal Gaussian-process discrepancy separates a flexible residual from
-the span of a calibrated mean model, addressing a standard identifiability
-failure in model calibration \cite{plumlee2018orthogonal}. Bayes factors are
-also classical test martingales, and e-processes provide anytime-valid
-evidence under optional continuation \cite{shafer2011test,ramdas2023gametheoretic}.
-We claim neither construction as new. Their role here is to make the
-discrepancy construction response-free and posterior ineligibility an explicit,
-fail-closed prerequisite for later acquisition experiments.
-
-\paragraph{Reusable symbolic structure.}
-Library learning and compositional program induction motivate reusable motifs
-\cite{ellis2021dreamcoder,lake2015humanlevel}. In \method{}, reuse is restricted
-to a corrected proposal mixture with source-only reliability; it cannot alter
-the likelihood or posterior target.
+\paragraph{Quality diversity.}
+MAP-Elites and quality-diversity (QD) algorithms retain high-quality solutions
+across behavioral niches \cite{mouret2015mapelites}. QD has also been applied
+to symbolic regression \cite{trujillo2025qdsr}. Our optional Bayesian
+operational-QD archive uses a descriptor derived from a candidate's
+decision-risk profile, rejects predictively unsafe candidates, and hands over
+to a QD repertoire only when fixed-prefix noninferiority is certified.
 
 \section{Problem Formulation}
 
-\subsection{Adaptive history and posterior}
+\subsection{Hypotheses, sources, and immutable lineages}
 
-Let $S\in\mathcal S$ be a canonical symbolic structure,
-$\theta_S$ its continuous parameters, and $\psi$ observation-noise or nuisance
-parameters. The history after $t$ acquired measurements is
+Let \(H_0=\{(x_i,y_i)\}_{i=1}^{n_0}\) be the initial development history.
+A proposal source \(s\in\mathcal S\) emits symbolic hypotheses
+\(h=(e,\ell,s)\), where \(e\) is an expression and \(\ell\) is an immutable
+lineage identifier. The registered core source \(s_0\) contains deterministic
+anchors and cannot be removed. Optional sources include symbolic engines and
+the LLM synthesis source.
+
+Each expression is compiled into a closed linear-in-coefficients support
+\(\phi_h(x)\). With a Gaussian--inverse-Gamma prior,
 \[
-H_t=H_0\cup\{(a_i,x_i,y_i)\}_{i=1}^t.
+ y=\phi_h(x)^\top\theta_h+\epsilon,\qquad
+ \epsilon\sim\mathcal N(0,\sigma_h^2),
 \]
-Untouched-heldout observations are not part of $H_t$ and are unavailable to
-the algorithm. The joint posterior is
+the coefficient and noise parameters are integrated analytically. This gives
+an exact finite posterior over the frozen bank,
 \[
-\pi_t(S,\theta_S,\psi)
-=p(S,\theta_S,\psi\mid H_t)
-\propto p(S)p(\theta_S\mid S,\psi)p(\psi)
-\prod_{o\in H_t}p(y_o\mid a_o,x_o,S,\theta_S,\psi).
+ p(h\mid H_0)\propto p(h)\,p(y_{1:n_0}\mid X_{1:n_0},h).
 \]
-The structure marginal is
+Fitted coefficients produced during search are discarded and refit under this
+common posterior contract.
+
+\subsection{Operational scientific estimand}
+
+Expression identity is often too fine: different symbolic forms can be
+indistinguishable on the action domain relevant to a scientific decision.
+Before sequential measurement, we freeze an action set
+\(\Acal_0=\{a_1,\ldots,a_M\}\), a predictive distance, and a resolution.
+These define a map
 \[
-p_t(S)=\int\pi_t(S,\theta_S,\psi)\,d\theta_S\,d\psi.
+ C=g_{H_0}(h)\in\{1,\ldots,K\}
 \]
-
-The first target-correct implementation uses
+from symbolic laws to operational predictive-equivalence classes. The class
+posterior is the pushforward
 \[
-y=f_S(a,x;\theta_S)+\varepsilon,
-\qquad \varepsilon\sim\mathcal N(0,\sigma^2),
+ p_t(c)=\sum_{h:g_{H_0}(h)=c}p_t(h).
 \]
-with $\theta_S\mid S,\sigma^2$ Gaussian and $\sigma^2$ Inverse-Gamma.
-Heteroscedastic variants are outside the current target. The production
-finite-bank path additionally uses the explicitly labelled generalized
-posterior defined below; ordinary-posterior identities are not transferred to
-that path without a separate alignment check.
+All policies compared at a coordinate use the same frozen map and initial
+posterior.
 
-\subsection{Operational predictive classes}
-
-At round $t$, let $\mathcal A_t^{\mathrm{op}}$ be a frozen, selection-visible
-action domain. We compare posterior-predictive 0.1/0.5/0.9 quantiles over this
-domain using their root-mean-square difference, standardized pointwise by the
-pooled posterior-predictive standard deviation. Deterministic complete-link
-clustering with preregistered diameter $\epsilon_B$ yields disjoint operational
-classes without epsilon chaining. For future measurement budget $B$, the real
-protocol sets $\epsilon_B=1/\sqrt{B}$, so equivalent laws have root-budget
-aggregate standardized separation at most one. This resolution is independent
-of dataset and target identity. The
-initial posterior and visible action domain define a frozen map $C_0(S)$. If
-$P_t^{(0)}$ is its posterior pushforward, then
+For \(0\)--\(1\) class loss, the Bayes risk is
 \[
-P_t^{(0)}(c)=\sum_{S:C_0(S)=c}p_t(S).
+ \R(p_t)=1-\max_c p_t(c).
 \]
-Exact predictive equivalence and alternative thresholds are sensitivity
-analyses rather than result-conditioned replacements for the primary
-definition. Both acquisition and the comparative endpoint target this same
-random variable. The endpoint is
-$H(C_0\mid H_0)-H(C_0\mid H_B)$. Recomputed dynamic partitions are
-diagnostics only.
+The ideal utility of action \(a\) is expected decision-risk reduction,
+\begin{equation}
+ U_t(a)=\R(p_t)-
+ \E_{Y_a\sim p_t(\cdot\mid a)}
+ \left[\R\!\left(p_{t+1}(\cdot\mid a,Y_a)\right)\right].
+ \label{eq:riskutility}
+\end{equation}
+This targets the terminal scientific decision directly. It is not predictive
+variance and need not agree with expression-recovery accuracy.
 
-For a Student-$t_\nu$ predictive variable $T$,
-$\nu/(\nu+T^2)\sim\mathrm{Beta}(\nu/2,1/2)$. We therefore integrate the
-antithetic sign average directly with a Gauss--Jacobi rule. The real-pool
-policy doubles its evaluation budget from 32 to at most 512. The point-estimate
-leader is certified only when its lower nested-quadrature error envelope
-exceeds every competitor's upper envelope. This is an exact-reference-validated
-asymptotic numerical diagnostic, not a rigorous quadrature bound or a
-finite-sample confidence sequence. If a unique EIG maximizer is not certified,
-the repaired rule uses posterior epistemic variance of the latent mean,
-excluding observation noise, and records that the utility is not EIG.
+\section{Method}
 
-\subsection{Terminal decision}
+\subsection{Typed lineage-bound synthesis}
 
-For preregistered structural loss $L$, the terminal decision after budget $B$
-is
+After the engines run, the LLM receives a structured evidence registry. It may
+return a directive
 \[
-\widehat c_B\in\arg\min_{\widehat c}
-\E_{c\sim P_B}[L(c,\widehat c)].
+ d=(o,\ell_1,\ldots,\ell_m,r),
 \]
-The default is $0$--$1$ class loss. Predictive risk is a secondary estimand and
-cannot retroactively alter this decision rule.
+where \(o\) is one of \textsc{UnionSupports},
+\textsc{IntersectionSupports}, or \textsc{AugmentBase}; the \(\ell_j\) are
+existing lineage identifiers; and \(r\) is an auditable rationale. The
+provider does not return the accepted expression.
 
-\section{Posterior Computation}
+A deterministic compiler parses the parent expressions into structural
+support sets \(T(\ell_j)\), applies the typed set operation, adds an intercept
+if needed, and constructs a canonical expression from registered parent
+terms. It rejects the directive if a parent is unknown, a term is outside the
+closed grammar, fewer than two parent lineages are referenced, the output has
+fewer than two supports, or the output support equals a parent support.
+The synthesized identity is a hash of the operation, ordered parents, and
+compiled support.
 
-\subsection{Exact finite-universe reference}
+\begin{proposition}[Provenance closure]
+Every accepted synthesized support is a deterministic function of registered
+parent lineages and the finite operation vocabulary. Changing free-form
+rationale while holding the typed directive fixed cannot change the compiled
+hypothesis.
+\end{proposition}
 
-Before SMC, define a small finite bank
-$\mathcal S_{\mathrm{ref}}=\{S_1,\ldots,S_K\}$ in which every structure is
-linear in its coefficients,
-$f_S(x;\theta_S)=\phi_S(x)^\top\theta_S$. With
+The proposition follows directly from canonical parsing and hash-bound
+compilation. It is modest but important: the LLM contributes a structural
+composition decision, not unverifiable coefficients or hidden evidence.
+
+\subsection{Independent source admission}
+
+Let \(z_{is}\) be the log posterior-predictive density assigned by source
+\(s\) to arbitration observation \(i\), computed after fitting only on
+\(H_0\). Arbitration observations are split into folds
+\(\Dcal_1,\Dcal_2\). Relative to the core \(s_0\), define
 \[
-\theta_S\mid\sigma^2\sim
-\mathcal N(m_0,\sigma^2\Lambda_0^{-1}),\qquad
-\sigma^2\sim\mathrm{IG}(\alpha_0,\beta_0),
+ G_{ks}=\sum_{i\in\Dcal_k}(z_{is}-z_{is_0}).
 \]
-the marginal likelihood is available analytically. Let
+A source is eligible only if every fold is nonnegative up to a
+floating-point containment tolerance. This individual check prevents a
+strong source from masking a harmful one inside a mixture.
+
+For the remaining sources, unconstrained stacking chooses
+\[
+ \widetilde w=\arg\max_{w\in\Delta}
+ \sum_i \log\!\left(\sum_s w_s\exp z_{is}\right).
+\]
+We then reserve at least half of production prior mass for the core. Along
+the fixed dyadic path
+\[
+ w(\alpha)=\alpha\widetilde w+(1-\alpha)e_{s_0},
+ \qquad
+ \alpha\in\{2^{-1},\ldots,2^{-8},0\},
+\]
+we select the largest \(\alpha\) for which every fold's mixture log-score is
+noninferior to the core. Rejected sources remain in the provenance ledger
+with zero mass and a fold-level certificate.
+
+\begin{proposition}[Fold-wise core protection]
+For the selected \(w(\alpha)\), the registered arbitration log score is no
+worse than the core on every fold, up to the declared numerical containment
+tolerance. If no optional mixture satisfies the condition, the procedure
+returns \(e_{s_0}\).
+\end{proposition}
+
+This is an arbitration guarantee, not a population no-harm theorem. Its role
+is to make the deployment boundary explicit and testable.
+
+\subsection{Certified decision-risk selection}
+
+For each candidate action, adaptive integration returns an interval
+\([L_t(a),R_t(a)]\) containing the computed utility in
+Eq.~\eqref{eq:riskutility}. An action is released only when one lower bound
+exceeds every competing upper bound by a registered numerical tolerance.
+Otherwise the system abstains or executes the registered reference policy.
+The decision is persisted before one matching response is opened.
+
+For short-prefix screening, we evaluate risks after \(0,8,16,\) and \(32\)
+responses and report normalized risk-reduction AULC. The prefixes and
+normalization are frozen before evaluating a condition. This repaired an
+earlier binary-readiness statistic that was identically zero across many
+rows.
+
+\subsection{Optional operational quality diversity}
+
+The operational-QD archive uses
 \[
 \begin{aligned}
-\Lambda_n&=\Lambda_0+\Phi^\top\Phi,\\
-m_n&=\Lambda_n^{-1}(\Lambda_0m_0+\Phi^\top y),\\
-\alpha_n&=\alpha_0+n/2,\\
-\beta_n&=\beta_0+\tfrac12(y^\top y+m_0^\top\Lambda_0m_0
--m_n^\top\Lambda_nm_n).
+b(h)=\big(&b_{\rm lead}(h),\,b_{\rm concentration}(h),\\[-2pt]
+          &b_{\rm support}(h)\big)
 \end{aligned}
 \]
-Then
-\[
-\log p(y\mid S)=
--\frac n2\log(2\pi)+\frac12(\log|\Lambda_0|-\log|\Lambda_n|)
-+\alpha_0\log\beta_0-\alpha_n\log\beta_n
-+\log\Gamma(\alpha_n)-\log\Gamma(\alpha_0).
-\]
-The implementation cross-checks this expression by integrating $\sigma^2$
-numerically after independently integrating the coefficients.
+as a behavior descriptor. Within a cell, verified candidates are ordered by
+certified risk lower bound, predictive quality, lower complexity, and stable
+identity. Unsafe candidates cannot enter the archive. A QD repertoire
+replaces the legacy bank only if its lower-bound curve is noninferior at all
+fixed prefixes and its AULC is strictly larger; otherwise the legacy bank is
+retained.
 
-The bank is generated only from input dimension and is identical for tasks
-with the same number of covariates. Dataset and target names do not select its
-structures. Exact-reference comparison on registered measured observations is
-kept separate from small controlled correctness fixtures. The latter may
-support only normalization, integration, SMC, and EIG correctness and are
-never real-data efficacy evidence. Historical generated-observation efficacy
-runs are excluded. Even a passed finite-bank check cannot by itself support
-scientific-discovery efficacy or comparison with external methods.
+\section{Experimental Protocol}
 
-\subsection{SMC target sequence}
+\paragraph{Conditions.}
+\ours{} contains the same registered symbolic engines as \nollm{} plus typed
+LLM synthesis. \nollm{} contains all deterministic and engine proposals but
+no LLM candidates. \single{} is the registered single-engine control. In
+the synthesis-only comparisons, engine executions, budgets, seeds, and raw
+engine candidates are identity-matched within every pair.
 
-For $z=(S,\theta_S,\psi)$ and newly acquired likelihood factor
-$g_t(z)=p(y_t\mid a_t,x_t,z)$, define
-\[
-\pi_t(z)\propto p_0(z)\prod_{r=1}^{t}g_r(z).
-\]
-Particles initialized from $q_0$ receive corrected initial weights. Later
-weights multiply only by $g_t$. ESS-triggered unbiased resampling records
-ancestor indices, after which a rejuvenation kernel leaves $\pi_t$ invariant.
-Birth, death, and structural replacement moves require explicit forward and
-reverse probabilities, dimension matching, and any Jacobian term.
-\evidencegate{P2A exact-posterior convergence and P2B trans-dimensional correction}
+\paragraph{Data.}
+The primary synthesis screens use fresh development tasks from four
+LLM-SRBench families: biological population growth, chemical reactions,
+transformed physical laws, and materials science. Each screen uses one task
+per family and two seeds, yielding 16 condition rows or eight paired
+comparisons. The measured source-admission case uses UCI gas-turbine CO.
+No synthesis screen opens candidate-action, test, OOD, or held-out responses.
 
-For the robust finite-bank implementation, $(\theta_S,\sigma^2)$ are
-Rao--Blackwellized and
-$g_t(S)=p(y_t\mid a_t,x_t,S,H_{t-1})$ is computed from independent conjugate
-sufficient statistics. An informative observation is bridged through
-\[
-\eta_{t,\beta}(S)\propto p_{t-1}(S)g_t(S)^\beta,
-\qquad 0=\beta_0<\cdots<\beta_B=1,
-\]
-with temperatures selected by a frozen conditional-ESS target. Conditional
-coefficient and noise draws at $\beta=1$ reconstruct joint posterior
-particles. This changes the numerical path but not the terminal target.
+\paragraph{Metrics and claims.}
+The synthesis metric is normalized fixed-prefix expected-risk AULC; it is
+model-relative development evidence. The realized pilot separately opens
+two selected development responses after each durable decision and compares
+targeted acquisition with a matched random policy. Family authorization uses
+a Jeffreys prior on binary task-level success and a preregistered 90\% lower
+credible bound. Every failure and unresolved task remains in the analysis.
+No result in this paper is untouched-heldout confirmation.
 
-For P2B, the collapsed structure proposal contains explicit birth, death, and
-equal-dimensional replacement edges. If $q(S'\mid S)$ denotes the catalog
-probability, the rejuvenation acceptance probability is
-\[
-\alpha(S,S')=\min\!\left\{1,
-\frac{\eta_{t,\beta}(S')q(S\mid S')}
-     {\eta_{t,\beta}(S)q(S'\mid S)}|J|\right\}.
-\]
-Coefficients and noise are integrated out during the move, so dimension
-matching is the empty auxiliary map and $|J|=1$. This is a corrected finite
-collapsed trans-dimensional kernel; it is not yet a claim about arbitrary
-open-grammar subtree RJ moves. \evidencegate{P2B frozen exact-reference Gate}
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/pcpi_prefix_curves.pdf}
+\caption{\textbf{Response-free fixed-prefix decision-risk curves.}
+Rows are two prospectively frozen fresh-task screens and columns are scientific
+families. Lines show means over two registered seeds; shaded regions show the
+seed range, not confidence intervals. \ours{} and \nollm{} have identical
+engine executions within every pair. Higher is better. Candidate-action,
+test, OOD, and held-out responses remain closed.}
+\label{fig:prefix-curves}
+\end{figure*}
 
-\section{Predictive-Class Acquisition}
+\section{Results}
 
-The acquisition objective is class information gain,
-\[
-\mathrm{EIG}^{(0)}_t(a)=H(C_0\mid H_t)-
-\E_{Y\sim p_t(Y\mid a)}[H(C_0\mid H_t,a,Y)].
-\]
-In the finite conjugate bank, each structure-conditional predictive density is
-Student-$t$. Hence
-\[
-I(C_0;Y_a\mid H_t)=
-\sum_c P_t^{(0)}(c)\int p_t(y\mid c,a)
-\log\frac{p_t(y\mid c,a)}{p_t(y\mid a)}\,dy,
-\]
-where $p_t(y\mid c,a)$ is the posterior-weighted mixture over structures in
-class $c$. We compute the reference by adaptive integration on the real line.
-The production estimator pushes each Student-$t$ predictive measure to its
-Beta square transform and applies an antithetic Gauss--Jacobi rule, allocating
-half of the node budget uniformly over structures and the remainder by
-posterior mass. Exact mixture densities are used in the log ratio. The P3A.2
-Gate compares normalized error, error-envelope coverage, rank correlation,
-top-one agreement, false certification, and convergence against the independent
-reference over increasing quadrature budgets.
+\subsection{LLM synthesis adds expected-risk value under matched engines}
 
-P3B.7 activates this class score at every PCPI query, yet its returned real
-run does not pass the efficacy Gate. This is consistent with the distinction
-between information about a model index and information about predictions on
-the target input distribution \cite{bickfordsmith2023prediction}, and with
-recent BOED analyses of selection-induced covariate shift under
-misspecification \cite{forster2025generalization}. P3B.8 therefore lets
-$X^\star$ be uniform on the registered selection-visible action domain and
-targets the chain rule
-\[
-I(C_0,Y^\star;Y_a\mid H_t)
-=I(C_0;Y_a\mid H_t)+I(Y^\star;Y_a\mid C_0,H_t).
-\]
-The first term remains the validated class-EIG. For the second, we match the
-first two moments of each class-conditional finite posterior mixture and
-average the resulting bivariate-Gaussian mutual information over $X^\star$.
-This is exact for a Gaussian class-conditional predictive and is explicitly
-named a Gaussian-moment surrogate for the production Student-$t$ mixture. The
-terms share information units, so no result-fitted tradeoff weight is added.
-If the adaptive envelope cannot certify the joint-score leader, the rule
-maximizes $\Var_{S,\theta_S\mid H_t}[f_S(a;\theta_S)]$, excluding observation
-noise and reporting the branch as posterior-epistemic acquisition.
-The returned P3B.8 run uses a certified joint score throughout but fails the
-efficacy Gate. P3B.9 therefore constrains this unchanged score to candidates
-whose addition does not increase biased RBF-kernel MMD between the observed
-design and the fixed registered action domain. Coordinates and the
-median-distance bandwidth use covariates only. If the safe set is empty, the
-minimum-MMD candidate is selected and recorded as an explicit fallback.
-The returned P3B.9 run applies this guard throughout but still fails efficacy.
-P3B.10 therefore ranks each safe candidate by the minimum P3B.9 joint utility
-over the likelihood-power family $\{0.125,0.25,0.5,1\}$ frozen before this
-repair. The calibrated nominal posterior remains the reporting and evaluation
-posterior; the finite family changes PCPI ranking only. A robust leader is
-certified by lower-envelope interval dominance, and least-favorable-model ties
-are resolved toward the smaller likelihood power.
-\evidencegate{P3B.10 maximin correctness diagnostic and heldout-closed real rerun}
+Figure~\ref{fig:prefix-curves} reports two fresh synthesis-only screens. Both
+complete all 16 rows with zero failures, identical engine execution within
+every pair, structurally novel LLM candidates in all four families, and no
+negative family-level effect. Mean \ours{}--\nollm{} AULC is \(0.0192\) in
+Screen~A and \(0.0328\) in Screen~B. The first screen is positive in
+transformed-law and materials tasks; the second is positive in population,
+transformed-law, and materials tasks and tied in chemistry.
 
-Because that real rerun remains negative, P3C.1 treats the next repair as a
-predictive model-discrepancy problem. It reconstructs a posterior-weighted
-residual mean square from acquired-history sufficient statistics, subtracts
-the prior mean noise variance with a zero floor, and distributes the resulting
-extra variance according to covariate distance from the acquired design. The
-registered target domain fixes both coordinate scaling and the median-distance
-bandwidth. Candidate, validation, and held-out responses do not enter this
-profile. Student-$t$ component scales are moment-matched to the inflated
-variance before applying the unchanged finite maximin joint utility and MMD
-safe set. Controlled tests support implementation correctness only; the
-heldout-closed P3C.1 run completes 96/96 policies but fails the efficacy Gate.
-The discrepancy is effectively zero on CCPP and active but insufficient on
-Gas; it is retained as a failed repair rather than promoted as robustness.
-\evidencegate{P3C.1 protocol passed; real efficacy failed}
+Because engines and engine outputs are matched, the contrast isolates the
+typed synthesis layer rather than additional search compute. It does not,
+however, prove realized benefit after observing new responses.
 
-P3D.1 returns to the primary class-EIG and registers a reference action policy
-$q_t$ over the same visible pool. Given containing utility intervals
-$[L_t(a),R_t(a)]$, it selects the action with largest lower bound only when
-$L_t(\widehat a) > \sum_a q_t(a)R_t(a)+\tau_{\rm num}$; otherwise it samples
-from $q_t$. Thus an unresolved ranking abstains to the registered policy rather
-than switching to epistemic variance. Its exactly enumerable finite-outcome
-diagnostic passes all 14 frozen correctness decisions.
+\subsection{Protected admission keeps useful sources and rejects others}
 
-P3D.2 constructs production intervals without the earlier fine/coarse
-quadrature envelope. A fixed response quantizer gives the data-processing
-lower bound $I(C_0;Q_a(Y_a)\mid H_t)$. Gaussian maximum entropy and concavity
-of within-class mixture entropy give the upper bound
-\[
-\min\!\left\{H(C_0\mid H_t),
-\tfrac12\log(2\pi e\operatorname{Var}(Y_a))
--\sum_s p_t(s)h(t_{\nu_s,\sigma_s(a)})\right\}.
-\]
-The implementation expands these values by a frozen numerical tolerance and
-agrees with independent adaptive quadrature on continuous correctness
-fixtures. Student-$t$ CDF and entropy evaluations are not formal interval
-arithmetic. The heldout-closed P3D.2 run completed 96/96 policies with zero
-failures and a valid evidence registry, but returned
-\texttt{REAL\_ADVANTAGE\_NOT\_DEMONSTRATED}. CCPP frozen-class gain relative to
-random is $-0.2538$ (95\% interval $[-0.4830,-0.0247]$); grouped Gas is
-$-0.0049$ (95\% interval $[-0.2234,0.2136]$).
-\evidencegate{P3D.2 protocol passed; real efficacy failed}
+On the gas-turbine CO source screen, the unconstrained stacking solution places
+approximately \(97.8\%\) mass on LLM candidates and negligible mass on MCTS.
+After the fixed core reserve, the production weights are
+\(0.511\) core, \(0.489\) LLM, and \(6.6\times10^{-17}\) MCTS. The resulting
+mixture improves fold log score by \(5.23\) and \(3.01\) nats over the core.
+The hypothesis bank retains five operational classes with entropy \(0.538\)
+nats. This example demonstrates the intended asymmetry: engines and the LLM
+may propose broadly, but an optional source receives production mass only
+when it contributes independent predictive evidence.
 
-\section{Theory and Scope}
+\subsection{Risk scoring is functional, but realized transfer is selective}
 
-\begin{assumption}[Predictable acquisition]
-$a_t$ is measurable with respect to $H_{t-1}$ and does not depend on an
-unobserved future outcome.
-\end{assumption}
+The response-free fixed-prefix replay accounts for 32 of 36 registered rows
+(four source artifacts are absent), with no outer replay exception or
+log-mass failure. It yields 23 positive AULCs and 23 distinct AULC values,
+showing that the repaired risk score is not the earlier constant-zero signal.
 
-Conditioned on the realized predictable actions, the likelihood factorization
-above remains valid. The theory section will separate this adaptive-posterior
-validity statement from SMC approximation error.
+The stronger realized test is less favorable. All 32 matched trajectories
+complete without failure, but the mean symmetric synthesis effect is
+\(-0.0827\), the mean acquisition effect is \(-0.00019\), and the
+predicted--realized correlation is \(-0.575\). A familywise calibration over
+eight development tasks therefore authorizes decision-risk acquisition only
+for materials science: its posterior success mean is \(0.833\) with 90\%
+lower bound \(0.552\). No family is authorized for unconditional synthesis
+deployment.
 
-P3B.5 introduced the explicitly named
-generalized posterior
-\[
-\pi_{t,\eta}(z)\propto p(z)\prod_{i=1}^t p(y_i\mid x_i,z)^\eta,
-\qquad 0<\eta\le1.
-\]
-One $\eta$ is chosen by prequential posterior-expected posterior-randomized
-log loss (R-log SafeBayes; \cite{grunwald2017inconsistency}) on the initial development observations and then shared by every
-acquisition policy. Every closed basis term is centered and scaled from the
-initial-development covariates before the shared coefficient prior is applied.
-This target is not described as ordinary Bayes when $\eta<1$.
-This distinction also constrains acquisition semantics. P3D.2 constructs
-ordinary mutual information under the nominal joint distribution
-$q_t(z)p(y\mid z,a)$. However, its actual update is
-\[
-q_{t+1}^{(\eta)}(z\mid y,a)\propto
-q_t(z)p(y\mid z,a)^\eta.
-\]
-For $\eta=1$, the update is the conditional distribution induced by the
-nominal joint and class mutual information equals expected class-entropy
-reduction. For $\eta\ne1$, that identity generally fails: the implemented
-generalized update is not the conditional distribution used by ordinary
-mutual information. Thirteen of sixteen Gas target/seed calibrations in P3D.2
-used $\eta<1$. This is a loss/update-alignment defect, not a numerical-bound
-failure. It is also distinct from robust or generalized experimental-design
-objectives already studied under misspecification
-\cite{go2022robust,forster2025generalization,abdulsamad2026maximin}.
-The returned P3B.5 run cannot be used as efficacy evidence: fitting used the
-frozen preconditioned design while posterior prediction and acquisition rebuilt
-raw basis rows. P3B.6 makes the posterior engine's frozen design transform the
-single coordinate map for fitting, posterior predictive distributions,
-validation metrics, operational classes, and all acquisition policies.
-Its returned real run passes the protocol Gate but not the efficacy Gate: the
-one-SD operational radius collapses most initial class mass. P3B.7 derives the
-radius from the registered future measurement budget and activates class-EIG
-throughout, but its returned 96/96 real run still fails the family-level
-efficacy Gate. P3B.8 changes the acquisition estimand, not the posterior,
-structure bank, class radius, budgets, seeds, splits, or assessment rule. Its
-returned real run also fails efficacy despite certified joint rankings. P3B.9
-adds a covariate-only representative safe set but its returned run still fails
-efficacy. P3B.10 retains the nominal posterior and every protocol commitment,
-changing only PCPI ranking to the finite lower envelope described above.
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/pcpi_realized_trajectories.pdf}
+\caption{\textbf{Matched-budget realized decision-risk trajectories.}
+Each panel is a scientific family; lines are means over two registered seeds
+and bands are seed ranges. Solid curves use targeted acquisition and dashed
+curves use matched random acquisition. Higher is better. The pale materials
+panel is the only family authorized by the preregistered realized-policy
+calibration. All 32 trajectories completed, but the pooled
+predicted--realized correlation is \(-0.575\), so no global superiority claim
+is made.}
+\label{fig:realized-curves}
+\end{figure*}
 
-\begin{proposition}[Reference-policy dominance]
-Let $U_t(a)=I(C_0;Y_a\mid H_t)$ and suppose
-$L_t(a)\le U_t(a)\le R_t(a)$ simultaneously for all visible actions. Define
-$U_t(q)=\sum_a q_t(a)U_t(a)$ and analogously $R_t(q)$. If P3D.1 hands over to
-$\widehat a$ because
-$L_t(\widehat a)>R_t(q)+\tau_{\rm num}$, then
-$U_t(\widehat a)>U_t(q)$. If it does not hand over, its expected utility equals
-$U_t(q)$.
-\end{proposition}
+\begin{table*}[t]
+\caption{Evidence layers and the claims they authorize.}
+\label{tab:claims}
+\centering
+\small
+\begin{tabular}{p{0.17\textwidth}p{0.13\textwidth}p{0.61\textwidth}}
+\toprule
+Layer & Outcome & Authorized claim\\
+\midrule
+Matched synthesis & Pass & LLM synthesis improves model-relative expected-risk AULC on screened tasks.\\
+Source admission & Pass & Optional sources can be retained or zeroed without candidate-response access.\\
+Prefix replay & Pass & Repaired risk signal is finite, varying, and nonconstant.\\
+Realized pilot & Fail & No global realized superiority claim.\\
+Family calibration & Selective & MatSci acquisition only; no synthesis family.\\
+BOQD replay & Mixed & Safe fallback; cross-family benefit unproved.\\
+\bottomrule
+\end{tabular}
+\end{table*}
 
-\begin{proof}
-In the handover branch,
-$U_t(\widehat a)\ge L_t(\widehat a)>R_t(q)\ge U_t(q)$. In the reference branch,
-linearity of expectation under $A\sim q_t$ gives
-$\E[U_t(A)]=\sum_a q_t(a)U_t(a)=U_t(q)$.
-\end{proof}
+This separation is a feature of the method rather than an inconvenient
+postscript. A system that used response-free gains as automatic deployment
+authority would have made an unsupported broad claim; \method{} instead turns
+the realized negative result into an explicit abstention policy.
 
-\begin{proposition}[Zero-capacity abstention]
-If $H(C_0\mid H_t)=0$, every class-EIG is zero and no valid interval system can
-certify strict reference dominance. P3D.1 therefore executes $q_t$ without a
-fitted entropy threshold.
-\end{proposition}
+\subsection{Operational QD is correct and safe, but not yet broadly effective}
 
-Both statements are conditional on the frozen posterior and containing
-intervals. They establish dominance for the declared ordinary-MI surrogate;
-they do not make that surrogate the expected loss reduction of a different
-generalized update. P3D.2's information inequalities hold in exact arithmetic,
-but its Student-$t$ special functions use ordinary floating-point evaluation with a
-registered outward tolerance rather than verified interval arithmetic.
-Moreover, posterior misspecification can invalidate model-based utility as a
-proxy for realized scientific gain. These propositions therefore do not
-authorize a real-world no-harm claim.
+The operational-QD algebraic gate verifies that different risk profiles occupy
+different cells, a same-cell challenger must improve certified quality, unsafe
+candidates are rejected, and emitter credit is based on independent tasks.
+In raw replay, BOQD has positive mean effect \(0.0175\) but negative effects
+for transformed-law and materials families. Conservative handover removes
+all observed negative family effects and increases the mean to \(0.0463\), but
+only population growth remains positive (\(0.1852\)); the other three families
+fall back to the legacy bank. BOQD is therefore an algorithmically valid
+auxiliary mechanism, not yet a cross-family efficacy result.
 
-P3E.1 instead defines the signed update-coherent utility
-\[
-V_{t,\eta}(a)=H_{q_t}(C_0)-
-\E_{Y\sim m_t(\cdot\mid a)}
-\left[H_{q_{t+1}^{(\eta)}(\cdot\mid Y,a)}(C_0)\right],
-\quad
-m_t(y\mid a)=\sum_z q_t(z)p(y\mid z,a).
-\]
-It is named by the loss/update contract rather than claimed as a generic
-generalized EIG. An exact finite counterexample at $\eta=0.25$ reverses the
-ordinary-MI and $V_{t,\eta}$ action rankings, while $\eta=1$ recovers ordinary
-class mutual information to numerical precision.
+\section{Discussion}
 
-\begin{proposition}[Update-coherent positive reference dominance]
-Suppose $L_t(a)\le V_{t,\eta}(a)\le R_t(a)$ simultaneously. If the selected
-leader satisfies
-$L_t(\widehat a)>\max\{\sum_a q_t(a)R_t(a),0\}+\tau_{\rm num}$, then it has
-strictly greater model-relative expected frozen-class entropy reduction than
-both the registered reference policy and zero. Otherwise P3E.1 executes the
-registered reference draw.
-\end{proposition}
+\paragraph{What is new?}
+LLM equation generation, predictive stacking, Bayesian experimental design,
+and QD each have substantial prior work. The contribution is their
+statistically separated composition: (i) the LLM can only propose a typed
+operation over immutable multi-engine evidence; (ii) individually harmful
+sources are removed before a core-reserved stack is formed; and (iii)
+experiment selection targets a frozen scientific decision and can fail
+closed. The matched-engine ablation is essential because it attributes gains
+to synthesis rather than additional engine calls.
 
-The proof is the same interval ordering and linearity argument as above. This
-correctness statement does not address posterior adequacy: all CCPP seeds use
-$\eta=1$, yet their P3D.2 structural effect is significantly negative.
+\paragraph{Why expected and realized effects differ.}
+Decision-risk utilities are conditional on the hypothesis bank and predictive
+model. A score can be numerically correct for that model and still transfer
+poorly when the bank omits the relevant mechanism or its predictive
+uncertainty is misspecified. The negative correlation in the realized pilot
+is direct evidence of this boundary. It motivates calibrated familywise
+deployment rather than another result-fitted score.
 
-\subsection{Posterior-adequacy evidence contract}
-
-P3E.2 freezes a finite registered action domain before observing its responses.
-For candidate structure $s$, let $D_s$ be its design matrix on that domain and
-let $\mathcal U=\operatorname{span}([D_1,\ldots,D_S])$. From registered
-covariates only, construct an RBF covariance $K$ using response-free
-standardization and the median positive squared-distance bandwidth. With
-$P_{\mathcal U}$ the projector onto $\mathcal U$, define
-\[
-K_\perp=(I-P_{\mathcal U})K(I-P_{\mathcal U}),\qquad
-K_{\perp,r}=BB^\top,
-\qquad D_s^\top B=0\quad\text{for every }s,
-\]
-where $B$ contains the retained positive eigenspace after the registered
-relative-eigenvalue truncation. The exact finite diagnostic
-compares
-\[
-M_0:\ y=D_s\beta_s+\varepsilon,
-\qquad
-M_1:\ y=D_s\beta_s+B\gamma+\varepsilon,
-\qquad \varepsilon\sim\mathcal N(0,\sigma^2I),
-\]
-under proper conjugate Gaussian--inverse-Gamma priors and the same prior over
-structures. Orthogonalization prevents the registered residual basis from
-reassigning full-domain variation already spanned by any candidate structure.
-It does not prove that this basis or its prior is appropriate on real data.
-Because a floating-point eigensolver can return tiny components in the
-numerically null eigenspace of $K_\perp$, the implementation reprojects the
-retained columns into the registered orthogonal complement before evaluating
-the contract. This is a numerical reproducibility safeguard, not a new
-statistical model or a scientific-discovery claim.
-
-Let $m_j(y_{1:t})$ denote the exact structure-averaged marginal under $M_j$.
-The diagnostic records
-\[
-E_t=\frac{m_1(y_{1:t})}{m_0(y_{1:t})}
-=\prod_{i=1}^t
-\frac{m_1(y_i\mid y_{<i})}{m_0(y_i\mid y_{<i})},
-\qquad E_0=1.
-\]
-
-\begin{proposition}[Registered adequacy e-process]
-Conditional on a predictable registered covariate/action sequence, if $M_0$
-is the declared data-generating marginal and both marginals are proper, then
-$(E_t)$ is a nonnegative unit-initialized martingale. Consequently,
-$\Pr_{0}(\sup_t E_t\ge 1/\alpha)\le\alpha$.
-\end{proposition}
-
-\begin{proof}
-For every observed history with positive null density,
-$E_t/E_{t-1}=m_1(Y_t\mid Y_{<t})/m_0(Y_t\mid Y_{<t})$. Its conditional
-expectation under $M_0$ is the integral of the proper $M_1$ predictive density,
-which equals one. Nonnegativity and $E_0=1$ then give Ville's inequality.
-\end{proof}
-
-The frozen fixture uses $\alpha=0.01$. Crossing $E_t\ge100$ makes the nominal
-posterior ineligible for targeted acquisition and forces the registered
-reference-only mode. The exact linear null ends at log Bayes factor $-0.7134$
-without crossing; a registered in-model orthogonal residual ends at $4.9366$
-and first crosses at round 16. These are deterministic algebraic correctness
-cases, not simulated efficacy data. Non-crossing means only failure to reject
-$M_0$ against this one alternative; crossing does not validate $M_1$ for
-acquisition. No real response is read by P3E.2.
-
-Under shared Gaussian observation noise, a maximum-entropy argument gives
-\[
-I(Z;Y_a\mid H_t)\le
-\frac12\log\left(1+\frac{\Var(\mu_Z(a)\mid H_t)}{\sigma^2(a)}\right).
-\]
-The final theorem must distinguish information about the full latent state
-$Z$ from information about its predictive-class coarsening. A low-signal
-expansion will be included only if its regularity and scaling conditions are
-proved. \evidencegate{theorem proofs and counterexample}
-
-Standard SMC consistency is invoked only after the implementation verifies
-incremental potentials, support, unbiased resampling, and invariant moves.
-No generic Monte Carlo rate is presented as a novel theorem.
-
-\section{Experiments}
-
-\paragraph{RQ1: matched-budget closed-loop effectiveness.}
-Compare one-shot fitting, sequential random acquisition, predictive
-uncertainty, query by committee, and PCPI under identical observation,
-candidate-evaluation, particle, and compute budgets. Report normalized AULC,
-final risk, posterior entropy, class concentration, and failure runs.
-
-\paragraph{RQ2: posterior correctness.}
-Compare exact posterior and SMC over increasing particle counts. Report class
-TV/KL, structure posterior error, predictive NLL, credible coverage, ESS,
-ancestor diversity, bridge CESS, immediate-parent concentration, weight
-entropy, seed stability, and time. The original P2A run used official CCPP and
-Gas Turbine CO/NOX measurements; CO and NOX count as one data family. Its
-finite-bank agreement check passed with a genealogy warning. P2B separately
-uses a labelled, exactly enumerable diagnostic fixture to test proposal-ratio
-correction, detailed balance, invariance, and particle convergence. That
-fixture is correctness evidence only and is excluded from real-data efficacy
-claims.
-P3E.2 separately checks a response-free union-orthogonal discrepancy basis,
-exact spike/slab marginal likelihoods, predictive-ratio telescoping, and the
-registered e-process decision on two deterministic finite cases. This is not a
-real posterior-adequacy experiment. A fresh canonical execution reproduced the
-11-decision result after source-identity and full-regression checks; the
-execution audit records the artifact identity and explicitly retains the same
-correctness-only boundary. A CCPP-only, initial-development real-audit protocol
-is now frozen for the confirmed eta=1 blocker; its local result is not yet part
-of the evidence tree. Gas Turbine eta<1 cases are excluded until an
-update-coherent adequacy contract is proved.
-
-\paragraph{RQ3: acquisition effectiveness.}
-All policies share one posterior engine. Compare realized entropy reduction,
-class-mass gain, score--gain correlation, nAULC, predictive risk, and compute;
-use exact class EIG where enumeration is possible.
-
-The P3B protocol uses 32 initial observations, 32 acquired measurements, a
-frozen 128-action pool, 256 validation observations, and eight paired seeds.
-All four policies share one conjugate finite-bank target to isolate the
-acquisition effect. Results are reported with paired 95\% seed confidence
-intervals; Gas Turbine CO and NOX count as one dataset family.
-P3B.2 completed all 96 policies without leakage and passed every protocol
-check, but it did not demonstrate a consistent advantage. All family-level
-predictive intervals crossed zero, and frozen-class gain was nonpositive
-against every baseline. CCPP class entropy was already numerically zero. That
-run is retained as development negative evidence. It also revealed that the
-query utility targeted a recomputed $C_t$ while the endpoint targeted $C_0$.
-P3B.3 fixed $C_0$ throughout the sequence and passed its protocol and decision
-validity checks, but still failed the family-level efficacy Gate. CCPP used the
-fallback for 98.8\% of PCPI queries; all grouped Gas efficacy intervals crossed
-zero. P3B.4 replaced the adjacent-column bank and added generalized-likelihood
-calibration, but its returned 96/96 run also failed efficacy: all CCPP seeds
-selected $\eta=1$, CCPP began with collapsed class entropy, and no primary
-family-level interval excluded zero. P3B.5 replaced mixture-log-score
-calibration with R-log SafeBayes and preconditioned all bank terms using only
-initial-development covariates, but its returned efficacy run is invalid due
-to the predictive-coordinate mismatch above. P3B.6 repairs that mismatch, then
-returns 96/96 protocol-valid runs without strong efficacy evidence: CCPP initial
-frozen-class entropy is $7.33\times10^{-12}$ and class-EIG is used in only
-0.78\% of PCPI queries. P3B.7 replaces the fixed one-SD radius by the
-budget-resolved definition above and uses class-EIG for 100\% of PCPI queries,
-but it still fails efficacy. Against random, mean predictive nAULC differences
-are $-0.0173$ for CCPP and $-0.0510$ for grouped Gas, with both paired 95\%
-intervals crossing zero. Only grouped Gas versus QBC excludes zero
-($-0.0262$, 95\% CI $[-0.0501,-0.0023]$); structural-gain intervals are not
-consistently positive across families and baselines. P3B.8 addresses the
-target-mismatch diagnosis with the joint class--predictive score, but its
-returned CCPP frozen-class gain versus random is $-0.3050$ with 95\% CI
-$[-0.4652,-0.1447]$. Its selected joint score has pooled Spearman correlation
-$0.0571$ with realized local class gain on CCPP. P3B.9 adds the representative
-safe set, but its returned CCPP class-gain difference versus random is
-$-0.2510$ with 95\% CI $[-0.4617,-0.0403]$, and its pooled selected-score versus
-realized-gain Spearman correlation is $-0.0079$. P3B.10 evaluates the frozen
-finite lower envelope inside that same guard. Budgets, seeds, nominal models,
-and efficacy Gates remain unchanged. The returned P3B.10 run is protocol-valid
-with 96/96 completed runs and closed held-out, but CCPP frozen-class gain versus
-random is $-0.2838$ (95\% CI $[-0.5047,-0.0629]$), with negative transfer in
-7/8 seeds; grouped Gas Turbine gain is not significant. Thus no real
-superiority result is claimed, and the next repair must address general
-posterior or decision-model misspecification rather than tune the data.
-P3C.1 adds a scalar distance-shaped discrepancy variance while preserving the
-same splits, budgets, policies, ambiguity set, safe set, and closed held-out.
-Its 96/96 run is also protocol-valid and returns the same CCPP paired effect,
-because the registered residual-excess variance is at most $6.88\times10^{-13}$
-there. The discrepancy is nonzero on Gas CO and NOX (mean selected variances
-$0.3281$ and $0.5801$), but grouped Gas frozen-class gain versus random is
-$0.0659$ with 95\% interval $[-0.2291,0.3609]$. The scalar discrepancy
-envelope is therefore an insufficient repair, not a no-op or a protocol
-failure.
-P3D.2 then removes those acquisition modules and uses certified ordinary
-class-MI reference dominance. Its returned 96/96 run is protocol-valid but
-again fails efficacy: CCPP frozen-class gain versus random is $-0.2538$ (95\%
-interval $[-0.4830,-0.0247]$), and grouped Gas is not significant. The P3E.1
-finite Gate identifies and repairs the generalized-update semantic mismatch,
-but supplies no real efficacy evidence and cannot explain CCPP at $\eta=1$.
-
-\paragraph{Optional RQ4: motif efficiency.}
-If retained, evaluate whether source-frozen memory improves ESS per second,
-mixing, acceptance, and time to concentration while preserving posterior
-expectations. General negative-transfer or safety claims require independent
-held-out evidence.
-
-Real experiments use provenance-audited measured data. Pool replay is called
-active query or measurement selection, not physical intervention. The
-untouched-heldout confirmation is opened once only after code, configuration,
-splits, seeds, budgets, and claim gates are frozen.
-
-\section{Current Evidence Boundary}
-
-The source implements analytic and sequential finite-bank posterior paths,
-operational-class aggregation, Rao--Blackwellized SMC weights, adaptive CESS
-bridges, systematic resampling, genealogy, and an explicit proposal-corrected
-collapsed trans-dimensional kernel. The P2B fixture supports only RQ2
-finite-bank correctness and cannot support real-data efficacy. P3A.2 is the
-matching exact-quadrature check for the production EIG estimator and is
-likewise a correctness diagnostic. P3B.5 is invalid efficacy evidence; P3B.6
-supports coordinate correctness and a valid but insufficient real-development
-result. P3B.7 supports budget-resolved class correctness and a valid negative
-real result. P3B.8 supports joint-score correctness and a valid negative real
-result. P3B.9 supports representative-guard correctness and a valid negative
-real result. P3B.10 controlled evidence supports correctness of the finite
-maximin decision, while its real rerun supports only protocol-valid negative
-development evidence. P3C.1 passed its controlled implementation Gate and
-completed a protocol-valid real run, but
-\texttt{formal\_efficacy\_evidence=false} and the registered status is
-\texttt{REAL\_ADVANTAGE\_NOT\_DEMONSTRATED}. The held-out was
-never opened. P3D.2 reference dominance completed a protocol-valid 96/96 real
-run, but \texttt{formal\_efficacy\_evidence=false}. P3E.1 passes an isolated
-finite loss/update-alignment Gate and has no real-data surface. P3E.2 passes an
-11-decision orthogonal-discrepancy/e-process correctness Gate. The frozen
-initial-development-only CCPP audit then completes all eight registered seeds
-with no threshold crossing, but this non-rejection is not an adequacy
-certificate and the augmented posterior is not authorized for acquisition. The
-held-out role stayed closed and no acquisition comparison was performed. Real
-posterior adequacy therefore remains unresolved. P3E.3 passes five
-predictive-calibration correctness decisions, while its returned CCPP
-validation-role audit rejects three of eight PIT sequences and fails global
-eligibility. P3F.1 then places a structure-wise projected discrepancy in one
-proper finite generative posterior. P3F.2 defines a proper countably-open typed
-AST prior and passes an exact conditional-slice SMC/RJMCMC correctness Gate;
-it is not a scalable sampler or real-data result. No current evidence supports
-matched-budget real superiority, motif invariance, VED discovery, unknown-law
-recovery, or held-out confirmation.
-
-\section{Open-Target Generative Repair}
-
-The P3E.3 failure motivates a model-class repair rather than post-result
-scaling. Let \(S\) be a finite typed AST. We place a geometric prior on its
-node count \(L\),
-\begin{equation}
- p(L=\ell)=(1-\rho)\rho^{\ell-1},\qquad
- p(S\mid L)=N_L^{-1},
-\end{equation}
-where \(N_L\) is the exact number of registered well-typed ASTs of size
-\(L\). This defines a proper countably-open target. Enumeration through
-\(L_{\max}\) is explicitly conditional and retains mass
-\(1-\rho^{L_{\max}}\); the omitted tail \(\rho^{L_{\max}}\) is reported.
-
-For each raw AST, P3F.1 uses the generative model
-\begin{equation}
- y=f_S(X;\theta_S)+dA_{S,\lambda}u+\epsilon,
- \quad d\in\{0,1\},
-\end{equation}
-where \(K_\lambda=W_\lambda W_\lambda^\top\),
-\begin{equation}
- N_S=\operatorname{null}(J_S^\top W_\lambda),\qquad
- A_{S,\lambda}=W_\lambda N_S.
-\end{equation}
-Thus \(A_{S,\lambda}A_{S,\lambda}^\top\) is positive semidefinite by
-construction and \(J_S^\top A_{S,\lambda}=0\) on the registered domain. In
-the exact P3F.2 slice, \(f_S(x;\theta_S)=\theta_Sg_S(x)\), so
-\(J_S=g_S(X)\) is exact. General nonlinear constants require a separate
-parameter-dependent target and are not claimed.
-
-Scientific mass is a pushforward, not a simplified winner. For the registered
-algebraic language, exact polynomial canonicalization defines \(C(S)\), and
-\begin{equation}
- p(C\mid D)=\sum_{S:C(S)=C}p(S\mid D).
-\end{equation}
-The exact slice analytically integrates the coefficient, discrepancy
-coordinates, and noise variance. Two distinct, evaluable collapsed proposals
-are corrected by
-\begin{equation}
- \alpha(i,j)=\min\!\left(1,
- \frac{\pi(j)q(j,i)}{\pi(i)q(i,j)}\right).
-\end{equation}
-Their transition matrices satisfy detailed balance and stationarity to
-floating-point tolerance, recover the same target, and telescope the
-sequential evidence to the batch marginal. The Gate uses a hand-constructed
-algebraic reference only and supplies no efficacy, calibration, acquisition,
-or discovery evidence.
+\paragraph{Limitations.}
+The positive synthesis evidence is development-only and compares against
+internal ablations, not all external symbolic-regression systems. The number
+of tasks per family is small. No untouched confirmation set has been opened.
+The current production posterior is a finite conjugate bank; the repository's
+open-grammar SMC work is correctness-only and is not claimed as part of these
+experiments. BOQD lacks cross-family efficacy. Finally, \method{} provides
+an empirical fold-safety certificate, not a distribution-free no-harm
+guarantee.
 
 \section{Conclusion}
 
-\method{} reframes symbolic discovery as sequential Bayesian discrimination
-among predictive classes. The exact-reference engine makes posterior semantics
-and acquisition naming testable before the project invests in open-grammar
-SMC. After the corrected P2B, exact P3A.2, P3B.6 coordinate, and P3B.7 class
-Gates, the negative P3B.10, P3C.1, and P3D.2 real audits show that numerical
-validity does not imply acquisition efficacy. The subsequent controlled Gates
-validate numerical reference dominance and expose that ordinary class-EIG is
-not automatically loss-aligned with a power-likelihood update. P3E.1 corrects
-this exact semantic defect and requires positive model-relative expected
-entropy change, but it does not repair the posterior. P3E.2 then validates the
-algebra and false-alarm semantics of a union-orthogonal discrepancy alternative
-on deterministic finite fixtures. The frozen CCPP-only initial-development
-audit completes protocol-validly with non-rejection at all eight seeds, while
-preserving the closed held-out role and the no-acquisition rule. This result is
-evidence against rejection by the registered diagnostic only; it does not
-certify posterior adequacy or authorize an augmented-posterior acquisition
-run. P3E.3 passes a five-decision PIT predictive-calibration correctness
-fixture, but its returned validation-role audit rejects three seeds and fails
-global eligibility. P3F.1/P3F.2 consequently move the repair to a proper
-structure-wise generative discrepancy and countably-open typed target. Their
-exact finite-slice checks establish normalization, class-mass conservation,
-reversible-kernel invariance, and sequential evidence identities, not search
-coverage or real predictive calibration. The eta-below-one branch remains
-fail-closed for a proper nominal-marginal interpretation. A scalable
-open-target particle engine, augmented-posterior calibration, another
-measured-pool acquisition run, motif transfer, and held-out confirmation remain
-downstream and independently blocked.
+\method{} separates scientific creativity from statistical authority.
+Heterogeneous engines produce immutable evidence lineages; an LLM composes
+them through a typed deterministic interface; protected Bayesian admission
+decides which sources receive mass; and certified decision-risk reduction
+decides whether to measure. Matched-engine experiments support the specific
+claim that LLM synthesis can improve response-free expected-risk AULC.
+Realized experiments do not support universal superiority, and the framework
+correctly restricts deployment. We view this selective result as the right
+standard for an auditable AI scientist: propose broadly, verify independently,
+and abstain when modeled value does not transfer.
+
+\section*{AI Use Statement}
+
+Large language models were used as research software components in the
+evaluated method and were also used for code assistance, literature discovery,
+and language editing during manuscript preparation. All mathematical claims,
+citations, source code, experiment registrations, and result artifacts were
+checked by the authors. Manuscript-writing tools did not receive protected
+candidate, test, OOD, or held-out responses. In the evaluated system, provider
+outputs were restricted by typed contracts and could not directly assign
+posterior mass, open a response, or authorize a scientific claim.
 
 \bibliographystyle{plain}
 \bibliography{references}
+
+\clearpage
+\appendix
+
+\section{Exact Finite-Bank Posterior}
+
+For a frozen support \(h\), let \(\Phi_h\) be its design matrix and use
+\[
+\theta_h\mid\sigma^2\sim
+\mathcal N(m_0,\sigma^2\Lambda_0^{-1}),\qquad
+\sigma^2\sim\operatorname{IG}(\alpha_0,\beta_0).
+\]
+Then
+\[
+\begin{aligned}
+\Lambda_n&=\Lambda_0+\Phi_h^\top\Phi_h,\\
+m_n&=\Lambda_n^{-1}(\Lambda_0m_0+\Phi_h^\top y),\\
+\alpha_n&=\alpha_0+n/2,\\
+\beta_n&=\beta_0+\tfrac12(y^\top y+m_0^\top\Lambda_0m_0-
+m_n^\top\Lambda_nm_n).
+\end{aligned}
+\]
+The collapsed marginal is
+\begin{align*}
+\log p(y\mid h)
+={}&-\frac n2\log(2\pi)
++\frac12(\log|\Lambda_0|-\log|\Lambda_n|)\\
+&+\alpha_0\log\beta_0-\alpha_n\log\beta_n\\
+&+\log\Gamma(\alpha_n)-\log\Gamma(\alpha_0).
+\end{align*}
+All search-produced coefficients are discarded before this common refit.
+
+\section{Source Admission Details}
+
+Individual source admission precedes mixture optimization. For every optional
+source, the implementation records fold gains, numerical tolerances,
+admission status, zero production mass when rejected, and whether a negative
+fold certifies negative transfer. A structurally duplicate source can instead
+receive a redundancy certificate. Conditional engine admission evaluates an
+engine against the already retained core--LLM reference, preventing a
+redundant engine from receiving credit for an improvement already supplied by
+the LLM.
+
+\section{Additional Experimental Accounting}
+
+\begin{table}[h]
+\caption{Claim boundaries of the principal artifacts.}
+\centering
+\small
+\begin{tabular}{p{0.30\linewidth}p{0.60\linewidth}}
+\toprule
+Artifact & Boundary\\
+\midrule
+Synthesis-only v2/v3 & Fresh-task, response-free development screens; no realized or confirmation claim.\\
+Gas source admission & Initial-data and arbitration responses only; no acquisition response.\\
+Fixed-prefix replay & Historical-candidate functionality; engines and LLM not rerun.\\
+Realized DRR pilot & Development responses opened after durable selection; held-out closed.\\
+Policy calibration & Familywise deployment decision; not universal superiority.\\
+BOQD correctness & Algebra and archive behavior only; no real-data efficacy.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The earlier 270-row formal DRR run is not used as positive evidence. It
+contains 118 failures and a zero primary effect, motivating the fixed-prefix
+repair. Similarly, historical PCPI acquisition stages that passed execution
+but failed efficacy are preserved as negative evidence and are not pooled into
+the positive synthesis results.
 
 \end{document}
