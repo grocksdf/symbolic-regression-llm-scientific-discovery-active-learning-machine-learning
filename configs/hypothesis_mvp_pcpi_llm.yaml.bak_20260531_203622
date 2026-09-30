@@ -1,0 +1,23 @@
+name: PCPI-LLM
+class_name: PCPISearcher
+api_type: "openai"
+
+# Either set this here or set $env:PCPI_PROJECT_ROOT
+project_root: "D:/01/666/hypothesis_mvp"
+
+use_llm: true
+n_steps: 5
+n_particles: 16
+use_library: true
+use_smc: true
+use_causal: true
+use_opt3: true
+adaptive_mode: false
+seed: 42
+
+internal_train_frac: 0.60
+internal_val_frac: 0.20
+
+llm_provider: "openai"
+llm_model: "deepseek-ai/DeepSeek-V4-Flash"
+llm_api_base: "https://api.siliconflow.cn/v1"

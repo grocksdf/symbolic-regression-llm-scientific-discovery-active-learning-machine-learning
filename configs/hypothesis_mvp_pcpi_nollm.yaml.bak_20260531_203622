@@ -1,0 +1,20 @@
+name: PCPI-noLLM
+class_name: PCPISearcher
+api_type: "none"
+
+# Either set this here or set $env:PCPI_PROJECT_ROOT
+project_root: "D:/01/666/hypothesis_mvp"
+
+use_llm: false
+n_steps: 5
+n_particles: 16
+use_library: true
+use_smc: true
+use_causal: true
+use_opt3: true
+adaptive_mode: false
+seed: 42
+
+# PCPI may only split official train samples internally.
+internal_train_frac: 0.60
+internal_val_frac: 0.20

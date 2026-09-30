@@ -1,0 +1,8 @@
+name: AISTATS-External-LLMSR-GLM53
+class_name: LLMSRSearcher
+api_type: openai
+api_model: glm-5.3
+api_url: https://open.bigmodel.cn/api/paas/v4/
+global_max_sample_num: 16
+samples_per_prompt: 2
+num_islands: 4

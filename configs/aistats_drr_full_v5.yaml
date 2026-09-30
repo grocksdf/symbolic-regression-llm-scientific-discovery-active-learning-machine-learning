@@ -1,0 +1,48 @@
+name: AISTATS-DRR-Full-V5
+class_name: DRRBenchmarkSearcher
+api_type: openai
+condition: entropy_portfolio_v5
+portfolio_method: v5
+use_llm: true
+llm_rl_enabled: true
+llm_model: glm-5.3
+llm_api_url: https://open.bigmodel.cn/api/paas/v4
+llm_timeout_s: 120.0
+llm_temperature: 0.25
+llm_max_tokens: 1800
+llm_thinking_type: ""
+llm_reasoning_effort: low
+llm_do_sample: false
+top_k_results: 1
+random_seed: 0
+use_library: false
+strict_train_val_only: true
+agent_config:
+  engines: [polynomial_lasso, mcts, sparse_library, additive_mechanisms]
+  engine_repeats: 1
+  engine_budget: 6
+  engine_workers: 1
+  engine_timeout_s: 90.0
+  engine_retries: 0
+  cycles: 2
+  discovery_budget: 48
+  random_seed: 0
+  search_iterations: 12
+  mcts_frontier_size: 3
+  mcts_score_folds: 2
+  acquisition_enabled: false
+  use_knowledge: false
+  task_local_memory: true
+  discovery_rounds: 2
+  candidates_per_island: 2
+  task_local_memory_topk: 8
+  llm_evaluation_reserve: 12
+  refit_policy: pcpi-closed-basis-amplitudes
+  discovery_islands: [low_complexity, nmse, novelty]
+  scientist_orchestration: true
+  require_explicit_skill_controls: true
+  typed_evidence_synthesis: true
+  protected_counterfactual_backbone: true
+  provider_failure_mode: audited-deterministic-abstention
+  conservative_allocation_policy: {}
+  dataset_family: llm_srbench_frozen

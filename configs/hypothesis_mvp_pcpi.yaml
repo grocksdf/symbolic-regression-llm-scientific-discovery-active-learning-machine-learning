@@ -1,0 +1,30 @@
+name: HypothesisMVP-PCPI
+class_name: PCPISearcher
+api_type: openai
+
+# Deterministic paired-ablation baseline.  No LLM endpoint is passed to the
+# searcher when use_llm/llm_rl_enabled are false.
+use_llm: false
+llm_rl_enabled: false
+
+n_particles: 64
+n_steps: 12
+top_k_results: 3
+train_ratio: 0.7
+pool_ratio: 0.15
+random_seed: 42
+
+use_library: true
+use_grammar_posterior: true
+use_causal: true
+use_opt3: true
+use_smc: true
+scoring_mode: heuristic
+adaptive_mode: true
+
+use_restart_controller: false
+restart_min_relative_val_gain: 0.02
+restart_max_complexity: 80
+restart_bootstrap_rounds: 5
+
+library_path: logs/pcpi_cross_task_library_nollm.json

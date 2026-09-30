@@ -1,0 +1,14 @@
+name: hypothesis_mvp_pcpi_deterministic_controller
+class_name: PCPISearcher
+api_type: none
+api_model: null
+api_url: null
+use_llm: false
+llm_rl_enabled: false
+use_restart_controller: true
+controller_only_llm: true
+restart_min_relative_val_gain: 0.02
+restart_max_complexity: 80
+restart_bootstrap_rounds: 5
+restart_max_candidates: 64
+restart_action_ledger_path: null

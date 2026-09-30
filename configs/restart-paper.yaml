@@ -1,0 +1,49 @@
+# RESTART ICLR 2026 parameter-faithful experiment profile.
+# The scientific algorithm remains implemented only in hypothesis_mvp.
+name: Hypothesis-MVP-RESTART-Paper
+class_name: PCPISearcher
+api_type: openai
+
+profile_name: restart-paper-iclr2026
+use_llm: true
+llm_rl_enabled: true
+use_restart_controller: true
+
+# Paper setup: Qwen3-8B, ten islands, four exemplars, 1000 candidates.
+llm_model: Qwen/Qwen3-8B
+llm_api_url: https://api.siliconflow.cn/v1
+llm_timeout_s: 150.0
+llm_temperature: 0.25
+llm_max_tokens: 4096
+evaluation_budget: 1000
+candidates_per_island: 4
+exemplars_per_prompt: 4
+islands:
+  - island_00
+  - island_01
+  - island_02
+  - island_03
+  - island_04
+  - island_05
+  - island_06
+  - island_07
+  - island_08
+  - island_09
+
+top_k_results: 3
+train_ratio: 0.7
+random_seed: 42
+max_rounds: 8
+patience: 2
+max_complexity: 160
+
+use_library: true
+structure_library_topk: 20
+structure_library_max_entries: 20
+structure_library_read: true
+structure_library_write: true
+
+final_require_val_strict_pass: true
+final_val_strict_threshold: 0.10
+final_require_stress_strict_pass: false
+final_stress_strict_threshold: 0.10

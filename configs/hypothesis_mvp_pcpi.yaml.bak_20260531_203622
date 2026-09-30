@@ -1,0 +1,33 @@
+name: HypothesisMVP-PCPI
+class_name: PCPISearcher
+
+api_type: openai
+
+n_particles: 64
+n_steps: 12
+top_k_results: 3
+train_ratio: 0.7
+pool_ratio: 0.15
+random_seed: 42
+
+use_library: true
+use_grammar_posterior: true
+use_causal: true
+use_opt3: true
+use_smc: true
+scoring_mode: heuristic
+adaptive_mode: true
+
+# Search-space controls
+use_polynomial: true
+use_template_search: true
+use_physics_priors: true
+use_pysr: true
+llm_rl_enabled: false
+
+# Adaptive search controls
+strategy_memory_path: "${HOME}/.llm_srbench_strategy_memory.json"
+physics_min_bucket_budget: 8
+poly_min_keep_ratio: 0.35
+
+library_path: "logs/pcpi_cross_task_library.json"

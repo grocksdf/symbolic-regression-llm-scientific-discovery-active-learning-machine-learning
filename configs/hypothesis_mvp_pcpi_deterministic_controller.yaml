@@ -1,0 +1,26 @@
+name: PCPI-Deterministic-Controller
+class_name: PCPISearcher
+api_type: none
+
+use_llm: false
+llm_rl_enabled: false
+use_restart_controller: true
+
+top_k_results: 3
+train_ratio: 0.7
+random_seed: 42
+use_library: false
+
+max_rounds: 3
+candidates_per_island: 4
+patience: 2
+max_complexity: 160
+stress_folds: 6
+min_objective_gain: 0.01
+metric_worse_tolerance: 0.01
+complexity_penalty: 0.20
+
+final_require_val_strict_pass: true
+final_val_strict_threshold: 0.10
+final_require_stress_strict_pass: false
+final_stress_strict_threshold: 0.10

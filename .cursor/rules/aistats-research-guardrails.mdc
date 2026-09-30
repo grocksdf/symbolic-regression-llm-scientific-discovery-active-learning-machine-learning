@@ -1,0 +1,18 @@
+---
+description: PCPI AISTATS real-data benchmark and experiment handoff rules
+alwaysApply: true
+---
+
+# PCPI AISTATS Benchmark Guardrails
+
+- This repository is the thin experimental branch; reusable discovery, posterior, evidence, and promotion capabilities belong in `hypothesis_mvp` public APIs.
+- Formal efficacy experiments must use provenance-audited real measured datasets. Never use simulated/synthetic data as evidence of superiority or scientific discovery.
+- Controlled fixtures are only for inference or estimator correctness and must be explicitly labeled; they are not benchmark evidence.
+- Preserve development, validation, acquisition-pool, and untouched-heldout isolation. No adapter, runner, config, logging, or exception path may expose held-out information before frozen one-time confirmation.
+- Codex edits and tests code only. Do not run formal experiments; provide exact commands, environment assumptions, expected artifacts, and validation checks for the user to execute.
+- Permit only non-evidentiary unit tests and dry-runs that consume no formal budget and touch no held-out data.
+- Enforce matched measurement/candidate/compute/LLM-call budgets, identical seeds and splits, a shared posterior engine, explicit failure policy, and complete provenance.
+- If results fail a preregistered gate or paper-quality target, stop progression and return to principled algorithm design. Never select code paths, thresholds, regularizers, formulas, seeds, or modules by looking backward at evaluation or held-out results.
+- Literature-driven changes must cite current primary papers and official source implementations, explain the target-level correction, and add invariant/contract tests before another experiment command is issued.
+- Do not claim EIG, Bayesian posterior, target invariance, or discovery advantage beyond what exact-reference, SMC, acquisition, and real-data evidence actually establish.
+- Keep experiment outputs, caches, frozen result bundles, credentials, and local provider state out of Git.

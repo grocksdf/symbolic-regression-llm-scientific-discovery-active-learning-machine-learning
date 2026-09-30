@@ -1,0 +1,38 @@
+# Enhanced profile: RESTART-inspired search plus Hypothesis-MVP evidence gates.
+name: Hypothesis-MVP-Auditable-RESTART
+class_name: PCPISearcher
+api_type: openai
+
+profile_name: auditable-restart
+use_llm: true
+llm_rl_enabled: true
+use_restart_controller: true
+llm_model: deepseek-ai/DeepSeek-V4-Flash
+llm_api_url: https://api.siliconflow.cn/v1
+llm_timeout_s: 120.0
+llm_temperature: 0.25
+llm_max_tokens: 1800
+
+top_k_results: 3
+train_ratio: 0.7
+random_seed: 42
+max_rounds: 3
+candidates_per_island: 4
+exemplars_per_prompt: 4
+patience: 2
+max_complexity: 160
+stress_folds: 6
+min_objective_gain: 0.01
+metric_worse_tolerance: 0.01
+complexity_penalty: 0.20
+
+use_library: true
+structure_library_topk: 8
+structure_library_max_entries: 64
+structure_library_read: true
+structure_library_write: true
+
+final_require_val_strict_pass: true
+final_val_strict_threshold: 0.10
+final_require_stress_strict_pass: false
+final_stress_strict_threshold: 0.10

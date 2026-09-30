@@ -1,0 +1,83 @@
+name: PCPI-LLM-RESTART
+class_name: PCPISearcher
+api_type: openai
+
+# Rigorous paired-ablation LLM condition for the PCPI adapter.
+# eval.py maps use_llm/llm_rl_enabled plus llm_api_base/llm_model into
+# PCPISearcher(llm_rl_enabled, llm_api_url, llm_model, llm_api_key).
+use_llm: true
+llm_rl_enabled: true
+
+# RESTART-style protocol flags recorded for audit/config provenance.
+# Current PCPISearcher directly consumes llm_rl_enabled/llm_api_url/llm_model;
+# these flags document the intended LLM branch for paired experiments and are
+# safe no-ops unless the controller adds explicit support for them.
+use_restart_controller: true
+controller_only_llm: true
+llm_residual_diagnosis: true
+llm_structure_library: true
+llm_improvement_gate: true
+
+llm_model: deepseek-ai/DeepSeek-V4-Flash
+llm_api_base: https://api.siliconflow.cn/v1
+llm_api_url: https://api.siliconflow.cn/v1
+llm_timeout_s: 120.0
+
+n_particles: 64
+n_steps: 12
+top_k_results: 3
+train_ratio: 0.7
+pool_ratio: 0.15
+random_seed: 42
+
+use_library: true
+use_grammar_posterior: true
+use_causal: true
+use_opt3: true
+use_smc: true
+scoring_mode: heuristic
+adaptive_mode: true
+
+use_restart_controller: true
+restart_min_relative_val_gain: 0.02
+restart_max_complexity: 80
+restart_bootstrap_rounds: 5
+
+library_path: logs/pcpi_cross_task_library_llm_restart.json
+
+# Conservative train/val-only RESTART gate knobs.
+restart_min_bootstrap_gain: 0.0
+restart_require_edge_split_improvement: true
+restart_complexity_gain_penalty: 0.001
+
+# v6.3.2 strict absolute validation export gate.
+restart_controller_version: v6.3.2-strict-absolute-val-export
+restart_max_candidates: 64
+restart_strict_tail_repair_rounds: 2
+restart_simplification_max_terms: 18
+restart_tail_worst_frac: 0.025
+restart_tail_weight: 40.0
+restart_max_tail_complexity: 220
+restart_strict_max_gain_min: 0.10
+restart_p995_gain_min: 0.08
+restart_fraction_gain_min: 0.01
+restart_nmse_worse_tolerance: 0.15
+# v6.3.2 stress-tail diagnostics and strict absolute export gate knobs.
+# These use train/validation observed data only; no ID/OOD/test/test_extra samples.
+restart_stress_tail_rounds: 8
+restart_stress_tail_val_frac: 0.25
+restart_stress_tail_threshold: 0.10
+restart_stress_tail_strict_margin: 1.15
+restart_stress_tail_p995_margin: 1.10
+restart_stress_tail_nmse_margin: 1.10
+
+# v6.3.2: final export is gated by validation strict-max absolute target.
+# Stress-tail observed-pool folds are retained as diagnostics by default because
+# near-zero relative errors in the observed pool were too noisy as a hard gate.
+restart_stress_tail_enforce_final_export: true
+restart_post_accept_stress_tail_mode: diagnostic
+restart_tail_repair_stress_tail_mode: diagnostic
+restart_final_export_require_val_strict_pass: true
+restart_final_export_val_strict_threshold: 0.10
+restart_final_export_val_strict_margin: 1.00
+restart_final_export_require_stress_pass: false
