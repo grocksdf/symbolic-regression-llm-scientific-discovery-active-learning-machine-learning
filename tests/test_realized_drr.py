@@ -1,9 +1,13 @@
 """Correctness fixtures for matched-budget realized DRR trajectories."""
 
 import numpy as np
+import pytest
+
+from hypothesis_mvp.data.roles import DataRole, RoleDataset
 
 from hypothesis_mvp.discovery.realized_drr import (
     _select_realized_action,
+    compare_paired_reporting,
     run_realized_drr_trajectory,
 )
 
@@ -72,3 +76,50 @@ def test_overlapping_intervals_fail_closed_even_with_positive_scores():
         remaining, random_order, policy="decision_risk",
         resolution=3e-10)
     assert selected == (2, "matched-random-fallback", False)
+
+
+def test_independent_reporting_scores_a_shared_response_target_without_selection_leak():
+    candidates = [
+        {"expression": "1", "source": "deterministic_constant_anchor",
+         "origin": "deterministic"},
+        {"expression": "x0", "source": "engine:polynomial_lasso",
+         "origin": "deterministic"},
+        {"expression": "x0**2", "source": "deterministic_linear_anchor",
+         "origin": "deterministic"},
+    ]
+    X = np.linspace(-.5, .5, 16)[:, None]
+    y = np.sin(3.0 * X[:, 0])
+    actions = np.array([[-3.], [-2.], [-1.], [1.], [2.], [3.]])
+    responses = np.sin(3.0 * actions[:, 0])
+    kwargs = dict(condition="fixture", exploration_identity="e" * 64,
+                  policy="random", random_seed=7)
+    reporting = RoleDataset(DataRole.VALIDATION,
+                            np.array([[4.], [5.]]), np.array([.2, -.3]))
+    base = run_realized_drr_trajectory(
+        candidates, X, y, actions, responses, **kwargs)
+    scored = run_realized_drr_trajectory(
+        candidates, X, y, actions, responses, **kwargs,
+        reporting_data=reporting, reporting_excluded_from_selection=True)
+    assert [row["action_index"] for row in base["queries"]] == [
+        row["action_index"] for row in scored["queries"]]
+    assert len(scored["independent_reporting"]["mse_curve"]) == 3
+    assert np.isfinite(scored["independent_reporting"]["log_score_aulc"])
+    assert scored["risk_curve"] == base["risk_curve"]
+    comparison = compare_paired_reporting(scored, scored)
+    assert comparison["full_minus_no_llm_mse_aulc"] == 0.0
+    assert comparison["full_minus_no_llm_log_score_aulc"] == 0.0
+
+    changed = dict(scored, independent_reporting=dict(
+        scored["independent_reporting"], reporting_fingerprint="different"))
+    with pytest.raises(ValueError, match="external target"):
+        compare_paired_reporting(scored, changed)
+    with pytest.raises(ValueError, match="excluded validation"):
+        run_realized_drr_trajectory(
+            candidates, X, y, actions, responses, **kwargs,
+            reporting_data=reporting)
+    with pytest.raises(ValueError, match="excluded validation"):
+        run_realized_drr_trajectory(
+            candidates, X, y, actions, responses, **kwargs,
+            reporting_data=RoleDataset(
+                DataRole.UNTOUCHED_HELDOUT, reporting.X, reporting.y),
+            reporting_excluded_from_selection=True)

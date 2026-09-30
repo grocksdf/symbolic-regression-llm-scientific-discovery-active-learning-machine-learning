@@ -8,7 +8,7 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from hypothesis_mvp.data.roles import DataRole, RoleDataset
+from hypothesis_mvp.data.roles import DataRole, RoleDataset, covariate_fingerprint
 from hypothesis_mvp.pcpi import NormalInverseGammaPrior
 from hypothesis_mvp.pcpi.acquisition import (
     EXACT_CLASS_EIG_EPSABS,
@@ -100,11 +100,54 @@ def _select_realized_action(
     return local, mode, False
 
 
+def _independent_predictive_score(engine, posterior, reporting_data):
+    """Score a fixed external response target; never feed it to selection."""
+    predictions = np.zeros(len(reporting_data.y), dtype=float)
+    for member in posterior.members:
+        mean, _ = engine.predictive_moments(member, reporting_data.X)
+        predictions += member.probability * np.asarray(mean, dtype=float)
+    log_density = np.asarray(engine.predictive_logpdf(
+        posterior, reporting_data.X, reporting_data.y), dtype=float)
+    if (predictions.shape != reporting_data.y.shape
+            or log_density.shape != reporting_data.y.shape
+            or not np.all(np.isfinite(predictions))
+            or not np.all(np.isfinite(log_density))):
+        raise FloatingPointError("independent predictive score is invalid")
+    return float(np.mean((predictions - reporting_data.y) ** 2)), float(
+        np.mean(log_density))
+
+
+def compare_paired_reporting(full, no_llm):
+    """Compare two conditions on the same real response target and budget.
+
+    This is a predictive transfer contrast, not class recovery or proof of
+    decision benefit. The reporting data must be excluded from every proposal,
+    bank, prior, admission, and action-selection step by the frozen protocol.
+    """
+    a, b = full["independent_reporting"], no_llm["independent_reporting"]
+    keys = ("reporting_fingerprint", "initial_data_fingerprint",
+            "action_covariate_fingerprint", "measurement_budget")
+    if any(a[key] != b[key] for key in keys):
+        raise ValueError("paired predictive comparison changed its external target")
+    return {
+        "schema": "scientific-paired-independent-predictive-transfer-v1",
+        "reporting_fingerprint": a["reporting_fingerprint"],
+        "full_minus_no_llm_mse_aulc": float(
+            a["mse_aulc"] - b["mse_aulc"]),
+        "full_minus_no_llm_log_score_aulc": float(
+            a["log_score_aulc"] - b["log_score_aulc"]),
+        "interpretation": "lower MSE and higher log score are better",
+        "claim_boundary": "shared independent predictive target; not class truth or acquisition efficacy",
+    }
+
+
 def run_realized_drr_trajectory(
     candidates: Sequence[Mapping[str, Any]],
     initial_X, initial_y, action_X, action_y, *, condition: str,
     exploration_identity: str, policy: str, random_seed: int,
     measurement_budget: int = 2,
+    reporting_data: RoleDataset | None = None,
+    reporting_excluded_from_selection: bool = False,
 ) -> dict[str, Any]:
     if policy not in {"decision_risk", "random"}:
         raise ValueError("unknown realized DRR policy")
@@ -117,6 +160,16 @@ def run_realized_drr_trajectory(
             or measurement_budget != 2 or len(actions) < measurement_budget):
         raise ValueError("realized DRR arrays or budget are inconsistent")
     initial = RoleDataset(DataRole.DEVELOPMENT, X0, y0)
+    if reporting_data is not None:
+        if (not isinstance(reporting_data, RoleDataset)
+                or reporting_data.role is not DataRole.VALIDATION
+                or reporting_data.X.shape[1] != X0.shape[1]
+                or not reporting_excluded_from_selection):
+            raise ValueError("reporting requires an excluded validation target")
+        action_rows = RoleDataset(DataRole.DEVELOPMENT, actions, responses)
+        if (reporting_data.row_fingerprints & initial.row_fingerprints
+                or reporting_data.row_fingerprints & action_rows.row_fingerprints):
+            raise ValueError("reporting responses overlap discovery or actions")
     selected, selection = select_operational_capacity_bank(
         candidates, initial, actions,
         n_features=X0.shape[1], prior=NormalInverseGammaPrior(),
@@ -145,6 +198,12 @@ def run_realized_drr_trajectory(
     initial_risk = bayes_zero_one_decision_risk(
         np.asarray(partition.class_probabilities))
     risks, queries = [initial_risk], []
+    reporting_mse, reporting_log_score = [], []
+    if reporting_data is not None:
+        mse, log_score = _independent_predictive_score(
+            engine, posterior, reporting_data)
+        reporting_mse.append(mse)
+        reporting_log_score.append(log_score)
     for step in range(measurement_budget):
         available = actions[remaining]
         components = predictive_components_for_partition(
@@ -163,6 +222,11 @@ def run_realized_drr_trajectory(
         before = risks[-1]
         posterior = engine.update_one(
             posterior, actions[global_index], response)
+        if reporting_data is not None:
+            mse, log_score = _independent_predictive_score(
+                engine, posterior, reporting_data)
+            reporting_mse.append(mse)
+            reporting_log_score.append(log_score)
         probabilities = fixed_partition_probabilities(
             posterior, partition)
         after = bayes_zero_one_decision_risk(probabilities)
@@ -194,9 +258,27 @@ def run_realized_drr_trajectory(
         "test_or_ood_accessed": False,
         "heldout_opened": False,
     }
+    if reporting_data is not None:
+        x = np.arange(measurement_budget + 1)
+        payload["independent_reporting"] = {
+            "schema": "scientific-independent-predictive-trajectory-v1",
+            "reporting_fingerprint": reporting_data.fingerprint,
+            "initial_data_fingerprint": initial.fingerprint,
+            "action_covariate_fingerprint": covariate_fingerprint(actions),
+            "measurement_budget": measurement_budget,
+            "mse_curve": reporting_mse,
+            "log_score_curve": reporting_log_score,
+            "mse_aulc": float(np.trapezoid(reporting_mse, x) / measurement_budget),
+            "log_score_aulc": float(
+                np.trapezoid(reporting_log_score, x) / measurement_budget),
+            "reporting_excluded_from_selection": True,
+            "claim_boundary": (
+                "independent predictive loss on one shared development target; "
+                "not operational-class truth or held-out confirmation"),
+        }
     payload["identity"] = sha256(
         repr(payload).encode()).hexdigest()
     return payload
 
 
-__all__ = ["run_realized_drr_trajectory"]
+__all__ = ["compare_paired_reporting", "run_realized_drr_trajectory"]

@@ -145,6 +145,39 @@ Interpretation:
 Claim boundary: frozen external ID/OOD comparison, not held-out confirmation,
 universal superiority, or an external proof of LLM-synthesis efficacy.
 
+## Offline LLM admission audit
+
+The outcome above was read as "LLM synthesis adds nothing".  That reading is
+wrong and has been corrected offline without rerunning anything.
+
+Artifact:
+
+`D:\01\666\outputs\scientific_aistats_llm_admission_offline_audit_20260930\AISTATS_LLM_ADMISSION_AUDIT.json`
+
+SHA-256:
+
+`333c8903adc21071b1b99ef376dbb4e42ec35e617732d61d4e73e94f4b9ed1be`
+
+Status: `passed=true`, read-only, no rerun and no rescoring.
+
+- Scientist synthesis directives emitted: `19`.
+- Passed novelty gate: `10`; rejected for `no structural novelty`: `9`.
+- Compiled candidates: `10`; rows reaching the evaluated bank: `5`.
+- Synthesis rows in final top-k: `0`; final sources were `engine:*` only.
+- `Full` and `No-LLM` share the same `best_expression` on all six resolved
+  coordinates.
+- Two `lsr_transform` coordinates are declared missing (timeout), not imputed.
+
+The mechanism is that the active `typed_evidence_synthesis` profile passes
+`provider_settings=None` into the inner discovery runtime, so free-form LLM
+equation proposal was never powered (`inner_llm_call_count = 0` while the outer
+Scientist made `21` logical calls).  The detailed record is
+`docs/scientific_aistats_llm_admission_offline_audit_result_20260930.md`.
+
+Claim boundary: offline admission accounting on frozen artifacts.  It licenses
+selective-admission and non-degradation claims.  It does not license any claim
+about LLM equation-proposal accuracy, because that path was not exercised.
+
 ## GitHub scope
 
 The Git repositories should contain:

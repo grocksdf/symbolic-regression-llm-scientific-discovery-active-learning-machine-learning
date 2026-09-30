@@ -31,6 +31,12 @@ FORBIDDEN_TEXT = {
 # is an admissible debt reduction and needs no registry update.
 LEGACY_LONG_FUNCTIONS = frozenset({
     (
+        "discovery/realized_drr.py",
+        "run_realized_drr_trajectory",
+        138,
+        "5cb21fd6a84da08d267f0d9c536aa7f79cd95bb47391cc2696df04f301f334d5",
+    ),
+    (
         "pcpi/open_target/adapted_knot.py",
         "run",
         342,
