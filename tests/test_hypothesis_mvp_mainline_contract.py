@@ -37,6 +37,6 @@ def test_active_adapter_contains_no_scientific_runtime_copy() -> None:
     active = ROOT / "methods" / "hypothesis_mvp_pcpi"
     assert sorted(path.name for path in active.glob("*.py")) == [
         "__init__.py", "_mainline.py", "drr_adapter.py",
-        "drr_searcher.py", "searcher.py",
+        "drr_searcher.py", "quality_first_augmentation.py", "searcher.py",
     ]
     assert PCPISearcher is not None and DRRBenchmarkSearcher is not None

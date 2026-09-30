@@ -6,7 +6,7 @@ This branch is a clean source snapshot exported from:
 
 - upstream project: `deep-symbolic-mathematics/llm-srbench`
 - local source branch: `codex/restart-experiment-adapter`
-- source commit: `06d7a719117b44dd3731a27c62f578e582b0010d`
+- source commit: `879524ef0c202c97ad8acf4fc695eb052ad9dfb4`
 
 The snapshot intentionally excludes the upstream Git history because that
 history contains experimental ledgers larger than GitHub's 100 MB per-file
