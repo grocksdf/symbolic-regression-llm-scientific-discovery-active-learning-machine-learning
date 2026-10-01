@@ -583,7 +583,8 @@ class KnowledgeRuntime:
                 matching = [record for record in records
                     if record.get("lineage_id")
                     and record["lineage_id"] == row.get("final_lineage_id")]
-                admitted = bool(matching and matching[0].get("admitted") is True)
+                admitted = bool(matching and matching[0].get("admitted") is True
+                                and matching[0].get("bank_retained", True) is True)
                 selected = {**row,
                     "status": "prediction_admitted_pending_decision"
                               if admitted else "admission_rejected",

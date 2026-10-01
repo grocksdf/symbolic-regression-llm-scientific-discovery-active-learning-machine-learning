@@ -720,8 +720,18 @@ class DiscoveryAgent:
         source_rows = [{"expression": row.expression,
                         "source": f"engine:{row.engine}"}
                        for row in engines.all_results]
-        source_rows.extend(generic_deterministic_candidates(
-            selection.development.X, selection.development.y))
+        score_reference_rows = generic_deterministic_candidates(
+            selection.development.X, selection.development.y)
+        source_rows.extend(score_reference_rows)
+        reference_rows, reference_supports = [], set()
+        for row in score_reference_rows:
+            try:
+                support = structural_terms(row["expression"], features)
+            except (SyntaxError, ValueError):
+                continue
+            if support not in reference_supports:
+                reference_rows.append(row)
+                reference_supports.add(support)
         seen: set[tuple[str, ...]] = set()
         candidates = []
         for row in source_rows:
@@ -745,6 +755,19 @@ class DiscoveryAgent:
             model, selection.development, domain,
             measurement_budget=measurement_budget,
             expected_model_identity=model.stable_hash)
+        reference_model = reference_target = None
+        if reference_rows:
+            reference_identity = sha256(json.dumps(
+                reference_rows, sort_keys=True).encode()).hexdigest()
+            reference_model = freeze_discovery_model(
+                reference_rows, n_features=features, prior=prior,
+                exploration_identity=reference_identity,
+                coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
+                minimum_supports=1)
+            reference_target = freeze_discovery_target(
+                reference_model, selection.development, domain,
+                measurement_budget=measurement_budget,
+                expected_model_identity=reference_model.stable_hash)
         cuts = (float(np.median(domain[:, 0])),)
         regions = FrozenAxisRegions(features, 0, cuts)
         diagnosis = diagnose_frozen_bank(
@@ -753,13 +776,17 @@ class DiscoveryAgent:
         evidence = screen_independent_adequacy(
             model, target, diagnosis, regions, audit,
             discovery_development=selection.development,
-            discovery_validation=selection.validation)
+            discovery_validation=selection.validation,
+            score_reference_model=reference_model,
+            score_reference_target=reference_target)
         return {"prompt": evidence.prompt_brief(diagnosis),
                 "existing_supports": [list(row) for row in sorted(seen)],
                 "audit": {"schema": "independent-posterior-gap-screen-v1",
                           "fit_identity": selection.development.fingerprint,
                           "selection_identity": selection.validation.fingerprint,
                           "target_identity": target.stable_hash,
+                          "score_reference_identity": (
+                              reference_model.stable_hash if reference_model else ""),
                           "audit_identity": audit.fingerprint,
                           "rows": [asdict(row) for row in evidence.rows],
                           "candidate_response_accessed": False,

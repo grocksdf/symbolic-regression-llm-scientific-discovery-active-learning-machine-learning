@@ -11,16 +11,22 @@ import json
 from pathlib import Path
 import time
 import math
+import numpy as np
 
 from .agent import DiscoveryAgent, DiscoveryAgentConfig
 from .system_run import analyze_system_contract
 from .resource_limits import run_bounded
 from hypothesis_mvp.pcpi.discovery_transaction import _publish
 from hypothesis_mvp.symbolic.registry import registered_engine_names
-from .pcpi_adapter import structural_terms
+from .pcpi_adapter import (
+    freeze_discovery_model, freeze_discovery_target, structural_terms,
+)
 from .initializer import generic_deterministic_candidates
 from .source_stacking import source_family
 from .regional_candidate_admission import admit_regional_candidates
+from .regional_decision_audit import (
+    FrozenFiniteActionReference, audit_admitted_candidate_action,
+)
 from .candidate_region_expansion import FrozenAxisRegions
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
@@ -175,7 +181,8 @@ def run_exploration_ablations(root, selection, *, dataset, config,
                              provider_attempt_ceiling, source_identity,
                              scientific_context, gap_audit=None,
                              gap_prior=None, gap_measurement_budget=0,
-                             gap_admission=None):
+                             gap_admission=None, decision_reference=None,
+                             decision_calibration=None):
     if (not isinstance(config, DiscoveryAgentConfig) or config.cycles < 1
             or len(config.engines) < 2 or len(set(config.engines)) != len(config.engines)
             or single_engine not in config.engines or config.engine_repeats < 1
@@ -216,6 +223,23 @@ def run_exploration_ablations(root, selection, *, dataset, config,
                 selection.development.row_fingerprints
                 | selection.validation.row_fingerprints)):
         raise ValueError("gap-directed independent roles overlap discovery roles")
+    if (decision_reference is None) != (decision_calibration is None):
+        raise ValueError("finite decision reference needs independent calibration role")
+    if decision_reference is not None and (
+            not config.posterior_gap_directed
+            or not isinstance(decision_reference, FrozenFiniteActionReference)
+            or not isinstance(decision_calibration, RoleDataset)
+            or decision_calibration.role is not DataRole.VALIDATION
+            or decision_reference.calibration_identity
+                != decision_calibration.fingerprint
+            or any(decision_calibration.row_fingerprints & role.row_fingerprints
+                   for role in (selection.development, selection.validation,
+                                gap_audit, gap_admission))
+            or not np.array_equal(decision_reference.action_covariates,
+                                  selection.acquisition_pool.X)
+            or not np.array_equal(decision_reference.target_covariates,
+                                  selection.acquisition_pool.X)):
+        raise ValueError("finite decision reference crosses independent roles or target")
     if total_jobs < len(config.engines):
         raise ValueError("engine budget must cover every registered skill")
     if config.scientist_orchestration:
@@ -223,7 +247,8 @@ def run_exploration_ablations(root, selection, *, dataset, config,
             root, selection, dataset, config, provider_settings, single_engine,
             compute_ceiling, provider_attempt_ceiling, source_identity,
             scientific_context, total_jobs, gap_audit, gap_prior,
-            gap_measurement_budget, gap_admission)
+            gap_measurement_budget, gap_admission, decision_reference,
+            decision_calibration)
     if config.typed_inner_augmentation:
         raise ValueError("augmentation requires Scientist source projection")
     optional_engines = tuple(engine for engine in config.engines if engine != single_engine)
@@ -391,7 +416,8 @@ def _run_scientist_ablations(root, selection, dataset, config, provider_settings
                              provider_attempt_ceiling, source_identity,
                              scientific_context, total_jobs,
                              gap_audit=None, gap_prior=None,
-                             gap_measurement_budget=0, gap_admission=None):
+                             gap_measurement_budget=0, gap_admission=None,
+                             decision_reference=None, decision_calibration=None):
     root = Path(root); root.mkdir(parents=True, exist_ok=True)
     contract = _scientist_contract(
         dataset, config, single_engine, selection, compute_ceiling,
@@ -411,6 +437,10 @@ def _run_scientist_ablations(root, selection, dataset, config, provider_settings
         contract["gap_admission_identity"] = gap_admission.fingerprint
         contract["gap_measurement_budget"] = gap_measurement_budget
         contract["gap_prior"] = gap_prior.to_dict()
+        if decision_reference is not None:
+            contract["finite_decision_reference_identity"] = decision_reference.stable_hash
+            contract["finite_decision_calibration_identity"] = (
+                decision_calibration.fingerprint)
     contract = json.loads(json.dumps(contract, allow_nan=False))
     _publish(root / "ABLATION_CONTRACT.json", contract)
     no_llm_budget = (
@@ -453,7 +483,8 @@ def _run_scientist_ablations(root, selection, dataset, config, provider_settings
     _complete_anchor_banks(rows, selection)
     if config.posterior_gap_directed:
         _screen_gap_candidates(rows, selection, gap_audit, gap_admission,
-                               gap_prior, gap_measurement_budget, root)
+                               gap_prior, gap_measurement_budget, root,
+                               decision_reference, decision_calibration)
     analysis = analyze_system_contract(
         rows, augmentation_total=(
             (config.synthesis_evaluation_reserve
@@ -464,7 +495,8 @@ def _run_scientist_ablations(root, selection, dataset, config, provider_settings
 
 
 def _screen_gap_candidates(rows, selection, gap_audit, gap_admission,
-                           prior, measurement_budget, root):
+                           prior, measurement_budget, root,
+                           decision_reference=None, decision_calibration=None):
     started = time.monotonic()
     if (gap_admission.row_fingerprints & (
             gap_audit.row_fingerprints
@@ -483,11 +515,20 @@ def _screen_gap_candidates(rows, selection, gap_audit, gap_admission,
     domain = selection.acquisition_pool.X
     regions = FrozenAxisRegions(selection.development.X.shape[1], 0,
                                 (float(np.median(domain[:, 0])),))
+    features = selection.development.X.shape[1]
+    baseline = {}
+    baseline_duplicates = 0
+    for row in indexed["no_llm"]["candidates"]:
+        support = structural_terms(row["expression"], features)
+        if support in baseline:
+            baseline_duplicates += 1
+        else:
+            baseline[support] = dict(row)
     optional = [row for row in full["candidates"]
                 if row.get("origin") == "llm"]
     if optional and allowed:
         retained, report = admit_regional_candidates(
-            indexed["no_llm"]["candidates"], optional,
+            list(baseline.values()), optional,
             selection.development, gap_audit, gap_admission, domain,
             regions, allowed, prior, measurement_budget)
     else:
@@ -506,11 +547,60 @@ def _screen_gap_candidates(rows, selection, gap_audit, gap_admission,
                   "decision_contribution_assessed": False,
                   "candidate_response_accessed": False,
                   "heldout_opened": False}
-    features = selection.development.X.shape[1]
-    keep = {structural_terms(row["expression"], features) for row in retained}
-    full["candidates"] = [row for row in full["candidates"]
-                          if row.get("origin") != "llm"
-                          or structural_terms(row["expression"], features) in keep]
+    report["baseline_duplicate_support_rows"] = baseline_duplicates
+    full_supports = {structural_terms(row["expression"], features): row
+                     for row in full["candidates"]}
+    if any(support not in full_supports for support in baseline):
+        # The Full discovery top-k may prune a core row, so restore the exact
+        # provider-free baseline before projecting the independent candidates.
+        report["full_topk_missing_baseline_supports"] = sum(
+            support not in full_supports for support in baseline)
+    admitted = {}
+    for row in retained:
+        support = structural_terms(row["expression"], features)
+        if support in baseline:
+            raise ExplorationProtocolError("quality-first-admission-duplicates-baseline")
+        admitted.setdefault(support, dict(row))
+    for record in report["candidates"]:
+        if record.get("admitted") is not True:
+            record["bank_retained"] = False
+            continue
+        support = structural_terms(record["composed_expression"], features)
+        chosen = admitted.get(support)
+        record["bank_retained"] = bool(chosen is not None
+            and record.get("lineage_id") == chosen.get("lineage_id")
+            and record["composed_expression"] == chosen["expression"])
+        if not record["bank_retained"]:
+            record["reason"] = "independently-predictive-duplicate-llm-support"
+    full["candidates"] = [*baseline.values(), *admitted.values()]
+    indexed["no_llm"]["candidates"] = list(baseline.values())
+    bank_report = _freeze_quality_first_expanded_banks(
+        baseline, admitted, selection, prior, measurement_budget)
+    if decision_reference is not None:
+        if decision_calibration is None:
+            raise ExplorationProtocolError("finite-decision-calibration-absent")
+        for candidate in admitted.values():
+            record = next((item for item in report["candidates"]
+                if item.get("admitted") is True and item.get("bank_retained") is True
+                and item.get("lineage_id") == candidate.get("lineage_id")
+                and item.get("composed_expression") == candidate["expression"]), None)
+            if record is None:
+                raise ExplorationProtocolError("finite-decision-candidate-identity-missing")
+            record["conditional_finite_law_action_audit"] = (
+                audit_admitted_candidate_action(
+                    list(baseline.values()), candidate,
+                    selection.development, gap_audit, gap_admission,
+                    decision_calibration, domain, regions, prior,
+                    measurement_budget, decision_reference,
+                    candidate_identity=record["candidate_identity"]))
+        report["finite_law_action_contribution_assessed"] = bool(admitted)
+        report["finite_decision_reference_identity"] = decision_reference.stable_hash
+    else:
+        report["finite_law_action_contribution_assessed"] = False
+    full["hypothesis_provenance"]["quality_first_expanded_bank"] = bank_report
+    indexed["no_llm"]["hypothesis_provenance"]["quality_first_expanded_bank"] = {
+        "role": "engine_only", "bank_identity": bank_report["engine_bank_identity"],
+        "target_identity": bank_report["engine_target_identity"]}
     full["hypothesis_provenance"]["regional_candidate_admission"] = report
     full["hypothesis_provenance"]["llm_retained_candidate_count"] = sum(
         row.get("origin") == "llm" for row in full["candidates"])
@@ -533,6 +623,47 @@ def _screen_gap_candidates(rows, selection, gap_audit, gap_admission,
          "decision_effect_assessed": False} for row in stage_results]
     report["admission_wall_seconds"] = time.monotonic() - started
     _publish(Path(root) / "REGIONAL_CANDIDATE_ADMISSION.json", report)
+    _publish(Path(root) / "QUALITY_FIRST_EXPANDED_BANKS.json", bank_report)
+
+
+def _freeze_quality_first_expanded_banks(
+        baseline, admitted, selection, prior, measurement_budget):
+    """Freeze both uncapped exploratory banks without using the old K selector.
+
+    Their class partitions can differ. The shared identity below is the
+    covariate target only; it is not a common class-loss certificate.
+    """
+    rows = (list(baseline.values()), [*baseline.values(), *admitted.values()])
+    frozen = []
+    for candidates in rows:
+        digest = sha256(json.dumps(candidates, sort_keys=True,
+            default=str).encode()).hexdigest()
+        model = freeze_discovery_model(candidates,
+            n_features=selection.development.X.shape[1], prior=prior,
+            exploration_identity=digest,
+            coefficient_policy="discard-fitted-coefficients-refit-closed-basis")
+        target = freeze_discovery_target(model, selection.development,
+            selection.acquisition_pool.X, measurement_budget=measurement_budget,
+            expected_model_identity=model.stable_hash)
+        frozen.append((model, target))
+    core, expanded = frozen
+    if (core[1].action_domain_identity != expanded[1].action_domain_identity
+            or core[1].initial_data_identity != expanded[1].initial_data_identity):
+        raise ExplorationProtocolError("quality-first-frozen-bank-identity-crossed")
+    return {"schema": "quality-first-expanded-operational-banks-v1",
+            "capacity_policy": "exploration-only-no-capacity-pruning",
+            "engine_support_count": len(baseline),
+            "admitted_llm_support_count": len(admitted),
+            "full_support_count": len(baseline) + len(admitted),
+            "engine_bank_identity": core[0].stable_hash,
+            "full_bank_identity": expanded[0].stable_hash,
+            "engine_target_identity": core[1].stable_hash,
+            "full_target_identity": expanded[1].stable_hash,
+            "common_covariate_domain_identity": core[1].action_domain_identity,
+            "common_class_loss_assessed": False,
+            "measured_runner_authorized": False,
+            "candidate_response_accessed": False,
+            "heldout_opened": False}
 
 
 def _restore_intact_engine_bank(rows, selection):

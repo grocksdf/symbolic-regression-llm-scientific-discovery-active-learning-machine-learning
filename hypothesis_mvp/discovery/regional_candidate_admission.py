@@ -65,6 +65,7 @@ def admit_regional_candidates(
             or admission.role is not DataRole.VALIDATION
             or admission.row_fingerprints & (
                 fit.row_fingerprints | gap_audit.row_fingerprints)
+            or gap_audit.row_fingerprints & fit.row_fingerprints
             or not 0 < alpha < 1
             or regions.n_features != fit.X.shape[1]
             or not eligible_regions

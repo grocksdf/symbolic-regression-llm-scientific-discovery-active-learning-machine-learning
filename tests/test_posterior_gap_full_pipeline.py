@@ -17,6 +17,10 @@ from hypothesis_mvp.discovery.agent import DiscoveryAgentConfig
 from hypothesis_mvp.discovery.agent import DiscoveryAgent
 from hypothesis_mvp.discovery.proposal_runtime import ProviderSettings, ProviderRoute
 from hypothesis_mvp.discovery.knowledge_runtime import KnowledgeRuntime
+from hypothesis_mvp.discovery.candidate_region_expansion import FiniteCommonLaw
+from hypothesis_mvp.discovery.regional_decision_audit import (
+    FrozenFiniteActionReference, audit_admitted_candidate_action,
+)
 
 
 def _roles():
@@ -206,3 +210,138 @@ def test_no_independent_gap_abstains_before_scientist_review(monkeypatch):
     assert review.stop_reason == "gap-directed proposal abstained"
     assert audit["posterior_gap_brief"]["propose_allowed"] is False
     assert usage[0] == 0
+
+
+def test_directional_pit_detects_local_shift_inside_wide_intervals(monkeypatch):
+    from types import SimpleNamespace
+    import hypothesis_mvp.discovery.posterior_gap_evidence as gap_module
+    fit, selection, _, admit = _roles()
+    prior, core, domain, model, target, regions, diagnosis = _frozen_bank(fit)
+    shifted = RoleDataset(DataRole.VALIDATION, admit.X,
+                          np.full(len(admit.X), .1))
+    components = SimpleNamespace(
+        structure_probabilities=np.array([1.]),
+        degrees_freedom=np.array([5.]),
+        locations=np.zeros((1, len(shifted.X))),
+        scales=np.full((1, len(shifted.X)), 100.))
+    monkeypatch.setattr(gap_module, "predictive_components_for_partition",
+                        lambda *args: components)
+    evidence = screen_independent_adequacy(model, target, diagnosis,
+        regions, shifted, discovery_development=fit,
+        discovery_validation=selection)
+    assert evidence.eligible_regions == (1,)
+    row = evidence.rows[1]
+    assert row.localized_bias_evidence is True
+    assert row.insufficient_coverage_evidence is False
+    assert row.score_degradation_evidence is False
+
+
+def test_frozen_reference_log_score_detects_gap_with_balanced_pit(monkeypatch):
+    from types import SimpleNamespace
+    import hypothesis_mvp.discovery.posterior_gap_evidence as gap_module
+    fit, selection, _, admit = _roles()
+    prior, core, domain, model, target, regions, diagnosis = _frozen_bank(fit)
+    audit = RoleDataset(DataRole.VALIDATION, admit.X,
+        np.resize(np.array([-.1, .1]), len(admit.X)))
+    calls = iter((100., .2))
+    def components(*args):
+        return SimpleNamespace(
+            structure_probabilities=np.array([1.]),
+            degrees_freedom=np.array([5.]),
+            locations=np.zeros((1, len(audit.X))),
+            scales=np.full((1, len(audit.X)), next(calls)))
+    monkeypatch.setattr(gap_module, "predictive_components_for_partition",
+                        components)
+    evidence = screen_independent_adequacy(model, target, diagnosis,
+        regions, audit, discovery_development=fit,
+        discovery_validation=selection,
+        score_reference_model=model, score_reference_target=target)
+    assert evidence.eligible_regions == (1,)
+    row = evidence.rows[1]
+    assert row.score_degradation_evidence is True
+    assert row.localized_bias_evidence is False
+    assert row.insufficient_coverage_evidence is False
+
+
+def test_full_expanded_bank_survives_final_exploration_projection(tmp_path):
+    import hypothesis_mvp.discovery.system_ablation as ablation
+    fit, selection_data, gap, admission = _roles()
+    pool = np.linspace(-4., 7., 8)[:, None]
+    selection = SelectionData(fit, selection_data,
+        AcquisitionCovariates(DataRole.ACQUISITION_POOL, pool,
+                              covariate_fingerprint(pool)), ())
+    baseline = [{"expression": "x0", "source": "engine:a",
+                 "origin": "deterministic"},
+                {"expression": "x0**3", "source": "engine:b",
+                 "origin": "deterministic"}]
+    llm = {"expression": "x0**2", "source": "llm", "origin": "llm",
+           "lineage_id": "candidate-1"}
+    rows = [{"variant": "full", "candidates": [baseline[0], llm],
+             "posterior_gap": [{"brief": {"regions": [{"region": 1}]},
+                                "audit": {"target_identity": "frozen"}}],
+             "hypothesis_provenance": {"gap_knowledge_stage_ids": []}},
+            {"variant": "no_llm", "candidates": list(baseline),
+             "hypothesis_provenance": {}},
+            {"variant": "single_engine", "candidates": list(baseline),
+             "hypothesis_provenance": {}}]
+    calibration = RoleDataset(DataRole.VALIDATION,
+        np.array([[-8.], [-7.]]), np.array([64., 49.]))
+    nodes = np.column_stack((pool[:, 0] ** 2 - .1, pool[:, 0] ** 2 + .1))
+    law = FiniteCommonLaw("calibration-law", "common-domain-loss",
+                          np.full(nodes.shape, .5), pool[:, 0] ** 2)
+    decision_reference = FrozenFiniteActionReference(
+        "common-domain-loss", calibration.fingerprint, pool,
+        np.full(len(pool), 1. / len(pool)), pool, nodes, (law,))
+    ablation._screen_gap_candidates(rows, selection, gap, admission,
+        NormalInverseGammaPrior(), 4, tmp_path, decision_reference, calibration)
+    assert rows[0]["candidates"][:2] == baseline
+    assert rows[0]["candidates"][2] == llm
+    report = rows[0]["hypothesis_provenance"]["quality_first_expanded_bank"]
+    assert report["engine_support_count"] == 2
+    assert report["full_support_count"] == 3
+    assert report["common_class_loss_assessed"] is False
+    assert report["capacity_policy"] == "exploration-only-no-capacity-pruning"
+    assert (tmp_path / "QUALITY_FIRST_EXPANDED_BANKS.json").exists()
+    candidate_record = rows[0]["hypothesis_provenance"][
+        "regional_candidate_admission"]["candidates"][0]
+    assert candidate_record["conditional_finite_law_action_audit"][
+        "finite_law_action_contribution_assessed"] is True
+    assert candidate_record["conditional_finite_law_action_audit"][
+        "decision_contribution_assessed"] is False
+
+
+def test_independent_finite_law_action_audit_is_conditional_only():
+    fit, selection, gap, admission = _roles()
+    domain = np.array([[-2.], [0.], [2.], [4.]])
+    regions = FrozenAxisRegions(1, 0, (0.,))
+    nodes = np.column_stack((domain[:, 0] ** 2 - .1,
+                             domain[:, 0] ** 2 + .1))
+    calibration = RoleDataset(DataRole.VALIDATION,
+        np.array([[-8.], [-7.]]), np.array([64., 49.]))
+    law = FiniteCommonLaw("independent-finite-law", "same-target",
+                          np.full(nodes.shape, .5), domain[:, 0] ** 2)
+    reference = FrozenFiniteActionReference(
+        "same-target", calibration.fingerprint, domain,
+        np.full(len(domain), 1. / len(domain)), domain, nodes, (law,))
+    frozen_identity = reference.stable_hash
+    law.response_probabilities[0, 0] = .75
+    assert reference.stable_hash == frozen_identity
+    assert reference.laws[0].response_probabilities[0, 0] == .5
+    core = [{"expression": "x0", "source": "engine:a"},
+            {"expression": "x0**3", "source": "engine:b"}]
+    llm = {"expression": "x0**2", "source": "llm", "origin": "llm"}
+    report = audit_admitted_candidate_action(
+        core, llm, fit, gap, admission, calibration, domain, regions,
+        NormalInverseGammaPrior(), 4, reference,
+        candidate_identity="candidate-fixture")
+    assert report["finite_law_action_contribution_assessed"] is True
+    assert report["decision_contribution_assessed"] is False
+    assert report["measured_action_authorized"] is False
+    assert len(report["after_action_common_loss_reduction_by_law"]) == 1
+    assert report["target_identity"] == "same-target"
+    assert report["pcpi_operational_class_decision_assessed"] is False
+    with pytest.raises(ValueError, match="disjoint"):
+        audit_admitted_candidate_action(
+            core, llm, fit, gap, admission, admission, domain, regions,
+            NormalInverseGammaPrior(), 4, reference,
+            candidate_identity="candidate-fixture")
