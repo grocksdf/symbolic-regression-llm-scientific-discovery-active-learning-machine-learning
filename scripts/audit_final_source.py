@@ -153,14 +153,14 @@ LEGACY_LONG_FUNCTIONS = frozenset({
     (
         "discovery/system_ablation.py",
         "run_exploration_ablations",
-        136,
-        "5e97b4fffc0001fe191422285ea511db3bf3ed03e20304dbe1f02169f38e4b78",
+        152,
+        "f549909359cb61215012a03418f1320110c9bce885d69587ca07f7ceeb1e6e54",
     ),
     (
         "discovery/system_ablation.py",
         "_screen_gap_candidates",
-        130,
-        "f10baa1ca95f6829fcbd42ccdd12c8f37459cf0871bcc36cb27144834d355627",
+        141,
+        "ef180a729ba69e339d0c08c89206d7074d91a7df042ef5aeb0983461d03f9291",
     ),
     (
         "discovery/agent.py",

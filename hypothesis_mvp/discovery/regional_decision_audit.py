@@ -126,38 +126,41 @@ def _expert(rows, fit, domain, prior, budget, target_x, action_x, nodes):
 
 def audit_admitted_candidate_action(
         core_rows, candidate, fit: RoleDataset, gap_audit: RoleDataset,
-        admission: RoleDataset, calibration: RoleDataset, domain,
+        admission: RoleDataset, selector_update: RoleDataset,
+        calibration: RoleDataset, domain,
         regions: FrozenAxisRegions, prior: NormalInverseGammaPrior,
         measurement_budget: int, reference: FrozenFiniteActionReference,
         *, candidate_identity: str):
     """Compute signed candidate action effect after independent admission.
 
-    The admission rows update a declared modular selector. The supplied laws
-    and common target must be frozen from a disjoint calibration role. The
-    caller never uses this diagnostic to select a measured acquisition.
+    Admission selects the candidate; a separate response role updates its
+    fixed-expert selector. Calibration and future reporting are separate.
+    The caller never uses this diagnostic to select a measured acquisition.
     """
+    roles = (fit, gap_audit, admission, selector_update, calibration)
     if (fit.role is not DataRole.DEVELOPMENT
             or gap_audit.role is not DataRole.VALIDATION
             or admission.role is not DataRole.VALIDATION
+            or selector_update.role is not DataRole.VALIDATION
             or calibration.role is not DataRole.VALIDATION
             or reference.calibration_identity != calibration.fingerprint
             or not candidate_identity
-            or any(a.row_fingerprints & b.row_fingerprints for i, a in enumerate(
-                (fit, gap_audit, admission, calibration)) for b in
-                (fit, gap_audit, admission, calibration)[i + 1:])
+            or any(a.row_fingerprints & b.row_fingerprints
+                   or _covariate_rows(a.X) & _covariate_rows(b.X)
+                   for i, a in enumerate(roles) for b in roles[i + 1:])
             or not np.array_equal(reference.action_covariates, domain)
             or not np.array_equal(reference.target_covariates, domain)
             or reference.action_covariates.shape[1] != fit.X.shape[1]
             or regions.n_features != fit.X.shape[1]):
         raise ValueError("action audit requires disjoint roles and one frozen domain")
     core_score, core_identity = _fixed_predictive_logpdf(
-        core_rows, fit, admission, domain, prior, measurement_budget)
+        core_rows, fit, selector_update, domain, prior, measurement_budget)
     optional_score, optional_identity = _fixed_predictive_logpdf(
-        [candidate], fit, admission, domain, prior, measurement_budget)
+        [candidate], fit, selector_update, domain, prior, measurement_budget)
     selector = RegionSelectorPosterior.from_partition(
         regions, ("core", candidate_identity),
         np.full((len(regions.cuts) + 1, 2), .5))
-    selector = selector.update(regions.assign(admission.X),
+    selector = selector.update(regions.assign(selector_update.X),
         np.column_stack([core_score, optional_score]))
     means, logpdf = [], []
     for rows in (core_rows, [candidate]):
@@ -178,6 +181,8 @@ def audit_admitted_candidate_action(
             "loss_identity": "common-domain-squared-predictive-mean-v1",
             "calibration_identity": calibration.fingerprint,
             "admission_identity": admission.fingerprint,
+            "selector_update_identity": selector_update.fingerprint,
+            "selector_update_independent_of_admission": True,
             "core_expert_identity": core_identity,
             "candidate_expert_identity": optional_identity,
             "decision_contribution_assessed": False,
@@ -186,3 +191,9 @@ def audit_admitted_candidate_action(
             "measured_action_authorized": False,
             "candidate_response_accessed": False,
             "heldout_opened": False}
+
+
+def _covariate_rows(x: np.ndarray) -> set[bytes]:
+    """Disjoint rows even when a reused covariate has a changed response."""
+    return {np.ascontiguousarray(np.asarray(row, dtype=np.float64) + 0.).tobytes()
+            for row in x}

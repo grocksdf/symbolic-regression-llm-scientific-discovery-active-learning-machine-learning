@@ -146,7 +146,8 @@ def test_quality_first_full_preserves_engine_frontier_and_adds_llm_budget(
                 "validation_fingerprint": selection_data.fingerprint,
                 "hypothesis_provenance": {"raw_engine_candidates": raw}}
     monkeypatch.setattr(ablation, "_run_scientist_variant", fake_variant)
-    monkeypatch.setattr(ablation, "_screen_gap_candidates", lambda *args: None)
+    monkeypatch.setattr(ablation, "_screen_gap_candidates",
+                        lambda *args, **kwargs: None)
     outcome = ablation._run_scientist_ablations(
         tmp_path, selection, "controlled", config, settings,
         "polynomial_lasso", 10., 3, "fixture", {
@@ -292,14 +293,26 @@ def test_full_expanded_bank_survives_final_exploration_projection(tmp_path):
     decision_reference = FrozenFiniteActionReference(
         "common-domain-loss", calibration.fingerprint, pool,
         np.full(len(pool), 1. / len(pool)), pool, nodes, (law,))
+    selector_x = np.array([[8.], [9.]])
+    selector_update = RoleDataset(DataRole.VALIDATION,
+        selector_x, selector_x[:, 0] ** 2)
+    with pytest.raises(ValueError, match="optional-candidate-budget"):
+        ablation._screen_gap_candidates(rows, selection, gap, admission,
+            NormalInverseGammaPrior(), 4, tmp_path, decision_reference,
+            calibration, selector_update,
+            optional_candidate_attempt_ceiling=0)
     ablation._screen_gap_candidates(rows, selection, gap, admission,
-        NormalInverseGammaPrior(), 4, tmp_path, decision_reference, calibration)
+        NormalInverseGammaPrior(), 4, tmp_path, decision_reference,
+        calibration, selector_update,
+        optional_candidate_attempt_ceiling=2)
     assert rows[0]["candidates"][:2] == baseline
     assert rows[0]["candidates"][2] == llm
     report = rows[0]["hypothesis_provenance"]["quality_first_expanded_bank"]
     assert report["engine_support_count"] == 2
     assert report["full_support_count"] == 3
     assert report["common_class_loss_assessed"] is False
+    assert report["common_class_projection_constructed"] is True
+    assert len(report["common_class_projection_identity"]) == 64
     assert report["capacity_policy"] == "exploration-only-no-capacity-pruning"
     assert (tmp_path / "QUALITY_FIRST_EXPANDED_BANKS.json").exists()
     candidate_record = rows[0]["hypothesis_provenance"][
@@ -308,6 +321,10 @@ def test_full_expanded_bank_survives_final_exploration_projection(tmp_path):
         "finite_law_action_contribution_assessed"] is True
     assert candidate_record["conditional_finite_law_action_audit"][
         "decision_contribution_assessed"] is False
+    assert candidate_record["conditional_finite_law_action_audit"][
+        "selector_update_identity"] == selector_update.fingerprint
+    assert rows[0]["hypothesis_provenance"]["regional_candidate_admission"][
+        "optional_candidate_attempt_ceiling"] == 2
 
 
 def test_independent_finite_law_action_audit_is_conditional_only():
@@ -323,6 +340,9 @@ def test_independent_finite_law_action_audit_is_conditional_only():
     reference = FrozenFiniteActionReference(
         "same-target", calibration.fingerprint, domain,
         np.full(len(domain), 1. / len(domain)), domain, nodes, (law,))
+    selector_x = np.array([[8.], [9.]])
+    selector_update = RoleDataset(DataRole.VALIDATION,
+        selector_x, selector_x[:, 0] ** 2)
     frozen_identity = reference.stable_hash
     law.response_probabilities[0, 0] = .75
     assert reference.stable_hash == frozen_identity
@@ -331,7 +351,8 @@ def test_independent_finite_law_action_audit_is_conditional_only():
             {"expression": "x0**3", "source": "engine:b"}]
     llm = {"expression": "x0**2", "source": "llm", "origin": "llm"}
     report = audit_admitted_candidate_action(
-        core, llm, fit, gap, admission, calibration, domain, regions,
+        core, llm, fit, gap, admission, selector_update, calibration,
+        domain, regions,
         NormalInverseGammaPrior(), 4, reference,
         candidate_identity="candidate-fixture")
     assert report["finite_law_action_contribution_assessed"] is True
@@ -340,8 +361,23 @@ def test_independent_finite_law_action_audit_is_conditional_only():
     assert len(report["after_action_common_loss_reduction_by_law"]) == 1
     assert report["target_identity"] == "same-target"
     assert report["pcpi_operational_class_decision_assessed"] is False
+    assert report["selector_update_independent_of_admission"] is True
     with pytest.raises(ValueError, match="disjoint"):
         audit_admitted_candidate_action(
-            core, llm, fit, gap, admission, admission, domain, regions,
+            core, llm, fit, gap, admission, selector_update, admission,
+            domain, regions,
             NormalInverseGammaPrior(), 4, reference,
+            candidate_identity="candidate-fixture")
+    with pytest.raises(ValueError, match="disjoint"):
+        audit_admitted_candidate_action(
+            core, llm, fit, gap, admission, admission, calibration,
+            domain, regions,
+            NormalInverseGammaPrior(), 4, reference,
+            candidate_identity="candidate-fixture")
+    changed_response = RoleDataset(DataRole.VALIDATION,
+        admission.X, admission.y + 1.)
+    with pytest.raises(ValueError, match="disjoint"):
+        audit_admitted_candidate_action(
+            core, llm, fit, gap, admission, changed_response, calibration,
+            domain, regions, NormalInverseGammaPrior(), 4, reference,
             candidate_identity="candidate-fixture")

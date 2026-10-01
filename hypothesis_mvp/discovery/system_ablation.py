@@ -26,8 +26,10 @@ from .source_stacking import source_family
 from .regional_candidate_admission import admit_regional_candidates
 from .regional_decision_audit import (
     FrozenFiniteActionReference, audit_admitted_candidate_action,
+    _covariate_rows,
 )
 from .candidate_region_expansion import FrozenAxisRegions
+from .common_class_projection import freeze_common_class_projection
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
 from hypothesis_mvp.hypotheses import EvidenceEventType, EvidenceRegistry
@@ -182,7 +184,8 @@ def run_exploration_ablations(root, selection, *, dataset, config,
                              scientific_context, gap_audit=None,
                              gap_prior=None, gap_measurement_budget=0,
                              gap_admission=None, decision_reference=None,
-                             decision_calibration=None):
+                             decision_calibration=None,
+                             decision_selector_update=None):
     if (not isinstance(config, DiscoveryAgentConfig) or config.cycles < 1
             or len(config.engines) < 2 or len(set(config.engines)) != len(config.engines)
             or single_engine not in config.engines or config.engine_repeats < 1
@@ -223,18 +226,33 @@ def run_exploration_ablations(root, selection, *, dataset, config,
                 selection.development.row_fingerprints
                 | selection.validation.row_fingerprints)):
         raise ValueError("gap-directed independent roles overlap discovery roles")
-    if (decision_reference is None) != (decision_calibration is None):
-        raise ValueError("finite decision reference needs independent calibration role")
+    if any(item is not None for item in (decision_reference,
+            decision_calibration, decision_selector_update)) and not all(
+            item is not None for item in (decision_reference,
+                decision_calibration, decision_selector_update)):
+        raise ValueError("finite decision reference needs distinct selector and calibration roles")
     if decision_reference is not None and (
             not config.posterior_gap_directed
             or not isinstance(decision_reference, FrozenFiniteActionReference)
             or not isinstance(decision_calibration, RoleDataset)
             or decision_calibration.role is not DataRole.VALIDATION
+            or not isinstance(decision_selector_update, RoleDataset)
+            or decision_selector_update.role is not DataRole.VALIDATION
             or decision_reference.calibration_identity
                 != decision_calibration.fingerprint
             or any(decision_calibration.row_fingerprints & role.row_fingerprints
                    for role in (selection.development, selection.validation,
+                                gap_audit, gap_admission, decision_selector_update))
+            or any(decision_selector_update.row_fingerprints & role.row_fingerprints
+                   for role in (selection.development, selection.validation,
                                 gap_audit, gap_admission))
+            or any(_covariate_rows(a.X) & _covariate_rows(b.X)
+                   for i, a in enumerate((selection.development,
+                       selection.validation, gap_audit, gap_admission,
+                       decision_calibration, decision_selector_update))
+                   for b in (selection.development, selection.validation,
+                       gap_audit, gap_admission, decision_calibration,
+                       decision_selector_update)[i + 1:])
             or not np.array_equal(decision_reference.action_covariates,
                                   selection.acquisition_pool.X)
             or not np.array_equal(decision_reference.target_covariates,
@@ -248,7 +266,7 @@ def run_exploration_ablations(root, selection, *, dataset, config,
             compute_ceiling, provider_attempt_ceiling, source_identity,
             scientific_context, total_jobs, gap_audit, gap_prior,
             gap_measurement_budget, gap_admission, decision_reference,
-            decision_calibration)
+            decision_calibration, decision_selector_update)
     if config.typed_inner_augmentation:
         raise ValueError("augmentation requires Scientist source projection")
     optional_engines = tuple(engine for engine in config.engines if engine != single_engine)
@@ -417,7 +435,8 @@ def _run_scientist_ablations(root, selection, dataset, config, provider_settings
                              scientific_context, total_jobs,
                              gap_audit=None, gap_prior=None,
                              gap_measurement_budget=0, gap_admission=None,
-                             decision_reference=None, decision_calibration=None):
+                             decision_reference=None, decision_calibration=None,
+                             decision_selector_update=None):
     root = Path(root); root.mkdir(parents=True, exist_ok=True)
     contract = _scientist_contract(
         dataset, config, single_engine, selection, compute_ceiling,
@@ -436,11 +455,16 @@ def _run_scientist_ablations(root, selection, dataset, config, provider_settings
         contract["gap_audit_identity"] = gap_audit.fingerprint
         contract["gap_admission_identity"] = gap_admission.fingerprint
         contract["gap_measurement_budget"] = gap_measurement_budget
+        contract["optional_candidate_attempt_ceiling"] = (
+            config.synthesis_evaluation_reserve
+            + config.llm_evaluation_reserve) * config.cycles
         contract["gap_prior"] = gap_prior.to_dict()
         if decision_reference is not None:
             contract["finite_decision_reference_identity"] = decision_reference.stable_hash
             contract["finite_decision_calibration_identity"] = (
                 decision_calibration.fingerprint)
+            contract["finite_decision_selector_update_identity"] = (
+                decision_selector_update.fingerprint)
     contract = json.loads(json.dumps(contract, allow_nan=False))
     _publish(root / "ABLATION_CONTRACT.json", contract)
     no_llm_budget = (
@@ -484,7 +508,10 @@ def _run_scientist_ablations(root, selection, dataset, config, provider_settings
     if config.posterior_gap_directed:
         _screen_gap_candidates(rows, selection, gap_audit, gap_admission,
                                gap_prior, gap_measurement_budget, root,
-                               decision_reference, decision_calibration)
+                               decision_reference, decision_calibration,
+                               decision_selector_update,
+                               optional_candidate_attempt_ceiling=contract[
+                                   "optional_candidate_attempt_ceiling"])
     analysis = analyze_system_contract(
         rows, augmentation_total=(
             (config.synthesis_evaluation_reserve
@@ -496,7 +523,9 @@ def _run_scientist_ablations(root, selection, dataset, config, provider_settings
 
 def _screen_gap_candidates(rows, selection, gap_audit, gap_admission,
                            prior, measurement_budget, root,
-                           decision_reference=None, decision_calibration=None):
+                           decision_reference=None, decision_calibration=None,
+                           decision_selector_update=None, *,
+                           optional_candidate_attempt_ceiling=None):
     started = time.monotonic()
     if (gap_admission.row_fingerprints & (
             gap_audit.row_fingerprints
@@ -526,6 +555,10 @@ def _screen_gap_candidates(rows, selection, gap_audit, gap_admission,
             baseline[support] = dict(row)
     optional = [row for row in full["candidates"]
                 if row.get("origin") == "llm"]
+    if (type(optional_candidate_attempt_ceiling) is not int
+            or optional_candidate_attempt_ceiling < 0
+            or len(optional) > optional_candidate_attempt_ceiling):
+        raise ExplorationProtocolError("quality-first-optional-candidate-budget")
     if optional and allowed:
         retained, report = admit_regional_candidates(
             list(baseline.values()), optional,
@@ -548,6 +581,8 @@ def _screen_gap_candidates(rows, selection, gap_audit, gap_admission,
                   "candidate_response_accessed": False,
                   "heldout_opened": False}
     report["baseline_duplicate_support_rows"] = baseline_duplicates
+    report["optional_candidate_attempt_ceiling"] = (
+        optional_candidate_attempt_ceiling)
     full_supports = {structural_terms(row["expression"], features): row
                      for row in full["candidates"]}
     if any(support not in full_supports for support in baseline):
@@ -577,8 +612,8 @@ def _screen_gap_candidates(rows, selection, gap_audit, gap_admission,
     bank_report = _freeze_quality_first_expanded_banks(
         baseline, admitted, selection, prior, measurement_budget)
     if decision_reference is not None:
-        if decision_calibration is None:
-            raise ExplorationProtocolError("finite-decision-calibration-absent")
+        if decision_calibration is None or decision_selector_update is None:
+            raise ExplorationProtocolError("finite-decision-independent-roles-absent")
         for candidate in admitted.values():
             record = next((item for item in report["candidates"]
                 if item.get("admitted") is True and item.get("bank_retained") is True
@@ -590,11 +625,14 @@ def _screen_gap_candidates(rows, selection, gap_audit, gap_admission,
                 audit_admitted_candidate_action(
                     list(baseline.values()), candidate,
                     selection.development, gap_audit, gap_admission,
+                    decision_selector_update,
                     decision_calibration, domain, regions, prior,
                     measurement_budget, decision_reference,
                     candidate_identity=record["candidate_identity"]))
         report["finite_law_action_contribution_assessed"] = bool(admitted)
         report["finite_decision_reference_identity"] = decision_reference.stable_hash
+        report["finite_decision_selector_update_identity"] = (
+            decision_selector_update.fingerprint)
     else:
         report["finite_law_action_contribution_assessed"] = False
     full["hypothesis_provenance"]["quality_first_expanded_bank"] = bank_report
@@ -650,6 +688,12 @@ def _freeze_quality_first_expanded_banks(
     if (core[1].action_domain_identity != expanded[1].action_domain_identity
             or core[1].initial_data_identity != expanded[1].initial_data_identity):
         raise ExplorationProtocolError("quality-first-frozen-bank-identity-crossed")
+    common_classes = freeze_common_class_projection(core[1], expanded[1])
+    if (not np.isclose(common_classes.common_probabilities(
+            core[1].initial_posterior, bank="core").sum(), 1.)
+            or not np.isclose(common_classes.common_probabilities(
+                expanded[1].initial_posterior, bank="expanded").sum(), 1.)):
+        raise ExplorationProtocolError("quality-first-common-class-mass-invalid")
     return {"schema": "quality-first-expanded-operational-banks-v1",
             "capacity_policy": "exploration-only-no-capacity-pruning",
             "engine_support_count": len(baseline),
@@ -660,6 +704,13 @@ def _freeze_quality_first_expanded_banks(
             "engine_target_identity": core[1].stable_hash,
             "full_target_identity": expanded[1].stable_hash,
             "common_covariate_domain_identity": core[1].action_domain_identity,
+            "common_class_projection_identity": common_classes.stable_hash,
+            "common_class_union_partition_identity": (
+                common_classes.union_partition_identity),
+            "common_class_count": len(common_classes.union_class_ids),
+            "core_unsupported_class_count": (len(common_classes.union_class_ids)
+                - len(common_classes.core_class_positions)),
+            "common_class_projection_constructed": True,
             "common_class_loss_assessed": False,
             "measured_runner_authorized": False,
             "candidate_response_accessed": False,
