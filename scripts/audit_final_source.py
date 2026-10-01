@@ -134,6 +134,28 @@ LEGACY_LONG_FUNCTIONS = frozenset({
         104,
         "2a042ec595d7e7a7e5d79234d02fb78be0bbbc69f75c4840a4c9834e5908a9e6",
     ),
+    # Posterior-gap-directed exploration (contract
+    # docs/posterior_gap_full_exploration_contract_20261001.md), which extends
+    # the agent orchestration loop with the independent adequacy screen.  Each
+    # entry fails closed again on the next edit to its body.
+    (
+        "discovery/agent.py",
+        "run",
+        83,
+        "f65aab33462a02f6f5a0a1cfb5b5ad403ed4ad0c4172a8fbef739d8c37bbe0b2",
+    ),
+    (
+        "discovery/system_ablation.py",
+        "_run_variant",
+        107,
+        "57f1049e56d0c35101711e4ef7de0c872edce352bb824f86bff6d948a1088eba",
+    ),
+    (
+        "discovery/system_ablation.py",
+        "run_exploration_ablations",
+        117,
+        "32205b6e8eb99ba24bd849fbdbb57ddf5fb96080d7dbc2b96d86092a65b1fed9",
+    ),
 })
 
 

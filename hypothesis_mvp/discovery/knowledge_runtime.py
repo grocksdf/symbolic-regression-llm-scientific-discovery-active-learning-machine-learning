@@ -231,6 +231,9 @@ class KnowledgeRuntime:
         for stage in self.staging.read():
             if stage.get("status") not in {"staged", "promoted"}:
                 continue
+            if stage.get("posterior_gap_mode") is True and stage.get(
+                    "decision_effect_assessed") is not True:
+                continue
             stage_id = str(stage.get("stage_id") or "")
             for raw in stage.get("entries") or ():
                 if not isinstance(raw, Mapping):
@@ -506,6 +509,7 @@ class KnowledgeRuntime:
         final: EquationState,
         failure_signature: Sequence[str],
         enabled: bool = True,
+        posterior_gap_mode: bool = False,
     ) -> dict[str, Any]:
         """Persist an internally accepted lineage outside the reusable library."""
         self._last_commit_rejections = []
@@ -540,6 +544,9 @@ class KnowledgeRuntime:
             "rejections": rejections,
             "created_at": time.time(),
             "promoted_at": None,
+            **({"posterior_gap_mode": True,
+                "decision_effect_assessed": False}
+               if posterior_gap_mode else {}),
         }
 
         def transform(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -553,6 +560,49 @@ class KnowledgeRuntime:
         for rejection in self._last_commit_rejections:
             self.log_event({"event": "structure_library_stage_rejected", **rejection})
         return dict(staged)
+
+    def finalize_gap_stage(self, stage_id: str, *,
+                           admission_identity: str, target_identity: str,
+                           candidate_records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+        """Bind staged corrections to disjoint admission without promoting them.
+
+        Rejected stages are not offered to task-local retrieval. A positive
+        prediction screen is insufficient for reusable decision knowledge.
+        """
+        if not stage_id or not admission_identity or not target_identity:
+            raise ValueError("independent gap stage identities are required")
+        records = [dict(row) for row in candidate_records]
+        def transform(rows):
+            output, selected = [], None
+            for row in rows:
+                if row.get("stage_id") != stage_id:
+                    output.append(row)
+                    continue
+                if row.get("posterior_gap_mode") is not True or row.get("status") != "staged":
+                    raise ValueError("stage is not pending gap admission")
+                matching = [record for record in records
+                    if record.get("lineage_id")
+                    and record["lineage_id"] == row.get("final_lineage_id")]
+                admitted = bool(matching and matching[0].get("admitted") is True)
+                selected = {**row,
+                    "status": "prediction_admitted_pending_decision"
+                              if admitted else "admission_rejected",
+                    "independent_admission_identity": admission_identity,
+                    "common_target_identity": target_identity,
+                    "candidate_admission": matching[0] if matching else {
+                        "admitted": False, "reason": "no-matching-independent-candidate"},
+                    "decision_effect_assessed": False}
+                output.append(selected)
+            if selected is None:
+                raise KeyError("unknown gap stage")
+            return output, selected
+        stage = self.staging.update(transform)
+        self.log_event({"event": "posterior_gap_stage_independent_admission",
+                        "stage_id": stage_id, "status": stage["status"],
+                        "admission_identity": admission_identity,
+                        "common_target_identity": target_identity,
+                        "decision_effect_assessed": False})
+        return dict(stage)
 
     def _promote_entries(
         self, stage_id: str, entries: Sequence[Mapping[str, Any]],
@@ -647,6 +697,10 @@ class KnowledgeRuntime:
         if not matches:
             raise KeyError(f"unknown_stage_id:{stage_key}")
         staged = matches[-1]
+        if staged.get("posterior_gap_mode") is True:
+            raise ValueError(
+                "gap structure promotion requires a separately registered "
+                "common-target decision gate")
         if staged.get("status") == "promoted":
             return dict(staged)
         if staged.get("status") != "staged":

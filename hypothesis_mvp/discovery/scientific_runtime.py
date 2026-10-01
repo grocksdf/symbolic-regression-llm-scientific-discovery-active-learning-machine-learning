@@ -179,9 +179,19 @@ class ScientificDiscoveryRuntime:
     def _proposal_context(
         self, current: EquationState, exploration: ExplorationProgram, island: str
     ) -> dict[str, Any]:
+        # The gap brief is absent unless the agent ran the independent
+        # adequacy screen; a controller without an orchestration context
+        # simply reports no gap.
+        orchestration_context = getattr(self, "orchestration_context", None) or {}
         return {
             "objective": island,
             "current_equation_state": current.compact(),
+            **({"current_expression": current.dag.expression,
+                "posterior_gap_brief": orchestration_context[
+                    "posterior_gap_brief"],
+                "posterior_gap_existing_supports": orchestration_context.get(
+                    "posterior_gap_existing_supports", ())}
+               if "posterior_gap_brief" in orchestration_context else {}),
             "executable_exploration_function": exploration.as_prompt_dict(),
             "failure_signature": list(
                 self.evaluation.failure_signature(current, exploration)
@@ -437,11 +447,16 @@ class ScientificDiscoveryRuntime:
                 row for row in accepted
                 if row.is_llm
                 and row.dag.canonical_hash != deterministic.dag.canonical_hash)
+        brief = getattr(self, "orchestration_context", None) or {}
+        brief = brief.get("posterior_gap_brief") or {}
+        gap_mode = bool(brief.get("propose_allowed", False))
+        if gap_mode:
+            targets.extend(row for row in accepted if row.is_llm and row.lineage)
         unique = {row.dag.canonical_hash: row for row in targets}
         records = [
             self.knowledge.stage_final_lineage(
                 row, self.evaluation.failure_signature(deterministic),
-                enabled=bool(row.lineage))
+                enabled=bool(row.lineage), posterior_gap_mode=gap_mode)
             for row in unique.values()
         ]
         staged = [row for row in records if row.get("status") == "staged"]

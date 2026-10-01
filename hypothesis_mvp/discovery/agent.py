@@ -8,11 +8,16 @@ labels, so it cannot become a second acquisition implementation.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from hashlib import sha256
+import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+import numpy as np
+
 from hypothesis_mvp.config import SymbolicConfig
 from hypothesis_mvp.data import SelectionData
+from hypothesis_mvp.data.roles import RoleDataset
 from hypothesis_mvp.symbolic import EngineScheduler, merge_multi_engine_results
 
 from .api import DiscoveryRunResult, discover_from_selection
@@ -23,6 +28,11 @@ from .proposal_runtime import (
 )
 from .equation_runtime import EquationRuntime
 from .evidence_synthesis import compile_evidence_synthesis
+from .candidate_region_expansion import FrozenAxisRegions
+from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target, structural_terms
+from .posterior_gap_diagnosis import diagnose_frozen_bank
+from .posterior_gap_evidence import screen_independent_adequacy
+from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
 from .initializer import generic_deterministic_candidates
 from .scientist_policy import (
     ResearchPlan, ScientistReview, ScientistState, allocated_plan,
@@ -67,6 +77,7 @@ class DiscoveryAgentConfig:
     require_explicit_skill_controls: bool = False
     typed_evidence_synthesis: bool = False
     typed_inner_augmentation: bool = False
+    posterior_gap_directed: bool = False
     synthesis_evaluation_reserve: int = 0
     skill_reliability: Mapping[str, Mapping[str, float]] = field(
         default_factory=dict)
@@ -106,6 +117,8 @@ class DiscoveryCycle:
     conservative_allocation_decision: Mapping[str, Any] = field(
         default_factory=dict)
     evidence_synthesis: Mapping[str, Any] = field(default_factory=dict)
+    posterior_gap_audit: Mapping[str, Any] = field(default_factory=dict)
+    posterior_gap_brief: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -243,6 +256,8 @@ class DiscoveryAgent:
         elif config.synthesis_evaluation_reserve:
             raise ValueError(
                 "synthesis evaluation reserve requires typed inner augmentation")
+        if config.posterior_gap_directed and not config.typed_inner_augmentation:
+            raise ValueError("posterior gap requires typed inner augmentation")
         if config.allocation_calibration_role not in {
                 "production", "paired-challenger"}:
             raise ValueError("invalid allocation calibration role")
@@ -446,6 +461,14 @@ class DiscoveryAgent:
         context = dict(orchestration_context or {})
         context["seed_bank"] = seed_audit
         context["typed_inner_augmentation"] = self.config.typed_inner_augmentation
+        gap_allowed = (not self.config.posterior_gap_directed or bool(
+            context.get("posterior_gap_brief", {}).get("propose_allowed")))
+        synthesis_budget = (self.config.synthesis_evaluation_reserve
+                            if self.config.typed_inner_augmentation and gap_allowed else 0)
+        llm_budget = self.config.llm_evaluation_reserve if gap_allowed else 0
+        evaluation_budget = (self.config.discovery_budget if gap_allowed else
+            self.config.discovery_budget - self.config.synthesis_evaluation_reserve
+            - self.config.llm_evaluation_reserve)
         discovery = discover_from_selection(
             selection=selection,
             task_name=task_name, task_description=task_description,
@@ -453,11 +476,9 @@ class DiscoveryAgent:
             hypothesis_dir=output_dir / "hypotheses",
             evidence_registry_path=output_dir / "evidence_registry.jsonl",
             config=DiscoveryConfig.from_mapping({
-                "evaluation_budget": self.config.discovery_budget,
-                "llm_evaluation_reserve": self.config.llm_evaluation_reserve,
-                "synthesis_evaluation_reserve": (
-                    self.config.synthesis_evaluation_reserve
-                    if self.config.typed_inner_augmentation else 0),
+                "evaluation_budget": evaluation_budget,
+                "llm_evaluation_reserve": llm_budget,
+                "synthesis_evaluation_reserve": synthesis_budget,
                 "refit_policy": self.config.refit_policy,
                 "islands": self.config.discovery_islands,
                 "random_seed": self.config.random_seed,
@@ -468,11 +489,11 @@ class DiscoveryAgent:
                 "max_rounds": self.config.discovery_rounds,
                 "candidates_per_island": self.config.candidates_per_island,
             }),
-            provider_settings=(self.provider_settings if (
+            provider_settings=(self.provider_settings if gap_allowed and (
                 not self.config.typed_evidence_synthesis
                 or self.config.typed_inner_augmentation) else None),
             supplemental_candidates=(
-                synthesized_candidates if self.config.typed_inner_augmentation
+                synthesized_candidates if synthesis_budget
                 else ()),
             variable_metadata=dict(variable_metadata),
             orchestration_context=context,
@@ -491,6 +512,11 @@ class DiscoveryAgent:
             "mode": self.config.provider_failure_mode}
 
     def _resolve_plan(self, planner, task_context):
+        if self.config.posterior_gap_directed:
+            # Keep every engine job and seed paired with the provider-free arm.
+            return deterministic_plan(self.config.engines,
+                self.config.engine_budget), {"engine_schedule":
+                    "frozen-deterministic-quality-first"}, None, 0
         if planner.enabled and self.config.scientist_orchestration:
             try:
                 plan, telemetry = planner.plan_research(
@@ -581,15 +607,28 @@ class DiscoveryAgent:
             review, telemetry = self._abstention_review(fallback)
             return review, telemetry, fallback, 1
 
-    def _orchestrate_cycle(self, selection, cycle, planner, task_context):
+    def _orchestrate_cycle(self, selection, cycle, planner, task_context,
+                           gap_audit=None, gap_prior=None,
+                           gap_measurement_budget=0):
         counters = (planner.call_count, planner.attempt_count, len(planner.errors))
         plan, plan_telemetry, fallback, plan_calls = self._resolve_plan(
             planner, task_context)
         self._active_research_plan = plan
         engines = self._run_engines(selection, cycle)
         evidence = _engine_evidence(engines)
-        review, review_telemetry, fallback, review_calls = (
-            self._resolve_review(planner, plan, evidence, fallback))
+        gap = (self._independent_gap_brief(
+            selection, engines, gap_audit, gap_prior,
+            gap_measurement_budget)
+            if self.config.posterior_gap_directed else None)
+        if gap is not None and not gap["prompt"]["propose_allowed"]:
+            review = ScientistReview(
+                ("independent region screen did not identify inadequacy",),
+                (), (), ("retain engine candidates",), False,
+                "gap-directed proposal abstained")
+            review_telemetry, review_calls = {"gap_abstention": True}, 0
+        else:
+            review, review_telemetry, fallback, review_calls = (
+                self._resolve_review(planner, plan, evidence, fallback))
         orchestration = {"schema": "scientific-llm-engine-orchestration-v1",
             "scientist_state_before": task_context["scientist_state"],
             "research_plan": plan.to_dict(), "research_plan_identity": plan.stable_hash,
@@ -599,6 +638,9 @@ class DiscoveryAgent:
             "protected_counterfactual_backbone": dict(getattr(
                 self, "_last_counterfactual_backbone", {})),
             "provider_failure_abstention": fallback,
+            **({"posterior_gap_brief": gap["prompt"],
+                "posterior_gap_existing_supports": gap["existing_supports"],
+                "posterior_gap_audit": gap["audit"]} if gap else {}),
             "candidate_response_accessed": False, "heldout_opened": False}
         usage = (plan_calls + review_calls,
                  planner.attempt_count - counters[1],
@@ -659,12 +701,77 @@ class DiscoveryAgent:
             dict(orchestration.get("provider_failure_abstention") or {}),
             dict(allocation or {}),
             dict(orchestration.get("evidence_synthesis") or {}),
+            dict(orchestration.get("posterior_gap_audit") or {}),
+            dict(orchestration.get("posterior_gap_brief") or {}),
         )
+
+    def _independent_gap_brief(
+        self, selection: SelectionData, engines: Any,
+        audit: RoleDataset, prior: NormalInverseGammaPrior,
+        measurement_budget: int,
+    ) -> dict[str, Any]:
+        if (type(measurement_budget) is not int or measurement_budget < 1
+                or selection.acquisition_pool is None):
+            raise ValueError("posterior gap requires registered budget and pool covariates")
+        features = selection.development.X.shape[1]
+        engine_base = self.config.discovery_budget - (
+            self.config.synthesis_evaluation_reserve
+            + self.config.llm_evaluation_reserve)
+        source_rows = [{"expression": row.expression,
+                        "source": f"engine:{row.engine}"}
+                       for row in engines.all_results]
+        source_rows.extend(generic_deterministic_candidates(
+            selection.development.X, selection.development.y))
+        seen: set[tuple[str, ...]] = set()
+        candidates = []
+        for row in source_rows:
+            try:
+                supports = structural_terms(row["expression"], features)
+            except (SyntaxError, ValueError):
+                continue
+            if supports in seen:
+                continue
+            candidates.append(row)
+            seen.add(supports)
+            if len(candidates) >= engine_base:
+                break
+        identity = sha256(json.dumps(candidates, sort_keys=True).encode()).hexdigest()
+        model = freeze_discovery_model(
+            candidates, n_features=features, prior=prior,
+            exploration_identity=identity,
+            coefficient_policy="discard-fitted-coefficients-refit-closed-basis")
+        domain = selection.acquisition_pool.X
+        target = freeze_discovery_target(
+            model, selection.development, domain,
+            measurement_budget=measurement_budget,
+            expected_model_identity=model.stable_hash)
+        cuts = (float(np.median(domain[:, 0])),)
+        regions = FrozenAxisRegions(features, 0, cuts)
+        diagnosis = diagnose_frozen_bank(
+            model, target, domain, np.full(len(domain), 1. / len(domain)),
+            regions)
+        evidence = screen_independent_adequacy(
+            model, target, diagnosis, regions, audit,
+            discovery_development=selection.development,
+            discovery_validation=selection.validation)
+        return {"prompt": evidence.prompt_brief(diagnosis),
+                "existing_supports": [list(row) for row in sorted(seen)],
+                "audit": {"schema": "independent-posterior-gap-screen-v1",
+                          "fit_identity": selection.development.fingerprint,
+                          "selection_identity": selection.validation.fingerprint,
+                          "target_identity": target.stable_hash,
+                          "audit_identity": audit.fingerprint,
+                          "rows": [asdict(row) for row in evidence.rows],
+                          "candidate_response_accessed": False,
+                          "heldout_opened": False}}
 
     def run(
         self, *, selection: SelectionData,
         task_name: str, task_description: str, output_dir: str | Path,
         knowledge_dir: str | Path, variable_metadata: Mapping[str, Any],
+        gap_audit: RoleDataset | None = None,
+        gap_prior: NormalInverseGammaPrior | None = None,
+        gap_measurement_budget: int = 0,
     ) -> DiscoveryAgentResult:
         output, knowledge = Path(output_dir), Path(knowledge_dir); output.mkdir(parents=True, exist_ok=True)
         previous: tuple[Mapping[str, str], ...] = ()
@@ -684,13 +791,24 @@ class DiscoveryAgent:
                           if key in {"feature_names", "feature_units",
                                      "target_name", "target_unit"}}}
         scientist_state = ScientistState()
+        if self.config.posterior_gap_directed and (
+                gap_audit is None or gap_prior is None
+                or gap_measurement_budget < 1):
+            raise ValueError("posterior gap needs independent rows, prior and budget")
         for cycle in range(max(1, self.config.cycles)):
             state_before = scientist_state.to_dict()
             context = {**base_task_context, "scientist_state": state_before}
             plan, review, engines, evidence, orchestration, usage = (
-                self._orchestrate_cycle(selection, cycle, planner, context))
+                self._orchestrate_cycle(
+                    selection, cycle, planner, context, gap_audit,
+                    gap_prior, gap_measurement_budget))
             synthesized, synthesis_audit = self._compile_cycle_synthesis(
                 review, evidence, selection.development.X.shape[1])
+            if (self.config.posterior_gap_directed
+                    and not orchestration["posterior_gap_brief"]["propose_allowed"]):
+                synthesized = []
+                synthesis_audit = {**synthesis_audit,
+                    "deferred_no_independent_gap": True}
             orchestration = {
                 **orchestration, "evidence_synthesis": synthesis_audit}
             final = self._discover(

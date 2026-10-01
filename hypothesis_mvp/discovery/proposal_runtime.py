@@ -14,6 +14,8 @@ from typing import Any, Mapping, Sequence
 
 import requests
 from .resource_limits import before_provider_transport
+from .closed_basis_composition import materialize_closed_basis_composition
+from .pcpi_adapter import structural_terms
 
 from .contracts import DISCOVERY_RUNTIME_ID, json_safe
 from .equation_runtime import EquationRuntime, sha256_text
@@ -196,6 +198,9 @@ class ProposalContext:
     parent_hash: str
     n_features: int
     max_candidates: int
+    incumbent_expression: str = ""
+    existing_supports: tuple[tuple[str, ...], ...] = ()
+    gap_directed: bool = False
 
 
 @dataclass(frozen=True)
@@ -1088,9 +1093,12 @@ class ProposalRuntime:
                 "equation_format": "right_hand_side_only_without_assignment",
                 "allowed_symbols": [f"x{i}" for i in range(context.n_features)],
                 "forbidden_symbols": ["y", "y_hat"],
-                "required_candidate_fields": [
-                    "candidate_id", "parent_hash", "action", "equation", "rationale"
-                ],
+                **({"correction_field_enabled": True} if context.gap_directed else {}),
+                "required_candidate_fields": (
+                    ["candidate_id", "parent_hash", "action", "rationale"]
+                    if context.gap_directed else
+                    ["candidate_id", "parent_hash", "action", "equation", "rationale"]
+                ),
                 "instruction": (
                     "Each equation is only an executable right-hand-side expression. "
                     "Never emit y=, f(x)=, y_hat, or any symbol outside allowed_symbols. "
@@ -1108,6 +1116,14 @@ class ProposalRuntime:
                     "most four, or sin(xi), cos(xi), tanh(xi). Do not use division, log, Abs, sign, "
                     "piecewise forms, transforms of compound expressions, or powers of a whole "
                     "parent equation."
+                    + (" Independently audited posterior gap is provided in "
+                       "scientific_context.posterior_gap_brief. Propose for its eligible "
+                       "regions. Optionally include correction containing y_hat and x "
+                       "variables; the system will substitute the current_expression, "
+                       "expand within a bounded grammar and reject nonnovel supports. "
+                       "Provide either a complete equation or a correction; "
+                       "if both exist correction takes precedence."
+                       if context.gap_directed else "")
                 ),
             },
         }
@@ -1142,7 +1158,24 @@ class ProposalRuntime:
         action = str(item.get("action") or "").upper()
         if action not in ALLOWED_ACTIONS:
             raise ProtocolError("invalid_action")
-        equation, normalization = self._equation(item.get("equation"), context)
+        correction = item.get("correction")
+        if correction is not None:
+            if not context.gap_directed or not isinstance(correction, str):
+                raise ProtocolError("correction_requires_independent_gap_context")
+            expression, supports = materialize_closed_basis_composition(
+                correction, context.incumbent_expression, context.n_features)
+            if supports in context.existing_supports:
+                raise ProtocolError("materialized_correction_duplicates_frozen_bank")
+            equation, normalization = self._equation(expression, context)
+            normalization = {**normalization, "materialized_correction": True,
+                             "materialized_supports": list(supports),
+                             "correction": correction,
+                             "incumbent": context.incumbent_expression}
+        else:
+            equation, normalization = self._equation(item.get("equation"), context)
+            if context.gap_directed and structural_terms(
+                    equation, context.n_features) in context.existing_supports:
+                raise ProtocolError("proposal_duplicates_frozen_bank")
         rationale = str(item.get("rationale") or "").strip()
         if not rationale or len(rationale) > 1200:
             raise ProtocolError("invalid_rationale")
@@ -1192,7 +1225,8 @@ class ProposalRuntime:
                 seen.add(candidate.candidate_id)
                 candidates.append(candidate)
                 if (normalization.get("assignment_removed")
-                        or normalization.get("parent_hash_projected")):
+                        or normalization.get("parent_hash_projected")
+                        or normalization.get("materialized_correction")):
                     normalizations.append(normalization)
             except Exception as error:
                 rejections.append({
@@ -1203,26 +1237,37 @@ class ProposalRuntime:
                 })
         return tuple(candidates), tuple(rejections), tuple(normalizations)
 
-    def _system_message(self) -> str:
+    def _system_message(self, gap_directed: bool = False) -> str:
         allowed = ", ".join(f"x{i}" for i in range(self.n_features))
         return (
             "You propose falsifiable structural equations as exactly one unfenced JSON object. "
             "Use protocol_id='hypothesis-proposal-v1', runtime_id='canonical-real-only-discovery', "
             "and preserve the requested round_id, island, and parent_hash. Every candidate needs "
-            "candidate_id, parent_hash, action, equation, and rationale. The equation field is RHS only: "
-            f"use only {allowed}; never use '=', y, y_hat, or prose. Diagnostic y_hat is not an allowed "
+            "candidate_id, parent_hash, action, rationale, and "
+            + ("equation or correction. " if gap_directed else "equation. ")
+            + "The equation field is RHS only: "
+            f"use only {allowed}; never use '=', y, y_hat, or prose"
+            + (" in equation" if gap_directed else "")
+            + ". Diagnostic y_hat is not an allowed "
             "variable: express every final candidate completely in x variables. At least one "
             "candidate must introduce a falsifiable mechanism-level structural change rather "
             "than only refitting coefficients of the parent equation. Across the candidate batch, "
             "cover distinct mechanism families where the registered closed basis permits them."
             " The closed basis permits constants, x variables, degree-at-most-four monomials, "
             "and sin(xi), cos(xi), tanh(xi) only; never use division or compound transforms."
+            + (" If an independently supported posterior gap is supplied, you may "
+               "send a correction string in a candidate's correction field using "
+               "y_hat and x variables. Its frozen incumbent is substituted and the "
+               "result checked against the registered closed basis before use; "
+               "do not assert that a proposal has been admitted."
+               if gap_directed else "")
         )
 
     def _request_validated(
         self, payload: Mapping[str, Any], context: ProposalContext,
     ) -> _ValidatedResponse:
-        messages, prompt_hash = self._messages(payload, self._system_message())
+        messages, prompt_hash = self._messages(
+            payload, self._system_message(context.gap_directed))
         self.call_count += 1
         content, telemetry = self._request(messages, prompt_hash)
         response_hash = hashlib.sha256(content.encode()).hexdigest()
@@ -1271,7 +1316,12 @@ class ProposalRuntime:
         ephemeral_refinements: Sequence[Mapping[str, Any]],
     ) -> ProposalBatch:
         context = ProposalContext(
-            round_id, island, parent_hash, self.n_features, self.candidates_per_island
+            round_id, island, parent_hash, self.n_features, self.candidates_per_island,
+            incumbent_expression=str(island_context.get("current_expression") or ""),
+            existing_supports=tuple(tuple(row) for row in
+                island_context.get("posterior_gap_existing_supports", ())),
+            gap_directed=bool(island_context.get("posterior_gap_brief", {}).get(
+                "propose_allowed", False)),
         )
         payload = self._proposal_payload(
             task_name, task_desc, context, island_context,

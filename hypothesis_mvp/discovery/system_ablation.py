@@ -20,6 +20,10 @@ from hypothesis_mvp.symbolic.registry import registered_engine_names
 from .pcpi_adapter import structural_terms
 from .initializer import generic_deterministic_candidates
 from .source_stacking import source_family
+from .regional_candidate_admission import admit_regional_candidates
+from .candidate_region_expansion import FrozenAxisRegions
+from hypothesis_mvp.data.roles import DataRole, RoleDataset
+from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
 from hypothesis_mvp.hypotheses import EvidenceEventType, EvidenceRegistry
 
 
@@ -58,13 +62,16 @@ def audit_usage(config, result, elapsed, compute_ceiling, provider_attempt_ceili
 
 
 def _run_variant(config, provider_settings, selection, workspace, compute_ceiling,
-                 provider_attempt_ceiling, scientific_context):
+                 provider_attempt_ceiling, scientific_context,
+                 gap_audit=None, gap_prior=None, gap_measurement_budget=0):
     start = time.monotonic()
     agent = DiscoveryAgent(config, provider_settings)
     context = dict(scientific_context)
     result = agent.run(selection=selection, task_name=context["task_name"],
         task_description=context["task_description"], output_dir=workspace,
-        knowledge_dir=workspace / "knowledge", variable_metadata=context)
+        knowledge_dir=workspace / "knowledge", variable_metadata=context,
+        gap_audit=gap_audit, gap_prior=gap_prior,
+        gap_measurement_budget=gap_measurement_budget)
     usage = audit_usage(config, result, time.monotonic() - start,
                         compute_ceiling, provider_attempt_ceiling)
     report = result.discovery.report
@@ -72,7 +79,11 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
             getattr(c, "provider_errors", 0) for c in result.cycles):
         raise ExplorationProtocolError(
             "provider-or-protocol-failure-blocks-exploration")
-    if provider_settings is not None and (
+    gap_abstained = (config.posterior_gap_directed
+        and result.cycles
+        and all(not getattr(c, "posterior_gap_brief", {}).get(
+            "propose_allowed", False) for c in result.cycles))
+    if provider_settings is not None and not gap_abstained and (
             sum(c.provider_calls for c in result.cycles) < 1
             or sum(c.provider_attempts for c in result.cycles) < 1):
         raise ExplorationProtocolError("llm-enabled-exploration-had-zero-provider-attempts")
@@ -122,6 +133,9 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
         "llm_candidate_lifecycle": report.get("llm_rounds", []),
         "heldout_accessed": False,
     }
+    if config.posterior_gap_directed:
+        provenance["gap_knowledge_stage_ids"] = list(
+            report.get("knowledge_stage_ids", ()))
     policy_trace = [{
         "cycle": getattr(cycle, "cycle", index),
         "research_plan": dict(getattr(cycle, "research_plan", {})),
@@ -143,6 +157,11 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
     } for index, cycle in enumerate(result.cycles)]
     return {"best_val_nmse": report["best_val_nmse"], "usage": usage,
         "provider_calls": sum(c.provider_calls for c in result.cycles),
+        **({"posterior_gap": [{"audit": dict(c.posterior_gap_audit),
+                           "brief": dict(c.posterior_gap_brief)}
+                          for c in result.cycles
+                          if getattr(c, "posterior_gap_audit", None)]}
+           if config.posterior_gap_directed else {}),
         "candidates": candidates,
         "hypothesis_provenance": provenance,
         "scientist_policy_trace": policy_trace,
@@ -154,7 +173,9 @@ def _run_variant(config, provider_settings, selection, workspace, compute_ceilin
 def run_exploration_ablations(root, selection, *, dataset, config,
                              provider_settings, single_engine, compute_ceiling,
                              provider_attempt_ceiling, source_identity,
-                             scientific_context):
+                             scientific_context, gap_audit=None,
+                             gap_prior=None, gap_measurement_budget=0,
+                             gap_admission=None):
     if (not isinstance(config, DiscoveryAgentConfig) or config.cycles < 1
             or len(config.engines) < 2 or len(set(config.engines)) != len(config.engines)
             or single_engine not in config.engines or config.engine_repeats < 1
@@ -172,13 +193,37 @@ def run_exploration_ablations(root, selection, *, dataset, config,
     for route in provider_settings.routes:
         route.validate()
     total_jobs = config.engine_budget
+    if config.posterior_gap_directed and (
+            not config.typed_inner_augmentation
+            or not isinstance(gap_audit, RoleDataset)
+            or gap_audit.role is not DataRole.VALIDATION
+            or not isinstance(gap_prior, NormalInverseGammaPrior)
+            or type(gap_measurement_budget) is not int
+            or gap_measurement_budget < 1
+            or not isinstance(gap_admission, RoleDataset)
+            or gap_admission.role is not DataRole.VALIDATION
+            or config.task_local_memory
+            or selection.acquisition_pool is None
+            or config.engine_budget != len(config.engines) * config.engine_repeats
+            or config.refit_policy != "pcpi-closed-basis-amplitudes"):
+        raise ValueError("gap-directed exploration needs distinct audit/admission roles and no unadmitted memory")
+    if config.posterior_gap_directed and (
+            gap_audit.row_fingerprints & (
+                selection.development.row_fingerprints
+                | selection.validation.row_fingerprints
+                | gap_admission.row_fingerprints)
+            or gap_admission.row_fingerprints & (
+                selection.development.row_fingerprints
+                | selection.validation.row_fingerprints)):
+        raise ValueError("gap-directed independent roles overlap discovery roles")
     if total_jobs < len(config.engines):
         raise ValueError("engine budget must cover every registered skill")
     if config.scientist_orchestration:
         return _run_scientist_ablations(
             root, selection, dataset, config, provider_settings, single_engine,
             compute_ceiling, provider_attempt_ceiling, source_identity,
-            scientific_context, total_jobs)
+            scientific_context, total_jobs, gap_audit, gap_prior,
+            gap_measurement_budget, gap_admission)
     if config.typed_inner_augmentation:
         raise ValueError("augmentation requires Scientist source projection")
     optional_engines = tuple(engine for engine in config.engines if engine != single_engine)
@@ -281,7 +326,8 @@ def _scientist_contract(dataset, config, single_engine, selection,
 
 def _run_scientist_variant(root, variant, variant_config, provider, selection,
                            compute_ceiling, provider_attempt_ceiling,
-                           scientific_context, contract, dataset, total_jobs):
+                           scientific_context, contract, dataset, total_jobs,
+                           gap_audit=None, gap_prior=None, gap_measurement_budget=0):
     workspace = Path(root) / variant
     workspace.mkdir(exist_ok=True)
     completed = workspace / "RESULT.json"
@@ -295,7 +341,10 @@ def _run_scientist_variant(root, variant, variant_config, provider, selection,
     try:
         summary, enforcement = run_bounded(
             _run_variant, args=(variant_config, provider, selection, workspace,
-                compute_ceiling, provider_attempt_ceiling, scientific_context),
+                compute_ceiling, provider_attempt_ceiling, scientific_context,
+                gap_audit if variant_config.posterior_gap_directed else None,
+                gap_prior if variant_config.posterior_gap_directed else None,
+                gap_measurement_budget if variant_config.posterior_gap_directed else 0),
             seconds=compute_ceiling,
             provider_attempts=(provider_attempt_ceiling if provider else 0))
     except Exception as error:
@@ -326,6 +375,8 @@ def _run_scientist_variant(root, variant, variant_config, provider, selection,
         "compute_ceiling": compute_ceiling, "provider_calls": summary["provider_calls"],
         **usage, "resource_enforcement": enforcement,
         "candidates": summary["candidates"],
+        **({"posterior_gap": summary["posterior_gap"]}
+           if variant_config.posterior_gap_directed else {}),
         "hypothesis_provenance": summary["hypothesis_provenance"],
         "scientist_policy_trace": summary["scientist_policy_trace"],
         "scientist_policy_provider_configured": summary[
@@ -338,38 +389,71 @@ def _run_scientist_variant(root, variant, variant_config, provider, selection,
 def _run_scientist_ablations(root, selection, dataset, config, provider_settings,
                              single_engine, compute_ceiling,
                              provider_attempt_ceiling, source_identity,
-                             scientific_context, total_jobs):
+                             scientific_context, total_jobs,
+                             gap_audit=None, gap_prior=None,
+                             gap_measurement_budget=0, gap_admission=None):
     root = Path(root); root.mkdir(parents=True, exist_ok=True)
     contract = _scientist_contract(
         dataset, config, single_engine, selection, compute_ceiling,
         provider_attempt_ceiling, source_identity, scientific_context,
         provider_settings)
+    if config.posterior_gap_directed:
+        contract["candidate_budget_contract"] = {
+            "mode": "quality-first-engine-intact-posterior-gap-v1",
+            "engine_reference": config.discovery_budget,
+            "full": config.discovery_budget
+                + config.synthesis_evaluation_reserve
+                + config.llm_evaluation_reserve,
+            "typed_synthesis": config.synthesis_evaluation_reserve,
+            "inner_proposal": config.llm_evaluation_reserve,
+            "compute_matched": False}
+        contract["gap_audit_identity"] = gap_audit.fingerprint
+        contract["gap_admission_identity"] = gap_admission.fingerprint
+        contract["gap_measurement_budget"] = gap_measurement_budget
+        contract["gap_prior"] = gap_prior.to_dict()
     contract = json.loads(json.dumps(contract, allow_nan=False))
     _publish(root / "ABLATION_CONTRACT.json", contract)
+    no_llm_budget = (
+        config.discovery_budget if config.posterior_gap_directed else
+        config.discovery_budget - config.llm_evaluation_reserve
+        - config.synthesis_evaluation_reserve
+        if config.typed_inner_augmentation else config.discovery_budget)
     variants = {
-        "full": (config, provider_settings),
+        "full": (replace(config, discovery_budget=(config.discovery_budget
+            + config.synthesis_evaluation_reserve
+            + config.llm_evaluation_reserve)) if config.posterior_gap_directed
+            else config, provider_settings),
         "no_llm": (replace(
             config, scientist_orchestration=False,
             typed_evidence_synthesis=False,
             typed_inner_augmentation=False,
+            posterior_gap_directed=False,
             synthesis_evaluation_reserve=0,
-            discovery_budget=(config.discovery_budget
-                - config.llm_evaluation_reserve
-                - config.synthesis_evaluation_reserve
-                if config.typed_inner_augmentation else config.discovery_budget),
+            discovery_budget=no_llm_budget,
             llm_evaluation_reserve=(0 if config.typed_inner_augmentation
                                     else config.llm_evaluation_reserve)), None),
         "single_engine": (replace(
             config, engines=(single_engine,), engine_repeats=total_jobs,
-            engine_budget=total_jobs), provider_settings),
+            engine_budget=total_jobs,
+            discovery_budget=(config.discovery_budget
+                + config.synthesis_evaluation_reserve
+                + config.llm_evaluation_reserve
+                if config.posterior_gap_directed else config.discovery_budget),
+            posterior_gap_directed=False), provider_settings),
     }
     rows = [_run_scientist_variant(
         root, variant, variant_config, provider, selection, compute_ceiling,
-        provider_attempt_ceiling, scientific_context, contract, dataset, total_jobs)
+        provider_attempt_ceiling, scientific_context, contract, dataset, total_jobs,
+        gap_audit, gap_prior, gap_measurement_budget)
         for variant, (variant_config, provider) in variants.items()]
     if rows[1]["provider_calls"] or rows[1]["provider_attempts_used"]:
         raise ValueError("provider-free scientist ablation attempted provider calls")
+    if config.posterior_gap_directed:
+        _restore_intact_engine_bank(rows, selection)
     _complete_anchor_banks(rows, selection)
+    if config.posterior_gap_directed:
+        _screen_gap_candidates(rows, selection, gap_audit, gap_admission,
+                               gap_prior, gap_measurement_budget, root)
     analysis = analyze_system_contract(
         rows, augmentation_total=(
             (config.synthesis_evaluation_reserve
@@ -377,6 +461,114 @@ def _run_scientist_ablations(root, selection, dataset, config, provider_settings
             if config.typed_inner_augmentation else 0))
     _publish(root / "ANALYSIS.json", analysis)
     return analysis
+
+
+def _screen_gap_candidates(rows, selection, gap_audit, gap_admission,
+                           prior, measurement_budget, root):
+    started = time.monotonic()
+    if (gap_admission.row_fingerprints & (
+            gap_audit.row_fingerprints
+            | selection.development.row_fingerprints
+            | selection.validation.row_fingerprints)
+            or gap_audit.row_fingerprints & (
+                selection.development.row_fingerprints
+                | selection.validation.row_fingerprints)):
+        raise ExplorationProtocolError("posterior-gap-data-roles-overlap")
+    indexed = {row["variant"]: row for row in rows}
+    full = indexed["full"]
+    final_gap = full["posterior_gap"][-1] if full["posterior_gap"] else None
+    allowed = tuple(sorted({int(item["region"])
+        for item in (final_gap["brief"].get("regions", ())
+                     if final_gap is not None else ())}))
+    domain = selection.acquisition_pool.X
+    regions = FrozenAxisRegions(selection.development.X.shape[1], 0,
+                                (float(np.median(domain[:, 0])),))
+    optional = [row for row in full["candidates"]
+                if row.get("origin") == "llm"]
+    if optional and allowed:
+        retained, report = admit_regional_candidates(
+            indexed["no_llm"]["candidates"], optional,
+            selection.development, gap_audit, gap_admission, domain,
+            regions, allowed, prior, measurement_budget)
+    else:
+        retained = []
+        report = {"schema": "candidate-regional-admission-v1",
+                  "attempts": len(optional), "candidates": [
+                      {"lineage_id": str(candidate.get("lineage_id") or ""),
+                       "composed_expression": candidate["expression"],
+                       "attempted_candidate_count": len(optional),
+                       "region_identity": regions.identity,
+                       "admitted": False,
+                       "reason": "no-independent-gap"}
+                      for candidate in optional],
+                  "admission_identity": gap_admission.fingerprint,
+                  "reason": "no-independent-gap-or-no-llm-candidate",
+                  "decision_contribution_assessed": False,
+                  "candidate_response_accessed": False,
+                  "heldout_opened": False}
+    features = selection.development.X.shape[1]
+    keep = {structural_terms(row["expression"], features) for row in retained}
+    full["candidates"] = [row for row in full["candidates"]
+                          if row.get("origin") != "llm"
+                          or structural_terms(row["expression"], features) in keep]
+    full["hypothesis_provenance"]["regional_candidate_admission"] = report
+    full["hypothesis_provenance"]["llm_retained_candidate_count"] = sum(
+        row.get("origin") == "llm" for row in full["candidates"])
+    full["hypothesis_provenance"]["candidate_count"] = len(full["candidates"])
+    from .knowledge_runtime import KnowledgeRuntime
+    knowledge = KnowledgeRuntime(
+        Path(root) / "full" / "knowledge" / "structure_library.jsonl",
+        Path(root) / "full" / "knowledge" / "runtime_ledger.jsonl")
+    stage_results = []
+    target_identity = (final_gap["audit"].get("target_identity")
+                       if final_gap is not None else "")
+    for stage_id in full["hypothesis_provenance"].get(
+            "gap_knowledge_stage_ids", ()):
+        stage_results.append(knowledge.finalize_gap_stage(
+            stage_id, admission_identity=gap_admission.fingerprint,
+            target_identity=target_identity,
+            candidate_records=report["candidates"]))
+    full["hypothesis_provenance"]["gap_knowledge_stages"] = [
+        {"stage_id": row["stage_id"], "status": row["status"],
+         "decision_effect_assessed": False} for row in stage_results]
+    report["admission_wall_seconds"] = time.monotonic() - started
+    _publish(Path(root) / "REGIONAL_CANDIDATE_ADMISSION.json", report)
+
+
+def _restore_intact_engine_bank(rows, selection):
+    """Preserve all identical engine supports in both quality-first arms."""
+    n_features = selection.development.X.shape[1]
+    indexed = {row["variant"]: row for row in rows}
+    if set(indexed) != {"full", "no_llm", "single_engine"}:
+        raise ExplorationProtocolError("quality-first variants incomplete")
+    def engine_rows(row):
+        result = {}
+        for record in row["hypothesis_provenance"]["raw_engine_candidates"]:
+            try:
+                support = structural_terms(str(record["expression"]), n_features)
+            except (SyntaxError, TypeError, ValueError):
+                continue
+            result.setdefault(support, {
+                "expression": str(record["expression"]),
+                "source": f"engine:{record['engine']}",
+                "origin": "deterministic",
+                "lineage_id": str(record.get("lineage_id", ""))})
+        return result
+    full, control = engine_rows(indexed["full"]), engine_rows(indexed["no_llm"])
+    if not full or full != control:
+        raise ExplorationProtocolError("quality-first-engine-frontiers-not-paired")
+    for variant in ("full", "no_llm"):
+        row = indexed[variant]
+        present = {structural_terms(item["expression"], n_features)
+                   for item in row["candidates"]}
+        for support, candidate in full.items():
+            if support not in present:
+                row["candidates"].append(candidate)
+                present.add(support)
+        row["hypothesis_provenance"]["intact_engine_support_count"] = len(full)
+        row["hypothesis_provenance"]["quality_first_engine_identity"] = sha256(
+            json.dumps([list(support) for support in sorted(full)]).encode()
+        ).hexdigest()
 
 
 def _execute_source(workspace, name, config, provider_settings, selection,
