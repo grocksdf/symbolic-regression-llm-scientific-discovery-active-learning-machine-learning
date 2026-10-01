@@ -122,6 +122,7 @@ def main(argv=None) -> int:
         ROOT / "eval.py",
         ROOT / "configs/aistats_drr_full_v6.yaml",
         ROOT / "configs/aistats_drr_no_llm_v6.yaml",
+        ROOT / "configs/aistats_drr_full_llmchannel_v7.yaml",
         ROOT / "configs/aistats_external_llmsr_glm53.yaml",
         ROOT / "methods/llmsr/sampler.py",
         ROOT / "methods/llmsr/profile.py",
@@ -135,16 +136,25 @@ def main(argv=None) -> int:
         "selected_tasks": selected,
         "seeds": [91, 92],
         "conditions": [
-            "full_scientist_v6", "no_llm_v6", "external_llmsr_glm53"],
-        "child_run_count": 24,
+            "full_scientist_v6", "no_llm_v6", "full_llmchannel_v7",
+            "external_llmsr_glm53"],
+        "child_run_count": 32,
         "condition_budgets": {
+            # Every internal condition gets the same wall-clock ceiling as the
+            # external LLM-SR baseline.  The previous 900s internal ceiling
+            # produced spurious wall-time-timeout failures on the heavier
+            # task, which silently counted as NMSE=100.
             "full_scientist_v6": {
                 "candidate_evaluation_limit": 48,
-                "wall_time_seconds": 900,
+                "wall_time_seconds": 1800,
             },
             "no_llm_v6": {
                 "candidate_evaluation_limit": 48,
-                "wall_time_seconds": 900,
+                "wall_time_seconds": 1800,
+            },
+            "full_llmchannel_v7": {
+                "candidate_evaluation_limit": 48,
+                "wall_time_seconds": 1800,
             },
             "external_llmsr_glm53": {
                 "sample_limit": 16,

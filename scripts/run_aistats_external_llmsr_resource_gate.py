@@ -48,7 +48,11 @@ async def _smoke(api_key: str) -> dict:
             "content": "Return exactly the token: OK",
         }],
         temperature=0.0,
-        max_tokens=16,
+        # glm-5.3 is a reasoning model: every token below its thinking budget
+        # is consumed by ``reasoning_content`` and ``message.content`` comes
+        # back empty, which would make this smoke test fail closed on a
+        # perfectly healthy provider. 256 clears the thinking budget.
+        max_tokens=256,
     )
     content = str(response.choices[0].message.content or "").strip()
     return {

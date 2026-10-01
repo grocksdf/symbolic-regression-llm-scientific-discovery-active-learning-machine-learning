@@ -31,6 +31,7 @@ DATASET_MAP = {
 CONFIGS = {
     "full_scientist_v6": "configs/aistats_drr_full_v6.yaml",
     "no_llm_v6": "configs/aistats_drr_no_llm_v6.yaml",
+    "full_llmchannel_v7": "configs/aistats_drr_full_llmchannel_v7.yaml",
     "external_llmsr_glm53": "configs/aistats_external_llmsr_glm53.yaml",
 }
 
