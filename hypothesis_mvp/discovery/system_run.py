@@ -252,9 +252,9 @@ def run_frozen_system_comparison(root, candidates, initial_data, pool,
     return result
 
 
-def analyze_system_contract(rows):
+def analyze_system_contract(rows, *, augmentation_total=0):
     """Require paired ablation integrity before exposing development metrics."""
-    gate = validate_system_pairs(rows)
+    gate = validate_system_pairs(rows, augmentation_total=augmentation_total)
     return {"schema": "scientific-system-analysis-v1", "pair_gate": gate,
             "rows": [dict(row) for row in rows],
             "metric_role": "internal-validation-development-only",

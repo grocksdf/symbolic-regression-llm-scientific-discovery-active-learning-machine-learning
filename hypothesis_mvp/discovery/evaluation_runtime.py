@@ -32,6 +32,7 @@ class EvaluationBudget:
         self.llm_reserve = 0
         self.llm_phase = False
         self.protected_seed_slots = 0
+        self.phase_ceiling: Optional[int] = None
 
     def reset(self) -> None:
         self.used = 0
@@ -40,6 +41,7 @@ class EvaluationBudget:
         self.llm_reserve = 0
         self.llm_phase = False
         self.protected_seed_slots = 0
+        self.phase_ceiling = None
 
     def protect_seed_evaluations(self, count: int) -> None:
         """Reserve first evaluations, not success or retained provenance."""
@@ -57,10 +59,18 @@ class EvaluationBudget:
     def begin_llm_phase(self) -> None:
         self.llm_phase = True
 
+    def limit_phase_work(self, additional_evaluations: int) -> None:
+        if not self.llm_phase or additional_evaluations < 0:
+            raise ValueError("invalid proposal phase evaluation budget")
+        self.phase_ceiling = (None if self.limit is None else
+                              min(self.limit, self.used + additional_evaluations))
+
     def consume(self, category: str) -> bool:
         cap = self.limit
         if cap is not None and not self.llm_phase:
             cap = cap - self.llm_reserve
+        if self.llm_phase and self.phase_ceiling is not None:
+            cap = min(cap, self.phase_ceiling) if cap is not None else self.phase_ceiling
         if cap is not None and category in {"post_refit_pruning_trial", "structure_ablation_trial"}:
             cap -= self.protected_seed_slots
         if cap is not None and self.used >= cap:
@@ -79,6 +89,8 @@ class EvaluationBudget:
         cap = self.limit
         if cap is not None and not self.llm_phase:
             cap = cap - self.llm_reserve
+        if self.llm_phase and self.phase_ceiling is not None:
+            cap = min(cap, self.phase_ceiling) if cap is not None else self.phase_ceiling
         return cap is not None and self.used >= cap
 
     @property
@@ -95,6 +107,7 @@ class EvaluationBudget:
             "exhausted": self.exhausted,
             "llm_reserve": self.llm_reserve,
             "llm_phase": self.llm_phase,
+            "phase_ceiling": self.phase_ceiling,
             "protected_seed_slots": self.protected_seed_slots,
             "denied": self.denied,
             "counts": dict(sorted(self.counts.items())),

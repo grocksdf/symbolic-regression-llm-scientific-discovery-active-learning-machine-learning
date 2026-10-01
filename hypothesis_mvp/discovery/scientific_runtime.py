@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import dataclasses
 import hashlib
 import json
 import time
@@ -530,15 +531,25 @@ class ScientificDiscoveryRuntime:
         self, *, X_train: np.ndarray, y_train: np.ndarray,
         X_val: np.ndarray, y_val: np.ndarray,
         base_candidates: Sequence[Any], refinement_enabled: bool = True,
+        supplemental_candidates: Sequence[Mapping[str, Any]] = (),
     ) -> tuple[str, dict[str, Any]]:
         started = time.time()
         self._events.clear()
         self.evaluation.reset()
+        synthesis_reserve = self.config.synthesis_evaluation_reserve
+        if (synthesis_reserve < 0 or (synthesis_reserve and
+                (not refinement_enabled or self.config.evaluation_budget is None
+                 or not self.proposal.enabled
+                 or self.config.llm_evaluation_reserve < 1))
+                or (supplemental_candidates and not synthesis_reserve)):
+            raise ValueError(
+                "supplemental evaluation requires a finite separate reserve "
+                "and an enabled inner proposal provider")
         self.evaluation.budget.configure_llm_reserve(
-            self.config.llm_evaluation_reserve if (
+            (self.config.llm_evaluation_reserve if (
                 self.proposal.enabled
                 or self.config.refit_policy == "pcpi-closed-basis-amplitudes"
-            ) else 0
+            ) else 0) + synthesis_reserve
         )
         self.proposal.reset()
         arrays = (
@@ -557,20 +568,49 @@ class ScientificDiscoveryRuntime:
         if refinement_enabled:
             state, deterministic_states, deterministic_rounds = self._deterministic_search(state, arrays)
         deterministic = state.deterministic_reference
+        synthesis_states: list[EquationState] = []
+        synthesis_audit: list[dict[str, Any]] = []
+        if synthesis_reserve:
+            self.evaluation.budget.begin_llm_phase()
+            self.evaluation.budget.limit_phase_work(synthesis_reserve)
+            for row in supplemental_candidates:
+                if self.evaluation.budget.exhausted:
+                    synthesis_audit.append({"lineage_id": row.get("lineage_id", ""),
+                        "status": "evaluation_reserve_exhausted"})
+                    continue
+                candidate = self.evaluation.build_state(
+                    str(row["expression"]), *arrays,
+                    source=str(row.get("source") or "llm_evidence_synthesis"),
+                    origin="llm", island="typed_synthesis", round_id=0)
+                if candidate is not None:
+                    candidate = dataclasses.replace(
+                        candidate, lineage_id=str(row.get("lineage_id") or ""))
+                    synthesis_states.append(candidate)
+                synthesis_audit.append({"lineage_id": row.get("lineage_id", ""),
+                    "status": "validated" if candidate is not None else "rejected"})
         llm_states: list[EquationState] = []
         llm_rounds: list[dict[str, Any]] = []
         if refinement_enabled and self.proposal.enabled:
             self.evaluation.budget.begin_llm_phase()
+            if synthesis_reserve:
+                self.evaluation.budget.limit_phase_work(
+                    self.config.llm_evaluation_reserve)
             state, llm_states, llm_rounds = self._llm_search(state, arrays)
-        final, gate = self._select_final(deterministic, llm_states)
+        final, gate = self._select_final(
+            deterministic, (*synthesis_states, *llm_states))
         staged = self._stage(final, deterministic, state.accepted)
         self._transition(state, DiscoveryPhase.DONE, "run_completed")
         report = self._report(
             anchor=anchor, deterministic=deterministic, final=final, seeds=seeds,
-            deterministic_states=deterministic_states, llm_states=llm_states,
+            deterministic_states=deterministic_states,
+            llm_states=(*synthesis_states, *llm_states),
             deterministic_rounds=deterministic_rounds, llm_rounds=llm_rounds,
             gate=gate, staged=staged, started=started,
         )
+        if synthesis_reserve:
+            report["supplemental_synthesis_evaluations"] = synthesis_audit
+            report["supplemental_synthesis_validated"] = len(synthesis_states)
+            report["inner_llm_enabled"] = self.proposal.enabled
         return final.dag.expression, report
 
 

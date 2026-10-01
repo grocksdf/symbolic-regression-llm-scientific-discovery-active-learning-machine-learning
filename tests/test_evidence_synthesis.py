@@ -86,3 +86,40 @@ def test_invalid_intersection_does_not_discard_valid_union():
     assert audit["passed_directive_count"] == 1
     assert audit["rejected_directive_count"] == 1
     assert "fewer than two supports" in audit["rejections"][0]["reason"]
+
+
+def test_interaction_adds_registered_support_when_additive_union_is_duplicate():
+    evidence = [
+        {"engine": "a", "expression": "1+x0+x1", "lineage_id": "a"},
+        {"engine": "b", "expression": "2+3*x0+4*x1", "lineage_id": "b"}]
+    directives = (
+        SynthesisDirective("UNION_SUPPORTS", ("a", "b"), "duplicate union"),
+        SynthesisDirective("INTERACT_SUPPORTS", ("a", "b"),
+                           "test a crossed mechanism"))
+    candidates, audit = compile_evidence_synthesis(
+        directives, evidence, 2, allow_interactions=True)
+    assert len(candidates) == 1
+    assert candidates[0]["synthesis_operation"] == "INTERACT_SUPPORTS"
+    assert "x0_x1" in structural_terms(candidates[0]["expression"], 2)
+    assert audit["rejected_directive_count"] == 1
+    legacy, _ = compile_evidence_synthesis(directives[1:], evidence, 2)
+    assert legacy == []
+
+
+def test_interaction_rejects_unregistered_product_and_existing_engine_support():
+    evidence = [
+        {"engine": "a", "expression": "1+sin(x0)", "lineage_id": "a"},
+        {"engine": "b", "expression": "1+x1", "lineage_id": "b"}]
+    candidate, audit = compile_evidence_synthesis((SynthesisDirective(
+        "INTERACT_SUPPORTS", ("a", "b"), "cross mechanisms"),), evidence,
+        2, allow_interactions=True)
+    assert candidate == []
+    assert "no admissible" in audit["rejections"][0]["reason"]
+    evidence = [
+        {"engine": "a", "expression": "1+x0+x1", "lineage_id": "a"},
+        {"engine": "b", "expression": "2+3*x0+4*x1", "lineage_id": "b"},
+        {"engine": "c", "expression": "1+x0+x1+x0*x1", "lineage_id": "c"}]
+    candidate, _ = compile_evidence_synthesis((SynthesisDirective(
+        "INTERACT_SUPPORTS", ("a", "b"), "cross mechanisms"),), evidence,
+        2, allow_interactions=True)
+    assert candidate == []

@@ -102,6 +102,38 @@ LEGACY_LONG_FUNCTIONS = frozenset({
         129,
         "b572b035067ba628fe0caf7191a8d3658447097bac7de854858e42a134400f70",
     ),
+    # Typed inner augmentation (contract docs/typed_inner_augmentation_contract_20260930.md).
+    # Each entry fails closed again on the next edit to its body.
+    (
+        "discovery/api.py",
+        "_discover_from_arrays",
+        87,
+        "ce618a8fa8ff3cc05bddd786494f2ed46cae8dcab7710a8abe41c79f4e85b5c1",
+    ),
+    (
+        "discovery/proposal_runtime.py",
+        "_normalize_scientist_review",
+        81,
+        "08cf56f5cfedd9a142716b69e102dd65a3944815746a7e0ff4e2e14849e75ffa",
+    ),
+    (
+        "discovery/proposal_runtime.py",
+        "review_engine_evidence",
+        86,
+        "e3e6e86a182460c02866f8d7afcd33b81e74169fcaba99f0ead2de2c7fa021f9",
+    ),
+    (
+        "discovery/scientific_runtime.py",
+        "run",
+        85,
+        "fcc11b70ffcc96db5a696d7fbb2cf4fb30d669a7b32f2809dd85b4bf316ef3c5",
+    ),
+    (
+        "discovery/system_executor.py",
+        "execute_registered_system",
+        104,
+        "2a042ec595d7e7a7e5d79234d02fb78be0bbbc69f75c4840a4c9834e5908a9e6",
+    ),
 })
 
 

@@ -167,6 +167,7 @@ def _discover_from_arrays(
     X_train: np.ndarray, y_train: np.ndarray,
     X_val: np.ndarray, y_val: np.ndarray,
     base_candidates: Sequence[Mapping[str, Any] | str] = (),
+    supplemental_candidates: Sequence[Mapping[str, Any] | str] = (),
     knowledge_dir: str | Path,
     hypothesis_dir: str | Path | None = None,
     evidence_registry_path: str | Path | None = None,
@@ -199,6 +200,13 @@ def _discover_from_arrays(
     normalized, rejected = normalize_candidates(
         rows, n_features=train.shape[1], X_probe=train
     )
+    supplemental, supplemental_rejected = normalize_candidates(
+        supplemental_candidates, n_features=train.shape[1], X_probe=train)
+    seed_hashes = {row["canonical_hash"] for row in normalized}
+    supplemental = [row for row in supplemental
+                    if row["canonical_hash"] not in seed_hashes]
+    if supplemental and resolved.synthesis_evaluation_reserve < 1:
+        raise ValueError("supplemental candidates require a separate evaluation reserve")
     runtime = build_scientific_discovery_runtime(
         n_features=train.shape[1], config=resolved,
         library_path=root / "structure_library.jsonl",
@@ -212,6 +220,7 @@ def _discover_from_arrays(
     expression, raw_report = runtime.run(
         X_train=train, y_train=train_y, X_val=validation, y_val=validation_y,
         base_candidates=normalized, refinement_enabled=refinement_enabled,
+        supplemental_candidates=supplemental,
     )
     train_hash, validation_hash = _fingerprints(train, train_y, validation, validation_y)
     report = {
@@ -223,6 +232,8 @@ def _discover_from_arrays(
         } for row in normalized],
         "candidate_arbitration": "canonical-deduplication-then-shared-evaluation-policy",
         "initializer_rejected_candidate_count": rejected,
+        "supplemental_candidate_count": len(supplemental),
+        "supplemental_rejected_candidate_count": supplemental_rejected,
         "generic_initializer_enabled": include_generic_candidates,
         "enabled_discovery_plugins": enabled_plugins,
         "plugin_candidate_count": plugin_count,

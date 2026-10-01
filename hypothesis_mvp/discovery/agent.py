@@ -66,6 +66,8 @@ class DiscoveryAgentConfig:
     scientist_orchestration: bool = False
     require_explicit_skill_controls: bool = False
     typed_evidence_synthesis: bool = False
+    typed_inner_augmentation: bool = False
+    synthesis_evaluation_reserve: int = 0
     skill_reliability: Mapping[str, Mapping[str, float]] = field(
         default_factory=dict)
     skill_policy_identity: str = ""
@@ -172,6 +174,8 @@ def _bounded_seed_bank(
     generic = generic_deterministic_candidates(
         selection.development.X, selection.development.y)
     limit = (config.discovery_budget - config.llm_evaluation_reserve
+             - (config.synthesis_evaluation_reserve
+                if config.typed_inner_augmentation else 0)
              - len(config.discovery_islands))
     if limit < len({row["source"] for row in engine_rows}) + 2:
         raise ValueError("discovery budget cannot preserve required seed roles")
@@ -186,7 +190,8 @@ def _bounded_seed_bank(
         match = next((row for row in generic if row["source"] == marker), None)
         if match is not None:
             priority.append(match)
-    synthesis_rows = [dict(row) for row in synthesized]
+    synthesis_rows = ([] if config.typed_inner_augmentation else
+                      [dict(row) for row in synthesized])
     # Evidence-conditioned synthesis is an additional proposal family.  It
     # may not evict a registered engine frontier or the deterministic anchors
     # from the fixed seed budget; this is a task-independent portfolio rule.
@@ -203,7 +208,10 @@ def _bounded_seed_bank(
     return selected, {"schema": "scientific-bounded-cross-round-seed-bank-v1",
         "limit": limit, "input_engine_candidates": len(engine_rows),
         "input_previous_survivors": len(previous_rows),
-        "input_evidence_synthesis_candidates": len(synthesis_rows),
+        "input_evidence_synthesis_candidates": len(synthesized),
+        "selected_evidence_synthesis_candidates": sum(
+            row.get("source") == "llm_evidence_synthesis" for row in selected),
+        "synthesis_deferred_to_separate_phase": config.typed_inner_augmentation,
         "synthesis_is_non_destructive": True,
         "input_generic_candidates": len(generic), "selected_count": len(selected),
         "candidate_response_accessed": False, "heldout_opened": False}
@@ -216,6 +224,25 @@ class DiscoveryAgent:
     ) -> None:
         self.config = config
         self.provider_settings = provider_settings
+        if config.typed_inner_augmentation:
+            if (not config.typed_evidence_synthesis
+                    or not config.scientist_orchestration
+                    or provider_settings is None
+                    or not provider_settings.routes
+                    or type(config.synthesis_evaluation_reserve) is not int
+                    or config.synthesis_evaluation_reserve < 1
+                    or type(config.llm_evaluation_reserve) is not int
+                    or config.llm_evaluation_reserve < 1
+                    or config.discovery_budget <= (
+                        config.synthesis_evaluation_reserve
+                        + config.llm_evaluation_reserve
+                        + len(config.discovery_islands) + len(config.engines) + 2)):
+                raise ValueError(
+                    "typed inner augmentation requires a provider, Scientist, "
+                    "typed synthesis, and separate positive evaluation budgets")
+        elif config.synthesis_evaluation_reserve:
+            raise ValueError(
+                "synthesis evaluation reserve requires typed inner augmentation")
         if config.allocation_calibration_role not in {
                 "production", "paired-challenger"}:
             raise ValueError("invalid allocation calibration role")
@@ -418,6 +445,7 @@ class DiscoveryAgent:
             synthesized_candidates)
         context = dict(orchestration_context or {})
         context["seed_bank"] = seed_audit
+        context["typed_inner_augmentation"] = self.config.typed_inner_augmentation
         discovery = discover_from_selection(
             selection=selection,
             task_name=task_name, task_description=task_description,
@@ -427,6 +455,9 @@ class DiscoveryAgent:
             config=DiscoveryConfig.from_mapping({
                 "evaluation_budget": self.config.discovery_budget,
                 "llm_evaluation_reserve": self.config.llm_evaluation_reserve,
+                "synthesis_evaluation_reserve": (
+                    self.config.synthesis_evaluation_reserve
+                    if self.config.typed_inner_augmentation else 0),
                 "refit_policy": self.config.refit_policy,
                 "islands": self.config.discovery_islands,
                 "random_seed": self.config.random_seed,
@@ -437,9 +468,12 @@ class DiscoveryAgent:
                 "max_rounds": self.config.discovery_rounds,
                 "candidates_per_island": self.config.candidates_per_island,
             }),
-            provider_settings=(
-                None if self.config.typed_evidence_synthesis
-                else self.provider_settings),
+            provider_settings=(self.provider_settings if (
+                not self.config.typed_evidence_synthesis
+                or self.config.typed_inner_augmentation) else None),
+            supplemental_candidates=(
+                synthesized_candidates if self.config.typed_inner_augmentation
+                else ()),
             variable_metadata=dict(variable_metadata),
             orchestration_context=context,
             refinement_enabled=True, include_generic_candidates=False,
@@ -534,9 +568,12 @@ class DiscoveryAgent:
             review, telemetry = self._abstention_review(fallback)
             return review, telemetry, fallback, 0
         try:
-            review, telemetry = planner.review_engine_evidence(
-                plan=plan, engine_evidence=evidence,
-                require_typed_synthesis=self.config.typed_evidence_synthesis)
+            review_kwargs = {
+                "plan": plan, "engine_evidence": evidence,
+                "require_typed_synthesis": self.config.typed_evidence_synthesis}
+            if self.config.typed_inner_augmentation:
+                review_kwargs["allow_interactions"] = True
+            review, telemetry = planner.review_engine_evidence(**review_kwargs)
             return review, telemetry, None, 1
         except (ProtocolError, ProviderInfrastructureError,
                 ScientistReviewProtocolError) as error:
@@ -585,7 +622,8 @@ class DiscoveryAgent:
         if not self.config.typed_evidence_synthesis:
             return [], audit
         candidates, audit = compile_evidence_synthesis(
-            review.synthesis_directives, evidence, n_features)
+            review.synthesis_directives, evidence, n_features,
+            allow_interactions=self.config.typed_inner_augmentation)
         if not candidates:
             reason = (
                 "single-engine-control-has-fewer-than-two-distinct-lineages"

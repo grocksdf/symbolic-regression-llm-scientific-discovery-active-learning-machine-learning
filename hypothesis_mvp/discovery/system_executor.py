@@ -319,6 +319,19 @@ def _validate_closed_loop_agent_registration(agent):
             or (agent.typed_evidence_synthesis
                 and not agent.scientist_orchestration)):
         raise ValueError("invalid typed evidence-synthesis registration")
+    if (type(agent.typed_inner_augmentation) is not bool
+            or type(agent.synthesis_evaluation_reserve) is not int
+            or agent.synthesis_evaluation_reserve < 0
+            or (agent.typed_inner_augmentation and (
+                not agent.typed_evidence_synthesis
+                or agent.synthesis_evaluation_reserve < 1
+                or agent.llm_evaluation_reserve < 1
+                or agent.discovery_budget <= agent.synthesis_evaluation_reserve
+                    + agent.llm_evaluation_reserve
+                    + len(agent.discovery_islands) + len(agent.engines) + 2))
+            or (not agent.typed_inner_augmentation
+                and agent.synthesis_evaluation_reserve)):
+        raise ValueError("invalid typed inner augmentation budget registration")
     if type(agent.task_local_memory) is not bool:
         raise ValueError("invalid task-local memory registration")
     if agent.task_local_memory and not agent.scientist_orchestration:
@@ -900,6 +913,11 @@ def execute_registered_system(project_root, root, config, expected_freeze, *, ex
                               measurement_authorized=True):
     config = json.loads(json.dumps(config, allow_nan=False))
     validate_system_registration(config)
+    if config["agent"].get("typed_inner_augmentation"):
+        raise ValueError(
+            "quality-first augmentation is an exploration-only protocol; "
+            "the matched-budget measured-pool system requires a separate "
+            "registered correctness and source-projection gate")
     if type(measurement_authorized) is not bool:
         raise TypeError("system measurement authorization must be boolean")
     if execution_role != "user" or config["user_execution_authorized"] is not True:

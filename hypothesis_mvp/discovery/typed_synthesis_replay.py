@@ -58,6 +58,19 @@ def audit_typed_synthesis_replay(
                     "engines": [left["engine"], right["engine"]],
                     "passed": False, "reason": str(error)})
                 continue
+            if not compiled:
+                # A recorded rejection is part of the replayed contract: a
+                # registered operation the compiler refuses is an admissible
+                # outcome, not a harness failure.
+                attempts.append({
+                    "operation": operation,
+                    "engines": [left["engine"], right["engine"]],
+                    "passed": False,
+                    "reason": "; ".join(
+                        str(row.get("reason") or "") for row in
+                        (audit.get("rejections") or [])) or
+                    "compiler produced no candidate"})
+                continue
             candidate = compiled[0]
             support = tuple(structural_terms(
                 candidate["expression"], n_features))

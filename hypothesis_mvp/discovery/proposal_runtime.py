@@ -780,6 +780,7 @@ class ProposalRuntime:
         *, require_typed_synthesis: bool = False,
         allowed_lineages: Sequence[str] = (),
         fallback_directives: Sequence[Mapping[str, Any]] = (),
+        allowed_operations: Sequence[str] = SYNTHESIS_OPERATIONS[:3],
     ) -> tuple[ScientistReview, Mapping[str, Any] | None]:
         candidate, projection = dict(raw_review), {}
         supplied_protocol = str(candidate.get("protocol_id", ""))
@@ -845,7 +846,8 @@ class ProposalRuntime:
             compiled, directive_projection = (
                 ProposalRuntime._compile_review_directives(
                     candidate.get("synthesis_directives"),
-                    allowed_lineages, fallback_directives))
+                    allowed_lineages, fallback_directives,
+                    allowed_operations=allowed_operations))
             candidate["synthesis_directives"] = compiled
             if directive_projection is not None:
                 projection["synthesis_directive_projection"] = (
@@ -859,6 +861,7 @@ class ProposalRuntime:
     def _compile_review_directives(
         raw_directives: Any, allowed_lineages: Sequence[str],
         fallback_directives: Sequence[Mapping[str, Any]],
+        *, allowed_operations: Sequence[str] = SYNTHESIS_OPERATIONS[:3],
     ):
         supplied = (list(raw_directives)
                     if isinstance(raw_directives, (list, tuple)) else [])
@@ -875,7 +878,7 @@ class ProposalRuntime:
             rationale = str(row.get("rationale", "")).strip()
             reason = (
                 "unsupported-operation"
-                if operation not in SYNTHESIS_OPERATIONS else
+                if operation not in allowed_operations else
                 "fewer-than-two-lineages" if len(lineages) < 2 else
                 "unknown-lineage" if set(lineages) - allowed else
                 "missing-rationale" if not rationale else "")
@@ -903,6 +906,7 @@ class ProposalRuntime:
     @staticmethod
     def _fallback_synthesis_directives(
         engine_evidence: Sequence[Mapping[str, Any]],
+        *, allow_interactions: bool = False,
     ) -> list[dict[str, Any]]:
         rows = [dict(row) for row in engine_evidence
                 if str(row.get("lineage_id") or "")
@@ -926,6 +930,8 @@ class ProposalRuntime:
                         pair = (left, right); break
                 if pair:
                     break
+        if pair is None and allow_interactions and len(rows) >= 2:
+            pair = rows[0], rows[1]
         if pair is None:
             return []
         lineage_ids = [str(row["lineage_id"]) for row in pair]
@@ -935,7 +941,9 @@ class ProposalRuntime:
                 "Code-owned fallback over the two highest-ranked distinct "
                 "validated engine lineages because the provider supplied no "
                 "executable typed directive.")}
-            for operation in ("UNION_SUPPORTS", "INTERSECTION_SUPPORTS")]
+            for operation in (("UNION_SUPPORTS", "INTERSECTION_SUPPORTS",
+                               "INTERACT_SUPPORTS") if allow_interactions else
+                              ("UNION_SUPPORTS", "INTERSECTION_SUPPORTS"))]
 
     @staticmethod
     def _scientist_review_error_code(error: ValueError) -> str:
@@ -977,12 +985,15 @@ class ProposalRuntime:
     def review_engine_evidence(
         self, *, plan: ResearchPlan, engine_evidence: Sequence[Mapping[str, Any]],
         require_typed_synthesis: bool = False,
+        allow_interactions: bool = False,
     ) -> tuple[ScientistReview, Mapping[str, Any]]:
         lineages = tuple(str(row.get("lineage_id") or "")
                          for row in engine_evidence
                          if str(row.get("lineage_id") or ""))
         fallback_directives = self._fallback_synthesis_directives(
-            engine_evidence)
+            engine_evidence, allow_interactions=allow_interactions)
+        allowed_operations = (SYNTHESIS_OPERATIONS if allow_interactions
+                              else SYNTHESIS_OPERATIONS[:3])
         typed_synthesis_available = bool(fallback_directives)
         typed_synthesis_required = bool(
             require_typed_synthesis and typed_synthesis_available)
@@ -998,13 +1009,18 @@ class ProposalRuntime:
         if require_typed_synthesis:
             payload["typed_synthesis_contract"] = {
                 "required": typed_synthesis_required,
-                "allowed_operations": list(SYNTHESIS_OPERATIONS),
+                "allowed_operations": list(allowed_operations),
                 "allowed_lineage_ids": list(lineages),
                 "minimum_parent_lineages": 2,
                 "instruction": (
                     ("Return synthesis_directives as JSON objects with operation, "
                      "lineage_ids and rationale. Reference only supplied lineage IDs. "
-                     "Do not emit equations or coefficients.")
+                     "Do not emit equations or coefficients. "
+                     + ("INTERACT_SUPPORTS combines already witnessed terms "
+                        "from distinct lineages inside the closed degree-four "
+                        "basis; choose it when additive unions repeat parent "
+                        "support and a scientifically defensible interaction "
+                        "is proposed." if allow_interactions else ""))
                     if typed_synthesis_available else
                     ("No two distinct evidence lineages are available. Omit "
                      "synthesis_directives and report the evidence limitation."))}
@@ -1022,7 +1038,8 @@ class ProposalRuntime:
             review, projection = self._normalize_scientist_review(
                 raw, require_typed_synthesis=typed_synthesis_required,
                 allowed_lineages=lineages,
-                fallback_directives=fallback_directives)
+                fallback_directives=fallback_directives,
+                allowed_operations=allowed_operations)
             return review, self._review_telemetry(
                 telemetry, projection, require_typed_synthesis,
                 typed_synthesis_available)
@@ -1041,7 +1058,8 @@ class ProposalRuntime:
                 review, projection = self._normalize_scientist_review(
                     repaired, require_typed_synthesis=typed_synthesis_required,
                     allowed_lineages=lineages,
-                    fallback_directives=fallback_directives)
+                    fallback_directives=fallback_directives,
+                    allowed_operations=allowed_operations)
             except (TypeError, ValueError) as repaired_error:
                 reason = self._scientist_review_error_code(repaired_error)
                 raise ScientistReviewProtocolError(

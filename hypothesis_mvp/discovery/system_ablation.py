@@ -179,6 +179,8 @@ def run_exploration_ablations(root, selection, *, dataset, config,
             root, selection, dataset, config, provider_settings, single_engine,
             compute_ceiling, provider_attempt_ceiling, source_identity,
             scientific_context, total_jobs)
+    if config.typed_inner_augmentation:
+        raise ValueError("augmentation requires Scientist source projection")
     optional_engines = tuple(engine for engine in config.engines if engine != single_engine)
     if not optional_engines:
         raise ValueError("source-first exploration requires an optional engine")
@@ -260,6 +262,18 @@ def _scientist_contract(dataset, config, single_engine, selection,
         "provider_settings_identity": sha256(json.dumps(
             public_provider, sort_keys=True, default=str).encode()).hexdigest(),
         "full_policy": "llm-research-plan-engine-dispatch-review-synthesis-v1",
+        "candidate_budget_contract": (
+            {"mode": "engine-plus-typed-plus-inner-v1",
+             "full": config.discovery_budget,
+             "engine_reference": config.discovery_budget
+                 - config.synthesis_evaluation_reserve
+                 - config.llm_evaluation_reserve,
+             "typed_synthesis": config.synthesis_evaluation_reserve,
+             "inner_proposal": config.llm_evaluation_reserve,
+             "compute_matched": False}
+            if config.typed_inner_augmentation else
+            {"mode": "legacy-matched-budget-v1",
+             "compute_matched": True}),
         "single_engine_policy": (
             "llm-plan-review-synthesis-fixed-singleton-engine-and-jobs-v1"),
         "formal_experiment_authorized": False}
@@ -336,7 +350,15 @@ def _run_scientist_ablations(root, selection, dataset, config, provider_settings
         "full": (config, provider_settings),
         "no_llm": (replace(
             config, scientist_orchestration=False,
-            typed_evidence_synthesis=False), None),
+            typed_evidence_synthesis=False,
+            typed_inner_augmentation=False,
+            synthesis_evaluation_reserve=0,
+            discovery_budget=(config.discovery_budget
+                - config.llm_evaluation_reserve
+                - config.synthesis_evaluation_reserve
+                if config.typed_inner_augmentation else config.discovery_budget),
+            llm_evaluation_reserve=(0 if config.typed_inner_augmentation
+                                    else config.llm_evaluation_reserve)), None),
         "single_engine": (replace(
             config, engines=(single_engine,), engine_repeats=total_jobs,
             engine_budget=total_jobs), provider_settings),
@@ -348,7 +370,11 @@ def _run_scientist_ablations(root, selection, dataset, config, provider_settings
     if rows[1]["provider_calls"] or rows[1]["provider_attempts_used"]:
         raise ValueError("provider-free scientist ablation attempted provider calls")
     _complete_anchor_banks(rows, selection)
-    analysis = analyze_system_contract(rows)
+    analysis = analyze_system_contract(
+        rows, augmentation_total=(
+            (config.synthesis_evaluation_reserve
+             + config.llm_evaluation_reserve) * config.cycles
+            if config.typed_inner_augmentation else 0))
     _publish(root / "ANALYSIS.json", analysis)
     return analysis
 

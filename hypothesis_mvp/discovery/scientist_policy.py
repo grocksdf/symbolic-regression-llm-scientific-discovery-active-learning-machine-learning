@@ -16,7 +16,8 @@ from hypothesis_mvp.symbolic.registry import REGISTERED_SYMBOLIC_ENGINES
 RESEARCH_PLAN_PROTOCOL = "scientific-research-plan-v1"
 ENGINE_REVIEW_PROTOCOL = "scientific-engine-evidence-review-v1"
 SYNTHESIS_OPERATIONS = (
-    "UNION_SUPPORTS", "INTERSECTION_SUPPORTS", "AUGMENT_BASE")
+    "UNION_SUPPORTS", "INTERSECTION_SUPPORTS", "AUGMENT_BASE",
+    "INTERACT_SUPPORTS")
 
 
 def _identity(value: Mapping[str, Any]) -> str:

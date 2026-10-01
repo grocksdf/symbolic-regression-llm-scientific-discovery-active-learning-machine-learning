@@ -15,6 +15,28 @@ def test_complete_budget_matched_pairs_pass_without_efficacy_claim():
     assert result["passed"] and not result["efficacy_demonstrated"]
 
 
+def test_augmented_exploration_budget_is_explicitly_not_compute_matched():
+    rows = _rows()
+    rows[1]["candidate_evaluation_budget"] = 85
+    with pytest.raises(ValueError, match="candidate_evaluation_budget"):
+        validate_system_pairs(rows)
+    gate = validate_system_pairs(rows, augmentation_total=15)
+    assert gate["passed"] and gate["compute_matched"] is False
+    assert gate["augmentation_total_per_run"] == 15
+    assert gate["candidate_incremental_attribution_eligible"] is False
+    for row in rows:
+        row["hypothesis_provenance"] = {"raw_engine_candidates": [
+            {"engine": "mcts", "lineage_id": "same", "expression": "x0"}]}
+    assert validate_system_pairs(
+        rows, augmentation_total=15)[
+            "candidate_incremental_attribution_eligible"] is True
+    rows[1]["hypothesis_provenance"]["raw_engine_candidates"][0]["expression"] = "x1"
+    assert validate_system_pairs(
+        rows, augmentation_total=15)["shared_engine_frontier"] is False
+    with pytest.raises(ValueError, match="candidate_evaluation_budget"):
+        validate_system_pairs(rows, augmentation_total=14)
+
+
 @pytest.mark.parametrize("field,value", [("measurement_budget", 33), ("compute_ceiling", 1001), ("status", "failed"), ("heldout_opened", True), ("best_val_nmse", float("nan"))])
 def test_mismatches_fail_closed(field, value):
     rows = _rows(); rows[1][field] = value

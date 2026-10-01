@@ -13,12 +13,16 @@ from hypothesis_mvp.hypotheses import EvidenceEventType, EvidenceRegistry
 from .contracts import json_safe
 
 
-def validate_system_pairs(rows: list[Mapping[str, Any]]) -> dict[str, Any]:
+def validate_system_pairs(
+        rows: list[Mapping[str, Any]], *,
+        augmentation_total: int = 0) -> dict[str, Any]:
     """Fail closed before effect analysis on incomplete/unmatched system runs.
 
     No-acquisition is not an admissible substitute for matched random queries.
     This checks declared ceilings and data identities, not realized efficacy.
     """
+    if type(augmentation_total) is not int or augmentation_total < 0:
+        raise ValueError("invalid registered augmentation total")
     required = {"full", "no_llm", "single_engine"}
     grouped: dict[tuple[str, int], dict[str, Mapping[str, Any]]] = {}
     for row in rows:
@@ -45,7 +49,8 @@ def validate_system_pairs(rows: list[Mapping[str, Any]]) -> dict[str, Any]:
         group[variant] = row
     if not grouped:
         raise ValueError("empty system evaluation")
-    matched = ("development_fingerprint", "validation_fingerprint", "measurement_budget", "engine_job_budget", "candidate_evaluation_budget", "compute_ceiling")
+    matched = ("development_fingerprint", "validation_fingerprint", "measurement_budget", "engine_job_budget", "compute_ceiling")
+    shared_engine_frontiers = []
     for group in grouped.values():
         if set(group) != required:
             raise ValueError("incomplete system ablation pairs")
@@ -53,11 +58,32 @@ def validate_system_pairs(rows: list[Mapping[str, Any]]) -> dict[str, Any]:
         for name in matched:
             if reference.get(name) is None or any(row.get(name) != reference[name] for row in group.values()):
                 raise ValueError(f"unmatched system contract: {name}")
+        full_budget = reference["candidate_evaluation_budget"]
+        if (group["single_engine"]["candidate_evaluation_budget"] != full_budget
+                or group["no_llm"]["candidate_evaluation_budget"]
+                    != full_budget - augmentation_total):
+            raise ValueError("unmatched system contract: candidate_evaluation_budget")
         if group["no_llm"].get("provider_calls") != 0:
             raise ValueError("no_llm variant made provider calls")
         if group["no_llm"].get("provider_attempts_used", 0) != 0:
             raise ValueError("no_llm variant attempted provider calls")
-    return {"schema": "system-paired-contract-gate-v1", "passed": True,
+        if augmentation_total:
+            full_engines = reference.get("hypothesis_provenance", {}).get(
+                "raw_engine_candidates")
+            no_llm_engines = group["no_llm"].get(
+                "hypothesis_provenance", {}).get("raw_engine_candidates")
+            shared_engine_frontiers.append(
+                full_engines is not None and no_llm_engines is not None
+                and full_engines == no_llm_engines)
+    return {"schema": ("system-augmented-exploration-gate-v1"
+                       if augmentation_total else "system-paired-contract-gate-v1"),
+            "compute_matched": augmentation_total == 0,
+            "augmentation_total_per_run": augmentation_total,
+            "shared_engine_frontier": (
+                all(shared_engine_frontiers) if augmentation_total else None),
+            "candidate_incremental_attribution_eligible": bool(
+                augmentation_total and all(shared_engine_frontiers)),
+            "passed": True,
             "complete_pairs": len(grouped), "heldout_opened": False,
             "efficacy_demonstrated": False}
 

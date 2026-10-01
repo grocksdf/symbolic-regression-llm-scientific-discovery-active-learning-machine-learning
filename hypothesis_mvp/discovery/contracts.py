@@ -85,6 +85,7 @@ def json_safe(value: Any) -> Any:
 class DiscoveryConfig:
     evaluation_budget: Optional[int] = None
     llm_evaluation_reserve: int = 0
+    synthesis_evaluation_reserve: int = 0
     max_rounds: int = 3
     candidates_per_island: int = 4
     patience: int = 2
@@ -164,6 +165,7 @@ class DiscoveryConfig:
             refit_policy=str(_pick(m, "refit_policy", "global-constants")),
             evaluation_budget=evaluation_budget,
             llm_evaluation_reserve=max(0, _env_int("HYPOTHESIS_DISCOVERY_LLM_EVALUATION_RESERVE", int(_pick(m, "llm_evaluation_reserve", 0)))),
+            synthesis_evaluation_reserve=int(_pick(m, "synthesis_evaluation_reserve", 0)),
             max_rounds=min(8, max(1, _env_int("HYPOTHESIS_DISCOVERY_MAX_ROUNDS", int(_pick(m, "max_rounds", 3))))),
             candidates_per_island=min(8, max(1, _env_int("HYPOTHESIS_DISCOVERY_CANDIDATES_PER_ISLAND", int(_pick(m, "candidates_per_island", 4))))),
             patience=max(1, _env_int("HYPOTHESIS_DISCOVERY_PATIENCE", int(_pick(m, "patience", 2)))),
