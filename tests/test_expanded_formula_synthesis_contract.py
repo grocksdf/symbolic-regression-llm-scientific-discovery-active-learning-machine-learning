@@ -160,15 +160,16 @@ def test_expanded_review_does_not_replace_missing_ast_with_old_union(monkeypatch
             "rationale": "missing tree"}]}
     monkeypatch.setattr(proposer, "complete_json",
                         lambda **_: (raw, {"mock_response_free": True}))
-    with pytest.raises(ValueError, match=(
-            "scientist-review-invalid-after-format-repairs:"
-            "missing-typed-synthesis")):
-        proposer.review_engine_evidence(
-            plan=deterministic_plan(("polynomial_lasso", "sparse_library"), 2),
-            engine_evidence=[{"lineage_id": "a", "expression": "x0"},
-                             {"lineage_id": "b", "expression": "x0"}],
-            require_typed_synthesis=True, allow_interactions=True,
-            expanded_formula_synthesis=True)
+    review, telemetry = proposer.review_engine_evidence(
+        plan=deterministic_plan(("polynomial_lasso", "sparse_library"), 2),
+        engine_evidence=[{"lineage_id": "a", "expression": "x0"},
+                         {"lineage_id": "b", "expression": "x0"}],
+        require_typed_synthesis=True, allow_interactions=True,
+        expanded_formula_synthesis=True)
+    assert review.stop is True
+    assert review.synthesis_directives == ()
+    assert telemetry["typed_synthesis_semantic_abstention"][
+        "fallback_formula_generated"] is False
 
 
 def test_expanded_review_accepts_explicit_semantic_abstention(monkeypatch):

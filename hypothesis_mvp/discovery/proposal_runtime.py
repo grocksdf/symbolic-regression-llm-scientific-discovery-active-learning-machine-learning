@@ -1129,6 +1129,30 @@ class ProposalRuntime:
             except (TypeError, ValueError) as error:
                 if repair_index == SCIENTIST_REVIEW_FORMAT_REPAIR_ATTEMPTS:
                     reason = self._scientist_review_error_code(error)
+                    if reason == "missing-typed-synthesis":
+                        abstention = {
+                            **dict(raw),
+                            "stop": True,
+                            "stop_reason": (
+                                "code-owned semantic abstention: no executable "
+                                "typed directive after fixed format repairs"),
+                            "synthesis_directives": [],
+                        }
+                        review, projection = self._normalize_scientist_review(
+                            abstention, require_typed_synthesis=False,
+                            allowed_lineages=lineages,
+                            fallback_directives=(),
+                            allowed_operations=allowed_operations)
+                        public = self._review_telemetry(
+                            telemetry, projection, require_typed_synthesis,
+                            typed_synthesis_available, repairs)
+                        public["typed_synthesis_semantic_abstention"] = {
+                            "reason":
+                                "no-executable-typed-directive-after-repairs",
+                            "new_scientific_evidence_available": False,
+                            "fallback_formula_generated": False,
+                        }
+                        return review, public
                     raise ScientistReviewProtocolError(
                         "scientist-review-invalid-after-format-repairs:"
                         + reason) from error
