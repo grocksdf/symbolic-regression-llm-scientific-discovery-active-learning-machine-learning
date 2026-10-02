@@ -32,6 +32,7 @@ from .skill_policy import allocate_bayesian_skill_jobs
 
 PROPOSAL_PROTOCOL_ID = "hypothesis-proposal-v1"
 SCIENTIST_REVIEW_FORMAT_REPAIR_ATTEMPTS = 2
+PROVIDER_CONTENT_FORMAT_REPAIR_ATTEMPTS = 1
 ALLOWED_ACTIONS = frozenset({
     "ADD", "DELETE", "REPLACE", "REPARAMETERIZE",
     "CHANGE_OPERATOR", "CHANGE_INTERACTION",
@@ -77,7 +78,11 @@ def strict_json_loads(text: str) -> Any:
     if not raw.strip() or raw.lstrip().startswith("```"):
         raise ProtocolError("provider content must be unfenced JSON")
     decoder = json.JSONDecoder(object_pairs_hook=_unique_object)
-    value, end = decoder.raw_decode(raw.lstrip())
+    try:
+        value, end = decoder.raw_decode(raw.lstrip())
+    except json.JSONDecodeError as error:
+        raise ProtocolError(
+            "provider content must be strict JSON") from error
     consumed = len(raw) - len(raw.lstrip()) + end
     if raw[consumed:].strip():
         raise ProtocolError("trailing_non_json_content")
@@ -431,10 +436,43 @@ class ProposalRuntime:
         self.call_count += 1
         messages, prompt_hash = self._messages(payload, system_message)
         content, telemetry = self._request(messages, prompt_hash)
-        parsed = strict_json_loads(content)
-        if not isinstance(parsed, dict):
-            raise ProtocolError("root_must_be_object")
-        return parsed, telemetry
+        repairs = []
+        for repair_index in range(
+                PROVIDER_CONTENT_FORMAT_REPAIR_ATTEMPTS + 1):
+            try:
+                parsed = strict_json_loads(content)
+                if not isinstance(parsed, dict):
+                    raise ProtocolError("root_must_be_object")
+                public = (
+                    telemetry if not repairs else {
+                        "content_format_repair_attempted": True,
+                        "content_format_repair_count": len(repairs),
+                        "provider_requests": [
+                            dict(telemetry), *(dict(row) for row in repairs)],
+                    })
+                return parsed, public
+            except ProtocolError as error:
+                if repair_index == PROVIDER_CONTENT_FORMAT_REPAIR_ATTEMPTS:
+                    raise
+                repair_payload = {
+                    **dict(payload),
+                    "content_format_repair": {
+                        "kind": "format-only",
+                        "repair_index": repair_index + 1,
+                        "maximum_repairs":
+                            PROVIDER_CONTENT_FORMAT_REPAIR_ATTEMPTS,
+                        "previous_error": str(error),
+                        "new_scientific_evidence_available": False,
+                        "instruction": (
+                            "Return the same answer as one complete unfenced "
+                            "JSON object. Do not add, remove, reinterpret or "
+                            "replace any scientific evidence."),
+                    },
+                }
+                messages, repair_hash = self._messages(
+                    repair_payload, system_message)
+                content, repaired = self._request(messages, repair_hash)
+                repairs.append(repaired)
 
     def _bind_dispatch_jobs(self, available, total_jobs, supplied_jobs):
         bound = {name: 1 for name in available}

@@ -84,3 +84,34 @@ def test_provider_exhaustion_exports_only_sanitized_diagnostic(monkeypatch):
             ProviderInfrastructureError,
             match="provider-infrastructure-failure:timeout:attempts=2"):
         runtime._request(({"role": "user", "content": "{}"},), "hash")
+
+
+def test_complete_json_allows_one_format_only_rerequest(monkeypatch):
+    settings = ProviderSettings(routes=(
+        ProviderRoute("https://fixture.invalid", "fixture", "key"),))
+    runtime = ProposalRuntime(EquationRuntime(1), 1, settings, 1)
+    responses = iter([
+        ("```json\n{\"ok\":true}\n```", {"request": 1}),
+        ("{\"ok\":true}", {"request": 2}),
+    ])
+    monkeypatch.setattr(runtime, "_request", lambda *args: next(responses))
+    result, telemetry = runtime.complete_json(
+        system_message="fixture", payload={"evidence": "unchanged"})
+    assert result == {"ok": True}
+    assert telemetry["content_format_repair_attempted"] is True
+    assert telemetry["content_format_repair_count"] == 1
+    assert [row["request"] for row in telemetry["provider_requests"]] == [1, 2]
+
+
+def test_complete_json_fails_after_fixed_format_repair(monkeypatch):
+    settings = ProviderSettings(routes=(
+        ProviderRoute("https://fixture.invalid", "fixture", "key"),))
+    runtime = ProposalRuntime(EquationRuntime(1), 1, settings, 1)
+    responses = iter([
+        ("```json\n{\"ok\":true}\n```", {"request": 1}),
+        ("still not json", {"request": 2}),
+    ])
+    monkeypatch.setattr(runtime, "_request", lambda *args: next(responses))
+    with pytest.raises(Exception, match="provider content must be strict JSON"):
+        runtime.complete_json(
+            system_message="fixture", payload={"evidence": "unchanged"})
