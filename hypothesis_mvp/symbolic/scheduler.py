@@ -6,6 +6,8 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from dataclasses import asdict, dataclass, field
 from hashlib import sha256
 import json
+import multiprocessing as mp
+import os
 import re
 import time
 from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
@@ -194,6 +196,10 @@ def _run_jobs(
     *, parallel: bool, workers: int, timeout_s: float,
 ) -> list[tuple[tuple[EngineResult, ...], EngineRunRecord]]:
     values = asdict(config)
+    if os.environ.get("FORMULA_ENGINE_PROCESS_ISOLATION") == "1":
+        return [
+            _execute_isolated(job, values, arrays, timeout_s)
+            for job in jobs]
     if not parallel or len(jobs) == 1:
         return [_execute(job, values, *arrays) for job in jobs]
     output: list[tuple[tuple[EngineResult, ...], EngineRunRecord]] = []
@@ -212,6 +218,52 @@ def _run_jobs(
                     controls=job.controls,
                 )))
     return output
+
+
+def _isolated_engine_worker(connection, job, values, arrays):
+    try:
+        connection.send(_execute(job, values, *arrays))
+    except BaseException as error:
+        connection.send(("worker-error", type(error).__name__))
+    finally:
+        connection.close()
+
+
+def _execute_isolated(job, values, arrays, timeout_s):
+    """Hard-kill one engine job at its registered timeout on every platform."""
+    context = mp.get_context("spawn")
+    receiver, sender = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_isolated_engine_worker,
+        args=(sender, job, values, arrays), daemon=True)
+    process.start()
+    sender.close()
+    try:
+        if receiver.poll(max(1.0, timeout_s)):
+            result = receiver.recv()
+            process.join(5.)
+            if (not isinstance(result, tuple) or len(result) != 2
+                    or result[0] == "worker-error"):
+                raise RuntimeError("isolated engine worker failed")
+            return result
+        process.terminate()
+        process.join(5.)
+        if process.is_alive():
+            process.kill()
+            process.join(5.)
+        lineage = sha256(f"{job}|timeout".encode()).hexdigest()
+        return (), EngineRunRecord(
+            job.engine, job.repeat, job.attempt, job.seed,
+            "timeout", timeout_s, lineage,
+            error_type="TimeoutError",
+            error_message="engine process timeout exceeded",
+            controls=job.controls)
+    finally:
+        if process.is_alive():
+            process.terminate()
+            process.join(5.)
+        process.close()
+        receiver.close()
 
 
 def _aggregate(results: Sequence[EngineResult], budget: int, used: int) -> tuple[EngineResult, ...]:
