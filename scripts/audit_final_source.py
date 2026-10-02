@@ -113,14 +113,14 @@ LEGACY_LONG_FUNCTIONS = frozenset({
     (
         "discovery/proposal_runtime.py",
         "_normalize_scientist_review",
-        81,
-        "08cf56f5cfedd9a142716b69e102dd65a3944815746a7e0ff4e2e14849e75ffa",
+        82,
+        "e9d862fea5c5f52e861ab6950f769a8cb46c86b1e92f5e1fb5b9d38166531023",
     ),
     (
         "discovery/proposal_runtime.py",
         "review_engine_evidence",
-        109,
-        "15492342134f1d3eb3497b0219cb3fcd5e0420afc9b448a3c341f4bd67388f23",
+        115,
+        "10e420dddfd63b81020b7160667c616b79fd4ab8c4a94ab258e296a98ffe5bd1",
     ),
     (
         "discovery/scientific_runtime.py",
