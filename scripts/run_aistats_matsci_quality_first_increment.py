@@ -306,6 +306,9 @@ def score_arm(rows, roles, *, n_features: int, exploration_identity: str,
             for key, value in selection["source_prior_weights"].items()
         },
         "selected_candidate_count": int(len(selected)),
+        "posterior_member_count": int(len(posterior.members)),
+        "decision_risk_utility": _plain(
+            selection.get("decision_risk_utility") or {}),
         "selected_bank_identity": str(selection["target"]),
         "model_identity": str(model.stable_hash),
         "target_identity": str(target.stable_hash),

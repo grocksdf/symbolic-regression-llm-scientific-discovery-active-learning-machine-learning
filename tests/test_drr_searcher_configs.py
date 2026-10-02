@@ -23,3 +23,31 @@ def test_drr_conditions_use_true_agent_variants():
     assert "engines: [polynomial_lasso]" in single
     assert "portfolio_method: v5" in entropy
     assert "portfolio_method: v6" in full
+
+
+def test_three_arm_configs_match_engine_and_llm_budgets():
+    engine = _config("aistats_three_arm_e_v1.yaml")
+    blind = _config("aistats_three_arm_l_blind_v1.yaml")
+    gap = _config("aistats_three_arm_l_gap_v1.yaml")
+    shared = [
+        "engines: [polynomial_lasso, mcts, sparse_library, additive_mechanisms]",
+        "engine_budget: 4",
+        "cycles: 2",
+        "task_local_memory: false",
+        "use_knowledge: false",
+    ]
+    assert all(token in engine and token in blind and token in gap
+               for token in shared)
+    assert "discovery_budget: 55" in engine
+    assert "discovery_budget: 55" in blind
+    assert "discovery_budget: 55" in gap
+    assert "synthesis_evaluation_reserve: 3" in blind
+    assert "synthesis_evaluation_reserve: 3" in gap
+    assert "llm_evaluation_reserve: 4" in blind
+    assert "llm_evaluation_reserve: 4" in gap
+    assert "scientist_orchestration: true" in blind
+    assert "scientist_orchestration: true" in gap
+    assert "typed_evidence_synthesis: true" in blind
+    assert "typed_evidence_synthesis: true" in gap
+    assert "posterior_gap_directed: false" in blind
+    assert "posterior_gap_directed: true" in gap

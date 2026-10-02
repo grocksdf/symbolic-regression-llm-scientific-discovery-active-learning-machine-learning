@@ -1,0 +1,43 @@
+name: AISTATS-Three-Arm-E-V1
+class_name: DRRBenchmarkSearcher
+api_type: none
+condition: three_arm_e_v1
+portfolio_method: v6
+use_llm: false
+llm_rl_enabled: false
+top_k_results: 1
+random_seed: 0
+use_library: false
+strict_train_val_only: true
+agent_config:
+  engines: [polynomial_lasso, mcts, sparse_library, additive_mechanisms]
+  engine_repeats: 1
+  engine_budget: 4
+  engine_workers: 1
+  engine_timeout_s: 90.0
+  engine_retries: 0
+  cycles: 2
+  discovery_budget: 55
+  random_seed: 0
+  search_iterations: 12
+  mcts_frontier_size: 3
+  mcts_score_folds: 2
+  acquisition_enabled: false
+  use_knowledge: false
+  task_local_memory: false
+  discovery_rounds: 2
+  candidates_per_island: 2
+  task_local_memory_topk: 8
+  synthesis_evaluation_reserve: 0
+  llm_evaluation_reserve: 0
+  refit_policy: pcpi-closed-basis-amplitudes
+  discovery_islands: [low_complexity, nmse, novelty]
+  scientist_orchestration: false
+  require_explicit_skill_controls: true
+  typed_evidence_synthesis: false
+  typed_inner_augmentation: false
+  posterior_gap_directed: false
+  protected_counterfactual_backbone: true
+  provider_failure_mode: audited-deterministic-abstention
+  conservative_allocation_policy: {}
+  dataset_family: llm_srbench_frozen

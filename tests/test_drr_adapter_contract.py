@@ -19,6 +19,21 @@ def test_drr_split_never_exports_action_targets():
                for right in sets[i + 1:])
 
 
+def test_three_arm_split_is_complete_disjoint_and_response_sealed():
+    samples = np.column_stack((
+        np.arange(200.), np.arange(200.), np.arange(200.) ** 2))
+    roles = drr_adapter.split_three_arm_training_samples(
+        samples, task_name="fixture", seed=7)
+    sets = [set(rows) for rows in roles.role_row_indices.values()]
+    assert all(not left & right for index, left in enumerate(sets)
+               for right in sets[index + 1:])
+    assert len(set().union(*sets)) == len(samples)
+    assert not hasattr(roles, "y_actions")
+    assert not hasattr(roles, "y_report")
+    assert not hasattr(roles, "y_gap_admission")
+    assert roles.X_report.shape[1] == roles.X_actions.shape[1] == 2
+
+
 def test_drr_adapter_public_signature_has_no_test_or_ood_surface():
     parameters = inspect.signature(
         drr_adapter.evaluate_drr_candidates).parameters

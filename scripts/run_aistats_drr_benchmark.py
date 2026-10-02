@@ -27,6 +27,9 @@ CONFIGS = {
     "full_scientist_v6": "configs/aistats_drr_full_v6.yaml",
     "no_llm_v6": "configs/aistats_drr_no_llm_v6.yaml",
     "full_llmchannel_v7": "configs/aistats_drr_full_llmchannel_v7.yaml",
+    "three_arm_e_v1": "configs/aistats_three_arm_e_v1.yaml",
+    "three_arm_l_blind_v1": "configs/aistats_three_arm_l_blind_v1.yaml",
+    "three_arm_l_gap_v1": "configs/aistats_three_arm_l_gap_v1.yaml",
     "single_engine_v6": "configs/aistats_drr_single_engine_v6.yaml",
 }
 

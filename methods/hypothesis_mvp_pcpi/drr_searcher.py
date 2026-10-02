@@ -7,12 +7,17 @@ import os
 from pathlib import Path
 from typing import Any, Mapping
 
-from hypothesis_mvp.data import DataRole, RoleDataset, SelectionData
+from hypothesis_mvp.data import (
+    AcquisitionCovariates, DataRole, RoleDataset, SelectionData,
+    covariate_fingerprint,
+)
+from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
 
 from ._mainline import load
 from .drr_adapter import (
-    candidate_rows_operational_qd, evaluate_drr_candidates,
-    evaluate_drr_prefix_candidates, split_training_samples,
+    candidate_rows, candidate_rows_operational_qd, evaluate_drr_candidates,
+    evaluate_drr_prefix_candidates, split_three_arm_training_samples,
+    split_training_samples,
 )
 from .searcher import PCPISearcher, ProviderSettings
 
@@ -42,8 +47,13 @@ class DRRBenchmarkSearcher(PCPISearcher):
 
     def discover(self, task):
         self._task_counter += 1
-        roles = split_training_samples(
-            task.samples, task_name=str(task.name), seed=self.random_seed)
+        three_arm = self.condition.startswith("three_arm_")
+        roles = (
+            split_three_arm_training_samples(
+                task.samples, task_name=str(task.name), seed=self.random_seed)
+            if three_arm else
+            split_training_samples(
+                task.samples, task_name=str(task.name), seed=self.random_seed))
         selection = SelectionData(
             RoleDataset(
                 DataRole.DEVELOPMENT,
@@ -51,7 +61,10 @@ class DRRBenchmarkSearcher(PCPISearcher):
             RoleDataset(
                 DataRole.VALIDATION,
                 roles.X_validation, roles.y_validation),
-            None, ())
+            (AcquisitionCovariates(
+                DataRole.ACQUISITION_POOL, roles.X_actions,
+                covariate_fingerprint(roles.X_actions))
+             if three_arm else None), ())
         provider = None
         if self.llm_enabled:
             provider = ProviderSettings.from_environment(**{
@@ -77,12 +90,24 @@ class DRRBenchmarkSearcher(PCPISearcher):
         metadata = {
             "feature_names": symbols, "feature_units": props,
             "target_name": str(task.name), "target_unit": "benchmark"}
+        knowledge_dir = self.output_dir / "scientist_knowledge"
+        if three_arm and knowledge_dir.exists() and any(
+                knowledge_dir.iterdir()):
+            raise ValueError(
+                "three-arm knowledge namespace must start empty")
         result = agent.run(
             selection=selection, task_name=str(task.name),
             task_description=str(task.desc or ""),
             output_dir=self.output_dir / "scientist_agent",
-            knowledge_dir=self.output_dir / "scientist_knowledge",
-            variable_metadata=metadata)
+            knowledge_dir=knowledge_dir,
+            variable_metadata=metadata,
+            gap_audit=(RoleDataset(
+                DataRole.VALIDATION, roles.X_gap_audit, roles.y_gap_audit)
+                if self.condition == "three_arm_l_gap_v1" else None),
+            gap_prior=(NormalInverseGammaPrior()
+                if self.condition == "three_arm_l_gap_v1" else None),
+            gap_measurement_budget=(2
+                if self.condition == "three_arm_l_gap_v1" else 0))
         report = dict(result.discovery.report)
         protected = [
             candidate
@@ -90,20 +115,46 @@ class DRRBenchmarkSearcher(PCPISearcher):
             for candidate in cycle.counterfactual_backbone.get(
                 "backbone_candidates", ())
         ]
-        candidates, qd_audit = candidate_rows_operational_qd(
-            report, result.discovery.expression, roles,
-            task_name=str(task.name), seed=self.random_seed,
-            protected_expressions=protected)
-        readiness = evaluate_drr_candidates(
-            candidates, roles, condition=self.condition,
-            task_name=str(task.name), seed=self.random_seed,
-            selection_method=self.portfolio_method)
-        alternate = None
-        prefix_curve = evaluate_drr_prefix_candidates(
-            candidates, roles, condition=self.condition,
-            task_name=str(task.name), seed=self.random_seed,
-            selection_method=self.portfolio_method)
-        if self.condition == "full_scientist_v6":
+        if three_arm:
+            candidates = candidate_rows(
+                report, result.discovery.expression,
+                roles.X_development.shape[1], protected)
+            qd_audit = {
+                "schema": "scientific-three-arm-generation-only-v1",
+                "evaluated": False,
+                "reason": "inference-and-report-responses-remain-sealed",
+                "candidate_response_accessed": False,
+                "heldout_opened": False,
+            }
+            readiness = {
+                "schema": "scientific-three-arm-generation-readiness-v1",
+                "indicator": 0, "ready": False,
+                "generation_completed": True,
+                "candidate_response_accessed": False,
+                "test_or_ood_accessed": False,
+                "heldout_opened": False,
+            }
+            prefix_curve = {
+                "schema": "scientific-three-arm-prefix-not-evaluated-v1",
+                "candidate_response_accessed": False,
+                "heldout_opened": False,
+            }
+            alternate = None
+        else:
+            candidates, qd_audit = candidate_rows_operational_qd(
+                report, result.discovery.expression, roles,
+                task_name=str(task.name), seed=self.random_seed,
+                protected_expressions=protected)
+            readiness = evaluate_drr_candidates(
+                candidates, roles, condition=self.condition,
+                task_name=str(task.name), seed=self.random_seed,
+                selection_method=self.portfolio_method)
+            alternate = None
+            prefix_curve = evaluate_drr_prefix_candidates(
+                candidates, roles, condition=self.condition,
+                task_name=str(task.name), seed=self.random_seed,
+                selection_method=self.portfolio_method)
+        if not three_arm and self.condition == "full_scientist_v6":
             alternate = evaluate_drr_candidates(
                 candidates, roles, condition="entropy_portfolio_v5",
                 task_name=str(task.name), seed=self.random_seed,
@@ -113,17 +164,27 @@ class DRRBenchmarkSearcher(PCPISearcher):
         provider_attempts = sum(
             int(cycle.provider_attempts) for cycle in result.cycles)
         report.update({
-            "drr_readiness": readiness.to_dict(),
+            "drr_readiness": (
+                readiness if isinstance(readiness, dict)
+                else readiness.to_dict()),
             "drr_alternate_readiness": (
                 alternate.to_dict() if alternate is not None else None),
             "drr_condition": self.condition,
             "drr_portfolio_method": self.portfolio_method,
             "drr_candidate_rows": candidates,
             "drr_operational_qd": qd_audit,
-            "drr_prefix_curve": prefix_curve.to_dict(),
+            "drr_prefix_curve": (
+                prefix_curve if isinstance(prefix_curve, dict)
+                else prefix_curve.to_dict()),
             "drr_role_row_indices": {
                 key: list(value)
                 for key, value in roles.role_row_indices.items()},
+            "three_arm_role_protocol": (
+                "sha256-disjoint-nine-role-v1" if three_arm else None),
+            "knowledge_namespace": (
+                str(knowledge_dir.resolve()) if three_arm else ""),
+            "knowledge_namespace_started_empty": bool(three_arm),
+            "knowledge_cross_arm_read_enabled": False,
             "candidate_response_accessed": False,
             "action_response_accessed": False,
             "test_or_ood_accessed": False,

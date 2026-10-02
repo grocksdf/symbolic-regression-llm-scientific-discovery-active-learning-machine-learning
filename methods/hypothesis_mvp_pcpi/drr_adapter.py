@@ -31,6 +31,23 @@ class DRRSelectionRoles:
     role_row_indices: Mapping[str, tuple[int, ...]]
 
 
+@dataclass(frozen=True)
+class ThreeArmSelectionRoles:
+    X_development: np.ndarray
+    y_development: np.ndarray
+    X_validation: np.ndarray
+    y_validation: np.ndarray
+    X_gap_audit: np.ndarray
+    y_gap_audit: np.ndarray
+    X_gap_admission: np.ndarray
+    X_selector_update: np.ndarray
+    X_decision_calibration: np.ndarray
+    X_initial: np.ndarray
+    X_report: np.ndarray
+    X_actions: np.ndarray
+    role_row_indices: Mapping[str, tuple[int, ...]]
+
+
 def _ordered_indices(count: int, task_name: str, seed: int):
     return sorted(range(count), key=lambda index:
         sha256(f"{task_name}:{seed}:{index}".encode()).digest())
@@ -66,6 +83,57 @@ def split_training_samples(samples, *, task_name: str, seed: int):
     return DRRSelectionRoles(
         X_development, y_development, X_validation, y_validation,
         X_initial, y_initial, action_rows[:, 1:], row_indices)
+
+
+def split_three_arm_training_samples(samples, *, task_name: str, seed: int):
+    """Freeze disjoint discovery, gap, decision, report, and action roles."""
+    values = np.asarray(samples, dtype=float)
+    if (values.ndim != 2 or values.shape[1] < 2 or len(values) < 160
+            or not np.all(np.isfinite(values))):
+        raise ValueError(
+            "three-arm adapter requires at least 160 finite training rows")
+    order = _ordered_indices(len(values), task_name, seed)
+    cuts = tuple(int(round(fraction * len(values))) for fraction in (
+        .40, .55, .65, .75, .80, .85, .90, .95))
+    if (cuts != tuple(sorted(cuts)) or len(set(cuts)) != len(cuts)
+            or cuts[0] < 32 or len(values) - cuts[-1] < 8):
+        raise ValueError("three-arm role split is infeasible")
+    names = (
+        "discovery_development", "discovery_validation", "gap_audit",
+        "gap_admission", "decision_selector_update",
+        "decision_calibration", "inference_initial", "reporting",
+        "action_covariates",
+    )
+    bounds = (0, *cuts, len(values))
+    row_indices = {
+        name: tuple(order[bounds[index]:bounds[index + 1]])
+        for index, name in enumerate(names)
+    }
+    if len(set().union(*(set(rows) for rows in row_indices.values()))
+            ) != len(values):
+        raise ValueError("three-arm roles overlap or omit rows")
+
+    def opened(name, *, response):
+        indices = row_indices[name]
+        ordered = sorted(indices)
+        rows = values[ordered, :]
+        lookup = dict(zip(ordered, rows, strict=True))
+        restored = np.asarray([lookup[index] for index in indices])
+        return ((restored[:, 1:], restored[:, 0])
+                if response else restored[:, 1:])
+
+    development = opened("discovery_development", response=True)
+    validation = opened("discovery_validation", response=True)
+    gap = opened("gap_audit", response=True)
+    admission = opened("gap_admission", response=False)
+    selector = opened("decision_selector_update", response=False)
+    calibration = opened("decision_calibration", response=False)
+    initial = opened("inference_initial", response=False)
+    report = opened("reporting", response=False)
+    actions = opened("action_covariates", response=False)
+    return ThreeArmSelectionRoles(
+        *development, *validation, *gap, admission, selector,
+        calibration, initial, report, actions, row_indices)
 
 
 def _candidate(row):
