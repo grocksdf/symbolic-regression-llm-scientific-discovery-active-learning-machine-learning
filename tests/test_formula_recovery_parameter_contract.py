@@ -33,3 +33,14 @@ def test_internal_frequency_is_structural_parameter_slot():
     assert structural["structural_topology"] is True
     assert structural["parameter_instantiated_exact"] is None
     assert instantiated["parameter_instantiated_exact"] is True
+
+
+def test_registered_state_function_notation_maps_to_input_coordinate():
+    result = assess_formula_recovery(
+        "0.3*x1*sin(0.7*x0)",
+        "k*P(t)*sin(0.7*t)",
+        ("t", "P"))
+    assert result["applicability"] == "unbound-parameters"
+    assert result["literal_exact"] is None
+    assert result["structural_topology"] is True
+    assert result["unbound_truth_parameters"] == ["k"]

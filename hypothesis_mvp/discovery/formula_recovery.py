@@ -74,6 +74,15 @@ def _parse(expression: str, input_symbols: Sequence[str], *, truth: bool):
                 and node.func.id in _FUNCTIONS and len(node.args) == 1
                 and not node.keywords):
             return _FUNCTIONS[node.func.id](visit(node.args[0]))
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id in inputs and len(node.args) == 1
+                and not node.keywords):
+            # Benchmark metadata may write one measured state coordinate as
+            # P(t), A(t), x(t), or v(t), while the sample column is registered
+            # as P, A, x, or v. The argument is observation context, not an
+            # additional formula input.
+            visit(node.args[0])
+            return inputs[node.func.id]
         raise FormulaNotEvaluable("unsupported-expression-node")
 
     try:
