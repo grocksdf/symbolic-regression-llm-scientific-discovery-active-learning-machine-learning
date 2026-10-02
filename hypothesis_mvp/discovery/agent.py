@@ -819,6 +819,14 @@ class DiscoveryAgent:
                           "score_reference_identity": (
                               reference_model.stable_hash if reference_model else ""),
                           "audit_identity": audit.fingerprint,
+                          "audit_row_count": int(evidence.audit_row_count),
+                          "undefined_row_count": int(
+                              evidence.undefined_row_count),
+                          "undefined_row_meaning": (
+                              "audit rows outside the registered action "
+                              "domain where a banked structure is singular; "
+                              "excluded from the numeric screen and counted, "
+                              "never scored as ordinary observations"),
                           "rows": [asdict(row) for row in evidence.rows],
                           "candidate_response_accessed": False,
                           "heldout_opened": False}}

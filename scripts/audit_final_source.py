@@ -165,14 +165,14 @@ LEGACY_LONG_FUNCTIONS = frozenset({
     (
         "discovery/agent.py",
         "_independent_gap_brief",
-        91,
-        "8a30d3ee60042c31bb762bc4a3c1dc4cea0760c374edfafa23bfe8a453e5459d",
+        99,
+        "f3d6506b95d061d8434889ff394ec4431f09f618af3a205a52ce354c668dcb51",
     ),
     (
         "discovery/posterior_gap_evidence.py",
         "screen_independent_adequacy",
-        102,
-        "b8bf501170fb375b00820ab7e55bf054298ffe83c38a28f566b0c67b34ce24fc",
+        106,
+        "9f9786430698014bd471ceab24713f34a37bfa37eb29bd8dbf833180d71453e4",
     ),
 })
 

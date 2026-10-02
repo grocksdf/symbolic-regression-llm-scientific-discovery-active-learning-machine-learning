@@ -5,7 +5,10 @@ import pytest
 
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.discovery.candidate_region_expansion import FrozenAxisRegions
-from hypothesis_mvp.discovery.pcpi_adapter import freeze_discovery_model, freeze_discovery_target
+from hypothesis_mvp.discovery.pcpi_adapter import (
+    EXPANDED_FORMULA_POLICY, freeze_discovery_model,
+    freeze_discovery_target, freeze_expanded_formula_model,
+)
 from hypothesis_mvp.discovery.posterior_gap_diagnosis import diagnose_frozen_bank
 from hypothesis_mvp.discovery.posterior_gap_evidence import screen_independent_adequacy
 from hypothesis_mvp.discovery.regional_candidate_admission import admit_regional_candidates
@@ -381,3 +384,42 @@ def test_independent_finite_law_action_audit_is_conditional_only():
             core, llm, fit, gap, admission, changed_response, calibration,
             domain, regions, NormalInverseGammaPrior(), 4, reference,
             candidate_identity="candidate-fixture")
+
+
+def test_audit_rows_outside_the_registered_domain_are_excluded_and_counted():
+    """A banked structure singular on an audit row is excluded, never fatal.
+
+    The bank is registered on the acquisition domain. An audit row where a
+    banked division attains zero has no defined predictive law under the
+    frozen bank, so it must be dropped from the numeric screen and reported
+    rather than either scored as an ordinary observation or aborting the
+    whole coordinate.
+    """
+    prior = NormalInverseGammaPrior()
+    fit_x = np.linspace(0.5, 2.0, 18)[:, None]
+    fit = RoleDataset(DataRole.DEVELOPMENT, fit_x, np.sin(fit_x[:, 0]))
+    selection = RoleDataset(DataRole.VALIDATION, np.array([[5.0], [6.0]]),
+                            np.sin(np.array([5.0, 6.0])))
+    audit_x = np.concatenate((np.linspace(3.0, 4.4, 12)[:, None],
+                              np.array([[0.0]])))
+    audit = RoleDataset(DataRole.VALIDATION, audit_x, np.sin(audit_x[:, 0]))
+    model = freeze_expanded_formula_model(
+        [{"expression": "(sin(x0) - 2.0) / x0", "source": "engine:a"},
+         {"expression": "x0", "source": "engine:b"}],
+        n_features=1, prior=prior, exploration_identity="b" * 64,
+        coefficient_policy=EXPANDED_FORMULA_POLICY, minimum_supports=1)
+    domain = np.linspace(0.5, 2.0, 40)[:, None]
+    target = freeze_discovery_target(
+        model, fit, domain, measurement_budget=4,
+        expected_model_identity=model.stable_hash)
+    regions = FrozenAxisRegions(1, 0, (1.0,))
+    diagnosis = diagnose_frozen_bank(
+        model, target, domain, np.full(len(domain), 1. / len(domain)), regions)
+    evidence = screen_independent_adequacy(
+        model, target, diagnosis, regions, audit,
+        discovery_development=fit, discovery_validation=selection)
+    assert evidence.audit_row_count == len(audit_x)
+    assert evidence.undefined_row_count == 1
+    assert evidence.evaluable_row_count == len(audit_x) - 1
+    assert sum(row.count for row in evidence.rows) == len(audit_x) - 1
+    assert evidence.prompt_brief(diagnosis)["undefined_row_count"] == 1

@@ -44,6 +44,12 @@ class IndependentGapEvidence:
     tail_probability: float
     score_reference_identity: str = ""
     audit_role: str = "dedicated-development-gap-audit"
+    audit_row_count: int = 0
+    undefined_row_count: int = 0
+
+    @property
+    def evaluable_row_count(self) -> int:
+        return self.audit_row_count - self.undefined_row_count
 
     @property
     def eligible_regions(self) -> tuple[int, ...]:
@@ -74,6 +80,8 @@ class IndependentGapEvidence:
             for row in self.rows if row.region in eligible]
         payload["external_adequacy_checked"] = True
         payload["audit_identity"] = self.audit_identity
+        payload["audit_row_count"] = self.audit_row_count
+        payload["undefined_row_count"] = self.undefined_row_count
         payload["score_reference_identity"] = self.score_reference_identity
         payload["propose_allowed"] = bool(selected)
         payload["interpretation"] = (
@@ -84,6 +92,39 @@ class IndependentGapEvidence:
             "an LLM candidate or action."
         )
         return payload
+
+
+def evaluable_predictive_components(
+    model: FrozenDiscoveryModel, posterior, partition, values: np.ndarray,
+) -> tuple[object, np.ndarray]:
+    """Predictive components together with the rows the frozen bank defines.
+
+    The bank is registered on the acquisition domain. An audit row may fall
+    outside that domain, where a banked structure is singular, for example a
+    division by a feature that attains zero there. Such a row has no defined
+    predictive law under the frozen bank: it is excluded from the numeric
+    screen and counted, never silently scored as an ordinary observation.
+    """
+    values = np.asarray(values, dtype=float)
+    engine = model.engine(model.stable_hash)
+    try:
+        components = predictive_components_for_partition(
+            engine, posterior, partition, values)
+        return components, np.ones(len(values), dtype=bool)
+    except ValueError:
+        mask = np.zeros(len(values), dtype=bool)
+        for index in range(len(values)):
+            try:
+                predictive_components_for_partition(
+                    engine, posterior, partition, values[index:index + 1])
+            except ValueError:
+                continue
+            mask[index] = True
+        if not mask.any():
+            raise ValueError("frozen bank undefined on every audit row")
+        components = predictive_components_for_partition(
+            engine, posterior, partition, values[mask])
+        return components, mask
 
 
 def screen_independent_adequacy(
@@ -132,17 +173,19 @@ def screen_independent_adequacy(
             or score_reference_target.action_domain_identity != target.action_domain_identity
             or score_reference_target.measurement_budget != target.measurement_budget):
         raise ValueError("score reference changed fit data or target domain")
-    components = predictive_components_for_partition(
-        model.engine(model.stable_hash), target.initial_posterior,
-        target.partition, audit.X)
+    components, evaluable = evaluable_predictive_components(
+        model, target.initial_posterior, target.partition, audit.X)
+    undefined_rows = int(len(audit.X) - int(np.sum(evaluable)))
+    screen_X = np.asarray(audit.X, dtype=float)[evaluable]
+    screen_y = np.asarray(audit.y, dtype=float)[evaluable]
     cdf = np.sum(components.structure_probabilities[:, None] * student_t.cdf(
-        (audit.y[None, :] - components.locations) / components.scales,
+        (screen_y[None, :] - components.locations) / components.scales,
         df=components.degrees_freedom[:, None]), axis=0)
     if not np.all(np.isfinite(cdf)):
         raise ValueError("nonfinite frozen-bank predictive CDF")
     core_log_score = logsumexp(
         np.log(components.structure_probabilities[:, None])
-        + student_t.logpdf(audit.y[None, :],
+        + student_t.logpdf(screen_y[None, :],
             df=components.degrees_freedom[:, None],
             loc=components.locations, scale=components.scales), axis=0)
     if not np.all(np.isfinite(core_log_score)):
@@ -152,16 +195,16 @@ def screen_independent_adequacy(
         reference = predictive_components_for_partition(
             score_reference_model.engine(score_reference_model.stable_hash),
             score_reference_target.initial_posterior,
-            score_reference_target.partition, audit.X)
+            score_reference_target.partition, screen_X)
         reference_log_score = logsumexp(
             np.log(reference.structure_probabilities[:, None])
-            + student_t.logpdf(audit.y[None, :],
+            + student_t.logpdf(screen_y[None, :],
                 df=reference.degrees_freedom[:, None],
                 loc=reference.locations, scale=reference.scales), axis=0)
         if not np.all(np.isfinite(reference_log_score)):
             raise ValueError("nonfinite frozen-reference predictive log score")
     misses = (cdf < tail_probability / 2) | (cdf > 1 - tail_probability / 2)
-    assigned = regions.assign(audit.X)
+    assigned = regions.assign(screen_X)
     rows = []
     tests_per_region = 4  # coverage, both PIT directions, reference log score
     local_alpha = alpha / (tests_per_region * (len(regions.cuts) + 1))
@@ -187,4 +230,6 @@ def screen_independent_adequacy(
                                   regions.identity, tuple(rows),
                                   float(alpha), float(tail_probability),
                                   score_reference_model.stable_hash
-                                  if score_reference_model is not None else "")
+                                  if score_reference_model is not None else "",
+                                  audit_row_count=int(len(audit.X)),
+                                  undefined_row_count=undefined_rows)
