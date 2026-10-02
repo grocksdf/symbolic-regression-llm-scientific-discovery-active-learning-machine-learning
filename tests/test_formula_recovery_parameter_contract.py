@@ -44,3 +44,16 @@ def test_registered_state_function_notation_maps_to_input_coordinate():
     assert result["literal_exact"] is None
     assert result["structural_topology"] is True
     assert result["unbound_truth_parameters"] == ["k"]
+
+
+def test_literal_exact_never_calls_global_simplify(monkeypatch):
+    import sympy as sp
+    monkeypatch.setattr(
+        sp, "simplify",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("global simplify is forbidden")))
+    expression = (
+        "x0*exp(-Abs(x0)) + log(1+Abs(x0)) + sin(1.7*x0)")
+    result = assess_formula_recovery(expression, expression, ("x0",))
+    assert result["literal_exact"] is True
+    assert result["structural_topology"] is True

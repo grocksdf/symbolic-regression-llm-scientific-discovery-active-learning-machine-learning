@@ -162,8 +162,11 @@ def assess_formula_recovery(candidate: str, truth: str,
         inputs = frozenset(sp.Symbol(f"x{i}") for i in range(len(input_symbols)))
         structural = _topology(reference, inputs) == _topology(proposal, inputs)
         def same(target):
-            difference = sp.cancel(sp.together(proposal - target))
-            return bool(difference == 0 or sp.simplify(difference) == 0)
+            # "Literal exact" is equality of SymPy's canonical construction,
+            # not an unbounded theorem-proving request. Global simplify,
+            # trigsimp and factor can have superlinear memory growth on a
+            # finite but large candidate bank and are deliberately forbidden.
+            return bool(proposal == target or proposal - target == 0)
         exact = None if parameters else same(reference)
         bound_exact = exact if not parameters else None
         if parameter_bindings is not None:
