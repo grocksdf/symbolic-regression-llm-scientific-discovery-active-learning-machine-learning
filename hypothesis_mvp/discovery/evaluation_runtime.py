@@ -970,7 +970,8 @@ class EvaluationRuntime:
                 round_id=round_id, candidate_id=candidate_id,
             )
             return None
-        if (self.config.refit_policy == "pcpi-closed-basis-amplitudes"
+        if (self.config.refit_policy in {"pcpi-closed-basis-amplitudes",
+                "pcpi-expanded-fixed-inner-v1"}
                 and origin == "llm"):
             # The downstream conjugate model discards fitted amplitudes and
             # tests the complete proposed support. Validation-driven term
@@ -1000,13 +1001,22 @@ class EvaluationRuntime:
             )
             return None
         if origin == "llm" and proposal is not None:
-            if self.config.refit_policy == "pcpi-closed-basis-amplitudes":
-                proposed_support = structural_terms(
+            if self.config.refit_policy in {"pcpi-closed-basis-amplitudes",
+                    "pcpi-expanded-fixed-inner-v1"}:
+                from hypothesis_mvp.pcpi.reference.expanded_formula_basis import (
+                    compile_fixed_formula_support,
+                )
+                parser = (compile_fixed_formula_support
+                          if self.config.refit_policy == "pcpi-expanded-fixed-inner-v1"
+                          else structural_terms)
+                proposed_support = parser(
                     proposal_dag.expression, self.n_features)
-                refitted_support = structural_terms(dag.expression, self.n_features)
+                refitted_support = parser(dag.expression, self.n_features)
                 retention = {
                     "pass": proposed_support == refitted_support,
-                    "method": "exact-pcpi-closed-support-identity-v1",
+                    "method": ("fixed-inner-expanded-support-identity-v1"
+                        if self.config.refit_policy == "pcpi-expanded-fixed-inner-v1"
+                        else "exact-pcpi-closed-support-identity-v1"),
                     "proposal_support": list(proposed_support),
                     "refitted_support": list(refitted_support),
                     "response_accessed": False,
@@ -1129,7 +1139,8 @@ class EvaluationRuntime:
         X_val: np.ndarray, y_val: np.ndarray,
     ) -> tuple[EquationState, list[EquationState]]:
         candidates: list[EquationState] = []
-        protect_seeds = self.config.refit_policy == "pcpi-closed-basis-amplitudes"
+        protect_seeds = self.config.refit_policy in {
+            "pcpi-closed-basis-amplitudes", "pcpi-expanded-fixed-inner-v1"}
         if protect_seeds:
             self.budget.protect_seed_evaluations(len(base_candidates))
         for seed in base_candidates:

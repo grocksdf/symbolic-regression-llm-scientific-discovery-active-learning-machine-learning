@@ -29,7 +29,9 @@ from .proposal_runtime import (
 from .equation_runtime import EquationRuntime
 from .evidence_synthesis import compile_evidence_synthesis
 from .candidate_region_expansion import FrozenAxisRegions
-from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target, structural_terms
+from .pcpi_adapter import (freeze_discovery_model, freeze_discovery_target,
+    structural_terms, EXPANDED_FORMULA_POLICY, model_factory_for_policy,
+    support_parser_for_policy)
 from .posterior_gap_diagnosis import diagnose_frozen_bank
 from .posterior_gap_evidence import screen_independent_adequacy
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
@@ -77,6 +79,7 @@ class DiscoveryAgentConfig:
     require_explicit_skill_controls: bool = False
     typed_evidence_synthesis: bool = False
     typed_inner_augmentation: bool = False
+    expanded_formula_synthesis: bool = False
     posterior_gap_directed: bool = False
     synthesis_evaluation_reserve: int = 0
     skill_reliability: Mapping[str, Mapping[str, float]] = field(
@@ -237,6 +240,12 @@ class DiscoveryAgent:
     ) -> None:
         self.config = config
         self.provider_settings = provider_settings
+        if config.expanded_formula_synthesis and (
+                not config.typed_inner_augmentation
+                or config.refit_policy != "pcpi-expanded-fixed-inner-v1"
+                or config.provider_failure_mode != "abort"):
+            raise ValueError("expanded formula synthesis requires explicit "
+                             "typed augmentation, fixed-inner refit and provider abort")
         if config.typed_inner_augmentation:
             if (not config.typed_evidence_synthesis
                     or not config.scientist_orchestration
@@ -599,6 +608,8 @@ class DiscoveryAgent:
                 "require_typed_synthesis": self.config.typed_evidence_synthesis}
             if self.config.typed_inner_augmentation:
                 review_kwargs["allow_interactions"] = True
+            if self.config.expanded_formula_synthesis:
+                review_kwargs["expanded_formula_synthesis"] = True
             review, telemetry = planner.review_engine_evidence(**review_kwargs)
             return review, telemetry, None, 1
         except (ProtocolError, ProviderInfrastructureError,
@@ -665,7 +676,10 @@ class DiscoveryAgent:
             return [], audit
         candidates, audit = compile_evidence_synthesis(
             review.synthesis_directives, evidence, n_features,
-            allow_interactions=self.config.typed_inner_augmentation)
+            allow_interactions=self.config.typed_inner_augmentation,
+            coefficient_policy=(EXPANDED_FORMULA_POLICY
+                if self.config.expanded_formula_synthesis else
+                "discard-fitted-coefficients-refit-closed-basis"))
         if not candidates:
             reason = (
                 "single-engine-control-has-fewer-than-two-distinct-lineages"
@@ -714,6 +728,11 @@ class DiscoveryAgent:
                 or selection.acquisition_pool is None):
             raise ValueError("posterior gap requires registered budget and pool covariates")
         features = selection.development.X.shape[1]
+        coefficient_policy = (EXPANDED_FORMULA_POLICY
+            if self.config.expanded_formula_synthesis else
+            "discard-fitted-coefficients-refit-closed-basis")
+        parser = support_parser_for_policy(coefficient_policy)
+        model_factory = model_factory_for_policy(coefficient_policy)
         engine_base = self.config.discovery_budget - (
             self.config.synthesis_evaluation_reserve
             + self.config.llm_evaluation_reserve)
@@ -726,7 +745,7 @@ class DiscoveryAgent:
         reference_rows, reference_supports = [], set()
         for row in score_reference_rows:
             try:
-                support = structural_terms(row["expression"], features)
+                support = parser(row["expression"], features)
             except (SyntaxError, ValueError):
                 continue
             if support not in reference_supports:
@@ -736,7 +755,7 @@ class DiscoveryAgent:
         candidates = []
         for row in source_rows:
             try:
-                supports = structural_terms(row["expression"], features)
+                supports = parser(row["expression"], features)
             except (SyntaxError, ValueError):
                 continue
             if supports in seen:
@@ -746,10 +765,10 @@ class DiscoveryAgent:
             if len(candidates) >= engine_base:
                 break
         identity = sha256(json.dumps(candidates, sort_keys=True).encode()).hexdigest()
-        model = freeze_discovery_model(
+        model = model_factory(
             candidates, n_features=features, prior=prior,
             exploration_identity=identity,
-            coefficient_policy="discard-fitted-coefficients-refit-closed-basis")
+            coefficient_policy=coefficient_policy)
         domain = selection.acquisition_pool.X
         target = freeze_discovery_target(
             model, selection.development, domain,
@@ -759,10 +778,10 @@ class DiscoveryAgent:
         if reference_rows:
             reference_identity = sha256(json.dumps(
                 reference_rows, sort_keys=True).encode()).hexdigest()
-            reference_model = freeze_discovery_model(
+            reference_model = model_factory(
                 reference_rows, n_features=features, prior=prior,
                 exploration_identity=reference_identity,
-                coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
+                coefficient_policy=coefficient_policy,
                 minimum_supports=1)
             reference_target = freeze_discovery_target(
                 reference_model, selection.development, domain,

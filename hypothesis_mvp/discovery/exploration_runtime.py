@@ -104,6 +104,15 @@ class ExplorationRuntime:
         return self.config.refit_policy == "pcpi-closed-basis-amplitudes"
 
     def _admissible_grammar_expression(self, expression: str, n_features: int) -> bool:
+        if self.config.refit_policy == "pcpi-expanded-fixed-inner-v1":
+            from hypothesis_mvp.pcpi.reference.expanded_formula_basis import (
+                compile_fixed_formula_support,
+            )
+            try:
+                compile_fixed_formula_support(expression, n_features)
+            except (SyntaxError, ValueError):
+                return False
+            return True
         if not self._closed_basis:
             return True
         try:

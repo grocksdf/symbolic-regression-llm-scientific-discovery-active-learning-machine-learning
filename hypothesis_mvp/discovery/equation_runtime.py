@@ -368,7 +368,8 @@ class EquationRuntime:
         refit_policy: str = "global-constants",
     ) -> None:
         self.n_features = int(n_features)
-        if refit_policy not in {"global-constants", "pcpi-closed-basis-amplitudes"}:
+        if refit_policy not in {"global-constants", "pcpi-closed-basis-amplitudes",
+                                "pcpi-expanded-fixed-inner-v1"}:
             raise ValueError("unknown refit policy")
         self.refit_policy = refit_policy
         self.registry = registry or PrimitiveRegistry()
@@ -542,6 +543,8 @@ class EquationRuntime:
         raw = self.normalize(expression)
         if self.refit_policy == "pcpi-closed-basis-amplitudes":
             return self._refit_closed_amplitudes(raw, X, y, ridge)
+        if self.refit_policy == "pcpi-expanded-fixed-inner-v1":
+            return self._refit_expanded_amplitudes(raw, X, y, ridge)
         try:
             initial_loss = self.mse(y, self.predict(raw, X))
         except Exception:
@@ -629,6 +632,34 @@ class EquationRuntime:
             raise ValueError("closed-basis refit produced nonfinite loss")
         return RefitResult(fitted, "pcpi-closed-basis-amplitudes", initial_loss,
                            loss, 0, count, True, "")
+
+    def _refit_expanded_amplitudes(self, expression, X, y, ridge):
+        """Fit only outer coefficients and preserve every frozen inner literal."""
+        from hypothesis_mvp.pcpi.reference.expanded_formula_basis import (
+            compile_fixed_formula_support, decode_fixed_formula_term,
+        )
+        from hypothesis_mvp.pcpi.reference.basis import design_matrix
+        before = compile_fixed_formula_support(expression, self.n_features)
+        initial_loss = self.mse(y, self.predict(expression, X))
+        matrix = design_matrix(np.asarray(X, dtype=float), before)
+        response = np.asarray(y, dtype=float).reshape(-1)
+        gram = matrix.T @ matrix + max(float(ridge), 0.0) * np.eye(len(before))
+        coefficients = np.linalg.solve(gram, matrix.T @ response)
+        if not np.all(np.isfinite(coefficients)) or np.any(coefficients == 0):
+            raise ValueError("expanded amplitudes are zero or nonfinite")
+        pieces = []
+        for coefficient, term in zip(coefficients, before, strict=True):
+            source = ("1" if term == "intercept" else
+                      decode_fixed_formula_term(term, self.n_features))
+            pieces.append(f"({float(coefficient):.17g})*({source})")
+        fitted = " + ".join(pieces)
+        if set(compile_fixed_formula_support(fitted, self.n_features)) != set(before):
+            raise ValueError("expanded refit changed a frozen inner parameter")
+        loss = self.mse(y, self.predict(fitted, X))
+        if not math.isfinite(loss):
+            raise ValueError("expanded refit produced nonfinite loss")
+        return RefitResult(fitted, "pcpi-expanded-fixed-inner-v1", initial_loss,
+                           loss, 0, len(before), True, "")
 
     def intermediate_outputs(self, dag: EquationDAG, X: np.ndarray, max_nodes: int = 20) -> list[tuple[str, np.ndarray]]:
         expr = self.registry.parse(dag.expression, self.n_features, evaluate=False)

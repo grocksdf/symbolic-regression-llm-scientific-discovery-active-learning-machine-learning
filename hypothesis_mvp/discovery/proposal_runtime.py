@@ -15,7 +15,11 @@ from typing import Any, Mapping, Sequence
 import requests
 from .resource_limits import before_provider_transport
 from .closed_basis_composition import materialize_closed_basis_composition
+from .expanded_formula_synthesis import witness_formula_terms
 from .pcpi_adapter import structural_terms
+from hypothesis_mvp.pcpi.reference.expanded_formula_basis import (
+    compile_fixed_formula_support,
+)
 
 from .contracts import DISCOVERY_RUNTIME_ID, json_safe
 from .equation_runtime import EquationRuntime, sha256_text
@@ -881,12 +885,15 @@ class ProposalRuntime:
                 str(value) for value in row.get("lineage_ids", ())
                 if str(value)))
             rationale = str(row.get("rationale", "")).strip()
+            formula_ast = row.get("formula_ast")
             reason = (
                 "unsupported-operation"
                 if operation not in allowed_operations else
                 "fewer-than-two-lineages" if len(lineages) < 2 else
                 "unknown-lineage" if set(lineages) - allowed else
-                "missing-rationale" if not rationale else "")
+                "missing-rationale" if not rationale else
+                "missing-formula-ast" if operation == "COMPOSE_FORMULA_AST"
+                and not isinstance(formula_ast, Mapping) else "")
             if reason:
                 discarded.append({
                     "index": index, "operation": operation,
@@ -894,8 +901,10 @@ class ProposalRuntime:
             else:
                 compiled.append({
                     "operation": operation, "lineage_ids": list(lineages),
-                    "rationale": rationale})
-        fallback_applied = not compiled
+                    "rationale": rationale,
+                    **({"formula_ast": formula_ast}
+                       if operation == "COMPOSE_FORMULA_AST" else {})})
+        fallback_applied = not compiled and bool(fallback_directives)
         if fallback_applied:
             compiled = [dict(row) for row in fallback_directives]
         projection = None
@@ -991,15 +1000,29 @@ class ProposalRuntime:
         self, *, plan: ResearchPlan, engine_evidence: Sequence[Mapping[str, Any]],
         require_typed_synthesis: bool = False,
         allow_interactions: bool = False,
+        expanded_formula_synthesis: bool = False,
     ) -> tuple[ScientistReview, Mapping[str, Any]]:
+        if expanded_formula_synthesis:
+            witnessed = []
+            for row in engine_evidence:
+                try:
+                    terms = witness_formula_terms(
+                        str(row["expression"]), self.n_features)
+                except (KeyError, SyntaxError, ValueError):
+                    continue
+                witnessed.append({**dict(row), "expanded_witness_terms": list(terms)})
+            engine_evidence = witnessed
         lineages = tuple(str(row.get("lineage_id") or "")
                          for row in engine_evidence
                          if str(row.get("lineage_id") or ""))
-        fallback_directives = self._fallback_synthesis_directives(
-            engine_evidence, allow_interactions=allow_interactions)
-        allowed_operations = (SYNTHESIS_OPERATIONS if allow_interactions
+        fallback_directives = ([] if expanded_formula_synthesis else
+            self._fallback_synthesis_directives(
+                engine_evidence, allow_interactions=allow_interactions))
+        allowed_operations = (SYNTHESIS_OPERATIONS if expanded_formula_synthesis
+                              else SYNTHESIS_OPERATIONS[:4] if allow_interactions
                               else SYNTHESIS_OPERATIONS[:3])
-        typed_synthesis_available = bool(fallback_directives)
+        typed_synthesis_available = (len(set(lineages)) >= 2
+            if expanded_formula_synthesis else bool(fallback_directives))
         typed_synthesis_required = bool(
             require_typed_synthesis and typed_synthesis_available)
         payload = {"protocol_id": ENGINE_REVIEW_PROTOCOL,
@@ -1021,6 +1044,15 @@ class ProposalRuntime:
                     ("Return synthesis_directives as JSON objects with operation, "
                      "lineage_ids and rationale. Reference only supplied lineage IDs. "
                      "Do not emit equations or coefficients. "
+                     + ("For COMPOSE_FORMULA_AST include formula_ast, a JSON tree "
+                        "with ref={lineage_id,term_index} leaves (zero-based "
+                        "indices of each evidence row's expanded_witness_terms), "
+                        "numeric const leaves, "
+                        "and op/args nodes using add,sub,mul,div,pow,neg, "
+                        "sin,cos,tanh,exp,log,sqrt,Abs. Refer to terms from at "
+                        "least two distinct declared lineages. Numeric literals "
+                        "inside functions are frozen by the resulting hypothesis. "
+                        if expanded_formula_synthesis else "")
                      + ("INTERACT_SUPPORTS combines already witnessed terms "
                         "from distinct lineages inside the closed degree-four "
                         "basis; choose it when additive unions repeat parent "
@@ -1144,6 +1176,8 @@ class ProposalRuntime:
         forbidden = sorted(set(re.findall(r"\b(?:y_hat|y)\b", equation)))
         if forbidden:
             raise ProtocolError("forbidden_output_symbol:" + ",".join(forbidden))
+        if self.equation_runtime.refit_policy == "pcpi-expanded-fixed-inner-v1":
+            compile_fixed_formula_support(equation, context.n_features)
         self.registry.parse(equation, context.n_features, evaluate=False)
         return equation, audit
 
@@ -1160,6 +1194,8 @@ class ProposalRuntime:
             raise ProtocolError("invalid_action")
         correction = item.get("correction")
         if correction is not None:
+            if self.equation_runtime.refit_policy == "pcpi-expanded-fixed-inner-v1":
+                raise ProtocolError("expanded-correction-not-registered")
             if not context.gap_directed or not isinstance(correction, str):
                 raise ProtocolError("correction_requires_independent_gap_context")
             expression, supports = materialize_closed_basis_composition(
@@ -1173,7 +1209,10 @@ class ProposalRuntime:
                              "incumbent": context.incumbent_expression}
         else:
             equation, normalization = self._equation(item.get("equation"), context)
-            if context.gap_directed and structural_terms(
+            support_parser = (compile_fixed_formula_support
+                if self.equation_runtime.refit_policy == "pcpi-expanded-fixed-inner-v1"
+                else structural_terms)
+            if context.gap_directed and support_parser(
                     equation, context.n_features) in context.existing_supports:
                 raise ProtocolError("proposal_duplicates_frozen_bank")
         rationale = str(item.get("rationale") or "").strip()
@@ -1239,12 +1278,14 @@ class ProposalRuntime:
 
     def _system_message(self, gap_directed: bool = False) -> str:
         allowed = ", ".join(f"x{i}" for i in range(self.n_features))
+        expanded = self.equation_runtime.refit_policy == "pcpi-expanded-fixed-inner-v1"
         return (
             "You propose falsifiable structural equations as exactly one unfenced JSON object. "
             "Use protocol_id='hypothesis-proposal-v1', runtime_id='canonical-real-only-discovery', "
             "and preserve the requested round_id, island, and parent_hash. Every candidate needs "
             "candidate_id, parent_hash, action, rationale, and "
-            + ("equation or correction. " if gap_directed else "equation. ")
+            + ("equation or correction. " if gap_directed and not expanded
+               else "equation. ")
             + "The equation field is RHS only: "
             f"use only {allowed}; never use '=', y, y_hat, or prose"
             + (" in equation" if gap_directed else "")
@@ -1252,14 +1293,25 @@ class ProposalRuntime:
             "variable: express every final candidate completely in x variables. At least one "
             "candidate must introduce a falsifiable mechanism-level structural change rather "
             "than only refitting coefficients of the parent equation. Across the candidate batch, "
-            "cover distinct mechanism families where the registered closed basis permits them."
-            " The closed basis permits constants, x variables, degree-at-most-four monomials, "
-            "and sin(xi), cos(xi), tanh(xi) only; never use division or compound transforms."
-            + (" If an independently supported posterior gap is supplied, you may "
-               "send a correction string in a candidate's correction field using "
-               "y_hat and x variables. Its frozen incumbent is substituted and the "
-               "result checked against the registered closed basis before use; "
-               "do not assert that a proposal has been admitted."
+            + ("cover distinct mechanism families where the registered expanded grammar "
+               "permits them." if expanded else
+               "cover distinct mechanism families where the registered closed basis permits them.")
+            + (" The registered expanded formula grammar permits exp, log, sqrt, "
+               "Abs, sin, cos, tanh, division, fractional powers and their "
+               "compositions. Propose only expressions finite on supplied "
+               "development covariates; numeric literals inside transforms "
+               "remain frozen in the candidate identity."
+               if expanded else
+               " The closed basis permits constants, x variables, degree-at-most-four "
+               "monomials and sin(xi), cos(xi), tanh(xi) only; never use division "
+               "or compound transforms.")
+            + ((" If an independently supported posterior gap is supplied, you may "
+               + ("send an equation field using x variables only; expanded "
+                "y_hat corrections are not registered. " if expanded else
+                "send a correction string in a candidate's correction field using "
+                "y_hat and x variables. Its frozen incumbent is substituted and the "
+                "result checked against the registered closed basis before use; ")
+               + " do not assert that a proposal has been admitted.")
                if gap_directed else "")
         )
 

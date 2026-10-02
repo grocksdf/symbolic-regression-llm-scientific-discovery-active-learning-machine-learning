@@ -17,7 +17,7 @@ RESEARCH_PLAN_PROTOCOL = "scientific-research-plan-v1"
 ENGINE_REVIEW_PROTOCOL = "scientific-engine-evidence-review-v1"
 SYNTHESIS_OPERATIONS = (
     "UNION_SUPPORTS", "INTERSECTION_SUPPORTS", "AUGMENT_BASE",
-    "INTERACT_SUPPORTS")
+    "INTERACT_SUPPORTS", "COMPOSE_FORMULA_AST")
 
 
 def _identity(value: Mapping[str, Any]) -> str:
@@ -73,19 +73,26 @@ class SynthesisDirective:
     operation: str
     lineage_ids: tuple[str, ...]
     rationale: str
+    formula_ast: Mapping[str, Any] | None = None
 
     def __post_init__(self):
         if (self.operation not in SYNTHESIS_OPERATIONS
                 or len(self.lineage_ids) < 2
                 or len(set(self.lineage_ids)) != len(self.lineage_ids)
                 or any(not value.strip() for value in self.lineage_ids)
-                or not self.rationale.strip()):
+                or not self.rationale.strip()
+                or (self.operation == "COMPOSE_FORMULA_AST")
+                   != isinstance(self.formula_ast, Mapping)
+                or (self.formula_ast is not None and len(json.dumps(
+                    self.formula_ast, sort_keys=True, default=str)) > 4096)):
             raise ValueError("invalid scientist synthesis directive")
 
     def to_dict(self) -> dict[str, Any]:
         return {"operation": self.operation,
                 "lineage_ids": list(self.lineage_ids),
-                "rationale": self.rationale}
+                "rationale": self.rationale,
+                **({"formula_ast": self.formula_ast}
+                   if self.formula_ast is not None else {})}
 
 
 @dataclass(frozen=True)
@@ -267,7 +274,7 @@ def review_from_json(raw: Mapping[str, Any]) -> ScientistReview:
     directives = tuple(SynthesisDirective(
         str(row.get("operation", "")),
         tuple(str(value) for value in row.get("lineage_ids", ())),
-        str(row.get("rationale", "")))
+        str(row.get("rationale", "")), row.get("formula_ast"))
         for row in raw.get("synthesis_directives", ())
         if isinstance(row, Mapping))
     return ScientistReview(

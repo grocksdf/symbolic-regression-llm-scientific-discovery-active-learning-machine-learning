@@ -8,8 +8,26 @@ from pathlib import Path
 from typing import Any
 
 from .evidence_synthesis import compile_evidence_synthesis
-from .pcpi_adapter import structural_terms
+from .pcpi_adapter import (EXPANDED_FORMULA_POLICY,
+                           support_parser_for_policy)
 from .scientist_policy import SYNTHESIS_OPERATIONS, SynthesisDirective
+
+_CLOSED_BASIS_POLICY = "discard-fitted-coefficients-refit-closed-basis"
+
+
+def _directive_payload(operation, left, right):
+    """Return the policy and directive extras one registered operation needs.
+
+    `COMPOSE_FORMULA_AST` is only well formed under the opt-in expanded
+    grammar and must reference witnessed terms by lineage and index.
+    """
+    lineage_ids = (left["lineage_id"], right["lineage_id"])
+    if operation != "COMPOSE_FORMULA_AST":
+        return _CLOSED_BASIS_POLICY, lineage_ids, {}
+    tree = {"op": "mul", "args": [
+        {"ref": {"lineage_id": left["lineage_id"], "term_index": 0}},
+        {"ref": {"lineage_id": right["lineage_id"], "term_index": 0}}]}
+    return EXPANDED_FORMULA_POLICY, lineage_ids, {"formula_ast": tree}
 
 
 def _full_result(source_output: Path) -> tuple[Path, dict[str, Any]]:
@@ -46,12 +64,16 @@ def audit_typed_synthesis_replay(
              "lineage_id": right["lineage_id"]},
         )
         for operation in SYNTHESIS_OPERATIONS:
+            policy, lineage_ids, extras = _directive_payload(
+                operation, left, right)
             directive = SynthesisDirective(
-                operation, (left["lineage_id"], right["lineage_id"]),
-                "artifact-only exhaustive registered-operation replay")
+                operation, lineage_ids,
+                "artifact-only exhaustive registered-operation replay",
+                **extras)
             try:
                 compiled, audit = compile_evidence_synthesis(
-                    (directive,), evidence, n_features)
+                    (directive,), evidence, n_features,
+                    coefficient_policy=policy)
             except Exception as error:
                 attempts.append({
                     "operation": operation,
@@ -72,7 +94,7 @@ def audit_typed_synthesis_replay(
                     "compiler produced no candidate"})
                 continue
             candidate = compiled[0]
-            support = tuple(structural_terms(
+            support = tuple(support_parser_for_policy(policy)(
                 candidate["expression"], n_features))
             attempts.append({
                 "operation": operation,

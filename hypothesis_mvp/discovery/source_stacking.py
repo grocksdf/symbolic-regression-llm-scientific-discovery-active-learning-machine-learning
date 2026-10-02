@@ -201,7 +201,7 @@ def arbitration_source_log_predictive(candidates, initial_data, arbitration, *,
     from dataclasses import replace
     from hypothesis_mvp.data.roles import DataRole
     from hypothesis_mvp.pcpi.reference import ExactPosterior
-    from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target
+    from .pcpi_adapter import model_factory_for_policy, freeze_discovery_target
 
     if (initial_data.role is not DataRole.DEVELOPMENT
             or arbitration.role is not DataRole.VALIDATION
@@ -212,7 +212,7 @@ def arbitration_source_log_predictive(candidates, initial_data, arbitration, *,
         raise ValueError("source admission requires the registered core baseline")
     expression_family = {(str(row["source"]), str(row["expression"])): source_family(row)
                          for row in candidates}
-    model = freeze_discovery_model(candidates, n_features=n_features, prior=prior,
+    model = model_factory_for_policy(coefficient_policy)(candidates, n_features=n_features, prior=prior,
         exploration_identity=exploration_identity, coefficient_policy=coefficient_policy)
     target = freeze_discovery_target(model, initial_data, action_domain,
         measurement_budget=measurement_budget, expected_model_identity=model.stable_hash)
@@ -303,9 +303,11 @@ def filter_fold_safe_source_candidates(candidates, initial_data, arbitration, **
     optional = tuple(row for row in rows if source_family(row) != "core")
     if len(core) < 2:
         raise ValueError("candidate admission requires at least two core supports")
-    from .pcpi_adapter import structural_terms
+    from .pcpi_adapter import support_parser_for_policy
     n_features = int(kwargs["n_features"])
-    support = {id(row): structural_terms(row["expression"], n_features)
+    parser = support_parser_for_policy(kwargs.get(
+        "coefficient_policy", "discard-fitted-coefficients-refit-closed-basis"))
+    support = {id(row): parser(row["expression"], n_features)
                for row in rows}
     core_supports = {support[id(row)] for row in core}
     optional_families = {}
@@ -462,7 +464,7 @@ def crossfit_source_log_predictive(candidates, initial_data, action_domain, *,
     from dataclasses import replace
     from hypothesis_mvp.data.roles import DataRole, RoleDataset
     from hypothesis_mvp.pcpi.reference import ExactPosterior
-    from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target
+    from .pcpi_adapter import model_factory_for_policy, freeze_discovery_target
 
     if initial_data.role is not DataRole.DEVELOPMENT or len(initial_data.X) < 4:
         raise ValueError("source stacking requires registered H0 development data")
@@ -477,7 +479,7 @@ def crossfit_source_log_predictive(candidates, initial_data, action_domain, *,
         held = fold_ids == fold
         training = RoleDataset(DataRole.DEVELOPMENT,
             initial_data.X[~held], initial_data.y[~held])
-        model = freeze_discovery_model(candidates, n_features=n_features, prior=prior,
+        model = model_factory_for_policy(coefficient_policy)(candidates, n_features=n_features, prior=prior,
             exploration_identity=exploration_identity,
             coefficient_policy=coefficient_policy)
         target = freeze_discovery_target(model, training, action_domain,

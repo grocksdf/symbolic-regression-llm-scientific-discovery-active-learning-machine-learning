@@ -37,6 +37,23 @@ class DiscoveryAdapterError(ValueError):
         self.public_diagnostic = code
 
 
+EXPANDED_FORMULA_POLICY = "discard-outer-amplitudes-freeze-inner-parameters-v1"
+
+
+def support_parser_for_policy(coefficient_policy: str):
+    if coefficient_policy == "discard-fitted-coefficients-refit-closed-basis":
+        return structural_terms
+    if coefficient_policy == EXPANDED_FORMULA_POLICY:
+        return compile_fixed_formula_support
+    raise ValueError("unknown formula coefficient contract")
+
+
+def model_factory_for_policy(coefficient_policy: str):
+    support_parser_for_policy(coefficient_policy)
+    return (freeze_expanded_formula_model if coefficient_policy == EXPANDED_FORMULA_POLICY
+            else freeze_discovery_model)
+
+
 def _scaled_sum(scale: ast.AST, node: ast.AST) -> ast.AST:
     if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub)):
         return ast.BinOp(_scaled_sum(scale, node.left), node.op,
@@ -246,7 +263,7 @@ def freeze_expanded_formula_model(
     This independent reference entry point does not authorize measured PCPI,
     generation, admission, or any historical frozen protocol.
     """
-    if coefficient_policy != "discard-outer-amplitudes-freeze-inner-parameters-v1":
+    if coefficient_policy != EXPANDED_FORMULA_POLICY:
         raise ValueError("explicit expanded-formula refit contract required")
     return _freeze_model_with_support_parser(
         candidates, n_features=n_features, prior=prior,

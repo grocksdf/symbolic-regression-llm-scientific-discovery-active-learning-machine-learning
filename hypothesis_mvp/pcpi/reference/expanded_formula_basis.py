@@ -182,8 +182,8 @@ def _run(node, x):
     raise ValueError("invalid compiled formula node")
 
 
-def evaluate_fixed_formula_term(token: str, x: np.ndarray) -> np.ndarray:
-    """Decode, revalidate, and evaluate one declared finite basis term."""
+def decode_fixed_formula_term(token: str, n_features: int) -> str:
+    """Return the canonical expression only after bounded token validation."""
     if not isinstance(token, str) or not token.startswith(PREFIX):
         raise ValueError("not a fixed formula basis token")
     data = token[len(PREFIX):]
@@ -194,12 +194,19 @@ def evaluate_fixed_formula_term(token: str, x: np.ndarray) -> np.ndarray:
                                        altchars=b"-_", validate=True).decode("utf-8")
     except (ValueError, UnicodeDecodeError) as error:
         raise ValueError("invalid formula token encoding") from error
+    _parse(expression, n_features)
+    if compile_fixed_formula_term(expression, n_features) != token:
+        raise ValueError("noncanonical fixed formula token")
+    return expression
+
+
+def evaluate_fixed_formula_term(token: str, x: np.ndarray) -> np.ndarray:
+    """Decode, revalidate, and evaluate one declared finite basis term."""
     values = np.asarray(x, dtype=float)
     if (values.ndim != 2 or not len(values) or not np.all(np.isfinite(values))):
         raise ValueError("invalid formula input domain")
+    expression = decode_fixed_formula_term(token, values.shape[1])
     node = _parse(expression, values.shape[1])
-    if compile_fixed_formula_term(expression, values.shape[1]) != token:
-        raise ValueError("noncanonical fixed formula token")
     with np.errstate(over="raise", divide="raise", invalid="raise"):
         try:
             result = np.broadcast_to(_run(node, values), (len(values),))

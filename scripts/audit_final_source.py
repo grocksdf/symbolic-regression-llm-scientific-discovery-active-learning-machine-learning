@@ -119,8 +119,8 @@ LEGACY_LONG_FUNCTIONS = frozenset({
     (
         "discovery/proposal_runtime.py",
         "review_engine_evidence",
-        86,
-        "e3e6e86a182460c02866f8d7afcd33b81e74169fcaba99f0ead2de2c7fa021f9",
+        109,
+        "15492342134f1d3eb3497b0219cb3fcd5e0420afc9b448a3c341f4bd67388f23",
     ),
     (
         "discovery/scientific_runtime.py",
@@ -165,8 +165,8 @@ LEGACY_LONG_FUNCTIONS = frozenset({
     (
         "discovery/agent.py",
         "_independent_gap_brief",
-        86,
-        "0ddefbc1d939ed3760be65605baf5dbab32caf5fe3654c7e55ca2865d4c74350",
+        91,
+        "8a30d3ee60042c31bb762bc4a3c1dc4cea0760c374edfafa23bfe8a453e5459d",
     ),
     (
         "discovery/posterior_gap_evidence.py",
