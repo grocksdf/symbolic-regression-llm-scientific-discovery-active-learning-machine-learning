@@ -160,13 +160,71 @@ def test_expanded_review_does_not_replace_missing_ast_with_old_union(monkeypatch
             "rationale": "missing tree"}]}
     monkeypatch.setattr(proposer, "complete_json",
                         lambda **_: (raw, {"mock_response_free": True}))
-    with pytest.raises(ValueError, match="missing-typed-synthesis"):
+    with pytest.raises(ValueError, match=(
+            "scientist-review-invalid-after-format-repairs:"
+            "missing-typed-synthesis")):
         proposer.review_engine_evidence(
             plan=deterministic_plan(("polynomial_lasso", "sparse_library"), 2),
             engine_evidence=[{"lineage_id": "a", "expression": "x0"},
                              {"lineage_id": "b", "expression": "x0"}],
             require_typed_synthesis=True, allow_interactions=True,
             expanded_formula_synthesis=True)
+
+
+def test_expanded_review_accepts_explicit_semantic_abstention(monkeypatch):
+    proposer = ProposalRuntime(
+        EquationRuntime(1, refit_policy="pcpi-expanded-fixed-inner-v1"),
+        1, None, 1)
+    raw = {"protocol_id": "scientific-engine-evidence-review-v1",
+        "supported_mechanisms": [], "contradicted_mechanisms": [],
+        "cross_engine_conflicts": [],
+        "synthesis_instructions": ["retain validated engine evidence"],
+        "stop": True, "stop_reason": "no warranted composition",
+        "synthesis_directives": []}
+    monkeypatch.setattr(
+        proposer, "complete_json",
+        lambda **_: (raw, {"fixture": "semantic-abstain"}))
+    review, telemetry = proposer.review_engine_evidence(
+        plan=deterministic_plan(
+            ("polynomial_lasso", "sparse_library"), 2),
+        engine_evidence=[{"lineage_id": "a", "expression": "x0"},
+                         {"lineage_id": "b", "expression": "x0**2"}],
+        require_typed_synthesis=True, allow_interactions=True,
+        expanded_formula_synthesis=True)
+    assert review.stop is True
+    assert review.synthesis_directives == ()
+    assert telemetry["fixture"] == "semantic-abstain"
+
+
+def test_expanded_review_allows_two_format_only_repairs(monkeypatch):
+    proposer = ProposalRuntime(
+        EquationRuntime(1, refit_policy="pcpi-expanded-fixed-inner-v1"),
+        1, None, 1)
+    invalid = {"protocol_id": "scientific-engine-evidence-review-v1",
+        "supported_mechanisms": [], "contradicted_mechanisms": [],
+        "cross_engine_conflicts": [], "synthesis_instructions": ["compose"],
+        "stop": False, "stop_reason": "continue",
+        "synthesis_directives": []}
+    valid = {**invalid, "synthesis_directives": [{
+        "operation": "COMPOSE_FORMULA_AST",
+        "lineage_ids": ["a", "b"], "rationale": "witnessed fixture",
+        "formula_ast": _tree()}]}
+    responses = iter([
+        (invalid, {"request": 1}), (invalid, {"request": 2}),
+        (valid, {"request": 3})])
+    monkeypatch.setattr(
+        proposer, "complete_json", lambda **_: next(responses))
+    review, telemetry = proposer.review_engine_evidence(
+        plan=deterministic_plan(
+            ("polynomial_lasso", "sparse_library"), 2),
+        engine_evidence=[{"lineage_id": "a", "expression": "x0"},
+                         {"lineage_id": "b", "expression": "x0**2"}],
+        require_typed_synthesis=True, allow_interactions=True,
+        expanded_formula_synthesis=True)
+    assert len(review.synthesis_directives) == 1
+    assert telemetry["format_only_repair_count"] == 2
+    assert [row["request"] for row in telemetry["provider_requests"]] == [
+        1, 2, 3]
 
 
 @pytest.mark.parametrize("tree", [

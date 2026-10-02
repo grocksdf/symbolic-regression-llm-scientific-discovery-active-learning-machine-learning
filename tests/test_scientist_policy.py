@@ -139,13 +139,13 @@ def test_review_compiler_fails_closed_after_invalid_stop_repair(monkeypatch):
         "cross_engine_conflicts": [],
         "synthesis_instructions": ["retain evidence"],
         "stop": "maybe", "stop_reason": "ambiguous"}
-    responses = iter([invalid, invalid])
+    responses = iter([invalid, invalid, invalid])
     runtime = ProposalRuntime(EquationRuntime(1), 1, None, 1)
     monkeypatch.setattr(runtime, "complete_json",
         lambda **kwargs: (next(responses), {"fixture": True}))
     with pytest.raises(
             ScientistReviewProtocolError,
-            match=("scientist-review-invalid-after-one-provider-repair:"
+            match=("scientist-review-invalid-after-format-repairs:"
                    "invalid-stop-decision")):
         runtime.review_engine_evidence(
             plan=deterministic_plan(("polynomial_lasso",), 1),

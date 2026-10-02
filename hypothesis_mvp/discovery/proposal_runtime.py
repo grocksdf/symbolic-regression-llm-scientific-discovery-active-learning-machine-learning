@@ -31,6 +31,7 @@ from .scientist_policy import (
 from .skill_policy import allocate_bayesian_skill_jobs
 
 PROPOSAL_PROTOCOL_ID = "hypothesis-proposal-v1"
+SCIENTIST_REVIEW_FORMAT_REPAIR_ATTEMPTS = 2
 ALLOWED_ACTIONS = frozenset({
     "ADD", "DELETE", "REPLACE", "REPARAMETERIZE",
     "CHANGE_OPERATOR", "CHANGE_INTERACTION",
@@ -862,7 +863,8 @@ class ProposalRuntime:
                 projection["synthesis_directive_projection"] = (
                     directive_projection)
         review = review_from_json(candidate)
-        if require_typed_synthesis and not review.synthesis_directives:
+        if (require_typed_synthesis and not review.synthesis_directives
+                and not review.stop):
             raise ValueError("scientist review omits typed synthesis directives")
         return review, projection or None
 
@@ -983,12 +985,14 @@ class ProposalRuntime:
     def _review_telemetry(
         first: Mapping[str, Any], projection: Mapping[str, Any] | None,
         requested: bool, available: bool,
-        second: Mapping[str, Any] | None = None,
+        repairs: Sequence[Mapping[str, Any]] = (),
     ) -> dict[str, Any]:
         result = (
-            dict(first) if second is None else {
+            dict(first) if not repairs else {
                 "protocol_repair_attempted": True,
-                "provider_requests": [dict(first), dict(second)]})
+                "format_only_repair_count": len(repairs),
+                "provider_requests": [
+                    dict(first), *(dict(row) for row in repairs)]})
         result["typed_synthesis_availability"] = {
             "requested": requested, "available": available,
             "distinct_parent_lineages_required": 2}
@@ -1070,41 +1074,47 @@ class ProposalRuntime:
             + ("Provide at least one typed synthesis_directive and do not write a "
                "new equation; executable structure is compiled by code."
                if typed_synthesis_required else ""))
-        raw, telemetry = self.complete_json(system_message=system, payload=payload)
-        try:
-            review, projection = self._normalize_scientist_review(
-                raw, require_typed_synthesis=typed_synthesis_required,
-                allowed_lineages=lineages,
-                fallback_directives=fallback_directives,
-                allowed_operations=allowed_operations)
-            return review, self._review_telemetry(
-                telemetry, projection, require_typed_synthesis,
-                typed_synthesis_available)
-        except (TypeError, ValueError) as error:
-            repaired, second = self.complete_json(
-                system_message=system, payload={**payload, "protocol_repair": {
-                    "previous_error": str(error),
-                    "instruction": (
-                        "Return a complete replacement evidence review. Evidence "
-                        "collections may contain strings or structured JSON "
-                        "objects; stop must be a JSON boolean. "
-                        + ("Include at least one synthesis_directives object using "
-                           "only allowed lineage IDs and operations."
-                           if typed_synthesis_required else ""))}})
+        raw, telemetry = self.complete_json(
+            system_message=system, payload=payload)
+        repairs = []
+        for repair_index in range(
+                SCIENTIST_REVIEW_FORMAT_REPAIR_ATTEMPTS + 1):
             try:
                 review, projection = self._normalize_scientist_review(
-                    repaired, require_typed_synthesis=typed_synthesis_required,
+                    raw, require_typed_synthesis=typed_synthesis_required,
                     allowed_lineages=lineages,
                     fallback_directives=fallback_directives,
                     allowed_operations=allowed_operations)
-            except (TypeError, ValueError) as repaired_error:
-                reason = self._scientist_review_error_code(repaired_error)
-                raise ScientistReviewProtocolError(
-                    "scientist-review-invalid-after-one-provider-repair:"
-                    + reason) from repaired_error
-            return review, self._review_telemetry(
-                telemetry, projection, require_typed_synthesis,
-                typed_synthesis_available, second)
+                return review, self._review_telemetry(
+                    telemetry, projection, require_typed_synthesis,
+                    typed_synthesis_available, repairs)
+            except (TypeError, ValueError) as error:
+                if repair_index == SCIENTIST_REVIEW_FORMAT_REPAIR_ATTEMPTS:
+                    reason = self._scientist_review_error_code(error)
+                    raise ScientistReviewProtocolError(
+                        "scientist-review-invalid-after-format-repairs:"
+                        + reason) from error
+                raw, repair_telemetry = self.complete_json(
+                    system_message=system, payload={
+                        **payload, "protocol_repair": {
+                            "kind": "format-only",
+                            "repair_index": repair_index + 1,
+                            "maximum_repairs":
+                                SCIENTIST_REVIEW_FORMAT_REPAIR_ATTEMPTS,
+                            "previous_error": str(error),
+                            "new_scientific_evidence_available": False,
+                            "instruction": (
+                                "Return a complete replacement evidence review "
+                                "using only the unchanged supplied evidence. "
+                                "Evidence collections may contain strings or "
+                                "structured JSON objects; stop must be a JSON "
+                                "boolean. If no synthesis is scientifically "
+                                "warranted, set stop=true and explain why. "
+                                + ("Otherwise include at least one "
+                                   "synthesis_directives object using only "
+                                   "allowed lineage IDs and operations."
+                                   if typed_synthesis_required else ""))}})
+                repairs.append(repair_telemetry)
 
     def _proposal_payload(
         self, task_name: str, task_desc: str, context: ProposalContext,
