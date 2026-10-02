@@ -148,6 +148,47 @@ def test_scientist_prompt_exposes_versioned_witness_indices_without_provider(mon
         "allowed_operations"]
 
 
+def test_gap_review_receives_only_explicit_response_free_context(monkeypatch):
+    proposer = ProposalRuntime(
+        EquationRuntime(1, refit_policy="pcpi-expanded-fixed-inner-v1"),
+        1, None, 1)
+    raw = {"protocol_id": "scientific-engine-evidence-review-v1",
+        "supported_mechanisms": [], "contradicted_mechanisms": [],
+        "cross_engine_conflicts": [], "synthesis_instructions": ["compose"],
+        "stop": False, "stop_reason": "continue", "synthesis_directives": [{
+            "operation": "COMPOSE_FORMULA_AST", "lineage_ids": ["a", "b"],
+            "rationale": "target the diagnosed response-free gap",
+            "formula_ast": _tree()}]}
+    payloads = []
+
+    def complete_json(*, system_message, payload):
+        payloads.append((system_message, payload))
+        return raw, {"mock_response_free": True}
+
+    monkeypatch.setattr(proposer, "complete_json", complete_json)
+    kwargs = dict(
+        plan=deterministic_plan(
+            ("polynomial_lasso", "sparse_library"), 2),
+        engine_evidence=[{"lineage_id": "a", "expression": "x0"},
+                         {"lineage_id": "b", "expression": "x0**2"}],
+        require_typed_synthesis=True, allow_interactions=True,
+        expanded_formula_synthesis=True)
+    proposer.review_engine_evidence(**kwargs)
+    gap = {"posterior_gap_brief": {
+        "propose_allowed": True, "eligible_regions": ["region-0"]},
+        "posterior_gap_existing_supports": [["x0"], ["x0**2"]],
+        "candidate_response_accessed": False, "heldout_opened": False}
+    proposer.review_engine_evidence(**kwargs, scientific_context=gap)
+
+    blind_system, blind_payload = payloads[0]
+    gap_system, gap_payload = payloads[1]
+    assert blind_payload["engine_evidence"] == gap_payload["engine_evidence"]
+    assert blind_payload["scientific_context"] == {}
+    assert gap_payload["scientific_context"] == gap
+    assert "posterior_gap_brief" not in blind_system
+    assert "posterior_gap_brief" in gap_system
+
+
 def test_expanded_review_does_not_replace_missing_ast_with_old_union(monkeypatch):
     proposer = ProposalRuntime(
         EquationRuntime(1, refit_policy="pcpi-expanded-fixed-inner-v1"),

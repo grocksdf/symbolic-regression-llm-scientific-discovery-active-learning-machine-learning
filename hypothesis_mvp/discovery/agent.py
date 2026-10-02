@@ -593,7 +593,9 @@ class DiscoveryAgent:
             False, "audited provider abstention"), {
                 "provider_failure_abstention": fallback}
 
-    def _resolve_review(self, planner, plan, evidence, fallback):
+    def _resolve_review(
+            self, planner, plan, evidence, fallback,
+            scientific_context=None):
         if not (planner.enabled and self.config.scientist_orchestration):
             return ScientistReview(
                 ("deterministic engine evidence available",), (), (),
@@ -610,6 +612,8 @@ class DiscoveryAgent:
                 review_kwargs["allow_interactions"] = True
             if self.config.expanded_formula_synthesis:
                 review_kwargs["expanded_formula_synthesis"] = True
+            if scientific_context:
+                review_kwargs["scientific_context"] = scientific_context
             review, telemetry = planner.review_engine_evidence(**review_kwargs)
             return review, telemetry, None, 1
         except (ProtocolError, ProviderInfrastructureError,
@@ -638,8 +642,16 @@ class DiscoveryAgent:
                 "gap-directed proposal abstained")
             review_telemetry, review_calls = {"gap_abstention": True}, 0
         else:
+            review_context = (None if gap is None else {
+                "posterior_gap_brief": gap["prompt"],
+                "posterior_gap_existing_supports": gap["existing_supports"],
+                "candidate_response_accessed": False,
+                "heldout_opened": False,
+            })
             review, review_telemetry, fallback, review_calls = (
-                self._resolve_review(planner, plan, evidence, fallback))
+                self._resolve_review(
+                    planner, plan, evidence, fallback,
+                    scientific_context=review_context))
         orchestration = {"schema": "scientific-llm-engine-orchestration-v1",
             "scientist_state_before": task_context["scientist_state"],
             "research_plan": plan.to_dict(), "research_plan_identity": plan.stable_hash,

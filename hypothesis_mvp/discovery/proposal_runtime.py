@@ -1043,6 +1043,7 @@ class ProposalRuntime:
         require_typed_synthesis: bool = False,
         allow_interactions: bool = False,
         expanded_formula_synthesis: bool = False,
+        scientific_context: Mapping[str, Any] | None = None,
     ) -> tuple[ScientistReview, Mapping[str, Any]]:
         if expanded_formula_synthesis:
             witnessed = []
@@ -1070,6 +1071,7 @@ class ProposalRuntime:
         payload = {"protocol_id": ENGINE_REVIEW_PROTOCOL,
             "research_plan": plan.to_dict(),
             "engine_evidence": [dict(row) for row in engine_evidence],
+            "scientific_context": dict(scientific_context or {}),
             "authority": {
                 "may_synthesize_hypothesis_instructions": True,
                 "may_run_additional_engines": False,
@@ -1109,6 +1111,11 @@ class ProposalRuntime:
             "contradicted_mechanisms, cross_engine_conflicts, synthesis_instructions, "
             "stop and stop_reason. Base every statement only on supplied engine evidence. "
             "Do not certify efficacy, posterior correctness, or hidden-data performance. "
+            + ("Use the supplied response-free posterior_gap_brief to direct "
+               "composition toward independently diagnosed inadequacy regions. "
+               "The brief may guide generative proposals but grants no admission "
+               "or posterior authority. "
+               if scientific_context else "")
             + ("Provide at least one typed synthesis_directive and do not write a "
                "new equation; executable structure is compiled by code."
                if typed_synthesis_required else ""))
