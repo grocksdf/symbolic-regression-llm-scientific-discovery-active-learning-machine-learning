@@ -190,7 +190,10 @@ def design_matrix(x: np.ndarray, terms: Sequence[str]) -> np.ndarray:
     values = _inputs(x)
     columns: list[np.ndarray] = []
     for term in terms:
-        if term in BASIS_FUNCTIONS and values.shape[1] == 1:
+        if term.startswith("formula_ast_v1:"):
+            from .expanded_formula_basis import evaluate_fixed_formula_term
+            columns.append(evaluate_fixed_formula_term(term, values))
+        elif term in BASIS_FUNCTIONS and values.shape[1] == 1:
             columns.append(BASIS_FUNCTIONS[term](values[:, 0]))
         elif term == "intercept":
             columns.append(np.ones(len(values), dtype=float))

@@ -24,6 +24,9 @@ from hypothesis_mvp.pcpi.reference import (
     budget_resolved_distance_threshold,
 )
 from .source_stacking import source_family
+from hypothesis_mvp.pcpi.reference.expanded_formula_basis import (
+    compile_fixed_formula_support,
+)
 
 
 class DiscoveryAdapterError(ValueError):
@@ -223,6 +226,42 @@ def freeze_discovery_model(
 ) -> FrozenDiscoveryModel:
     if coefficient_policy != "discard-fitted-coefficients-refit-closed-basis":
         raise ValueError("explicit structural-refit authorization required")
+    return _freeze_model_with_support_parser(
+        candidates, n_features=n_features, prior=prior,
+        exploration_identity=exploration_identity,
+        coefficient_policy=coefficient_policy,
+        source_prior_weights=source_prior_weights,
+        minimum_supports=minimum_supports, support_parser=structural_terms)
+
+
+def freeze_expanded_formula_model(
+    candidates: Sequence[Mapping[str, str]], *, n_features: int,
+    prior: NormalInverseGammaPrior, exploration_identity: str,
+    coefficient_policy: str,
+    source_prior_weights: Mapping[str, float] | None = None,
+    minimum_supports: int = 2,
+) -> FrozenDiscoveryModel:
+    """Opt-in finite bank; freezes inner constants, refits outer amplitudes.
+
+    This independent reference entry point does not authorize measured PCPI,
+    generation, admission, or any historical frozen protocol.
+    """
+    if coefficient_policy != "discard-outer-amplitudes-freeze-inner-parameters-v1":
+        raise ValueError("explicit expanded-formula refit contract required")
+    return _freeze_model_with_support_parser(
+        candidates, n_features=n_features, prior=prior,
+        exploration_identity=exploration_identity,
+        coefficient_policy=coefficient_policy,
+        source_prior_weights=source_prior_weights,
+        minimum_supports=minimum_supports,
+        support_parser=compile_fixed_formula_support)
+
+
+def _freeze_model_with_support_parser(
+    candidates, *, n_features, prior, exploration_identity,
+    coefficient_policy, source_prior_weights, minimum_supports,
+    support_parser,
+):
     if len(exploration_identity) != 64 or any(c not in "0123456789abcdef" for c in exploration_identity):
         raise ValueError("exploration identity must be SHA-256")
     if type(minimum_supports) is not int or minimum_supports not in {1, 2}:
@@ -232,7 +271,7 @@ def freeze_discovery_model(
     for candidate in candidates:
         expression = str(candidate["expression"])
         try:
-            terms = structural_terms(expression, n_features)
+            terms = support_parser(expression, n_features)
         except (SyntaxError, ValueError) as error:
             digest = sha256(expression.encode("utf-8", errors="replace")).hexdigest()[:16]
             code = getattr(error, "public_diagnostic", type(error).__name__)
@@ -270,4 +309,5 @@ def freeze_discovery_model(
             f"source fallback leaves fewer than {minimum_supports} model supports")
     return FrozenDiscoveryModel(ReferenceBank(structures, prior), n_features,
                                 tuple(sorted(bindings)), exploration_identity,
+                                refit_policy=coefficient_policy,
                                 minimum_supports=minimum_supports)
