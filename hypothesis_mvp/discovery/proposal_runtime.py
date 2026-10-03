@@ -1202,6 +1202,8 @@ class ProposalRuntime:
             self.equation_runtime.refit_policy
             == "pcpi-expanded-fixed-inner-v1"
         )
+        if context.new_skeleton_quota and not expanded:
+            raise ProtocolError("new_skeleton_requires_expanded_contract")
         required_fields = (
             ["candidate_id", "parent_hash", "action", "equation", "rationale"]
             if expanded or not context.gap_directed
@@ -1218,6 +1220,10 @@ class ProposalRuntime:
             "forms, or arbitrary code. At least one candidate must use "
             "action='PROPOSE_NEW_SKELETON' and provide a complete equation "
             "that is not already present in the frozen supports."
+            + (f" You may propose at most {context.new_skeleton_quota} "
+               "distinct complete novel equations with that action; do not "
+               "fill the budget with unsupported structures."
+               if context.new_skeleton_quota else "")
             if expanded else
             "For downstream PCPI compatibility, each equation must be a sum "
             "of constants, x variables, degree-at-most-four monomials, or "
@@ -1240,7 +1246,8 @@ class ProposalRuntime:
                 "allowed_symbols": [f"x{i}" for i in range(context.n_features)],
                 "forbidden_symbols": ["y", "y_hat"],
                 "expanded_formula_contract": expanded,
-                "allowed_actions": sorted(ALLOWED_ACTIONS),
+                "allowed_actions": sorted(ALLOWED_ACTIONS - (
+                    set() if expanded else {"PROPOSE_NEW_SKELETON"})),
                 "new_skeleton_quota": context.new_skeleton_quota,
                 **({"correction_field_enabled": True}
                     if context.gap_directed and not expanded else {}),
@@ -1260,11 +1267,12 @@ class ProposalRuntime:
                     "family with different coefficients. " + grammar_instruction
                     + (" Independently audited posterior gap is provided in "
                        "scientific_context.posterior_gap_brief. Propose for its eligible "
-                       "regions. Optionally include correction containing y_hat and x "
-                       "variables; the system will substitute the current_expression, "
-                       "expand within a bounded grammar and reject nonnovel supports. "
-                       "Provide either a complete equation or a correction; "
-                       "if both exist correction takes precedence."
+                       "regions. "
+                       + ("Provide complete x-only equations; corrections are not registered."
+                          if expanded else
+                          "Optionally include correction containing y_hat and x "
+                          "variables; the system substitutes current_expression and "
+                          "rejects nonnovel supports. If both exist correction takes precedence.")
                        if context.gap_directed else "")
                 ),
             },
@@ -1302,17 +1310,12 @@ class ProposalRuntime:
         action = str(item.get("action") or "").upper()
         if action not in ALLOWED_ACTIONS:
             raise ProtocolError("invalid_action")
-        expanded = (
-            self.equation_runtime.refit_policy
-            == "pcpi-expanded-fixed-inner-v1"
-        )
         if action == "PROPOSE_NEW_SKELETON":
-            if not expanded:
-                raise ProtocolError("new_skeleton_requires_expanded_contract")
-            if item.get("correction") is not None:
-                raise ProtocolError("new_skeleton_cannot_use_correction")
-            if not str(item.get("equation") or "").strip():
-                raise ProtocolError("new_skeleton_requires_equation")
+            if (self.equation_runtime.refit_policy != "pcpi-expanded-fixed-inner-v1"
+                    or context.new_skeleton_quota < 1):
+                raise ProtocolError("new_skeleton_not_registered_for_round")
+            if item.get("correction") is not None or not str(item.get("equation") or "").strip():
+                raise ProtocolError("new_skeleton_requires_complete_equation")
         correction = item.get("correction")
         if correction is not None:
             if self.equation_runtime.refit_policy == "pcpi-expanded-fixed-inner-v1":
@@ -1333,6 +1336,13 @@ class ProposalRuntime:
             support_parser = (compile_fixed_formula_support
                 if self.equation_runtime.refit_policy == "pcpi-expanded-fixed-inner-v1"
                 else structural_terms)
+            if action == "PROPOSE_NEW_SKELETON":
+                support = support_parser(equation, context.n_features)
+                if support in context.existing_supports:
+                    raise ProtocolError("new_skeleton_duplicates_frozen_bank")
+                if context.incumbent_expression and support == support_parser(
+                        context.incumbent_expression, context.n_features):
+                    raise ProtocolError("new_skeleton_duplicates_incumbent")
             if context.gap_directed and support_parser(
                     equation, context.n_features) in context.existing_supports:
                 raise ProtocolError("proposal_duplicates_frozen_bank")
@@ -1373,6 +1383,7 @@ class ProposalRuntime:
         rejections: list[Mapping[str, Any]] = []
         normalizations: list[Mapping[str, Any]] = []
         seen: set[str] = set()
+        skeleton_supports: set[tuple[str, ...]] = set()
         new_skeleton_count = 0
         for index, item in enumerate(items):
             identifier = str(item.get("candidate_id") or "") if isinstance(item, Mapping) else ""
@@ -1385,6 +1396,11 @@ class ProposalRuntime:
                 if candidate.candidate_id in seen:
                     raise ProtocolError("duplicate_candidate_id")
                 if candidate.action == "PROPOSE_NEW_SKELETON":
+                    support = compile_fixed_formula_support(
+                        candidate.equation, context.n_features)
+                    if support in skeleton_supports:
+                        raise ProtocolError("duplicate_new_skeleton_support")
+                    skeleton_supports.add(support)
                     new_skeleton_count += 1
                     if context.new_skeleton_quota <= 0:
                         raise ProtocolError("new_skeleton_not_registered_for_round")
@@ -1404,11 +1420,14 @@ class ProposalRuntime:
                     "error_type": type(error).__name__,
                     "error": str(error),
                 })
+        if new_skeleton_count > context.new_skeleton_quota:
+            raise ProtocolError("new_skeleton_quota_exceeded")
         if context.new_skeleton_quota > 0 and new_skeleton_count == 0:
             raise ProtocolError("expanded_batch_missing_new_skeleton")
         return tuple(candidates), tuple(rejections), tuple(normalizations)
 
-    def _system_message(self, gap_directed: bool = False) -> str:
+    def _system_message(self, gap_directed: bool = False,
+                        new_skeleton_quota: int = 0) -> str:
         allowed = ", ".join(f"x{i}" for i in range(self.n_features))
         expanded = self.equation_runtime.refit_policy == "pcpi-expanded-fixed-inner-v1"
         return (
@@ -1437,11 +1456,14 @@ class ProposalRuntime:
                " The closed basis permits constants, x variables, degree-at-most-four "
                "monomials and sin(xi), cos(xi), tanh(xi) only; never use division "
                "or compound transforms.")
-            + (" At least one candidate must use action "
+            + ((" At least one candidate must use action "
                "'PROPOSE_NEW_SKELETON' and include a complete equation; "
                "this action is the only registered route for a topology not "
                "already witnessed by an engine."
-               if expanded else "")
+               + (f" You may emit at most {new_skeleton_quota} distinct "
+                  "complete novel equations with that action; do not "
+                  "invent a structure to fill the budget."))
+               if expanded and new_skeleton_quota else "")
             + ((" If an independently supported posterior gap is supplied, you may "
                + ("send an equation field using x variables only; expanded "
                 "y_hat corrections are not registered. " if expanded else
@@ -1456,7 +1478,8 @@ class ProposalRuntime:
         self, payload: Mapping[str, Any], context: ProposalContext,
     ) -> _ValidatedResponse:
         messages, prompt_hash = self._messages(
-            payload, self._system_message(context.gap_directed))
+            payload, self._system_message(context.gap_directed,
+                                          context.new_skeleton_quota))
         self.call_count += 1
         content, telemetry = self._request(messages, prompt_hash)
         response_hash = hashlib.sha256(content.encode()).hexdigest()
@@ -1513,16 +1536,18 @@ class ProposalRuntime:
                 "propose_allowed", False)
         )
         supplied_quota = island_context.get("new_skeleton_quota")
-        default_quota = (
-            1 if expanded and (gap_directed or
-                               island_context.get("expanded_formula_discovery", False))
-            else 0
-        )
-        quota = (
-            default_quota if supplied_quota is None
-            else max(0, int(supplied_quota))
-        )
-        quota = min(self.candidates_per_island, quota)
+        if supplied_quota is None:
+            quota = (
+                1 if expanded and (gap_directed or
+                                   island_context.get("expanded_formula_discovery", False))
+                else 0
+            )
+            quota = min(self.candidates_per_island, quota)
+        else:
+            if (type(supplied_quota) is not int or supplied_quota < 0
+                    or supplied_quota > self.candidates_per_island):
+                raise ProtocolError("invalid_new_skeleton_quota")
+            quota = supplied_quota
         context = ProposalContext(
             round_id, island, parent_hash, self.n_features, self.candidates_per_island,
             incumbent_expression=str(island_context.get("current_expression") or ""),
@@ -1551,6 +1576,10 @@ class ProposalRuntime:
                 selected = self._request_validated(repair_payload, context)
                 responses.append(selected)
             telemetry = self._response_telemetry(responses, library_rows)
+            telemetry["new_skeleton_quota"] = context.new_skeleton_quota
+            telemetry["valid_new_skeletons"] = sum(
+                candidate.action == "PROPOSE_NEW_SKELETON"
+                for candidate in selected.candidates)
             protocol_valid = bool(selected.candidates and not selected.rejections)
             reason = (
                 "ok_after_protocol_repair" if len(responses) > 1 and protocol_valid

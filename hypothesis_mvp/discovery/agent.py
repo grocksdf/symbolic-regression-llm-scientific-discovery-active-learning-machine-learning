@@ -71,6 +71,7 @@ class DiscoveryAgentConfig:
     task_local_memory: bool = False
     discovery_rounds: int = 3
     candidates_per_island: int = 4
+    new_skeleton_quota: int = 0
     task_local_memory_topk: int = 8
     llm_evaluation_reserve: int = 0
     refit_policy: str = "global-constants"
@@ -267,6 +268,17 @@ class DiscoveryAgent:
                 "synthesis evaluation reserve requires typed inner augmentation")
         if config.posterior_gap_directed and not config.typed_inner_augmentation:
             raise ValueError("posterior gap requires typed inner augmentation")
+        if (type(config.new_skeleton_quota) is not int
+                or config.new_skeleton_quota < 0
+                or config.new_skeleton_quota > config.candidates_per_island
+                or (config.new_skeleton_quota > 0
+                    and config.refit_policy != "pcpi-expanded-fixed-inner-v1")):
+            raise ValueError("new skeleton quota requires expanded contract and candidate slots")
+        if (config.new_skeleton_quota > 0
+                and config.llm_evaluation_reserve <
+                config.new_skeleton_quota * len(config.discovery_islands)
+                * config.discovery_rounds):
+            raise ValueError("new skeleton evaluation reserve cannot cover all requested batches")
         if config.allocation_calibration_role not in {
                 "production", "paired-challenger"}:
             raise ValueError("invalid allocation calibration role")
@@ -497,6 +509,7 @@ class DiscoveryAgent:
                 "structure_library_topk": self.config.task_local_memory_topk,
                 "max_rounds": self.config.discovery_rounds,
                 "candidates_per_island": self.config.candidates_per_island,
+                "new_skeleton_quota": self.config.new_skeleton_quota,
             }),
             provider_settings=(self.provider_settings if gap_allowed and (
                 not self.config.typed_evidence_synthesis
@@ -820,6 +833,9 @@ class DiscoveryAgent:
                               reference_model.stable_hash if reference_model else ""),
                           "audit_identity": audit.fingerprint,
                           "audit_row_count": int(evidence.audit_row_count),
+                          "gap_bank_inputs": "current_cycle_engine_rows_only",
+                          "prior_cycle_admitted_candidates_used": False,
+                          "iterative_posterior_refinement_verified": False,
                           "undefined_row_count": int(
                               evidence.undefined_row_count),
                           "undefined_row_meaning": (
@@ -912,7 +928,11 @@ class DiscoveryAgent:
                      if selection.acquisition_pool is not None else 0)
         return DiscoveryAgentResult(
             final, tuple(history), selection, remaining, self.provider_settings is not None,
-            system_evaluation(history),
+            {**system_evaluation(history),
+             "iterative_posterior_refinement_verified": False,
+             "posterior_feedback_boundary": (
+                 "regional admission runs after discovery cycles; "
+                 "subsequent gaps cannot include admitted LLM candidates")},
         )
 
 

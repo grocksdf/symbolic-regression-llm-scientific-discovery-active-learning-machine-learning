@@ -88,6 +88,7 @@ class DiscoveryConfig:
     synthesis_evaluation_reserve: int = 0
     max_rounds: int = 3
     candidates_per_island: int = 4
+    new_skeleton_quota: int = 0
     patience: int = 2
     max_complexity: int = 160
     exploration_max_terms: int = 6
@@ -161,13 +162,21 @@ class DiscoveryConfig:
         if (not islands or len(set(islands)) != len(islands)
                 or any(value not in {*ISLANDS, "balanced"} for value in islands)):
             raise ValueError("islands must be unique registered discovery objectives")
+        quota = _pick(m, "new_skeleton_quota", 0)
+        candidates = min(8, max(1, _env_int(
+            "HYPOTHESIS_DISCOVERY_CANDIDATES_PER_ISLAND",
+            int(_pick(m, "candidates_per_island", 4)))))
+        if (type(quota) is not int or quota < 0 or quota > candidates
+                or quota > 8):
+            raise ValueError("new skeleton quota must fit candidates per island")
         return cls(
             refit_policy=str(_pick(m, "refit_policy", "global-constants")),
             evaluation_budget=evaluation_budget,
             llm_evaluation_reserve=max(0, _env_int("HYPOTHESIS_DISCOVERY_LLM_EVALUATION_RESERVE", int(_pick(m, "llm_evaluation_reserve", 0)))),
             synthesis_evaluation_reserve=int(_pick(m, "synthesis_evaluation_reserve", 0)),
             max_rounds=min(8, max(1, _env_int("HYPOTHESIS_DISCOVERY_MAX_ROUNDS", int(_pick(m, "max_rounds", 3))))),
-            candidates_per_island=min(8, max(1, _env_int("HYPOTHESIS_DISCOVERY_CANDIDATES_PER_ISLAND", int(_pick(m, "candidates_per_island", 4))))),
+            candidates_per_island=candidates,
+            new_skeleton_quota=quota,
             patience=max(1, _env_int("HYPOTHESIS_DISCOVERY_PATIENCE", int(_pick(m, "patience", 2)))),
             max_complexity=max(16, _env_int("HYPOTHESIS_DISCOVERY_MAX_COMPLEXITY", int(_pick(m, "max_complexity", 160)))),
             exploration_max_terms=max(2, _env_int("HYPOTHESIS_DISCOVERY_G_MAX_TERMS", int(_pick(m, "exploration_max_terms", 6)))),

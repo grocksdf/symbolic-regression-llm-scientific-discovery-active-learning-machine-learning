@@ -141,8 +141,8 @@ LEGACY_LONG_FUNCTIONS = frozenset({
     (
         "discovery/agent.py",
         "run",
-        83,
-        "f65aab33462a02f6f5a0a1cfb5b5ad403ed4ad0c4172a8fbef739d8c37bbe0b2",
+        87,
+        "805ee1d6169a1267ba5580e9ef7b569deb2cab5bb049cd52f56a8b2dc194f95d",
     ),
     (
         "discovery/system_ablation.py",
@@ -165,14 +165,31 @@ LEGACY_LONG_FUNCTIONS = frozenset({
     (
         "discovery/agent.py",
         "_independent_gap_brief",
-        99,
-        "f3d6506b95d061d8434889ff394ec4431f09f618af3a205a52ce354c668dcb51",
+        102,
+        "e64f0f5812477b6de020564fe852cd3cd910ba4074fb8b4856fff3c220da4402",
     ),
     (
         "discovery/posterior_gap_evidence.py",
         "screen_independent_adequacy",
         106,
         "9f9786430698014bd471ceab24713f34a37bfa37eb29bd8dbf833180d71453e4",
+    ),
+    # Expanded iterative-refinement audit (contract
+    # docs/expanded_iterative_refinement_audit_20261003.md): the new-skeleton
+    # quota is carried by the agent, the inner discovery contract and the
+    # proposal payload.  Each entry fails closed again on the next edit to
+    # its body.
+    (
+        "discovery/proposal_runtime.py",
+        "_proposal_payload",
+        84,
+        "67714db66d1ea867935a5744aace455e825ee6d06a94a1b95fc6468a8ce03ed1",
+    ),
+    (
+        "discovery/contracts.py",
+        "from_mapping",
+        101,
+        "a0d69c07e2e08ac5626566c3271a8da6371a5e2477734f234c2a42ccf0c5530e",
     ),
 })
 

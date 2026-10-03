@@ -199,7 +199,9 @@ class ScientificDiscoveryRuntime:
             "allowed_edits": [
                 "ADD", "DELETE", "REPLACE", "REPARAMETERIZE",
                 "CHANGE_OPERATOR", "CHANGE_INTERACTION",
-            ],
+            ] + (["PROPOSE_NEW_SKELETON"]
+                 if self.config.new_skeleton_quota else []),
+            "new_skeleton_quota": self.config.new_skeleton_quota,
             "scientist_orchestration": self.orchestration_context,
         }
 
