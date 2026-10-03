@@ -99,6 +99,9 @@ def main(argv=None):
         and isinstance(completion, dict)
         and completion == {"ok": True})
     result = {"schema": "response-free-provider-transport-preflight-v2",
+              "base_url": args.base_url.rstrip("/"),
+              "model": args.model,
+              "provider_env_path": str(args.provider_env.resolve()),
               "http_status": status,
               "error_code": error_code,
               "classification": classify_transport(status, error_code),

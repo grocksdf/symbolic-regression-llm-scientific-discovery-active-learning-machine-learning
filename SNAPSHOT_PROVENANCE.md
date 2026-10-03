@@ -6,7 +6,7 @@ This branch is a clean source snapshot exported from:
 
 - upstream project: `deep-symbolic-mathematics/llm-srbench`
 - local source branch: `codex/restart-experiment-adapter`
-- source commit: `d9713bef` (Partition the gap roles into cycles for the iterative expanded condition)
+- source commit: `2ed161ad` (Register the iterative Full / frozen-engine bank predictive matrix)
 
 The snapshot intentionally excludes the upstream Git history because that
 history contains experimental ledgers larger than GitHub's 100 MB per-file
@@ -62,6 +62,28 @@ tool `scripts/audit_iterative_bank_reporting.py`. The nine-role historical
 split is unchanged, and this adapter now requires mainline `5f22eeca` or
 later for the `core_rows_before` / `bank_rows_after` /
 `posterior_map_expression` trace fields and the positive-quota expanded guard.
+
+The 2026-10-04 second increment brings the branch up to local source commit
+`2ed161ad` (1 commit, 8 changed files: +1002 / -4, all under `docs/`,
+`scripts/` and `tests/`). It registers the iterative Full / frozen-engine bank
+predictive matrix as a new protocol beside the untouched historical three-arm
+predictive gate: `scripts/iterative_matrix_contract.py` (response-free identity
+and config contract), `scripts/build_iterative_expanded_matrix_freeze.py`
+(hash-selected fresh tasks after every supplied exclusion freeze, symbol-only
+metadata, provider-env identity), `scripts/run_iterative_expanded_matrix.py`
+(all child artifacts frozen before any train-reporting response is decoded, no
+resume) and `scripts/check_iterative_matrix_correctness.py`, together with 8
+response-free orchestration and integrity checks in
+`tests/test_iterative_expanded_matrix.py` and the protocol note
+`docs/iterative_expanded_matrix_v1.md`. The child output guard now rejects any
+pre-existing path, including an empty directory left by a crashed process, and
+the provider preflight records model, base URL and credential-file identity
+without recording credential contents. The bank-only ablation has no matched
+non-LLM new-skeleton proposal attempts, so the freeze, result and docs record
+`formula_recovery_attribution_authorized: false`; no formula-recovery claim is
+authorized by this protocol. The provider-transport, correctness-gate and
+freeze JSON artifacts are runtime inputs, so they must be regenerated per
+`docs/iterative_expanded_matrix_v1.md` before any matrix execution.
 
 Nothing here rescores the historical rows. The 36-row expanded-formula
 development run keeps its `passed=false` result; see

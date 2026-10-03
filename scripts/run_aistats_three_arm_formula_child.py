@@ -48,10 +48,11 @@ def _provider_key(path: Path) -> str:
 
 
 def _require_clean_output_dir(path: Path) -> None:
-    if path.exists() and any(child.is_file() for child in path.rglob("*")):
-        raise ValueError(
-            "three-arm child output contains materialized files")
-    path.mkdir(parents=True, exist_ok=True)
+    # A formal child has exactly one creation attempt.  Even an empty directory
+    # may be the residue of a crashed or concurrently starting process.
+    if path.exists():
+        raise ValueError("three-arm child output path already exists")
+    path.mkdir(parents=True, exist_ok=False)
 
 
 @contextmanager
