@@ -23,6 +23,9 @@ from hypothesis_mvp.discovery.pcpi_adapter import EXPANDED_FORMULA_POLICY
 from hypothesis_mvp.discovery.regional_candidate_admission import (
     admit_regional_candidates,
 )
+from hypothesis_mvp.discovery.iterative_reporting import (
+    paired_iterative_bank_reporting,
+)
 from hypothesis_mvp.discovery.system_ablation import run_exploration_ablations
 
 
@@ -53,6 +56,8 @@ def test_admission_changes_actual_frozen_posterior_used_by_second_gap(
         iterative_posterior_refinement=True,
         expanded_formula_synthesis=True,
         refit_policy="pcpi-expanded-fixed-inner-v1",
+        discovery_islands=("novelty",), discovery_rounds=1,
+        new_skeleton_quota=1,
         synthesis_evaluation_reserve=3, llm_evaluation_reserve=4)
     agent = DiscoveryAgent(config, ProviderSettings(routes=(ProviderRoute(
         "https://example.invalid", "fixture", "fixture"),)))
@@ -101,6 +106,26 @@ def test_admission_changes_actual_frozen_posterior_used_by_second_gap(
     assert trace[1]["proposal_batch_count"] > 0
     assert result.system_evaluation["iterative_feedback_gate"]["passed"]
     assert result.system_evaluation["iterative_posterior_refinement_verified"]
+    reporting_x = np.linspace(12., 13., 12)[:, None]
+    reporting = RoleDataset(DataRole.VALIDATION, reporting_x,
+                            reporting_x[:, 0] ** 2)
+    scores = paired_iterative_bank_reporting(
+        result, selection, reporting, roles, NormalInverseGammaPrior(), 4)
+    assert len(scores["cycles"]) == 2
+    assert scores["reporting_identity"] == reporting.fingerprint
+    assert scores["cycles"][0]["full_bank"] == trace[0]["bank_after"]
+    assert scores["cycles"][0]["no_llm_bank"] == trace[0]["bank_before"]
+    assert not scores["measured_action_authorized"]
+    with pytest.raises(ValueError, match="overlap"):
+        paired_iterative_bank_reporting(
+            result, selection, roles[0][0], roles,
+            NormalInverseGammaPrior(), 4)
+    action_x = selection.acquisition_pool.X[-1:]
+    with pytest.raises(ValueError, match="overlap"):
+        paired_iterative_bank_reporting(result, selection,
+            RoleDataset(DataRole.VALIDATION, action_x,
+                        action_x[:, 0] ** 2), roles,
+            NormalInverseGammaPrior(), 4)
 
 
 def test_reused_cycle_response_role_fails_before_output(tmp_path):

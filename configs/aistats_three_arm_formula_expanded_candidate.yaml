@@ -38,16 +38,18 @@ agent_config:
   candidates_per_island: 2
   task_local_memory_topk: 8
   synthesis_evaluation_reserve: 3
-  llm_evaluation_reserve: 4
+  # One new skeleton in each of three islands over two inner rounds.
+  llm_evaluation_reserve: 6
+  new_skeleton_quota: 1
   refit_policy: pcpi-expanded-fixed-inner-v1
   expanded_formula_synthesis: true
-  expanded_formula_discovery: true
   discovery_islands: [low_complexity, nmse, novelty]
   scientist_orchestration: true
   require_explicit_skill_controls: true
   typed_evidence_synthesis: true
   typed_inner_augmentation: true
   posterior_gap_directed: true
+  iterative_posterior_refinement: true
   protected_counterfactual_backbone: true
   provider_failure_mode: abort
   conservative_allocation_policy: {}

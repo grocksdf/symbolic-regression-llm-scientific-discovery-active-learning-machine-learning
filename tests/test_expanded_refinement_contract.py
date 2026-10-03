@@ -97,3 +97,30 @@ def test_actual_proposal_request_carries_four_skeletons(monkeypatch):
     assert batch.protocol_valid and len(batch.candidates) == 4
     assert observed["payload"]["contract"]["new_skeleton_quota"] == 4
     assert batch.telemetry["valid_new_skeletons"] == 4
+
+
+def test_zero_quota_payload_does_not_request_forbidden_action():
+    runtime = _runtime()
+    context = ProposalContext(1, "novelty", "p", 2, 2,
+                              new_skeleton_quota=0)
+    payload = runtime._proposal_payload("fixture", "fixture", context,
+                                        {}, (), ())
+    assert "PROPOSE_NEW_SKELETON" not in payload["contract"]["allowed_actions"]
+    assert "not registered" in payload["contract"]["instruction"]
+
+
+def test_registered_iterative_config_has_real_topology_budget():
+    from pathlib import Path
+    import yaml
+    from hypothesis_mvp.discovery.agent import DiscoveryAgent, DiscoveryAgentConfig
+    from hypothesis_mvp.discovery.proposal_runtime import ProviderRoute, ProviderSettings
+
+    raw = yaml.safe_load((Path(__file__).parents[1] / "configs" /
+        "aistats_three_arm_formula_expanded_candidate.yaml").read_text())
+    config = DiscoveryAgentConfig(**raw["agent_config"])
+    assert config.iterative_posterior_refinement
+    assert config.new_skeleton_quota >= 1
+    assert config.llm_evaluation_reserve >= (config.new_skeleton_quota
+        * len(config.discovery_islands) * config.discovery_rounds)
+    DiscoveryAgent(config, ProviderSettings(routes=(ProviderRoute(
+        "https://example.invalid", "fixture", "fixture"),)))

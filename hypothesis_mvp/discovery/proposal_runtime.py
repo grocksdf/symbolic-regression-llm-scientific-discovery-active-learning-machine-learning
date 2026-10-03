@@ -1217,13 +1217,16 @@ class ProposalRuntime:
             "nonlinear transforms are frozen in the candidate identity; only "
             "outer linear amplitudes are refit downstream. Do not emit "
             "symbolic theta parameters, y, y_hat, assignments, piecewise "
-            "forms, or arbitrary code. At least one candidate must use "
-            "action='PROPOSE_NEW_SKELETON' and provide a complete equation "
-            "that is not already present in the frozen supports."
-            + (f" You may propose at most {context.new_skeleton_quota} "
+            "forms, or arbitrary code. "
+            + ("At least one candidate must use "
+               "action='PROPOSE_NEW_SKELETON' and provide a complete equation "
+               "that is not already present in the frozen supports. "
+               f"You may propose at most {context.new_skeleton_quota} "
                "distinct complete novel equations with that action; do not "
                "fill the budget with unsupported structures."
-               if context.new_skeleton_quota else "")
+               if context.new_skeleton_quota else
+               "PROPOSE_NEW_SKELETON is not registered for this run; "
+               "do not use that action.")
             if expanded else
             "For downstream PCPI compatibility, each equation must be a sum "
             "of constants, x variables, degree-at-most-four monomials, or "
@@ -1247,7 +1250,8 @@ class ProposalRuntime:
                 "forbidden_symbols": ["y", "y_hat"],
                 "expanded_formula_contract": expanded,
                 "allowed_actions": sorted(ALLOWED_ACTIONS - (
-                    set() if expanded else {"PROPOSE_NEW_SKELETON"})),
+                    set() if expanded and context.new_skeleton_quota else
+                    {"PROPOSE_NEW_SKELETON"})),
                 "new_skeleton_quota": context.new_skeleton_quota,
                 **({"correction_field_enabled": True}
                     if context.gap_directed and not expanded else {}),

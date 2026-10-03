@@ -141,8 +141,8 @@ LEGACY_LONG_FUNCTIONS = frozenset({
     (
         "discovery/agent.py",
         "run",
-        220,
-        "487b5a3d1f1c24e6436839efe0f150ce790bfcf56cf271784474d3a0ae4643ce",
+        230,
+        "91b1c58bb119f89a92b0b833cbfedb4e77d866755f28cf108425c35f0c1fe344",
     ),
     (
         "discovery/system_ablation.py",
@@ -182,8 +182,8 @@ LEGACY_LONG_FUNCTIONS = frozenset({
     (
         "discovery/proposal_runtime.py",
         "_proposal_payload",
-        84,
-        "67714db66d1ea867935a5744aace455e825ee6d06a94a1b95fc6468a8ce03ed1",
+        88,
+        "d977c57f21eb14efc8541ff3218f4cadb52c43cc1feed8b7a9813905ad5e925d",
     ),
     (
         "discovery/contracts.py",

@@ -301,6 +301,10 @@ class DiscoveryAgent:
                 not config.posterior_gap_directed or config.cycles < 2
                 or config.task_local_memory or config.use_knowledge):
             raise ValueError("iterative posterior refinement requires separate gap roles and no memory")
+        if (config.iterative_posterior_refinement
+                and config.expanded_formula_synthesis
+                and config.new_skeleton_quota < 1):
+            raise ValueError("iterative expanded refinement requires a positive new skeleton quota")
         if (type(config.new_skeleton_quota) is not int
                 or config.new_skeleton_quota < 0
                 or config.new_skeleton_quota > config.candidates_per_island
@@ -1047,6 +1051,12 @@ class DiscoveryAgent:
                     expected_model_identity=after_model.stable_hash)
                 expected_next_bank = after_model.stable_hash
                 expected_next_target = after_target.stable_hash
+                map_id = after_target.initial_posterior.map_structure_id
+                map_expressions = sorted(expression for _, expression, identifier
+                                         in after_model.candidate_bindings
+                                         if identifier == map_id)
+                if not map_expressions:
+                    raise ValueError("posterior MAP structure lacks a bank expression")
                 support_key = lambda row: json.dumps(parser(
                     str(row["expression"]), selection.development.X.shape[1]))
                 brief_identity = sha256(json.dumps(gap["prompt"],
@@ -1063,6 +1073,7 @@ class DiscoveryAgent:
                     proposal_audits[0]["posterior_gap_identity"])
                 feedback_trace.append({
                     "bank_before": gap["model"].stable_hash,
+                    "core_rows_before": [dict(r) for r in gap["core_rows"]],
                     "posterior_before": gap["target"].stable_hash,
                     "gap_bank": gap["model"].stable_hash,
                     "gap_posterior": gap["target"].stable_hash,
@@ -1071,6 +1082,9 @@ class DiscoveryAgent:
                     "bank_after": after_model.stable_hash,
                     "posterior_after": after_target.stable_hash,
                     "bank_supports_after": [support_key(r) for r in after_rows],
+                    "bank_rows_after": [dict(r) for r in after_rows],
+                    "posterior_map_structure_id": map_id,
+                    "posterior_map_expression": map_expressions[0],
                     "admitted_supports": [support_key(r) for r in retained],
                     "fit_rows": sorted(selection.development.row_fingerprints),
                     "selection_rows": sorted(selection.validation.row_fingerprints),

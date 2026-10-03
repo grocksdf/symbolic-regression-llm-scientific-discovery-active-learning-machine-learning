@@ -78,6 +78,12 @@ The fixture must prove, without benchmark responses:
 
 ## New method identity and experiment
 
+The original proposal-only instructions below predate the adaptive role
+integration. For the current source contract and its explicit remaining
+measured-runner boundary, see
+`docs/expanded_iterative_benchmark_integration_20261003.md`. The new
+iterative condition cannot be executed through the old three-arm runner.
+
 Use the added
 configs/aistats_three_arm_formula_expanded_candidate.yaml.
 It is a new development protocol. Keep the earlier formula_round2_source_first.yaml
@@ -112,4 +118,3 @@ Report separately:
 Do not use this new development run to rewrite the previous all-zero result. It tests
 a new representation/engine/proposal protocol after the documented
 representation-mismatch NO-GO.
-

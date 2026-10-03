@@ -24,7 +24,7 @@ dependencies = [
 
 [project.optional-dependencies]
 symbolic = ["pysr>=0.15.1"]
-test = ["pytest>=7.4"]
+test = ["pytest>=7.4", "pyyaml>=6.0"]
 benchmark = ["h5py>=3.10,<4"]
 
 [project.scripts]
