@@ -18,16 +18,22 @@ from hypothesis_mvp.pcpi.acquisition import predictive_components_for_partition
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
 
 from .candidate_region_expansion import FrozenAxisRegions, RegionSelectorPosterior
-from .pcpi_adapter import freeze_discovery_model, freeze_discovery_target, structural_terms
+from .pcpi_adapter import (
+    freeze_discovery_target, model_factory_for_policy, support_parser_for_policy,
+)
+
+
+CLOSED_POLICY = "discard-fitted-coefficients-refit-closed-basis"
 
 
 def _fixed_predictive_logpdf(candidates, fit, observations, domain,
-                             prior, measurement_budget):
+                             prior, measurement_budget, *,
+                             coefficient_policy=CLOSED_POLICY):
     identity = sha256(json.dumps(candidates, sort_keys=True).encode()).hexdigest()
-    model = freeze_discovery_model(
+    model = model_factory_for_policy(coefficient_policy)(
         candidates, n_features=fit.X.shape[1], prior=prior,
         exploration_identity=identity,
-        coefficient_policy="discard-fitted-coefficients-refit-closed-basis",
+        coefficient_policy=coefficient_policy,
         minimum_supports=1)
     target = freeze_discovery_target(
         model, fit, domain, measurement_budget=measurement_budget,
@@ -52,6 +58,7 @@ def admit_regional_candidates(
     admission: RoleDataset, domain: np.ndarray, regions: FrozenAxisRegions,
     eligible_regions: tuple[int, ...], prior: NormalInverseGammaPrior,
     measurement_budget: int, *, alpha: float = .05,
+    coefficient_policy: str = CLOSED_POLICY,
 ) -> tuple[list[dict], dict]:
     """Bonferroni evidence ratios for independent fixed-expert predictive laws.
 
@@ -80,15 +87,17 @@ def admit_regional_candidates(
                     "admission_identity": admission.fingerprint,
                     "candidate_response_accessed": False,
                     "heldout_opened": False}
-    core_supports = {structural_terms(row["expression"], fit.X.shape[1])
+    parser = support_parser_for_policy(coefficient_policy)
+    core_supports = {parser(row["expression"], fit.X.shape[1])
                      for row in core}
     core_score, core_identity = _fixed_predictive_logpdf(
-        core, fit, admission, domain, prior, measurement_budget)
+        core, fit, admission, domain, prior, measurement_budget,
+        coefficient_policy=coefficient_policy)
     assignments = regions.assign(admission.X)
     threshold = math.log(len(proposals) * len(eligible_regions) / alpha)
     retained, results = [], []
     for candidate in proposals:
-        support = structural_terms(candidate["expression"], fit.X.shape[1])
+        support = parser(candidate["expression"], fit.X.shape[1])
         identity = sha256(json.dumps(candidate, sort_keys=True,
                                       default=str).encode()).hexdigest()
         if support in core_supports:
@@ -101,7 +110,8 @@ def admit_regional_candidates(
                             "reason": "duplicate-engine-support", "admitted": False})
             continue
         optional_score, law_identity = _fixed_predictive_logpdf(
-            [candidate], fit, admission, domain, prior, measurement_budget)
+            [candidate], fit, admission, domain, prior, measurement_budget,
+            coefficient_policy=coefficient_policy)
         selector = RegionSelectorPosterior.from_partition(
             regions, ("core", identity),
             np.full((len(regions.cuts) + 1, 2), .5))
@@ -131,6 +141,7 @@ def admit_regional_candidates(
                       "region_identity": regions.identity,
                       "admission_identity": admission.fingerprint,
                       "gap_identity": gap_audit.fingerprint,
+                      "coefficient_policy": coefficient_policy,
                       "attempts": len(proposals), "candidates": results,
                       "decision_contribution_assessed": False,
                       "candidate_response_accessed": False,

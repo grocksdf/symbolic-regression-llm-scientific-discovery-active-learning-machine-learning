@@ -186,6 +186,8 @@ def run_exploration_ablations(root, selection, *, dataset, config,
                              gap_admission=None, decision_reference=None,
                              decision_calibration=None,
                              decision_selector_update=None):
+    if getattr(config, "iterative_posterior_refinement", False):
+        raise ValueError("iterative posterior refinement has no paired ablation role forwarding")
     if (not isinstance(config, DiscoveryAgentConfig) or config.cycles < 1
             or len(config.engines) < 2 or len(set(config.engines)) != len(config.engines)
             or single_engine not in config.engines or config.engine_repeats < 1

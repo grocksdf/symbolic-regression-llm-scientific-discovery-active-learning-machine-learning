@@ -34,6 +34,10 @@ from .pcpi_adapter import (freeze_discovery_model, freeze_discovery_target,
     support_parser_for_policy)
 from .posterior_gap_diagnosis import diagnose_frozen_bank
 from .posterior_gap_evidence import screen_independent_adequacy
+from .regional_candidate_admission import admit_regional_candidates
+from .knowledge_runtime import KnowledgeRuntime
+from .iterative_refinement_gate import verify_iterative_refinement
+from hypothesis_mvp.data.roles import DataRole
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
 from .initializer import generic_deterministic_candidates
 from .scientist_policy import (
@@ -82,6 +86,7 @@ class DiscoveryAgentConfig:
     typed_inner_augmentation: bool = False
     expanded_formula_synthesis: bool = False
     posterior_gap_directed: bool = False
+    iterative_posterior_refinement: bool = False
     synthesis_evaluation_reserve: int = 0
     skill_reliability: Mapping[str, Mapping[str, float]] = field(
         default_factory=dict)
@@ -162,6 +167,30 @@ def _engine_payload(result: Any) -> dict[str, Any]:
         "evaluation_budget": result.evaluation_budget,
         "evaluations_used": result.evaluations_used,
     }
+
+
+def _check_cycle_roles(selection: SelectionData, roles, cycles: int) -> None:
+    """Validate every adaptive response role before engine or provider work."""
+    if selection.acquisition_pool is None:
+        raise ValueError("iterative gap requires frozen action covariates")
+    if not isinstance(roles, (tuple, list)) or len(roles) != cycles:
+        raise ValueError("one fresh gap/admission pair required per cycle")
+    datasets = [selection.development, selection.validation]
+    for pair in roles:
+        if (not isinstance(pair, (tuple, list)) or len(pair) != 2
+                or any(not isinstance(row, RoleDataset)
+                       or row.role is not DataRole.VALIDATION for row in pair)):
+            raise ValueError("each cycle requires two validation response roles")
+        datasets.extend(pair)
+    # Also exclude the same covariates with altered response values. The
+    # selection and audit roles cannot be recycled under a changed label.
+    observed = set()
+    for data in datasets:
+        keys = {sha256(np.ascontiguousarray(x, dtype=np.float64).tobytes()).hexdigest()
+                for x in data.X}
+        if keys & observed:
+            raise ValueError("iterative gap/admission roles must be row-disjoint")
+        observed.update(keys)
 
 
 def _engine_evidence(result: Any) -> list[dict[str, Any]]:
@@ -268,6 +297,10 @@ class DiscoveryAgent:
                 "synthesis evaluation reserve requires typed inner augmentation")
         if config.posterior_gap_directed and not config.typed_inner_augmentation:
             raise ValueError("posterior gap requires typed inner augmentation")
+        if config.iterative_posterior_refinement and (
+                not config.posterior_gap_directed or config.cycles < 2
+                or config.task_local_memory or config.use_knowledge):
+            raise ValueError("iterative posterior refinement requires separate gap roles and no memory")
         if (type(config.new_skeleton_quota) is not int
                 or config.new_skeleton_quota < 0
                 or config.new_skeleton_quota > config.candidates_per_island
@@ -637,17 +670,25 @@ class DiscoveryAgent:
 
     def _orchestrate_cycle(self, selection, cycle, planner, task_context,
                            gap_audit=None, gap_prior=None,
-                           gap_measurement_budget=0):
+                           gap_measurement_budget=0, admitted_rows=()):
         counters = (planner.call_count, planner.attempt_count, len(planner.errors))
         plan, plan_telemetry, fallback, plan_calls = self._resolve_plan(
             planner, task_context)
         self._active_research_plan = plan
-        engines = self._run_engines(selection, cycle)
+        engines = (self._iterative_frozen_engines
+                   if self.config.iterative_posterior_refinement and cycle
+                   else self._run_engines(selection, cycle))
+        if self.config.iterative_posterior_refinement and cycle == 0:
+            self._iterative_frozen_engines = engines
         evidence = _engine_evidence(engines)
         gap = (self._independent_gap_brief(
             selection, engines, gap_audit, gap_prior,
-            gap_measurement_budget)
+            gap_measurement_budget,
+            **({"admitted_rows": admitted_rows}
+               if self.config.iterative_posterior_refinement else {}))
             if self.config.posterior_gap_directed else None)
+        if self.config.iterative_posterior_refinement:
+            self._last_cycle_gap = gap
         if gap is not None and not gap["prompt"]["propose_allowed"]:
             review = ScientistReview(
                 ("independent region screen did not identify inadequacy",),
@@ -748,6 +789,7 @@ class DiscoveryAgent:
         self, selection: SelectionData, engines: Any,
         audit: RoleDataset, prior: NormalInverseGammaPrior,
         measurement_budget: int,
+        admitted_rows: Sequence[Mapping[str, Any]] = (),
     ) -> dict[str, Any]:
         if (type(measurement_budget) is not int or measurement_budget < 1
                 or selection.acquisition_pool is None):
@@ -789,6 +831,12 @@ class DiscoveryAgent:
             seen.add(supports)
             if len(candidates) >= engine_base:
                 break
+        for row in admitted_rows:
+            support = parser(str(row["expression"]), features)
+            if support in seen:
+                raise ValueError("admitted structure collided with frozen engine bank")
+            candidates.append(dict(row))
+            seen.add(support)
         identity = sha256(json.dumps(candidates, sort_keys=True).encode()).hexdigest()
         model = model_factory(
             candidates, n_features=features, prior=prior,
@@ -821,10 +869,14 @@ class DiscoveryAgent:
             model, target, diagnosis, regions, audit,
             discovery_development=selection.development,
             discovery_validation=selection.validation,
+            alpha=(.05 / self.config.cycles
+                   if self.config.iterative_posterior_refinement else .05),
             score_reference_model=reference_model,
             score_reference_target=reference_target)
         return {"prompt": evidence.prompt_brief(diagnosis),
                 "existing_supports": [list(row) for row in sorted(seen)],
+                "model": model, "target": target, "core_rows": candidates,
+                "regions": regions,
                 "audit": {"schema": "independent-posterior-gap-screen-v1",
                           "fit_identity": selection.development.fingerprint,
                           "selection_identity": selection.validation.fingerprint,
@@ -833,9 +885,14 @@ class DiscoveryAgent:
                               reference_model.stable_hash if reference_model else ""),
                           "audit_identity": audit.fingerprint,
                           "audit_row_count": int(evidence.audit_row_count),
-                          "gap_bank_inputs": "current_cycle_engine_rows_only",
-                          "prior_cycle_admitted_candidates_used": False,
-                          "iterative_posterior_refinement_verified": False,
+                          "model_identity": model.stable_hash,
+                          "gap_bank_inputs": ("frozen_engine_plus_prior_admitted"
+                              if self.config.iterative_posterior_refinement else
+                              "current_cycle_engine_rows_only"),
+                          "prior_cycle_admitted_candidates_used": bool(admitted_rows),
+                          **({"iterative_gate_pending": True}
+                             if self.config.iterative_posterior_refinement else
+                             {"iterative_posterior_refinement_verified": False}),
                           "undefined_row_count": int(
                               evidence.undefined_row_count),
                           "undefined_row_meaning": (
@@ -854,9 +911,27 @@ class DiscoveryAgent:
         gap_audit: RoleDataset | None = None,
         gap_prior: NormalInverseGammaPrior | None = None,
         gap_measurement_budget: int = 0,
+        gap_cycle_roles: Sequence[tuple[RoleDataset, RoleDataset]] | None = None,
     ) -> DiscoveryAgentResult:
-        output, knowledge = Path(output_dir), Path(knowledge_dir); output.mkdir(parents=True, exist_ok=True)
+        iterative = self.config.iterative_posterior_refinement
+        if iterative:
+            if gap_audit is not None:
+                raise ValueError("iterative mode forbids a reused single gap audit")
+            _check_cycle_roles(selection, gap_cycle_roles, self.config.cycles)
+            if (not isinstance(gap_prior, NormalInverseGammaPrior)
+                    or type(gap_measurement_budget) is not int
+                    or gap_measurement_budget < 1):
+                raise ValueError("iterative mode requires a registered prior and budget")
+        output = Path(output_dir)
+        knowledge = Path(knowledge_dir)
+        if iterative and output.exists() and any(output.iterdir()):
+            raise ValueError("iterative output already exists; provider calls cannot be replayed")
+        output.mkdir(parents=True, exist_ok=True)
         previous: tuple[Mapping[str, str], ...] = ()
+        admitted_rows: list[dict[str, Any]] = []
+        attempted_lineages: set[str] = set()
+        feedback_trace: list[dict[str, Any]] = []
+        expected_next_bank = expected_next_target = None
         history: list[DiscoveryCycle] = []
         final: DiscoveryRunResult | None = None
         planner = ProposalRuntime(
@@ -873,17 +948,26 @@ class DiscoveryAgent:
                           if key in {"feature_names", "feature_units",
                                      "target_name", "target_unit"}}}
         scientist_state = ScientistState()
-        if self.config.posterior_gap_directed and (
+        if self.config.posterior_gap_directed and not iterative and (
                 gap_audit is None or gap_prior is None
                 or gap_measurement_budget < 1):
             raise ValueError("posterior gap needs independent rows, prior and budget")
         for cycle in range(max(1, self.config.cycles)):
+            cycle_audit = gap_cycle_roles[cycle][0] if iterative else gap_audit
+            cycle_admission = gap_cycle_roles[cycle][1] if iterative else None
             state_before = scientist_state.to_dict()
             context = {**base_task_context, "scientist_state": state_before}
             plan, review, engines, evidence, orchestration, usage = (
                 self._orchestrate_cycle(
-                    selection, cycle, planner, context, gap_audit,
-                    gap_prior, gap_measurement_budget))
+                    selection, cycle, planner, context, cycle_audit,
+                    gap_prior, gap_measurement_budget,
+                    admitted_rows=tuple(admitted_rows) if iterative else ()))
+            gap = self._last_cycle_gap if iterative else None
+            if iterative and (gap is None or (
+                    expected_next_bank is not None and (
+                        gap["model"].stable_hash != expected_next_bank or
+                        gap["target"].stable_hash != expected_next_target))):
+                raise ValueError("next gap did not use the admitted posterior bank")
             synthesized, synthesis_audit = self._compile_cycle_synthesis(
                 review, evidence, selection.development.X.shape[1])
             if (self.config.posterior_gap_directed
@@ -899,7 +983,107 @@ class DiscoveryAgent:
                 orchestration_context=orchestration,
                 synthesized_candidates=synthesized,
             )
-            previous = _survivors(final.report, final.expression)
+            if iterative:
+                parser = support_parser_for_policy(EXPANDED_FORMULA_POLICY
+                    if self.config.expanded_formula_synthesis else
+                    "discard-fitted-coefficients-refit-closed-basis")
+                policy = (EXPANDED_FORMULA_POLICY
+                    if self.config.expanded_formula_synthesis else
+                    "discard-fitted-coefficients-refit-closed-basis")
+                optional = []
+                for row in final.report.get("evaluated_hypothesis_bank", ()):
+                    if row.get("origin") != "llm":
+                        continue
+                    lineage = str(row.get("lineage_id") or "")
+                    if not lineage:
+                        raise ValueError("iterative candidate lacks an auditable lineage")
+                    if lineage not in attempted_lineages:
+                        optional.append(dict(row))
+                        attempted_lineages.add(lineage)
+                if len(optional) > (self.config.llm_evaluation_reserve
+                                    + self.config.synthesis_evaluation_reserve):
+                    raise ValueError("iterative candidate attempt budget exceeded")
+                eligible = tuple(sorted({int(r["region"]) for r in
+                    gap["prompt"].get("regions", ())}))
+                if optional and eligible and gap["prompt"].get("propose_allowed"):
+                    retained, admission_report = admit_regional_candidates(
+                        gap["core_rows"], optional, selection.development,
+                        cycle_audit, cycle_admission,
+                        selection.acquisition_pool.X, gap["regions"], eligible,
+                        gap_prior, gap_measurement_budget,
+                        alpha=.05 / self.config.cycles,
+                        coefficient_policy=policy)
+                else:
+                    retained, admission_report = [], {
+                        "attempts": len(optional), "admitted": 0,
+                        "reason": "no-independent-gap-or-no-new-candidate",
+                        "admission_identity": cycle_admission.fingerprint}
+                retained_supports = [parser(str(row["expression"]),
+                    selection.development.X.shape[1]) for row in retained]
+                if len(set(retained_supports)) != len(retained_supports):
+                    raise ValueError("duplicate admitted support in adaptive cycle")
+                stage_ids = final.report.get("knowledge_stage_ids", ())
+                if stage_ids:
+                    stage_store = KnowledgeRuntime(
+                        knowledge / "structure_library.jsonl",
+                        knowledge / "runtime_ledger.jsonl")
+                    for stage_id in stage_ids:
+                        stage_store.finalize_gap_stage(
+                            stage_id,
+                            admission_identity=cycle_admission.fingerprint,
+                            target_identity=gap["target"].stable_hash,
+                            candidate_records=admission_report.get("candidates", ()))
+                admitted_rows.extend(dict(row) for row in retained)
+                after_rows = [*gap["core_rows"], *retained]
+                next_identity = sha256(json.dumps(after_rows,
+                    sort_keys=True, allow_nan=False).encode()).hexdigest()
+                after_model = model_factory_for_policy(policy)(
+                    after_rows, n_features=selection.development.X.shape[1],
+                    prior=gap_prior, exploration_identity=next_identity,
+                    coefficient_policy=policy)
+                after_target = freeze_discovery_target(
+                    after_model, selection.development, selection.acquisition_pool.X,
+                    measurement_budget=gap_measurement_budget,
+                    expected_model_identity=after_model.stable_hash)
+                expected_next_bank = after_model.stable_hash
+                expected_next_target = after_target.stable_hash
+                support_key = lambda row: json.dumps(parser(
+                    str(row["expression"]), selection.development.X.shape[1]))
+                brief_identity = sha256(json.dumps(gap["prompt"],
+                    sort_keys=True, allow_nan=False).encode()).hexdigest()
+                proposal_audits = [island.get("memory", {})
+                    for round_row in final.report.get("llm_rounds", ())
+                    for island in round_row.get("islands", ())]
+                if gap["prompt"].get("propose_allowed"):
+                    if not proposal_audits or any(
+                            row.get("posterior_gap_identity") != brief_identity
+                            for row in proposal_audits):
+                        raise ValueError("proposal batch was not bound to current gap")
+                payload_identity = (brief_identity if not proposal_audits else
+                    proposal_audits[0]["posterior_gap_identity"])
+                feedback_trace.append({
+                    "bank_before": gap["model"].stable_hash,
+                    "posterior_before": gap["target"].stable_hash,
+                    "gap_bank": gap["model"].stable_hash,
+                    "gap_posterior": gap["target"].stable_hash,
+                    "gap_identity": brief_identity,
+                    "proposal_gap_identity": payload_identity,
+                    "bank_after": after_model.stable_hash,
+                    "posterior_after": after_target.stable_hash,
+                    "bank_supports_after": [support_key(r) for r in after_rows],
+                    "admitted_supports": [support_key(r) for r in retained],
+                    "fit_rows": sorted(selection.development.row_fingerprints),
+                    "selection_rows": sorted(selection.validation.row_fingerprints),
+                    "gap_rows": sorted(cycle_audit.row_fingerprints),
+                    "admission_rows": sorted(cycle_admission.row_fingerprints),
+                    "admission_report": admission_report,
+                    "attempted_candidate_count": len(optional),
+                    "proposal_batch_count": len(proposal_audits),
+                    "cumulative_admitted_count": len(admitted_rows),
+                    "conditional_bank_posterior_only": True,
+                })
+            previous = (tuple(dict(row) for row in admitted_rows)
+                        if iterative else _survivors(final.report, final.expression))
             scientist_state = scientist_state.advance(
                 plan=plan, review=review, engine_evidence=evidence,
                 surviving_hypotheses=previous)
@@ -926,11 +1110,17 @@ class DiscoveryAgent:
             raise RuntimeError("discovery agent executed no cycle")
         remaining = (len(selection.acquisition_pool.X)
                      if selection.acquisition_pool is not None else 0)
+        feedback_gate = (verify_iterative_refinement(feedback_trace)
+                         if iterative else None)
         return DiscoveryAgentResult(
             final, tuple(history), selection, remaining, self.provider_settings is not None,
             {**system_evaluation(history),
-             "iterative_posterior_refinement_verified": False,
-             "posterior_feedback_boundary": (
+             "iterative_posterior_refinement_verified": bool(
+                 feedback_gate and feedback_gate["passed"]),
+             **({"iterative_feedback_trace": feedback_trace,
+                 "iterative_feedback_gate": feedback_gate} if iterative else {}),
+             "posterior_feedback_boundary": ("bank-conditional feedback only; "
+                 "measured executor remains unauthorized" if iterative else
                  "regional admission runs after discovery cycles; "
                  "subsequent gaps cannot include admitted LLM candidates")},
         )

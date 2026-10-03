@@ -141,8 +141,8 @@ LEGACY_LONG_FUNCTIONS = frozenset({
     (
         "discovery/agent.py",
         "run",
-        87,
-        "805ee1d6169a1267ba5580e9ef7b569deb2cab5bb049cd52f56a8b2dc194f95d",
+        220,
+        "487b5a3d1f1c24e6436839efe0f150ce790bfcf56cf271784474d3a0ae4643ce",
     ),
     (
         "discovery/system_ablation.py",
@@ -153,8 +153,8 @@ LEGACY_LONG_FUNCTIONS = frozenset({
     (
         "discovery/system_ablation.py",
         "run_exploration_ablations",
-        152,
-        "f549909359cb61215012a03418f1320110c9bce885d69587ca07f7ceeb1e6e54",
+        154,
+        "3ffe054c0e6beceed9a3fc82fb5aa308ae43c42f24e16c7cac1c07898bf53131",
     ),
     (
         "discovery/system_ablation.py",
@@ -165,8 +165,8 @@ LEGACY_LONG_FUNCTIONS = frozenset({
     (
         "discovery/agent.py",
         "_independent_gap_brief",
-        102,
-        "e64f0f5812477b6de020564fe852cd3cd910ba4074fb8b4856fff3c220da4402",
+        118,
+        "f43e5c9b43c98d7c06dfe6aa9983cd28de885191dcd59ae52257e1a6818c705b",
     ),
     (
         "discovery/posterior_gap_evidence.py",
@@ -191,6 +191,11 @@ LEGACY_LONG_FUNCTIONS = frozenset({
         101,
         "a0d69c07e2e08ac5626566c3271a8da6371a5e2477734f234c2a42ccf0c5530e",
     ),
+    # Candidate admission before the next posterior Gap (contract
+    # docs/iterative_posterior_feedback_20261003.md): cycle role preflight,
+    # independent per-cycle admission and the next-bank posterior handoff are
+    # carried inside the agent orchestration loop.  Each entry fails closed
+    # again on the next edit to its body.
 })
 
 

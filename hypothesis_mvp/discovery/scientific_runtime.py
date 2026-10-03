@@ -183,15 +183,17 @@ class ScientificDiscoveryRuntime:
         # adequacy screen; a controller without an orchestration context
         # simply reports no gap.
         orchestration_context = getattr(self, "orchestration_context", None) or {}
+        gap_brief = orchestration_context.get("posterior_gap_brief")
         return {
             "objective": island,
             "current_equation_state": current.compact(),
             **({"current_expression": current.dag.expression,
-                "posterior_gap_brief": orchestration_context[
-                    "posterior_gap_brief"],
+                "posterior_gap_brief": gap_brief,
+                "posterior_gap_identity": hashlib.sha256(json.dumps(
+                    gap_brief, sort_keys=True, allow_nan=False).encode()).hexdigest(),
                 "posterior_gap_existing_supports": orchestration_context.get(
                     "posterior_gap_existing_supports", ())}
-               if "posterior_gap_brief" in orchestration_context else {}),
+               if gap_brief is not None else {}),
             "executable_exploration_function": exploration.as_prompt_dict(),
             "failure_signature": list(
                 self.evaluation.failure_signature(current, exploration)
@@ -239,16 +241,20 @@ class ScientificDiscoveryRuntime:
                 if len(combined) >= self.config.structure_library_topk:
                     break
             task = self.task_context.prompt_payload(self.proposal.n_features)
+            proposal_context = self._proposal_context(
+                current, explorations[island], island)
             batch = self.proposal.propose(
                 task_name=task["name"],
                 task_desc=task["description"],
                 round_id=round_id, island=island,
                 parent_hash=current.dag.canonical_hash,
-                island_context={**self._proposal_context(current, explorations[island], island),
+                island_context={**proposal_context,
                                 "registered_task_context": task},
                 library_rows=combined, ephemeral_refinements=refinements[-12:],
             )
             audit = {
+                "posterior_gap_identity": proposal_context.get(
+                    "posterior_gap_identity", ""),
                 "confirmed_count": len(confirmed),
                 "task_local_count": len(task_local),
                 "supplied_count": len(combined),
