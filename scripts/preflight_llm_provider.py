@@ -18,12 +18,26 @@ def main() -> None:
     )
     parser.add_argument("--calls", type=int, default=1)
     parser.add_argument("--interval", type=float, default=10.0)
+    parser.add_argument(
+        "--expanded", action="store_true",
+        help="exercise the expanded numeric-inner formula contract and "
+             "PROPOSE_NEW_SKELETON action",
+    )
     args = parser.parse_args()
 
     settings = ProviderSettings.from_file(args.config)
     if not settings.routes:
         raise RuntimeError("No LLM routes configured")
-    runtime = ProposalRuntime(EquationRuntime(1), 1, settings, candidates_per_island=1)
+    runtime = ProposalRuntime(
+        EquationRuntime(
+            1,
+            refit_policy=(
+                "pcpi-expanded-fixed-inner-v1" if args.expanded
+                else "global-constants"
+            ),
+        ),
+        1, settings, candidates_per_island=1,
+    )
     results = []
     for index in range(max(1, args.calls)):
         batch = runtime.propose(
@@ -35,10 +49,20 @@ def main() -> None:
             island_context={
                 "current_expression": "x0",
                 "failure_signature": ["validation_error"],
-                "instruction": "Return exactly one complete finite equation close to x0. "
-                "Use protocol_id='hypothesis-proposal-v1', runtime_id='canonical-real-only-discovery', "
-                "action='REPLACE', candidate_id='preflight-1', parent_hash='preflight-parent', "
-                "round_id matching the request, island='nmse', and no markdown.",
+                "instruction": (
+                "Return exactly one complete finite equation close to x0. "
+                + (
+                "Use action='PROPOSE_NEW_SKELETON' and an expanded expression "
+                "such as exp(-0.7*x0)+log(1+Abs(x0)). "
+                if args.expanded else
+                ""
+                )
+                + "Use protocol_id='hypothesis-proposal-v1', runtime_id='canonical-real-only-discovery', "
+                "action='" + ("PROPOSE_NEW_SKELETON" if args.expanded else "REPLACE") + "', "
+                "candidate_id='preflight-1', parent_hash='preflight-parent', "
+                "round_id matching the request, island='nmse', and no markdown."
+                ),
+                **({"new_skeleton_quota": 1} if args.expanded else {}),
             },
             library_rows=[],
             ephemeral_refinements=[],

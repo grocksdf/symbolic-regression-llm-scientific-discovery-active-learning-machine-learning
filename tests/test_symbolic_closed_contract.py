@@ -181,7 +181,10 @@ def test_scheduler_binds_controls_to_engine_diagnostics_and_lineage():
 def test_four_skill_scheduler_preserves_one_job_per_engine_and_lineage():
     from hypothesis_mvp.symbolic import EngineScheduler
     X, y = _fixture()
-    engines = registered_engine_names()
+    # PySR is registered for the expanded contract and is deliberately not a
+    # closed-basis engine, so this scheduler check stays on the closed-basis set.
+    engines = tuple(
+        name for name in registered_engine_names() if name != "pysr")
     assert engines == ("polynomial_lasso", "mcts", "sparse_library",
                        "additive_mechanisms")
     result = EngineScheduler().run(

@@ -30,12 +30,17 @@ class PySRSymbolicRegressor(SymbolicRegressor):
         self._model: Any = None
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "PySRSymbolicRegressor":
+        unary_operators = list(self.config.unary_operators)
+        if self.config.expression_contract == "pcpi-expanded-fixed-inner-v1":
+            unary_operators = list(dict.fromkeys(
+                [*unary_operators, "sin", "cos", "tanh",
+                 "exp", "log", "sqrt", "abs"]))
         options: dict[str, Any] = {
             "niterations": self.config.niterations,
             "population_size": self.config.population_size,
             "loss": self.config.loss,
             "binary_operators": self.config.binary_operators,
-            "unary_operators": self.config.unary_operators,
+            "unary_operators": unary_operators,
             "model_selection": self.config.pysr_model_selection,
             "maxsize": self.config.maxsize,
             "complexity_of_constants": self.config.complexity_of_constants,
@@ -82,9 +87,13 @@ class PolynomialLassoRegressor(SymbolicRegressor):
         self.skill_controls = controls
         self.allow_interactions = not controls or "interactions" in controls
         self.expression_contract = expression_contract
-        if expression_contract not in {"unrestricted", "pcpi-closed-basis-v1"}:
+        if expression_contract not in {
+                "unrestricted", "pcpi-closed-basis-v1",
+                "pcpi-expanded-fixed-inner-v1"}:
             raise ValueError("unknown symbolic expression contract")
-        if expression_contract == "pcpi-closed-basis-v1" and not 1 <= self.degree <= 4:
+        if expression_contract in {
+                "pcpi-closed-basis-v1", "pcpi-expanded-fixed-inner-v1"} \
+                and not 1 <= self.degree <= 4:
             raise ValueError("closed symbolic contract requires polynomial degree one to four")
         self.alpha = float(alpha)
         self._poly = PolynomialFeatures(degree=self.degree, include_bias=False)
@@ -139,7 +148,8 @@ class PolynomialLassoRegressor(SymbolicRegressor):
         scaled = scaled[:, self._selected_features]
         self._model.fit(scaled, normalized_target)
         self._feature_names = self._poly.get_feature_names_out()[self._selected_features]
-        if self.expression_contract == "pcpi-closed-basis-v1":
+        if self.expression_contract in {
+                "pcpi-closed-basis-v1", "pcpi-expanded-fixed-inner-v1"}:
             import sympy as sp
             from hypothesis_mvp.discovery.pcpi_adapter import structural_terms
             structural_terms(str(sp.sympify(self.best_expression())), X.shape[1])
@@ -178,7 +188,9 @@ class PolynomialLassoRegressor(SymbolicRegressor):
             "max_iterations": int(self._model.max_iter),
             "expression_contract": self.expression_contract,
             "library_selection": ("train-correlation-pre-fit-ast-cap" if
-                self.expression_contract == "pcpi-closed-basis-v1" else "all-polynomial-features"),
+                self.expression_contract in {
+                    "pcpi-closed-basis-v1", "pcpi-expanded-fixed-inner-v1"}
+                else "all-polynomial-features"),
             "selected_feature_count": None if self._selected_features is None else len(self._selected_features),
             "lasso_fit_count": 1 if self._feature_names is not None else 0,
             "skill_controls": list(self.skill_controls),
@@ -186,10 +198,18 @@ class PolynomialLassoRegressor(SymbolicRegressor):
 
 
 def get_symbolic_regressor(config: SymbolicConfig) -> SymbolicRegressor:
-    if config.expression_contract not in {"unrestricted", "pcpi-closed-basis-v1"}:
+    if config.expression_contract not in {
+            "unrestricted", "pcpi-closed-basis-v1",
+            "pcpi-expanded-fixed-inner-v1"}:
         raise ValueError("unknown symbolic expression contract")
     if (config.expression_contract != "unrestricted"
             and config.engine not in set(registered_engine_names())):
+        raise ValueError("backend does not implement closed expression contract")
+    # PySR is registered for the expanded contract only.  Registration must not
+    # turn it into a closed-basis fallback, and it must fail here rather than
+    # after the optional backend import.
+    if (config.engine == "pysr"
+            and config.expression_contract == "pcpi-closed-basis-v1"):
         raise ValueError("backend does not implement closed expression contract")
     factories = {
         "pysr": lambda: PySRSymbolicRegressor(config),

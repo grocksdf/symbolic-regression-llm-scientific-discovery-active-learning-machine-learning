@@ -10,7 +10,7 @@ def test_heterogeneous_skill_registry_gate_passes_without_real_data():
     assert result["passed"], result["decisions"]
     assert result["registered_engines"] == [
         "polynomial_lasso", "mcts", "sparse_library",
-        "additive_mechanisms"]
+        "additive_mechanisms", "pysr"]
     assert result["real_data_accessed"] is False
     assert result["candidate_response_accessed"] is False
     assert result["heldout_opened"] is False

@@ -9,6 +9,7 @@ import pytest
 
 from hypothesis_mvp.discovery import system_executor as executor
 from hypothesis_mvp.discovery.agent import DiscoveryAgentConfig
+from hypothesis_mvp.symbolic.registry import registered_engine_names
 from hypothesis_mvp.discovery.proposal_runtime import ProviderSettings, ProviderRoute
 from hypothesis_mvp.data.system_protocol import OpenSystemData, ROLE_NAMES
 from hypothesis_mvp.data.roles import SelectionData, RoleDataset, DataRole
@@ -99,8 +100,7 @@ def test_registration_accepts_task_local_memory_only_for_scientist_policy():
 def test_bayesian_skill_policy_certificate_is_hash_and_replay_bound(tmp_path):
     reliability = {
         name: {"posterior_mean": .5, "lower_credible_bound": .2}
-        for name in ("polynomial_lasso", "mcts", "sparse_library",
-                     "additive_mechanisms")}
+        for name in registered_engine_names()}
     certificate = {
         "schema": "scientific-bayesian-skill-policy-certificate-v1",
         "passed": True, "candidate_response_accessed": False,

@@ -41,6 +41,12 @@ REGISTERED_SYMBOLIC_ENGINES = (
         "strongly interpretable additive residual-forward-selection",
         ("cross-variable interaction", "reciprocal", "logarithmic",
          "exponential", "division", "ratio")),
+    SymbolicEngineSpec(
+        "pysr",
+        ("linear", "polynomial", "monomials", "interactions",
+         "trigonometric", "saturating", "exponential", "logarithmic",
+         "reciprocal", "division", "powers", "composed_transforms"),
+        "multi-population evolutionary expression-tree search with fitted constants"),
 )
 
 

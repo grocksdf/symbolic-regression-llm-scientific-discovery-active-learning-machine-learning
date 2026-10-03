@@ -36,6 +36,11 @@ PROVIDER_CONTENT_FORMAT_REPAIR_ATTEMPTS = 1
 ALLOWED_ACTIONS = frozenset({
     "ADD", "DELETE", "REPLACE", "REPARAMETERIZE",
     "CHANGE_OPERATOR", "CHANGE_INTERACTION",
+    # Expanded formula discovery must be able to add a topology that is not
+    # present in the witnessed engine supports.  This action is accepted only
+    # under pcpi-expanded-fixed-inner-v1 and is still subject to the frozen
+    # candidate budget and grammar compiler.
+    "PROPOSE_NEW_SKELETON",
 })
 
 
@@ -211,6 +216,9 @@ class ProposalContext:
     incumbent_expression: str = ""
     existing_supports: tuple[tuple[str, ...], ...] = ()
     gap_directed: bool = False
+    # Zero keeps the historical closed-basis edit protocol.  Expanded
+    # discovery callers set this to a small frozen quota (normally one).
+    new_skeleton_quota: int = 0
 
 
 @dataclass(frozen=True)
@@ -1190,6 +1198,33 @@ class ProposalRuntime:
         island_context: Mapping[str, Any], library_rows: Sequence[Mapping[str, Any]],
         refinements: Sequence[Mapping[str, Any]],
     ) -> dict[str, Any]:
+        expanded = (
+            self.equation_runtime.refit_policy
+            == "pcpi-expanded-fixed-inner-v1"
+        )
+        required_fields = (
+            ["candidate_id", "parent_hash", "action", "equation", "rationale"]
+            if expanded or not context.gap_directed
+            else ["candidate_id", "parent_hash", "action", "rationale"]
+        )
+        grammar_instruction = (
+            "The expanded formula contract permits the finite registered "
+            "grammar: numeric constants, x variables, +, -, *, /, bounded "
+            "numeric powers, sin, cos, tanh, exp, log, sqrt, Abs and abs, "
+            "including their finite compositions. Numeric literals inside "
+            "nonlinear transforms are frozen in the candidate identity; only "
+            "outer linear amplitudes are refit downstream. Do not emit "
+            "symbolic theta parameters, y, y_hat, assignments, piecewise "
+            "forms, or arbitrary code. At least one candidate must use "
+            "action='PROPOSE_NEW_SKELETON' and provide a complete equation "
+            "that is not already present in the frozen supports."
+            if expanded else
+            "For downstream PCPI compatibility, each equation must be a sum "
+            "of constants, x variables, degree-at-most-four monomials, or "
+            "sin(xi), cos(xi), tanh(xi). Do not use division, log, Abs, "
+            "sign, piecewise forms, transforms of compound expressions, or "
+            "powers of a whole parent equation."
+        )
         return {
             "runtime_id": DISCOVERY_RUNTIME_ID,
             "protocol_id": PROPOSAL_PROTOCOL_ID,
@@ -1204,12 +1239,12 @@ class ProposalRuntime:
                 "equation_format": "right_hand_side_only_without_assignment",
                 "allowed_symbols": [f"x{i}" for i in range(context.n_features)],
                 "forbidden_symbols": ["y", "y_hat"],
-                **({"correction_field_enabled": True} if context.gap_directed else {}),
-                "required_candidate_fields": (
-                    ["candidate_id", "parent_hash", "action", "rationale"]
-                    if context.gap_directed else
-                    ["candidate_id", "parent_hash", "action", "equation", "rationale"]
-                ),
+                "expanded_formula_contract": expanded,
+                "allowed_actions": sorted(ALLOWED_ACTIONS),
+                "new_skeleton_quota": context.new_skeleton_quota,
+                **({"correction_field_enabled": True}
+                    if context.gap_directed and not expanded else {}),
+                "required_candidate_fields": required_fields,
                 "instruction": (
                     "Each equation is only an executable right-hand-side expression. "
                     "Never emit y=, f(x)=, y_hat, or any symbol outside allowed_symbols. "
@@ -1222,11 +1257,7 @@ class ProposalRuntime:
                     "that changes predictions over the registered feature domain. When returning "
                     "multiple candidates, cover distinct mechanism families (interaction, nonlinear "
                     "transform, scale/ratio, and regime-sensitive form) instead of repeating one "
-                    "family with different coefficients. For downstream PCPI compatibility, each "
-                    "equation must be a sum of constants, x variables, monomials of total degree at "
-                    "most four, or sin(xi), cos(xi), tanh(xi). Do not use division, log, Abs, sign, "
-                    "piecewise forms, transforms of compound expressions, or powers of a whole "
-                    "parent equation."
+                    "family with different coefficients. " + grammar_instruction
                     + (" Independently audited posterior gap is provided in "
                        "scientific_context.posterior_gap_brief. Propose for its eligible "
                        "regions. Optionally include correction containing y_hat and x "
@@ -1271,6 +1302,17 @@ class ProposalRuntime:
         action = str(item.get("action") or "").upper()
         if action not in ALLOWED_ACTIONS:
             raise ProtocolError("invalid_action")
+        expanded = (
+            self.equation_runtime.refit_policy
+            == "pcpi-expanded-fixed-inner-v1"
+        )
+        if action == "PROPOSE_NEW_SKELETON":
+            if not expanded:
+                raise ProtocolError("new_skeleton_requires_expanded_contract")
+            if item.get("correction") is not None:
+                raise ProtocolError("new_skeleton_cannot_use_correction")
+            if not str(item.get("equation") or "").strip():
+                raise ProtocolError("new_skeleton_requires_equation")
         correction = item.get("correction")
         if correction is not None:
             if self.equation_runtime.refit_policy == "pcpi-expanded-fixed-inner-v1":
@@ -1308,6 +1350,7 @@ class ProposalRuntime:
         )
         return candidate, {"candidate_id": identifier, "proposal_index": index,
             "parent_hash_projected": supplied_parent != context.parent_hash,
+            "new_skeleton_action": action == "PROPOSE_NEW_SKELETON",
             "supplied_parent_hash": supplied_parent,
             "bound_parent_hash": context.parent_hash, **normalization}
 
@@ -1330,6 +1373,7 @@ class ProposalRuntime:
         rejections: list[Mapping[str, Any]] = []
         normalizations: list[Mapping[str, Any]] = []
         seen: set[str] = set()
+        new_skeleton_count = 0
         for index, item in enumerate(items):
             identifier = str(item.get("candidate_id") or "") if isinstance(item, Mapping) else ""
             try:
@@ -1340,11 +1384,18 @@ class ProposalRuntime:
                 )
                 if candidate.candidate_id in seen:
                     raise ProtocolError("duplicate_candidate_id")
+                if candidate.action == "PROPOSE_NEW_SKELETON":
+                    new_skeleton_count += 1
+                    if context.new_skeleton_quota <= 0:
+                        raise ProtocolError("new_skeleton_not_registered_for_round")
+                    if new_skeleton_count > context.new_skeleton_quota:
+                        raise ProtocolError("new_skeleton_quota_exceeded")
                 seen.add(candidate.candidate_id)
                 candidates.append(candidate)
                 if (normalization.get("assignment_removed")
                         or normalization.get("parent_hash_projected")
-                        or normalization.get("materialized_correction")):
+                        or normalization.get("materialized_correction")
+                        or normalization.get("new_skeleton_action")):
                     normalizations.append(normalization)
             except Exception as error:
                 rejections.append({
@@ -1353,6 +1404,8 @@ class ProposalRuntime:
                     "error_type": type(error).__name__,
                     "error": str(error),
                 })
+        if context.new_skeleton_quota > 0 and new_skeleton_count == 0:
+            raise ProtocolError("expanded_batch_missing_new_skeleton")
         return tuple(candidates), tuple(rejections), tuple(normalizations)
 
     def _system_message(self, gap_directed: bool = False) -> str:
@@ -1384,6 +1437,11 @@ class ProposalRuntime:
                " The closed basis permits constants, x variables, degree-at-most-four "
                "monomials and sin(xi), cos(xi), tanh(xi) only; never use division "
                "or compound transforms.")
+            + (" At least one candidate must use action "
+               "'PROPOSE_NEW_SKELETON' and include a complete equation; "
+               "this action is the only registered route for a topology not "
+               "already witnessed by an engine."
+               if expanded else "")
             + ((" If an independently supported posterior gap is supplied, you may "
                + ("send an equation field using x variables only; expanded "
                 "y_hat corrections are not registered. " if expanded else
@@ -1446,13 +1504,32 @@ class ProposalRuntime:
         library_rows: Sequence[Mapping[str, Any]],
         ephemeral_refinements: Sequence[Mapping[str, Any]],
     ) -> ProposalBatch:
+        expanded = (
+            self.equation_runtime.refit_policy
+            == "pcpi-expanded-fixed-inner-v1"
+        )
+        gap_directed = bool(
+            island_context.get("posterior_gap_brief", {}).get(
+                "propose_allowed", False)
+        )
+        supplied_quota = island_context.get("new_skeleton_quota")
+        default_quota = (
+            1 if expanded and (gap_directed or
+                               island_context.get("expanded_formula_discovery", False))
+            else 0
+        )
+        quota = (
+            default_quota if supplied_quota is None
+            else max(0, int(supplied_quota))
+        )
+        quota = min(self.candidates_per_island, quota)
         context = ProposalContext(
             round_id, island, parent_hash, self.n_features, self.candidates_per_island,
             incumbent_expression=str(island_context.get("current_expression") or ""),
             existing_supports=tuple(tuple(row) for row in
                 island_context.get("posterior_gap_existing_supports", ())),
-            gap_directed=bool(island_context.get("posterior_gap_brief", {}).get(
-                "propose_allowed", False)),
+            gap_directed=gap_directed,
+            new_skeleton_quota=quota,
         )
         payload = self._proposal_payload(
             task_name, task_desc, context, island_context,

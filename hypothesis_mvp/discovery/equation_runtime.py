@@ -645,15 +645,24 @@ class EquationRuntime:
         response = np.asarray(y, dtype=float).reshape(-1)
         gram = matrix.T @ matrix + max(float(ridge), 0.0) * np.eye(len(before))
         coefficients = np.linalg.solve(gram, matrix.T @ response)
-        if not np.all(np.isfinite(coefficients)) or np.any(coefficients == 0):
-            raise ValueError("expanded amplitudes are zero or nonfinite")
+        if not np.all(np.isfinite(coefficients)):
+            raise ValueError("expanded amplitudes are nonfinite")
         pieces = []
         for coefficient, term in zip(coefficients, before, strict=True):
+            # Collinearity and sparse targets legitimately produce a zero outer
+            # amplitude.  That is a support reduction, not evidence that the
+            # frozen inner formula is invalid.  Drop only numerically negligible
+            # outer terms and keep every nonlinear literal unchanged.
+            if abs(float(coefficient)) <= 1.0e-12:
+                continue
             source = ("1" if term == "intercept" else
                       decode_fixed_formula_term(term, self.n_features))
             pieces.append(f"({float(coefficient):.17g})*({source})")
+        if not pieces:
+            raise ValueError("expanded amplitudes are all zero")
         fitted = " + ".join(pieces)
-        if set(compile_fixed_formula_support(fitted, self.n_features)) != set(before):
+        after = set(compile_fixed_formula_support(fitted, self.n_features))
+        if not after.issubset(set(before)):
             raise ValueError("expanded refit changed a frozen inner parameter")
         loss = self.mse(y, self.predict(fitted, X))
         if not math.isfinite(loss):

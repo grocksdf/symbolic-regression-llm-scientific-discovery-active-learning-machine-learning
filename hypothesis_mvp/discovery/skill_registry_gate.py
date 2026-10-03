@@ -28,7 +28,11 @@ def run_skill_registry_correctness_gate() -> dict:
     grid = np.linspace(-1.0, 1.0, 24)
     X = np.column_stack((grid, np.roll(grid, 3), np.roll(grid, 7)))
     y = 1.25 + 0.7 * X[:, 0] - 0.45 * X[:, 1] ** 2 + 0.2 * np.sin(X[:, 2])
-    engines = registered_engine_names()
+    registry = registered_engine_names()
+    # PySR is registered for the expanded contract only and is not a
+    # closed-basis engine, so this closed-basis fixture excludes it while the
+    # registry identity below still reports every registered engine.
+    engines = tuple(name for name in registry if name != "pysr")
     config = SymbolicConfig(
         expression_contract="pcpi-closed-basis-v1",
         mcts_max_iterations=12, mcts_frontier_size=2,
@@ -57,11 +61,13 @@ def run_skill_registry_correctness_gate() -> dict:
         for name in engines}
     plan = deterministic_plan(engines, len(engines))
     decisions = {
-        "four_registered_engines": len(engines) == 4,
+        "four_closed_basis_engines": len(engines) == 4,
+        "expanded_engine_registered": "pysr" in registry,
         "one_registered_baseline": baseline_engine_name() == "polynomial_lasso",
         "skill_registry_matches_scheduler": (
-            tuple(skill.name for skill in REGISTERED_ENGINE_SKILLS) == engines
-            and tuple(spec.name for spec in REGISTERED_SYMBOLIC_ENGINES) == engines),
+            tuple(skill.name for skill in REGISTERED_ENGINE_SKILLS) == registry
+            and tuple(spec.name for spec in REGISTERED_SYMBOLIC_ENGINES)
+                == registry),
         "one_job_per_engine": (
             first.evaluations_used == len(engines)
             and len(first.run_records) == len(engines)
@@ -79,7 +85,7 @@ def run_skill_registry_correctness_gate() -> dict:
         "schema": "scientific-engine-skill-registry-correctness-gate-v1",
         "passed": all(decisions.values()),
         "decisions": decisions,
-        "registered_engines": list(engines),
+        "registered_engines": list(registry),
         "source_families": families,
         "engine_output_identity": _identity(first_rows),
         "support_identity": _identity(supports),

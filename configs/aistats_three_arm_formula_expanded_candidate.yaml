@@ -1,0 +1,54 @@
+name: AISTATS-Three-Arm-Formula-Expanded-Candidate
+class_name: DRRBenchmarkSearcher
+api_type: openai
+condition: three_arm_formula_expanded_candidate
+portfolio_method: v6
+use_llm: true
+llm_rl_enabled: true
+llm_model: glm-5.3
+llm_api_url: https://open.bigmodel.cn/api/paas/v4
+llm_timeout_s: 300.0
+llm_temperature: 0.25
+llm_max_tokens: 2400
+llm_thinking_type: ""
+llm_reasoning_effort: low
+llm_do_sample: false
+top_k_results: 1
+random_seed: 0
+use_library: false
+strict_train_val_only: true
+agent_config:
+  # PySR is the only registered engine in this protocol that can search new
+  # exp/log/sqrt/Abs/division/composed skeletons.  polynomial_lasso remains the
+  # matched degree-bounded baseline under the same expanded compiler.
+  engines: [pysr, polynomial_lasso]
+  engine_repeats: 1
+  engine_budget: 4
+  engine_workers: 1
+  engine_timeout_s: 300.0
+  engine_retries: 0
+  cycles: 2
+  discovery_budget: 55
+  random_seed: 0
+  search_iterations: 12
+  acquisition_enabled: false
+  use_knowledge: false
+  task_local_memory: false
+  discovery_rounds: 2
+  candidates_per_island: 2
+  task_local_memory_topk: 8
+  synthesis_evaluation_reserve: 3
+  llm_evaluation_reserve: 4
+  refit_policy: pcpi-expanded-fixed-inner-v1
+  expanded_formula_synthesis: true
+  expanded_formula_discovery: true
+  discovery_islands: [low_complexity, nmse, novelty]
+  scientist_orchestration: true
+  require_explicit_skill_controls: true
+  typed_evidence_synthesis: true
+  typed_inner_augmentation: true
+  posterior_gap_directed: true
+  protected_counterfactual_backbone: true
+  provider_failure_mode: abort
+  conservative_allocation_policy: {}
+  dataset_family: llm_srbench_frozen
