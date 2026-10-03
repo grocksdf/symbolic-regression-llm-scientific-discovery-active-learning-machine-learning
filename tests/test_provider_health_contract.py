@@ -39,3 +39,16 @@ def test_429_does_not_imply_a_rate_limit_without_error_code():
     assert classify_transport(429, "") == "429_cause_unresolved"
     assert classify_transport(429, "insufficient_quota") == "account_quota_or_balance"
     assert classify_transport(429, "rate_limit_exceeded") == "rate_or_concurrency_limit"
+
+
+def test_transport_classification_alone_is_not_a_completion_contract():
+    assert classify_transport(200, "") == "transport_2xx"
+    source = __import__(
+        "pathlib").Path(__file__).resolve().parents[1].joinpath(
+            "scripts/provider_transport_preflight.py").read_text(
+                encoding="utf-8")
+    assert "openai_completion_contract_valid" in source
+    assert 'completion == {"ok": True}' in source
+    assert '"response_format": {"type": "json_object"}' in source
+    assert 'payload["thinking"] = {"type": args.thinking_type}' in source
+    assert 'payload["reasoning_effort"] = args.reasoning_effort' in source

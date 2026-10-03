@@ -1,12 +1,12 @@
 # LLM-SRBench experiment adapter snapshot
 
-Snapshot date: 2026-10-02
+Snapshot date: 2026-10-03
 
 This branch is a clean source snapshot exported from:
 
 - upstream project: `deep-symbolic-mathematics/llm-srbench`
 - local source branch: `codex/restart-experiment-adapter`
-- source commit: `d821898e` (Overlay the v2 expanded-formula admission and bank projection)
+- source commit: `4ca5bb7b` (Score missing single-engine support as failure)
 
 The snapshot intentionally excludes the upstream Git history because that
 history contains experimental ledgers larger than GitHub's 100 MB per-file
@@ -33,6 +33,19 @@ prospective overlay: `scripts/expanded_formula_admission_v2.py`,
 pair, and their contract tests. `scripts/formula_recovery_contract.py` is now a
 compatibility import of the versioned mainline recovery evaluator, so this
 adapter requires mainline `8229551f` or later.
+
+The 2026-10-03 increment brings the branch up to local source commit
+`4ca5bb7b` (36 commits, 53 changed files: +4098 / -43, all under `configs/`,
+`scripts/` and `tests/`). It adds the Formula Generation round-two
+source-first engine-support audit: the preflight and freeze builders, the
+gap-routing gate, the runner and its child, the stage-wise structural support
+audit, the source-first bank adapter, `configs/formula_round2_source_first.yaml`,
+and their regression tests. It also carries the Formula Discovery v2.10-v2.12
+continuations (engine isolation, abstention continuation, evaluator-only
+recovery), the parallel-schedule work recorded as rejected history, and the
+provider transport repairs. `scripts/formula_generation_support_audit.py` and
+the round-two child depend on the mainline divide-by-zero screen fix, so this
+adapter now requires mainline `2c4e6c00` or later.
 
 Nothing here rescores the historical rows. The 36-row expanded-formula
 development run keeps its `passed=false` result; see

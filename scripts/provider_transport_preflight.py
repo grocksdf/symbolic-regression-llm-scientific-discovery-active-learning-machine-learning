@@ -39,6 +39,12 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--model", required=True)
+    parser.add_argument(
+        "--thinking-type", choices=("enabled", "disabled", ""), default="")
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=("max", "high", "medium", "low", "minimal", "none", ""),
+        default="")
     parser.add_argument("--provider-env", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args(argv)
@@ -51,7 +57,12 @@ def main(argv=None):
         endpoint += "/chat/completions"
     payload = {"model": args.model, "messages": [
         {"role": "user", "content": "Return the JSON object {\"ok\":true}."}],
-        "max_tokens": 16, "temperature": 0}
+        "max_tokens": 64, "temperature": 0,
+        "response_format": {"type": "json_object"}}
+    if args.thinking_type:
+        payload["thinking"] = {"type": args.thinking_type}
+    if args.reasoning_effort:
+        payload["reasoning_effort"] = args.reasoning_effort
     data = json.dumps(payload, ensure_ascii=True).encode("utf-8")
     request = Request(endpoint, data=data, method="POST", headers={
         "Authorization": "Bearer " + _key(args.provider_env),
@@ -71,10 +82,32 @@ def main(argv=None):
     error = parsed.get("error") if isinstance(parsed, dict) else None
     error_code = str((error.get("code") or error.get("type") or "")
                      if isinstance(error, dict) else "")[:80]
-    result = {"schema": "response-free-provider-transport-preflight-v1",
+    choices = parsed.get("choices") if isinstance(parsed, dict) else None
+    content = (
+        str((choices[0].get("message") or {}).get("content") or "")
+        if isinstance(choices, list) and choices
+        and isinstance(choices[0], dict) else "")
+    try:
+        completion = json.loads(content)
+    except (ValueError, TypeError):
+        completion = None
+    content_type = str(headers.get("Content-Type", ""))[:120]
+    contract_valid = (
+        200 <= status < 300
+        and "json" in content_type.lower()
+        and isinstance(choices, list) and len(choices) == 1
+        and isinstance(completion, dict)
+        and completion == {"ok": True})
+    result = {"schema": "response-free-provider-transport-preflight-v2",
               "http_status": status,
               "error_code": error_code,
               "classification": classify_transport(status, error_code),
+              "content_type": content_type,
+              "openai_completion_contract_valid": contract_valid,
+              "choice_count": len(choices) if isinstance(choices, list) else 0,
+              "strict_json_content_valid": completion == {"ok": True},
+              "thinking_type": args.thinking_type,
+              "reasoning_effort": args.reasoning_effort,
               "retry_after": str(headers.get("Retry-After", ""))[:80],
               "elapsed_seconds": round(time.monotonic() - started, 3),
               "request_utf8_bytes": len(data),
@@ -83,7 +116,7 @@ def main(argv=None):
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n",
                            encoding="utf-8")
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 0 if 200 <= status < 300 else 1
+    return 0 if contract_valid else 1
 
 
 if __name__ == "__main__":

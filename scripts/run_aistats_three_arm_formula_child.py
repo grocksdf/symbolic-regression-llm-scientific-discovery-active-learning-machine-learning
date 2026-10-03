@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -20,11 +21,12 @@ import pyarrow.parquet as pq
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT.parent / "hypothesis_mvp"))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 from bench.dataclasses import SEDTask
 from methods.hypothesis_mvp_pcpi.drr_adapter import _ordered_indices
 from methods.hypothesis_mvp_pcpi.drr_searcher import DRRBenchmarkSearcher
-from scripts.provider_health_contract import bounded_messages
+from provider_health_contract import bounded_messages
 
 
 DATASET_GROUPS = {
@@ -50,6 +52,48 @@ def _require_clean_output_dir(path: Path) -> None:
         raise ValueError(
             "three-arm child output contains materialized files")
     path.mkdir(parents=True, exist_ok=True)
+
+
+@contextmanager
+def _provider_process_lock():
+    """Serialize provider transport across independently isolated tasks."""
+    path = os.environ.get("FORMULA_PROVIDER_LOCK", "").strip()
+    if not path:
+        yield
+        return
+    lock_path = Path(path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as handle:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"0")
+            handle.flush()
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+            deadline = time.monotonic() + float(
+                os.environ.get("FORMULA_PROVIDER_LOCK_TIMEOUT", "1800"))
+            while True:
+                try:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as error:
+                    if (getattr(error, "errno", None) not in {13, 36}
+                            or time.monotonic() >= deadline):
+                        raise
+                    time.sleep(0.1)
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _task_metadata(path: Path | None, task: str, feature_count: int):
@@ -161,7 +205,8 @@ def main(argv=None) -> int:
             bounded_messages(messages, prompt_cap)
         started_request = time.monotonic()
         try:
-            response = original_post(url, **kwargs)
+            with _provider_process_lock():
+                response = original_post(url, **kwargs)
         except requests.RequestException:
             provider_cost.append({
                 "request_index": len(provider_cost) + 1,

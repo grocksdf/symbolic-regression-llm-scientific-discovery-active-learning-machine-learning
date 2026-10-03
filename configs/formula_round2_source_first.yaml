@@ -1,10 +1,4 @@
-name: AISTATS-Three-Arm-L-Gap-V1
-class_name: DRRBenchmarkSearcher
-api_type: openai
-condition: three_arm_l_gap_v1
-portfolio_method: v6
-use_llm: true
-llm_rl_enabled: true
+name: Formula-Round2-Source-First
 llm_model: glm-5.3
 llm_api_url: https://open.bigmodel.cn/api/paas/v4
 llm_timeout_s: 300.0
@@ -13,18 +7,14 @@ llm_max_tokens: 1800
 llm_thinking_type: ""
 llm_reasoning_effort: low
 llm_do_sample: false
-top_k_results: 1
-random_seed: 0
-use_library: false
-strict_train_val_only: true
 agent_config:
   engines: [polynomial_lasso, mcts, sparse_library, additive_mechanisms]
   engine_repeats: 1
   engine_budget: 4
-  engine_workers: 1
-  engine_timeout_s: 90.0
+  engine_workers: 4
+  engine_timeout_s: 180.0
   engine_retries: 0
-  cycles: 2
+  cycles: 1
   discovery_budget: 55
   random_seed: 0
   search_iterations: 12
@@ -33,7 +23,7 @@ agent_config:
   acquisition_enabled: false
   use_knowledge: false
   task_local_memory: false
-  discovery_rounds: 2
+  discovery_rounds: 1
   candidates_per_island: 2
   task_local_memory_topk: 8
   synthesis_evaluation_reserve: 3
@@ -41,7 +31,7 @@ agent_config:
   refit_policy: pcpi-expanded-fixed-inner-v1
   expanded_formula_synthesis: true
   discovery_islands: [low_complexity, nmse, novelty]
-  scientist_orchestration: true
+  scientist_orchestration: false
   require_explicit_skill_controls: true
   typed_evidence_synthesis: true
   typed_inner_augmentation: true

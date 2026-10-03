@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from hashlib import sha256
 import json
 import os
@@ -16,6 +17,7 @@ import pyarrow.parquet as pq
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 from methods.hypothesis_mvp_pcpi import drr_adapter
 from methods.hypothesis_mvp_pcpi._mainline import ensure_mainline
@@ -26,13 +28,13 @@ from hypothesis_mvp.discovery.pcpi_adapter import (
 )
 from hypothesis_mvp.hypotheses.source_identity import verify_clean_git_source
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
-from scripts.expanded_formula_admission_v2 import project_expanded_admission_arms
-from scripts.formula_bank_materialization_v2 import (
+from expanded_formula_admission_v2 import project_expanded_admission_arms
+from formula_bank_materialization_v2 import (
     expanded_bank_rows, proposal_stage_audit, read_generator_artifact,
 )
-from scripts.formula_recovery_contract import assess_formula_recovery
-from scripts.provider_health_contract import require_healthy_generation
-from scripts.run_aistats_drr_benchmark import _sha
+from formula_recovery_contract import assess_formula_recovery
+from provider_health_contract import require_healthy_generation
+from run_aistats_drr_benchmark import _sha
 
 
 GROUPS = {
@@ -114,6 +116,10 @@ def _run_child(freeze, item):
     env = os.environ.copy()
     env["THREE_ARM_PROMPT_BYTES"] = str(
         freeze["llm_user_prompt_utf8_bytes"])
+    env["FORMULA_PROVIDER_LOCK"] = item["provider_lock_path"]
+    env["FORMULA_PROVIDER_LOCK_TIMEOUT"] = str(
+        freeze["provider_lock_timeout_seconds"])
+    env["FORMULA_ENGINE_PROCESS_ISOLATION"] = "1"
     with Path(str(run_dir) + ".stdout.log").open(
             "w", encoding="utf-8") as stdout:
         process = subprocess.run(
@@ -125,6 +131,49 @@ def _run_child(freeze, item):
             "Gap generation stopped before admission; preserve the child "
             "failure log and do not retry under this protocol")
     require_healthy_generation(_read(completed).get("provider_cost"))
+
+
+def _run_generation_plan(freeze, plan):
+    """Run deterministic two-task batches; never exceed one provider request."""
+    pending = []
+    for index, item in enumerate(plan, 1):
+        if item["reused"]:
+            print(f"[{index}/{len(plan)}] reused "
+                  f"{item['family']}/{item['task']} seed={item['seed']}",
+                  flush=True)
+        else:
+            pending.append((index, item))
+    parallelism = int(freeze["task_parallelism"])
+    if parallelism not in {1, 2} or freeze["provider_concurrency"] != 1:
+        raise ValueError("formula scheduling identity changed")
+    for start in range(0, len(pending), parallelism):
+        batch = pending[start:start + parallelism]
+        for index, item in batch:
+            print(f"[{index}/{len(plan)}] Gap generation "
+                  f"{item['family']}/{item['task']} seed={item['seed']}",
+                  flush=True)
+        errors = []
+        if parallelism == 1:
+            try:
+                _run_child(freeze, batch[0][1])
+            except BaseException as error:
+                errors.append((batch[0], error))
+        else:
+            with ThreadPoolExecutor(max_workers=parallelism) as executor:
+                futures = {
+                    executor.submit(_run_child, freeze, item): (index, item)
+                    for index, item in batch}
+                for future in as_completed(futures):
+                    try:
+                        future.result()
+                    except BaseException as error:
+                        errors.append((futures[future], error))
+        if errors:
+            (_, item), error = errors[0]
+            raise RuntimeError(
+                "parallel generation batch stopped after terminal child "
+                f"failure: {item['family']}/{item['task']}/{item['seed']}"
+            ) from error
 
 
 def _map_expression(bank, posterior):
@@ -191,7 +240,8 @@ def _evaluate(admissions, metadata, input_symbols_by_task):
                 "bank_structural_topology": some("structural_topology"),
             }
         rows.append({**{key: row[key] for key in (
-            "family", "task", "seed", "candidate_bank_identity")},
+            "family", "task", "seed", "candidate_bank_identity",
+            "generation_provenance")},
             "arms": arm_results})
     return rows
 
@@ -238,10 +288,20 @@ def main(argv=None):
     parser.add_argument("--preflight-only", action="store_true")
     args = parser.parse_args(argv)
     freeze = _read(args.freeze)
-    if (freeze.get("schema") !=
-            "scientific-expanded-formula-discovery-freeze-v2"
+    if (freeze.get("schema") not in {
+            "scientific-expanded-formula-discovery-freeze-v2.1",
+            "scientific-expanded-formula-discovery-freeze-v2.2",
+            "scientific-expanded-formula-discovery-freeze-v2.3",
+            "scientific-expanded-formula-discovery-freeze-v2.4",
+            "scientific-expanded-formula-discovery-freeze-v2.5",
+            "scientific-expanded-formula-discovery-freeze-v2.6",
+            "scientific-expanded-formula-discovery-freeze-v2.7",
+            "scientific-expanded-formula-discovery-freeze-v2.8",
+            "scientific-expanded-formula-discovery-freeze-v2.9",
+            "scientific-expanded-formula-discovery-freeze-v2.10",
+            "scientific-expanded-formula-discovery-freeze-v2.11"}
             or freeze.get("execution_authorized") is not True):
-        raise ValueError("new prospective formula-discovery freeze required")
+        raise ValueError("v2.1/v2.2 formula-discovery continuation freeze required")
     minimum = freeze.get("minimum_paired_bank_contrasts")
     if (type(minimum) is not int or minimum < 1
             or minimum > freeze.get("development_task_count", 0)):
@@ -292,10 +352,26 @@ def main(argv=None):
             indent=2, sort_keys=True) + "\n", encoding="utf-8")
     plan = [
         {"family": family, "task": task, "seed": seed,
-         "run_dir": str((args.output_dir / "generation" / family / task
-                         / f"seed{seed}").resolve())}
+         "key": f"{family}/{task}/{seed}",
+         "run_dir": str(Path(
+             freeze.get("reused_generation_runs", {}).get(
+                 f"{family}/{task}/{seed}", {}).get("run_dir")
+             or (args.output_dir / "generation" / family / task
+                 / f"seed{seed}")).resolve()),
+         "provider_lock_path": str(
+             (args.output_dir / "FORMULA_PROVIDER.lock").resolve()),
+         "reused": f"{family}/{task}/{seed}" in
+             freeze.get("reused_generation_runs", {})}
         for family, tasks in freeze["development_tasks"].items()
         for task in tasks for seed in freeze["seeds"]]
+    for key, reused in freeze.get("reused_generation_runs", {}).items():
+        run_dir = Path(reused["run_dir"])
+        child = run_dir / "THREE_ARM_CHILD_RESULT.json"
+        artifact = run_dir / "pcpi_artifacts" / f"{reused['task']}.json"
+        if (_sha(child) != reused["child_sha256"]
+                or _sha(artifact) != reused["artifact_sha256"]):
+            raise ValueError(
+                f"reused v2 candidate artifact changed: {key}")
     if args.preflight_only:
         result = {
             "schema": "scientific-expanded-formula-discovery-run-preflight-v2",
@@ -315,17 +391,7 @@ def main(argv=None):
             encoding="utf-8")
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0 if result["passed"] else 1
-    # The attached benchmark source is incomplete. Config forwarding and
-    # artifact identities need to be verified against the user's full branch
-    # before the new opt-in chain may execute a registered experiment.
-    raise RuntimeError(
-        "full benchmark adapter source unavailable for integration replay; "
-        "prospective execution remains blocked")
-    for index, item in enumerate(plan, 1):
-        print(f"[{index}/{len(plan)}] Gap generation "
-              f"{item['family']}/{item['task']} seed={item['seed']}",
-              flush=True)
-        _run_child(freeze, item)
+    _run_generation_plan(freeze, plan)
 
     admission_path = args.output_dir / "FROZEN_ADMISSIONS.json"
     admission_complete_path = args.output_dir / "ADMISSION_COMPLETE.json"
@@ -383,6 +449,9 @@ def main(argv=None):
                 admissions.append({
                     "family": item["family"], "task": item["task"],
                     "seed": item["seed"],
+                    "generation_provenance": (
+                        "v2-pre-typed-output-repair" if item["reused"]
+                        else "v2.1-post-typed-output-repair"),
                     "feature_count": roles["fit"].X.shape[1],
                     "candidate_bank_identity":
                         projection["candidate_bank_identity"],
