@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import Any, Mapping
 
+import numpy as np
+
 from hypothesis_mvp.data import (
     AcquisitionCovariates, DataRole, RoleDataset, SelectionData,
     covariate_fingerprint,
@@ -16,7 +18,8 @@ from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
 from ._mainline import load
 from .drr_adapter import (
     candidate_rows, candidate_rows_operational_qd, evaluate_drr_candidates,
-    evaluate_drr_prefix_candidates, split_three_arm_training_samples,
+    evaluate_drr_prefix_candidates, iterative_gap_role_indices,
+    split_three_arm_training_samples,
     split_training_samples,
 )
 from .searcher import PCPISearcher, ProviderSettings
@@ -24,6 +27,7 @@ from .searcher import PCPISearcher, ProviderSettings
 
 _agent = load("agent")
 _bank = load("bank_selection")
+_adapter = load("pcpi_adapter")
 
 
 class DRRBenchmarkSearcher(PCPISearcher):
@@ -48,6 +52,9 @@ class DRRBenchmarkSearcher(PCPISearcher):
     def discover(self, task):
         self._task_counter += 1
         three_arm = self.condition.startswith("three_arm_")
+        iterative_formula = self.condition == "three_arm_formula_expanded_candidate"
+        if iterative_formula != self.agent_config.iterative_posterior_refinement:
+            raise ValueError("iterative formula condition/config mismatch")
         roles = (
             split_three_arm_training_samples(
                 task.samples, task_name=str(task.name), seed=self.random_seed)
@@ -85,6 +92,21 @@ class DRRBenchmarkSearcher(PCPISearcher):
             self.agent_config, dataset_family=dataset_family)
         agent = _agent.DiscoveryAgent(
             agent_config, provider_settings=provider)
+        cycle_roles = None
+        if iterative_formula:
+            if not self.llm_enabled:
+                raise ValueError("iterative formula discovery requires the Full provider")
+            partitions = iterative_gap_role_indices(
+                roles.role_row_indices, agent_config.cycles)
+            response_source = np.asarray(task.samples, dtype=float)
+            cycle_roles = tuple(tuple(
+                RoleDataset(DataRole.VALIDATION,
+                            response_source[list(indices), 1:],
+                            response_source[list(indices), 0])
+                for indices in pair) for pair in partitions)
+            if any(not np.all(np.isfinite(row.y))
+                   for pair in cycle_roles for row in pair):
+                raise ValueError("iterative gap/admission responses unavailable")
         symbols, descs, props = self._input_fields(
             task, roles.X_development.shape[1])
         metadata = {
@@ -101,13 +123,16 @@ class DRRBenchmarkSearcher(PCPISearcher):
             output_dir=self.output_dir / "scientist_agent",
             knowledge_dir=knowledge_dir,
             variable_metadata=metadata,
+            gap_cycle_roles=cycle_roles,
             gap_audit=(RoleDataset(
                 DataRole.VALIDATION, roles.X_gap_audit, roles.y_gap_audit)
                 if self.condition == "three_arm_l_gap_v1" else None),
             gap_prior=(NormalInverseGammaPrior()
-                if self.condition == "three_arm_l_gap_v1" else None),
+                if self.condition == "three_arm_l_gap_v1" or iterative_formula
+                else None),
             gap_measurement_budget=(2
-                if self.condition == "three_arm_l_gap_v1" else 0))
+                if self.condition == "three_arm_l_gap_v1" or iterative_formula
+                else 0))
         report = dict(result.discovery.report)
         protected = [
             candidate
@@ -116,9 +141,28 @@ class DRRBenchmarkSearcher(PCPISearcher):
                 "backbone_candidates", ())
         ]
         if three_arm:
-            candidates = candidate_rows(
-                report, result.discovery.expression,
-                roles.X_development.shape[1], protected)
+            if iterative_formula:
+                trace = result.system_evaluation.get("iterative_feedback_trace", ())
+                if len(trace) != agent_config.cycles:
+                    raise ValueError("missing iterative bank provenance")
+                candidates = [dict(row) for row in trace[-1]["bank_rows_after"]]
+                parser = _adapter.support_parser_for_policy(
+                    _adapter.EXPANDED_FORMULA_POLICY)
+                if len({parser(row["expression"], roles.X_development.shape[1])
+                        for row in candidates}) != len(candidates):
+                    raise ValueError("iterative final bank contains duplicate support")
+                export_expression = str(trace[-1]["posterior_map_expression"])
+                if not any(row["expression"] == export_expression
+                           for row in candidates):
+                    raise ValueError("export expression is not in admitted bank")
+                report["best_programs"] = [export_expression]
+                report["best_expression"] = export_expression
+                report["iterative_top1_selection_rule"] = (
+                    "conditional-posterior-MAP-after-independent-admission-v1")
+            else:
+                candidates = candidate_rows(
+                    report, result.discovery.expression,
+                    roles.X_development.shape[1], protected)
             qd_audit = {
                 "schema": "scientific-three-arm-generation-only-v1",
                 "evaluated": False,
@@ -179,8 +223,21 @@ class DRRBenchmarkSearcher(PCPISearcher):
             "drr_role_row_indices": {
                 key: list(value)
                 for key, value in roles.role_row_indices.items()},
+            "iterative_cycle_role_row_indices": (
+                [{"gap_audit": list(a), "gap_admission": list(b)}
+                 for a, b in iterative_gap_role_indices(
+                     roles.role_row_indices, agent_config.cycles)]
+                if iterative_formula else []),
+            "iterative_conditional_feedback_verified": bool(
+                iterative_formula and result.system_evaluation.get(
+                    "iterative_posterior_refinement_verified")),
+            "paired_bank_predictive_report_available": iterative_formula,
+            "measured_pair_authorized": False,
             "three_arm_role_protocol": (
-                "sha256-disjoint-nine-role-v1" if three_arm else None),
+                ("sha256-disjoint-nine-role-iterative-subsplits-v2"
+                 if iterative_formula else "sha256-disjoint-nine-role-v1")
+                if three_arm else None),
+            "iterative_admission_responses_opened": bool(iterative_formula),
             "knowledge_namespace": (
                 str(knowledge_dir.resolve()) if three_arm else ""),
             "knowledge_namespace_started_empty": bool(three_arm),
@@ -214,7 +271,8 @@ class DRRBenchmarkSearcher(PCPISearcher):
         })
         self._write_artifact(str(task.name), report)
         return [self._result(
-            task, result.discovery.expression, report,
+            task, (export_expression if iterative_formula else
+                   result.discovery.expression), report,
             roles.X_development.shape[1])]
 
 __all__ = ["DRRBenchmarkSearcher"]

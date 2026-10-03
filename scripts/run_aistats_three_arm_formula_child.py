@@ -165,7 +165,11 @@ def main(argv=None) -> int:
         order = _ordered_indices(count, args.task, args.seed)
         cuts = tuple(int(round(fraction * count)) for fraction in (
             .40, .55, .65, .75, .80, .85, .90, .95))
-        opened_indices = tuple(order[:cuts[2]])
+        # The iterative method consumes a fresh admission slice after each
+        # proposal cycle. Historical generation still opens only the old
+        # development, validation and Gap responses.
+        opened_indices = tuple(order[:cuts[3] if args.condition ==
+            "three_arm_formula_expanded_candidate" else cuts[2]])
         sorted_indices = sorted(opened_indices)
         opened_rows = np.asarray(dataset[sorted_indices, :])
         response_lookup = dict(zip(
@@ -302,7 +306,9 @@ def main(argv=None) -> int:
         "artifact": str(artifact.resolve()),
         "task_train_covariates_accessed": True,
         "decoded_response_roles": [
-            "discovery_development", "discovery_validation", "gap_audit"],
+            "discovery_development", "discovery_validation", "gap_audit",
+            *(["gap_admission"] if args.condition ==
+              "three_arm_formula_expanded_candidate" else [])],
         "decoded_response_count": len(opened_indices),
         "sealed_response_values_decoded": False,
         "metadata_columns_opened": metadata_columns,

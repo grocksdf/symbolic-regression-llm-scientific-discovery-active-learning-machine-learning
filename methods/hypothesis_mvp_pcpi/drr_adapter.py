@@ -85,18 +85,15 @@ def split_training_samples(samples, *, task_name: str, seed: int):
         X_initial, y_initial, action_rows[:, 1:], row_indices)
 
 
-def split_three_arm_training_samples(samples, *, task_name: str, seed: int):
-    """Freeze disjoint discovery, gap, decision, report, and action roles."""
-    values = np.asarray(samples, dtype=float)
-    if (values.ndim != 2 or values.shape[1] < 2 or len(values) < 160
-            or not np.all(np.isfinite(values))):
-        raise ValueError(
-            "three-arm adapter requires at least 160 finite training rows")
-    order = _ordered_indices(len(values), task_name, seed)
-    cuts = tuple(int(round(fraction * len(values))) for fraction in (
+def three_arm_role_indices(count: int, *, task_name: str, seed: int):
+    """Reconstruct the frozen nine-role split from row count alone."""
+    if type(count) is not int or count < 160:
+        raise ValueError("three-arm adapter requires at least 160 training rows")
+    order = _ordered_indices(count, task_name, seed)
+    cuts = tuple(int(round(fraction * count)) for fraction in (
         .40, .55, .65, .75, .80, .85, .90, .95))
     if (cuts != tuple(sorted(cuts)) or len(set(cuts)) != len(cuts)
-            or cuts[0] < 32 or len(values) - cuts[-1] < 8):
+            or cuts[0] < 32 or count - cuts[-1] < 8):
         raise ValueError("three-arm role split is infeasible")
     names = (
         "discovery_development", "discovery_validation", "gap_audit",
@@ -104,14 +101,26 @@ def split_three_arm_training_samples(samples, *, task_name: str, seed: int):
         "decision_calibration", "inference_initial", "reporting",
         "action_covariates",
     )
-    bounds = (0, *cuts, len(values))
+    bounds = (0, *cuts, count)
     row_indices = {
         name: tuple(order[bounds[index]:bounds[index + 1]])
         for index, name in enumerate(names)
     }
     if len(set().union(*(set(rows) for rows in row_indices.values()))
-            ) != len(values):
+            ) != count:
         raise ValueError("three-arm roles overlap or omit rows")
+    return row_indices
+
+
+def split_three_arm_training_samples(samples, *, task_name: str, seed: int):
+    """Freeze disjoint discovery, gap, decision, report, and action roles."""
+    values = np.asarray(samples, dtype=float)
+    if (values.ndim != 2 or values.shape[1] < 2 or len(values) < 160
+            or not np.all(np.isfinite(values))):
+        raise ValueError(
+            "three-arm adapter requires at least 160 finite training rows")
+    row_indices = three_arm_role_indices(
+        len(values), task_name=task_name, seed=seed)
 
     def opened(name, *, response):
         indices = row_indices[name]
@@ -136,6 +145,31 @@ def split_three_arm_training_samples(samples, *, task_name: str, seed: int):
         calibration, initial, report, actions, row_indices)
 
 
+def iterative_gap_role_indices(role_row_indices, cycles: int):
+    """Partition only the registered train-only gap/admission roles.
+
+    This is a new protocol; it never changes the historical nine-role split.
+    No responses or reporting rows are accessed while constructing indices.
+    """
+    if type(cycles) is not int or cycles < 2:
+        raise ValueError("iterative role partition needs at least two cycles")
+    out = []
+    for name in ("gap_audit", "gap_admission"):
+        rows = tuple(role_row_indices[name])
+        if len(rows) < 4 * cycles or len(set(rows)) != len(rows):
+            raise ValueError("insufficient distinct rows for iterative gap roles")
+        pieces = tuple(tuple(rows[i * len(rows) // cycles:
+                                  (i + 1) * len(rows) // cycles])
+                       for i in range(cycles))
+        if min(map(len, pieces)) < 4:
+            raise ValueError("iterative gap role too small")
+        out.append(pieces)
+    all_rows = [row for group in out for piece in group for row in piece]
+    if len(all_rows) != len(set(all_rows)):
+        raise ValueError("iterative gap and admission indices overlap")
+    return tuple(zip(*out, strict=True))
+
+
 def _candidate(row):
     candidate = {
         "expression": str(row["expression"]),
@@ -148,12 +182,12 @@ def _candidate(row):
     return candidate
 
 
-def _distinct_supports(rows, n_features, limit):
+def _distinct_supports(rows, n_features, limit, parser=None):
+    parser = parser or _adapter.structural_terms
     selected, supports = [], set()
     for row in rows:
         try:
-            support = tuple(_adapter.structural_terms(
-                row["expression"], n_features))
+            support = tuple(parser(row["expression"], n_features))
         except Exception:
             continue
         if support in supports:
@@ -168,6 +202,7 @@ def _distinct_supports(rows, n_features, limit):
 def candidate_rows(
     report: Mapping[str, Any], fallback_expression: str, n_features: int,
     protected_expressions: Sequence[Mapping[str, Any]] = (),
+    *, coefficient_policy: str | None = None,
 ):
     """Build a bounded source-safe DRR pool from the complete discovery bank.
 
@@ -181,10 +216,12 @@ def candidate_rows(
     """
     if type(n_features) is not int or n_features < 1:
         raise ValueError("candidate extraction requires a positive feature count")
+    parser = (_adapter.support_parser_for_policy(coefficient_policy)
+              if coefficient_policy is not None else _adapter.structural_terms)
     protected = {}
     for row in protected_expressions:
         try:
-            support = tuple(_adapter.structural_terms(
+            support = tuple(parser(
                 str(row["expression"]), n_features))
         except Exception:
             continue
@@ -204,7 +241,7 @@ def candidate_rows(
         evaluated = list(top)
     for row in (*evaluated, *top):
         try:
-            support = tuple(_adapter.structural_terms(
+            support = tuple(parser(
                 row["expression"], n_features))
         except Exception:
             continue
@@ -222,7 +259,7 @@ def candidate_rows(
         str(row["source"]) != "deterministic_linear_anchor",
         str(row["source"]) != "deterministic_constant_anchor",
     ))
-    protected = _distinct_supports(core, n_features, 4)
+    protected = _distinct_supports(core, n_features, 4, parser)
 
     optional_by_family = {}
     for row in (*top, *evaluated):
@@ -233,11 +270,11 @@ def candidate_rows(
     optional = []
     for family in sorted(optional_by_family):
         optional.extend(_distinct_supports(
-            optional_by_family[family], n_features, 1))
-    optional = _distinct_supports(optional, n_features, 4)
+            optional_by_family[family], n_features, 1, parser))
+    optional = _distinct_supports(optional, n_features, 4, parser)
 
     rows = [*protected, *optional]
-    rows = _distinct_supports(rows, n_features, 8)
+    rows = _distinct_supports(rows, n_features, 8, parser)
     if not rows:
         rows = [{
             "expression": str(fallback_expression),
