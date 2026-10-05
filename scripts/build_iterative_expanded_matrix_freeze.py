@@ -197,6 +197,7 @@ def main(argv=None):
         "interpreter": str(Path(sys.executable).resolve()),
         "python_version": sys.version,
         "dependency_versions": correctness["dependencies"],
+        "julia_runtime": correctness["julia_runtime"],
         "mainline_root": str(mainline_root),
         "benchmark_source": benchmark_source,
         "mainline_source": mainline_source,

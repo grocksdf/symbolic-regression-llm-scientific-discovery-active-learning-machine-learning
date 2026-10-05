@@ -38,6 +38,16 @@ GROUPS = {
 }
 
 
+def _read_role_rows(data, row_indices, *, response):
+    original = [int(index) for index in row_indices]
+    ordered = sorted(set(original))
+    columns = slice(None) if response else slice(1, None)
+    values = np.asarray(data[ordered, columns], dtype=float)
+    lookup = dict(zip(ordered, values, strict=True))
+    values = np.asarray([lookup[index] for index in original])
+    return (values[:, 1:], values[:, 0]) if response else values
+
+
 def run(artifact: Path, hdf5: Path, family: str, task: str, seed: int):
     frozen = json.loads(artifact.read_text(encoding="utf-8"))
     if frozen.get("task_name") != task:
@@ -69,12 +79,7 @@ def run(artifact: Path, hdf5: Path, family: str, task: str, seed: int):
             raise ValueError("cycle role partition changed")
 
         def opened(row_indices, *, response):
-            original = [int(index) for index in row_indices]
-            ordered = sorted(original)
-            values = np.asarray(data[ordered, :], dtype=float)
-            lookup = dict(zip(ordered, values, strict=True))
-            values = np.asarray([lookup[index] for index in original])
-            return (values[:, 1:], values[:, 0]) if response else values[:, 1:]
+            return _read_role_rows(data, row_indices, response=response)
 
         fit = RoleDataset(DataRole.DEVELOPMENT,
                           *opened(indices["discovery_development"], response=True))

@@ -14,7 +14,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts.iterative_matrix_contract import (  # noqa: E402
-    digest, source_identity, validate_config,
+    digest, julia_runtime_identity, source_identity, validate_config,
 )
 
 
@@ -29,6 +29,7 @@ def main(argv=None):
     config_path = ROOT / "configs/aistats_three_arm_formula_expanded_candidate.yaml"
     validate_config(config_path)
     bench_source, main_source = source_identity(ROOT, mainline)
+    julia_runtime = julia_runtime_identity()
     dependencies = {}
     for module in ("h5py", "pyarrow", "pysr", "yaml", "pytest"):
         try:
@@ -58,6 +59,7 @@ def main(argv=None):
               "provider_called": False, "tests_exit_code": process.returncode,
               "pytest_output_tail": (process.stdout + process.stderr)[-1600:],
               "dependencies": dependencies,
+              "julia_runtime": julia_runtime,
               "benchmark_source": bench_source,
               "mainline_source": main_source,
               "config_sha256": digest(config_path)}

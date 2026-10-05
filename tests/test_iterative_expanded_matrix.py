@@ -51,6 +51,33 @@ def test_matrix_requires_explicit_unmatched_claim_boundary(monkeypatch):
         matrix.verify_freeze(freeze)
 
 
+def test_iterative_config_freezes_glm_53_flash():
+    config = contract.validate_config(
+        Path(__file__).resolve().parents[1]
+        / "configs/aistats_three_arm_formula_expanded_candidate.yaml")
+    assert config["llm_model"] == "glm-5.3-flash"
+
+
+def test_julia_runtime_requires_explicit_paths(monkeypatch):
+    monkeypatch.delenv("PYTHON_JULIACALL_EXE", raising=False)
+    monkeypatch.delenv("PYTHON_JULIACALL_PROJECT", raising=False)
+    with pytest.raises(ValueError, match="explicit PYTHON_JULIACALL"):
+        contract.julia_runtime_identity()
+
+
+def test_subprocess_capture_is_explicit_utf8(monkeypatch):
+    seen = {}
+
+    def execute(*args, **kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(matrix.subprocess, "run", execute)
+    matrix._run(["fixture"], {}, 1)
+    assert seen["encoding"] == "utf-8"
+    assert seen["errors"] == "replace"
+
+
 def test_source_locator_rejects_different_environment(tmp_path, monkeypatch):
     expected = tmp_path / "expected"
     (expected / "hypothesis_mvp/discovery").mkdir(parents=True)
@@ -198,6 +225,7 @@ def test_freeze_selects_fresh_task_without_formula_column(tmp_path, monkeypatch)
         "schema": "iterative-matrix-response-free-gate-v1",
         "passed": True, "benchmark_arrays_opened": False,
         "dependencies": {},
+        "julia_runtime": {"fixture": True},
         "benchmark_source": identity, "mainline_source": identity,
         "config_sha256": contract.digest(config_path)}))
     observed = []

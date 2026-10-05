@@ -6,6 +6,8 @@ from hashlib import sha256
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 
 import yaml
 
@@ -35,6 +37,35 @@ def read(path: str | Path) -> dict:
     return value
 
 
+def julia_runtime_identity() -> dict:
+    executable_text = os.environ.get("PYTHON_JULIACALL_EXE", "")
+    project_text = os.environ.get("PYTHON_JULIACALL_PROJECT", "")
+    if not executable_text or not project_text:
+        raise ValueError(
+            "explicit PYTHON_JULIACALL_EXE and PROJECT are required")
+    executable = Path(executable_text).resolve(strict=True)
+    project = Path(project_text).resolve(strict=True)
+    if not executable.is_file() or not project.is_dir():
+        raise ValueError("registered Julia executable/project invalid")
+    project_file = project / "Project.toml"
+    manifest_file = project / "Manifest.toml"
+    if not project_file.is_file() or not manifest_file.is_file():
+        raise ValueError("registered Julia project is incomplete")
+    version = subprocess.run(
+        [str(executable), "--startup-file=no", "--version"],
+        check=True, capture_output=True, text=True, timeout=30).stdout.strip()
+    return {
+        "executable": str(executable),
+        "executable_sha256": digest(executable),
+        "project": str(project),
+        "project_sha256": digest(project_file),
+        "manifest_sha256": digest(manifest_file),
+        "version": version,
+        "python_juliacall_exe_explicit": True,
+        "python_juliacall_project_explicit": True,
+    }
+
+
 def source_identity(benchmark_root: Path, mainline_root: Path):
     """Resolve the imported discovery code against one explicit clean root."""
     from methods.hypothesis_mvp_pcpi._mainline import ensure_mainline
@@ -59,6 +90,7 @@ def validate_config(path: Path) -> dict:
     agent = config["agent_config"]
     if (config.get("condition") != CONDITION
             or config.get("llm_rl_enabled") is not True
+            or config.get("llm_model") != "glm-5.3-flash"
             or config.get("use_library") is not False
             or agent.get("engines") != ["pysr", "polynomial_lasso"]
             or agent.get("cycles") != 2

@@ -19,7 +19,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts.iterative_matrix_contract import (  # noqa: E402
-    CONDITION, SCHEMA, digest, read, source_identity, validate_config,
+    CONDITION, SCHEMA, digest, julia_runtime_identity, read,
+    source_identity, validate_config,
 )
 
 
@@ -70,6 +71,8 @@ def verify_freeze(freeze: dict) -> None:
     if (str(Path(sys.executable).resolve()) != freeze["interpreter"]
             or sys.version != freeze["python_version"]):
         raise ValueError("registered Python interpreter changed")
+    if julia_runtime_identity() != freeze["julia_runtime"]:
+        raise ValueError("registered Julia/PySR runtime changed")
     for name, expected in freeze["dependency_versions"].items():
         actual = str(getattr(importlib.import_module(name),
                              "__version__", "present"))
@@ -123,7 +126,16 @@ def _child_command(freeze, item):
 
 def _run(command, env, timeout):
     return subprocess.run(command, cwd=ROOT, env=env, timeout=timeout,
-                          capture_output=True, text=True, check=False)
+                          capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", check=False)
+
+
+def _write_process_logs(directory: Path, process) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "PROCESS_STDOUT.txt").write_text(
+        getattr(process, "stdout", "") or "", encoding="utf-8")
+    (directory / "PROCESS_STDERR.txt").write_text(
+        getattr(process, "stderr", "") or "", encoding="utf-8")
 
 
 def _check_child(item):
@@ -240,6 +252,8 @@ def main(argv=None):
         freeze["mainline_root"], str(ROOT), env.get("PYTHONPATH", "")))
     env["FORMULA_PROVIDER_LOCK"] = str(a.output_root.resolve() / "provider.lock")
     env["THREE_ARM_PROMPT_BYTES"] = "65536"  # upper bound only, no padding
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
     identities = []
     try:
         for item in plan:
@@ -248,6 +262,7 @@ def main(argv=None):
                 raise ValueError("child output path already exists")
             path.parent.mkdir(parents=True, exist_ok=True)
             process = _run(_child_command(freeze, item), env, 2400)
+            _write_process_logs(path, process)
             if process.returncode:
                 raise RuntimeError(f"child failed: {item['family']}/{item['task']} "
                                    f"seed={item['seed']} exit={process.returncode}")
@@ -267,6 +282,7 @@ def main(argv=None):
                    "--family", item["family"], "--task", item["task"],
                    "--seed", str(item["seed"]), "--output", str(output)]
             process = _run(cmd, env, 600)
+            _write_process_logs(output.parent / (output.stem + "_logs"), process)
             if process.returncode:
                 raise RuntimeError(f"report failed: {item['family']}/{item['task']} "
                                    f"seed={item['seed']} exit={process.returncode}")

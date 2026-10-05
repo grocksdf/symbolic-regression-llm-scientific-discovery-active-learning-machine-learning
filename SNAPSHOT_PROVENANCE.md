@@ -1,12 +1,12 @@
 # LLM-SRBench experiment adapter snapshot
 
-Snapshot date: 2026-10-04
+Snapshot date: 2026-10-06
 
 This branch is a clean source snapshot exported from:
 
 - upstream project: `deep-symbolic-mathematics/llm-srbench`
 - local source branch: `codex/restart-experiment-adapter`
-- source commit: `2ed161ad` (Register the iterative Full / frozen-engine bank predictive matrix)
+- source commit: `d018628c` (Read each reporting role from HDF5 once)
 
 The snapshot intentionally excludes the upstream Git history because that
 history contains experimental ledgers larger than GitHub's 100 MB per-file
@@ -84,6 +84,27 @@ non-LLM new-skeleton proposal attempts, so the freeze, result and docs record
 authorized by this protocol. The provider-transport, correctness-gate and
 freeze JSON artifacts are runtime inputs, so they must be regenerated per
 `docs/iterative_expanded_matrix_v1.md` before any matrix execution.
+
+The 2026-10-06 increment brings the branch up to local source commit
+`d018628c` (192 commits, 28 changed files: +3532 / -10, all under `configs/`,
+`scripts/` and `tests/`). It adds the matched-attribution protocol family -
+the isolated matched S branch, the matched three-arm projection and
+composition gate, the gap structural generator and its correctness runner, the
+matched attribution freeze builder, exclusion manifest, correctness gate and
+matrix runner, the common-report matched audit, the durable interruption
+recovery and multi-seed reporting, the registered-family generalization, and
+the proposal mechanism diagnostics with their lineage binding - together with
+their regression tests. `scripts/audit_iterative_bank_reporting.py` now reads
+each reporting role from HDF5 once through `_read_role_rows`, so a covariate
+column is no longer materialized twice with different orderings. This adapter
+requires mainline `3f659d52` or later for the candidate-validity modules
+(`candidate_validity`, `mechanism_funnel`, `proposal_calibration`) and the
+legacy fixed-formula token replay.
+
+The `configs/aistats_three_arm_formula_expanded_candidate.yaml` copies are no
+longer byte-identical between the two repositories: this branch freezes
+`llm_model: glm-5.3-flash` for the iterative matrix (`78c5bc75`), while the
+mainline copy keeps `llm_model: glm-5.3`. Every other field matches.
 
 Nothing here rescores the historical rows. The 36-row expanded-formula
 development run keeps its `passed=false` result; see
