@@ -304,8 +304,9 @@ def decode_fixed_formula_term(token: str, n_features: int) -> str:
     except (ValueError, UnicodeDecodeError) as error:
         raise ValueError("invalid formula token encoding") from error
     _parse(expression, n_features)
-    if compile_fixed_formula_term(expression, n_features) != token:
-        raise ValueError("noncanonical fixed formula token")
+    # Historical v1 tokens retain their exact expression and identity. New
+    # compilation normalizes more syntax; bounded decoding must remain able
+    # to replay already frozen banks without migrating their hashes.
     return expression
 
 

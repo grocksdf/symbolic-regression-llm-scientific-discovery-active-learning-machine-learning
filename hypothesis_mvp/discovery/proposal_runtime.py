@@ -16,6 +16,7 @@ import requests
 from .resource_limits import before_provider_transport
 from .closed_basis_composition import materialize_closed_basis_composition
 from .expanded_formula_synthesis import witness_formula_terms
+from .proposal_calibration import assert_generation_context_safe
 from .pcpi_adapter import structural_terms
 from hypothesis_mvp.pcpi.reference.expanded_formula_basis import (
     compile_fixed_formula_support,
@@ -1046,13 +1047,8 @@ class ProposalRuntime:
             result["review_contract_projection"] = projection
         return result
 
-    def review_engine_evidence(
-        self, *, plan: ResearchPlan, engine_evidence: Sequence[Mapping[str, Any]],
-        require_typed_synthesis: bool = False,
-        allow_interactions: bool = False,
-        expanded_formula_synthesis: bool = False,
-        scientific_context: Mapping[str, Any] | None = None,
-    ) -> tuple[ScientistReview, Mapping[str, Any]]:
+    def _review_evidence_contract(self, engine_evidence, allow_interactions,
+                                  expanded_formula_synthesis, require_typed_synthesis):
         if expanded_formula_synthesis:
             witnessed = []
             for row in engine_evidence:
@@ -1076,44 +1072,44 @@ class ProposalRuntime:
             if expanded_formula_synthesis else bool(fallback_directives))
         typed_synthesis_required = bool(
             require_typed_synthesis and typed_synthesis_available)
-        payload = {"protocol_id": ENGINE_REVIEW_PROTOCOL,
-            "research_plan": plan.to_dict(),
-            "engine_evidence": [dict(row) for row in engine_evidence],
-            "scientific_context": dict(scientific_context or {}),
-            "authority": {
-                "may_synthesize_hypothesis_instructions": True,
-                "may_run_additional_engines": False,
-                "may_access_pool_responses": False,
-                "may_access_heldout": False,
-            }}
-        if require_typed_synthesis:
-            payload["typed_synthesis_contract"] = {
-                "required": typed_synthesis_required,
-                "allowed_operations": list(allowed_operations),
-                "allowed_lineage_ids": list(lineages),
-                "minimum_parent_lineages": 2,
-                "instruction": (
-                    ("Return synthesis_directives as JSON objects with operation, "
-                     "lineage_ids and rationale. Reference only supplied lineage IDs. "
-                     "Do not emit equations or coefficients. "
-                     + ("For COMPOSE_FORMULA_AST include formula_ast, a JSON tree "
-                        "with ref={lineage_id,term_index} leaves (zero-based "
-                        "indices of each evidence row's expanded_witness_terms), "
-                        "numeric const leaves, "
-                        "and op/args nodes using add,sub,mul,div,pow,neg, "
-                        "sin,cos,tanh,exp,log,sqrt,Abs. Refer to terms from at "
-                        "least two distinct declared lineages. Numeric literals "
-                        "inside functions are frozen by the resulting hypothesis. "
-                        if expanded_formula_synthesis else "")
-                     + ("INTERACT_SUPPORTS combines already witnessed terms "
-                        "from distinct lineages inside the closed degree-four "
-                        "basis; choose it when additive unions repeat parent "
-                        "support and a scientifically defensible interaction "
-                        "is proposed." if allow_interactions else ""))
-                    if typed_synthesis_available else
-                    ("No two distinct evidence lineages are available. Omit "
-                     "synthesis_directives and report the evidence limitation."))}
-        system = (
+        return (engine_evidence, lineages, fallback_directives, allowed_operations,
+                typed_synthesis_available, typed_synthesis_required)
+
+    def _typed_synthesis_contract(self, typed_synthesis_required, allowed_operations,
+                                  lineages, expanded_formula_synthesis,
+                                  typed_synthesis_available, allow_interactions):
+        return {
+            "required": typed_synthesis_required,
+            "allowed_operations": list(allowed_operations),
+            "allowed_lineage_ids": list(lineages),
+            "minimum_parent_lineages": 2,
+            "instruction": (
+                ("Return synthesis_directives as JSON objects with operation, "
+                 "lineage_ids and rationale. Reference only supplied lineage IDs. "
+                 "Do not emit equations or coefficients. "
+                 + ("For COMPOSE_FORMULA_AST include formula_ast, a JSON tree "
+                    "with ref={lineage_id,term_index} leaves (zero-based "
+                    "indices of each evidence row's expanded_witness_terms), "
+                    "numeric const leaves, "
+                    "and op/args nodes using add,sub,mul,div,pow,neg, "
+                    "sin,cos,tanh,exp,log,sqrt,Abs. Refer to terms from at "
+                    "least two distinct declared lineages. Numeric literals "
+                    "inside functions are frozen by the resulting hypothesis. "
+                    "div/log/sqrt/pow carry domain obligations in the supplied "
+                    "proposal_domain_context. Do not add abs, clamp or epsilon "
+                    "unless explicitly proposing that operator as part of the hypothesis. "
+                    if expanded_formula_synthesis else "")
+                 + ("INTERACT_SUPPORTS combines already witnessed terms "
+                    "from distinct lineages inside the closed degree-four "
+                    "basis; choose it when additive unions repeat parent "
+                    "support and a scientifically defensible interaction "
+                    "is proposed." if allow_interactions else ""))
+                if typed_synthesis_available else
+                ("No two distinct evidence lineages are available. Omit "
+                 "synthesis_directives and report the evidence limitation."))}
+
+    def _review_system(self, scientific_context, typed_synthesis_required):
+        return (
             "Act as a scientific evidence reviewer. Return one unfenced JSON object. "
             f"Use protocol_id='{ENGINE_REVIEW_PROTOCOL}'. Provide supported_mechanisms, "
             "contradicted_mechanisms, cross_engine_conflicts, synthesis_instructions, "
@@ -1127,6 +1123,40 @@ class ProposalRuntime:
             + ("Provide at least one typed synthesis_directive and do not write a "
                "new equation; executable structure is compiled by code."
                if typed_synthesis_required else ""))
+
+    def review_engine_evidence(
+        self, *, plan: ResearchPlan, engine_evidence: Sequence[Mapping[str, Any]],
+        require_typed_synthesis: bool = False,
+        allow_interactions: bool = False,
+        expanded_formula_synthesis: bool = False,
+        scientific_context: Mapping[str, Any] | None = None,
+    ) -> tuple[ScientistReview, Mapping[str, Any]]:
+        assert_generation_context_safe(scientific_context or {})
+        (engine_evidence, lineages, fallback_directives, allowed_operations,
+         typed_synthesis_available, typed_synthesis_required) = self._review_evidence_contract(
+            engine_evidence, allow_interactions, expanded_formula_synthesis,
+            require_typed_synthesis)
+        payload = {"protocol_id": ENGINE_REVIEW_PROTOCOL,
+            "research_plan": plan.to_dict(),
+            "engine_evidence": [dict(row) for row in engine_evidence],
+            "scientific_context": dict(scientific_context or {}),
+            "authority": {
+                "may_synthesize_hypothesis_instructions": True,
+                "may_run_additional_engines": False,
+                "may_access_pool_responses": False,
+                "may_access_heldout": False,
+            }}
+        if require_typed_synthesis:
+            payload["typed_synthesis_contract"] = self._typed_synthesis_contract(
+                typed_synthesis_required, allowed_operations, lineages,
+                expanded_formula_synthesis, typed_synthesis_available, allow_interactions)
+        system = self._review_system(scientific_context, typed_synthesis_required)
+        return self._complete_review(system, payload, typed_synthesis_required, lineages,
+            fallback_directives, allowed_operations, require_typed_synthesis, typed_synthesis_available)
+
+    def _complete_review(self, system, payload, typed_synthesis_required, lineages,
+                         fallback_directives, allowed_operations, require_typed_synthesis,
+                         typed_synthesis_available):
         raw, telemetry = self.complete_json(
             system_message=system, payload=payload)
         repairs = []
@@ -1193,29 +1223,17 @@ class ProposalRuntime:
                                    if typed_synthesis_required else ""))}})
                 repairs.append(repair_telemetry)
 
-    def _proposal_payload(
-        self, task_name: str, task_desc: str, context: ProposalContext,
-        island_context: Mapping[str, Any], library_rows: Sequence[Mapping[str, Any]],
-        refinements: Sequence[Mapping[str, Any]],
-    ) -> dict[str, Any]:
-        expanded = (
-            self.equation_runtime.refit_policy
-            == "pcpi-expanded-fixed-inner-v1"
-        )
-        if context.new_skeleton_quota and not expanded:
-            raise ProtocolError("new_skeleton_requires_expanded_contract")
-        required_fields = (
-            ["candidate_id", "parent_hash", "action", "equation", "rationale"]
-            if expanded or not context.gap_directed
-            else ["candidate_id", "parent_hash", "action", "rationale"]
-        )
-        grammar_instruction = (
+    def _proposal_grammar_instruction(self, context, expanded):
+        return (
             "The expanded formula contract permits the finite registered "
             "grammar: numeric constants, x variables, +, -, *, /, bounded "
             "numeric powers, sin, cos, tanh, exp, log, sqrt, Abs and abs, "
             "including their finite compositions. Numeric literals inside "
             "nonlinear transforms are frozen in the candidate identity; only "
             "outer linear amplitudes are refit downstream. Do not emit "
+            "Respect proposal_domain_context and its operator obligations. "
+            "Use development_failure_feedback to avoid repeating invalid proposals "
+            "while keeping distinct structural families. No implicit semantic repair. "
             "symbolic theta parameters, y, y_hat, assignments, piecewise "
             "forms, or arbitrary code. "
             + ("At least one candidate must use "
@@ -1234,6 +1252,25 @@ class ProposalRuntime:
             "sign, piecewise forms, transforms of compound expressions, or "
             "powers of a whole parent equation."
         )
+
+    def _proposal_payload(
+        self, task_name: str, task_desc: str, context: ProposalContext,
+        island_context: Mapping[str, Any], library_rows: Sequence[Mapping[str, Any]],
+        refinements: Sequence[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        assert_generation_context_safe(island_context)
+        expanded = (
+            self.equation_runtime.refit_policy
+            == "pcpi-expanded-fixed-inner-v1"
+        )
+        if context.new_skeleton_quota and not expanded:
+            raise ProtocolError("new_skeleton_requires_expanded_contract")
+        required_fields = (
+            ["candidate_id", "parent_hash", "action", "equation", "rationale"]
+            if expanded or not context.gap_directed
+            else ["candidate_id", "parent_hash", "action", "rationale"]
+        )
+        grammar_instruction = self._proposal_grammar_instruction(context, expanded)
         return {
             "runtime_id": DISCOVERY_RUNTIME_ID,
             "protocol_id": PROPOSAL_PROTOCOL_ID,

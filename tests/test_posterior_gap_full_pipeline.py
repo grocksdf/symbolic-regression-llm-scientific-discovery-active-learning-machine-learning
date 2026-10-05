@@ -256,6 +256,14 @@ def test_frozen_reference_log_score_detects_gap_with_balanced_pit(monkeypatch):
             scales=np.full((1, len(audit.X)), next(calls)))
     monkeypatch.setattr(gap_module, "predictive_components_for_partition",
                         components)
+    # Density scoring now uses the posterior engine's native log weights;
+    # stub that surface independently of the CDF-component fixture.
+    from scipy.stats import t as student_t
+    from hypothesis_mvp.pcpi.reference import SequentialReferencePosterior
+    score_scales = iter((100., .2))
+    monkeypatch.setattr(SequentialReferencePosterior, "predictive_logpdf",
+        lambda self, posterior, x, y: student_t.logpdf(
+            y, df=5., loc=0., scale=next(score_scales)))
     evidence = screen_independent_adequacy(model, target, diagnosis,
         regions, audit, discovery_development=fit,
         discovery_validation=selection,

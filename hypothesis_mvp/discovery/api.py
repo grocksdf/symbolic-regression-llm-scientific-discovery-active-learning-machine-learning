@@ -16,6 +16,7 @@ from hypothesis_mvp.hypotheses import HypothesisSpec
 from .contracts import DiscoveryConfig, RuntimeEvent
 from .equation_runtime import PrimitiveRegistry
 from .factory import build_scientific_discovery_runtime
+from .candidate_validity import proposal_domain_context
 from .hypothesis_output import (
     array_fingerprint,
     build_hypothesis_spec,
@@ -162,6 +163,31 @@ def _persist_result(
     return DiscoveryRunResult(expression, report, spec, spec_path, registry_path)
 
 
+def _prepare_candidates(knowledge_dir, task_name, variable_metadata, train, train_y,
+                        resolved, base_candidates, include_generic_candidates, plugins,
+                        supplemental_candidates):
+    root, registry = _knowledge_root(knowledge_dir, task_name), PrimitiveRegistry()
+    structure_metadata = _structure_metadata(variable_metadata)
+    context = DiscoveryContext(train, train_y, structure_metadata, resolved)
+    rows, enabled_plugins, plugin_count = _candidate_rows(
+        base_candidates, include_generic_candidates, plugins, context, registry
+    )
+    normalized, rejected = normalize_candidates(
+        rows, n_features=train.shape[1], X_probe=train,
+        preserve_semantics=resolved.refit_policy == "pcpi-expanded-fixed-inner-v1"
+    )
+    supplemental, supplemental_rejected = normalize_candidates(
+        supplemental_candidates, n_features=train.shape[1], X_probe=train,
+        preserve_semantics=resolved.refit_policy == "pcpi-expanded-fixed-inner-v1")
+    seed_hashes = {row["canonical_hash"] for row in normalized}
+    supplemental = [row for row in supplemental
+                    if row["canonical_hash"] not in seed_hashes]
+    if supplemental and resolved.synthesis_evaluation_reserve < 1:
+        raise ValueError("supplemental candidates require a separate evaluation reserve")
+    return (root, registry, structure_metadata, normalized, rejected, supplemental,
+            supplemental_rejected, enabled_plugins, plugin_count)
+
+
 def _discover_from_arrays(
     *, task_name: str, task_description: str,
     X_train: np.ndarray, y_train: np.ndarray,
@@ -180,6 +206,7 @@ def _discover_from_arrays(
     event_callback: Callable[[RuntimeEvent], None] | None = None,
     selection_contract: Mapping[str, Any] | None = None,
     orchestration_context: Mapping[str, Any] | None = None,
+    registered_covariates: np.ndarray | None = None,
 ) -> DiscoveryRunResult:
     train, validation = _matrix(X_train, "development"), _matrix(X_val, "validation")
     train_y, validation_y = _vector(y_train, "development"), _vector(y_val, "validation")
@@ -191,22 +218,10 @@ def _discover_from_arrays(
     access = dict(selection_contract or {})
     if access.get("heldout_capability") is not False:
         raise ValueError("discovery requires a verified selection-only capability surface")
-    root, registry = _knowledge_root(knowledge_dir, task_name), PrimitiveRegistry()
-    structure_metadata = _structure_metadata(variable_metadata)
-    context = DiscoveryContext(train, train_y, structure_metadata, resolved)
-    rows, enabled_plugins, plugin_count = _candidate_rows(
-        base_candidates, include_generic_candidates, plugins, context, registry
-    )
-    normalized, rejected = normalize_candidates(
-        rows, n_features=train.shape[1], X_probe=train
-    )
-    supplemental, supplemental_rejected = normalize_candidates(
-        supplemental_candidates, n_features=train.shape[1], X_probe=train)
-    seed_hashes = {row["canonical_hash"] for row in normalized}
-    supplemental = [row for row in supplemental
-                    if row["canonical_hash"] not in seed_hashes]
-    if supplemental and resolved.synthesis_evaluation_reserve < 1:
-        raise ValueError("supplemental candidates require a separate evaluation reserve")
+    (root, registry, structure_metadata, normalized, rejected, supplemental,
+     supplemental_rejected, enabled_plugins, plugin_count) = _prepare_candidates(
+        knowledge_dir, task_name, variable_metadata, train, train_y, resolved,
+        base_candidates, include_generic_candidates, plugins, supplemental_candidates)
     runtime = build_scientific_discovery_runtime(
         n_features=train.shape[1], config=resolved,
         library_path=root / "structure_library.jsonl",
@@ -217,6 +232,9 @@ def _discover_from_arrays(
         orchestration_context=dict(orchestration_context or {}),
         primitive_registry=registry, event_callback=event_callback,
     )
+    runtime.evaluation.registered_covariates = registered_covariates
+    runtime.orchestration_context["proposal_domain_context"] = proposal_domain_context(
+        np.vstack([train, validation] + ([registered_covariates] if registered_covariates is not None else [])))
     expression, raw_report = runtime.run(
         X_train=train, y_train=train_y, X_val=validation, y_val=validation_y,
         base_candidates=normalized, refinement_enabled=refinement_enabled,
@@ -225,6 +243,7 @@ def _discover_from_arrays(
     train_hash, validation_hash = _fingerprints(train, train_y, validation, validation_y)
     report = {
         **dict(raw_report),
+        "candidate_validity_attempts": list(runtime.evaluation.validity_attempts),
         "initializer_candidate_count": len(normalized),
         "candidate_registry": [{
             "canonical_hash": row["canonical_hash"], "expression": row["expression"],
@@ -260,6 +279,8 @@ def discover_from_selection(
     return _discover_from_arrays(
         X_train=selection.development.X, y_train=selection.development.y,
         X_val=selection.validation.X, y_val=selection.validation.y,
+        registered_covariates=(selection.acquisition_pool.X
+                              if selection.acquisition_pool is not None else None),
         selection_contract={
             "interface": "SelectionData",
             "fields": list(field_names),

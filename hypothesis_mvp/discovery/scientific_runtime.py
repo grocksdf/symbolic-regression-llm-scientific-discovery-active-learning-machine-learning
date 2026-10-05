@@ -30,6 +30,7 @@ from .proposal_runtime import (
     ProposalRuntime,
 )
 from .task_context import DiscoveryTaskContext
+from .proposal_calibration import development_failure_feedback, generation_orchestration_context
 
 
 class ScientificDiscoveryRuntime:
@@ -186,6 +187,10 @@ class ScientificDiscoveryRuntime:
         gap_brief = orchestration_context.get("posterior_gap_brief")
         return {
             "objective": island,
+            "proposal_domain_context": orchestration_context.get("proposal_domain_context", {}),
+            "development_failure_feedback": development_failure_feedback([
+                *orchestration_context.get("development_validity_history", ()),
+                *getattr(self.evaluation, "validity_attempts", ())]),
             "current_equation_state": current.compact(),
             **({"current_expression": current.dag.expression,
                 "posterior_gap_brief": gap_brief,
@@ -204,7 +209,7 @@ class ScientificDiscoveryRuntime:
             ] + (["PROPOSE_NEW_SKELETON"]
                  if self.config.new_skeleton_quota else []),
             "new_skeleton_quota": self.config.new_skeleton_quota,
-            "scientist_orchestration": self.orchestration_context,
+            "scientist_orchestration": generation_orchestration_context(self.orchestration_context),
         }
 
     def _request_batches(
@@ -550,6 +555,26 @@ class ScientificDiscoveryRuntime:
             "elapsed_s": time.time() - started,
         }
 
+    def _evaluate_supplemental_candidates(self, supplemental_candidates, arrays):
+        synthesis_states, synthesis_audit = [], []
+        for row in supplemental_candidates:
+            if self.evaluation.budget.exhausted:
+                synthesis_audit.append({"lineage_id": row.get("lineage_id", ""),
+                    "status": "evaluation_reserve_exhausted"})
+                continue
+            candidate = self.evaluation.build_state(
+                str(row["expression"]), *arrays,
+                source=str(row.get("source") or "llm_evidence_synthesis"),
+                origin="llm", island="typed_synthesis", round_id=0,
+                audit_lineage_id=str(row.get("lineage_id") or ""))
+            if candidate is not None:
+                candidate = dataclasses.replace(
+                    candidate, lineage_id=str(row.get("lineage_id") or ""))
+                synthesis_states.append(candidate)
+            synthesis_audit.append({"lineage_id": row.get("lineage_id", ""),
+                "status": "validated" if candidate is not None else "rejected"})
+        return synthesis_states, synthesis_audit
+
     def run(
         self, *, X_train: np.ndarray, y_train: np.ndarray,
         X_val: np.ndarray, y_val: np.ndarray,
@@ -596,21 +621,8 @@ class ScientificDiscoveryRuntime:
         if synthesis_reserve:
             self.evaluation.budget.begin_llm_phase()
             self.evaluation.budget.limit_phase_work(synthesis_reserve)
-            for row in supplemental_candidates:
-                if self.evaluation.budget.exhausted:
-                    synthesis_audit.append({"lineage_id": row.get("lineage_id", ""),
-                        "status": "evaluation_reserve_exhausted"})
-                    continue
-                candidate = self.evaluation.build_state(
-                    str(row["expression"]), *arrays,
-                    source=str(row.get("source") or "llm_evidence_synthesis"),
-                    origin="llm", island="typed_synthesis", round_id=0)
-                if candidate is not None:
-                    candidate = dataclasses.replace(
-                        candidate, lineage_id=str(row.get("lineage_id") or ""))
-                    synthesis_states.append(candidate)
-                synthesis_audit.append({"lineage_id": row.get("lineage_id", ""),
-                    "status": "validated" if candidate is not None else "rejected"})
+            synthesis_states, synthesis_audit = self._evaluate_supplemental_candidates(
+                supplemental_candidates, arrays)
         llm_states: list[EquationState] = []
         llm_rounds: list[dict[str, Any]] = []
         if refinement_enabled and self.proposal.enabled:

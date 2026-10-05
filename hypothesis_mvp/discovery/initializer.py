@@ -62,6 +62,7 @@ def normalize_candidates(
     n_features: int,
     X_probe: np.ndarray | None = None,
     registry: PrimitiveRegistry | None = None,
+    preserve_semantics: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
     """Canonicalize, validate, and deduplicate candidates by expression hash."""
     runtime = EquationRuntime(int(n_features), registry or PrimitiveRegistry())
@@ -72,7 +73,7 @@ def normalize_candidates(
         candidate = {"expression": item, "source": "caller_seed"} if isinstance(item, str) else dict(item)
         try:
             dag = runtime.dag(str(candidate.get("expression") or ""))
-            if probe is not None:
+            if probe is not None and not preserve_semantics:
                 runtime.predict(dag.expression, probe[:min(8, len(probe))])
             identity = dag.canonical_hash
             provenance = {
@@ -84,7 +85,8 @@ def normalize_candidates(
                 accepted[identity]["engine_provenance"].append(provenance)
             else:
                 accepted[identity] = {
-                    **candidate, "expression": dag.expression,
+                    **candidate, "expression": (str(candidate["expression"])
+                                                if preserve_semantics else dag.expression),
                     "canonical_hash": identity, "engine_provenance": [provenance],
                 }
         except Exception:

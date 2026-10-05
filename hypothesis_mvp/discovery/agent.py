@@ -37,6 +37,9 @@ from .posterior_gap_evidence import screen_independent_adequacy
 from .regional_candidate_admission import admit_regional_candidates
 from .knowledge_runtime import KnowledgeRuntime
 from .iterative_refinement_gate import verify_iterative_refinement
+from .candidate_validity import proposal_domain_context
+from .proposal_calibration import development_failure_feedback
+from .mechanism_funnel import candidate_mechanism_funnel
 from hypothesis_mvp.data.roles import DataRole
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
 from .initializer import generic_deterministic_candidates
@@ -128,6 +131,7 @@ class DiscoveryCycle:
     evidence_synthesis: Mapping[str, Any] = field(default_factory=dict)
     posterior_gap_audit: Mapping[str, Any] = field(default_factory=dict)
     posterior_gap_brief: Mapping[str, Any] = field(default_factory=dict)
+    mechanism_funnel: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -213,7 +217,7 @@ def _bounded_seed_bank(
         "source": f"engine:{row.engine}", "lineage_id": row.lineage_id}
         for row in engine_result.all_results]
     previous_rows = [
-        (dict(row) if isinstance(row, Mapping) else {
+        ({**dict(row), "reused_candidate": True} if isinstance(row, Mapping) else {
             "expression": str(row), "source": "legacy_previous_cycle_survivor",
             "origin": "unknown", "lineage_id": ""})
         for row in previous]
@@ -685,6 +689,9 @@ class DiscoveryAgent:
         if self.config.iterative_posterior_refinement and cycle == 0:
             self._iterative_frozen_engines = engines
         evidence = _engine_evidence(engines)
+        domain_context = proposal_domain_context(np.vstack([
+            selection.development.X, selection.validation.X,
+            *([selection.acquisition_pool.X] if selection.acquisition_pool is not None else [])])) if isinstance(selection, SelectionData) else {}
         gap = (self._independent_gap_brief(
             selection, engines, gap_audit, gap_prior,
             gap_measurement_budget,
@@ -700,17 +707,23 @@ class DiscoveryAgent:
                 "gap-directed proposal abstained")
             review_telemetry, review_calls = {"gap_abstention": True}, 0
         else:
-            review_context = (None if gap is None else {
+            review_context = {
+                "proposal_domain_context": domain_context,
+                "development_failure_feedback": development_failure_feedback(
+                    getattr(self, "_development_validity_history", ())),
+                **({
                 "posterior_gap_brief": gap["prompt"],
                 "posterior_gap_existing_supports": gap["existing_supports"],
                 "candidate_response_accessed": False,
                 "heldout_opened": False,
-            })
+            } if gap is not None else {})}
             review, review_telemetry, fallback, review_calls = (
                 self._resolve_review(
                     planner, plan, evidence, fallback,
                     scientific_context=review_context))
         orchestration = {"schema": "scientific-llm-engine-orchestration-v1",
+            "proposal_domain_context": domain_context,
+            "development_validity_history": list(getattr(self, "_development_validity_history", ())),
             "scientist_state_before": task_context["scientist_state"],
             "research_plan": plan.to_dict(), "research_plan_identity": plan.stable_hash,
             "engine_evidence": evidence, "scientist_review": review.to_dict(),
@@ -787,6 +800,9 @@ class DiscoveryAgent:
             dict(orchestration.get("evidence_synthesis") or {}),
             dict(orchestration.get("posterior_gap_audit") or {}),
             dict(orchestration.get("posterior_gap_brief") or {}),
+            candidate_mechanism_funnel(final.report,
+                orchestration.get("evidence_synthesis", {}),
+                getattr(self, "_last_admission_report", {})),
         )
 
     def _independent_gap_brief(
@@ -908,16 +924,172 @@ class DiscoveryAgent:
                           "candidate_response_accessed": False,
                           "heldout_opened": False}}
 
-    def run(
-        self, *, selection: SelectionData,
-        task_name: str, task_description: str, output_dir: str | Path,
-        knowledge_dir: str | Path, variable_metadata: Mapping[str, Any],
-        gap_audit: RoleDataset | None = None,
-        gap_prior: NormalInverseGammaPrior | None = None,
-        gap_measurement_budget: int = 0,
-        gap_cycle_roles: Sequence[tuple[RoleDataset, RoleDataset]] | None = None,
-    ) -> DiscoveryAgentResult:
+    def _execute_discovery_cycle(self, selection, cycle, planner, context, cycle_audit,
+                                 gap_prior, gap_measurement_budget, admitted_rows,
+                                 expected_next_bank, expected_next_target, task_name,
+                                 task_description, output, knowledge, variable_metadata, previous):
         iterative = self.config.iterative_posterior_refinement
+        plan, review, engines, evidence, orchestration, usage = (
+            self._orchestrate_cycle(
+                selection, cycle, planner, context, cycle_audit,
+                gap_prior, gap_measurement_budget,
+                admitted_rows=tuple(admitted_rows) if iterative else ()))
+        gap = self._last_cycle_gap if iterative else None
+        if iterative and (gap is None or (
+                expected_next_bank is not None and (
+                    gap["model"].stable_hash != expected_next_bank or
+                    gap["target"].stable_hash != expected_next_target))):
+            raise ValueError("next gap did not use the admitted posterior bank")
+        synthesized, synthesis_audit = self._compile_cycle_synthesis(
+            review, evidence, selection.development.X.shape[1])
+        if (self.config.posterior_gap_directed
+                and not orchestration["posterior_gap_brief"]["propose_allowed"]):
+            synthesized = []
+            synthesis_audit = {**synthesis_audit,
+                "deferred_no_independent_gap": True}
+        orchestration = {
+            **orchestration, "evidence_synthesis": synthesis_audit}
+        final = self._discover(
+            selection, engines, previous, task_name, task_description,
+            output, knowledge, variable_metadata, cycle=cycle,
+            orchestration_context=orchestration,
+            synthesized_candidates=synthesized,
+        )
+        # Cross-cycle calibration persists only enum failure categories;
+        # the independently opened admission report never enters this list.
+        self._development_validity_history.extend({
+            "origin": "llm", "rejection_reason": row["rejection_reason"]}
+            for row in final.report.get("candidate_validity_attempts", ())
+            if row.get("origin") == "llm" and not row.get("reused")
+            and row.get("rejection_reason"))
+        return final, plan, review, engines, evidence, orchestration, usage, gap
+
+    def _admit_cycle_candidates(self, final, selection, cycle_audit, cycle_admission,
+                                gap, gap_prior, gap_measurement_budget, attempted_lineages):
+        parser = support_parser_for_policy(EXPANDED_FORMULA_POLICY
+            if self.config.expanded_formula_synthesis else
+            "discard-fitted-coefficients-refit-closed-basis")
+        policy = (EXPANDED_FORMULA_POLICY
+            if self.config.expanded_formula_synthesis else
+            "discard-fitted-coefficients-refit-closed-basis")
+        optional = []
+        for row in final.report.get("evaluated_hypothesis_bank", ()):
+            if row.get("origin") != "llm":
+                continue
+            lineage = str(row.get("lineage_id") or "")
+            if not lineage:
+                raise ValueError("iterative candidate lacks an auditable lineage")
+            if lineage not in attempted_lineages:
+                optional.append(dict(row))
+                attempted_lineages.add(lineage)
+        if len(optional) > (self.config.llm_evaluation_reserve
+                            + self.config.synthesis_evaluation_reserve):
+            raise ValueError("iterative candidate attempt budget exceeded")
+        eligible = tuple(sorted({int(r["region"]) for r in
+            gap["prompt"].get("regions", ())}))
+        if optional and eligible and gap["prompt"].get("propose_allowed"):
+            retained, admission_report = admit_regional_candidates(
+                gap["core_rows"], optional, selection.development,
+                cycle_audit, cycle_admission,
+                selection.acquisition_pool.X, gap["regions"], eligible,
+                gap_prior, gap_measurement_budget,
+                alpha=.05 / self.config.cycles,
+                coefficient_policy=policy)
+        else:
+            retained, admission_report = [], {
+                "attempts": len(optional), "admitted": 0,
+                "reason": "no-independent-gap-or-no-new-candidate",
+                "admission_identity": cycle_admission.fingerprint}
+        return parser, policy, optional, retained, admission_report
+
+    def _update_cycle_posterior(self, parser, policy, optional, retained, admission_report,
+                                final, knowledge, selection, cycle_admission, gap, gap_prior,
+                                gap_measurement_budget, admitted_rows):
+        retained_supports = [parser(str(row["expression"]),
+            selection.development.X.shape[1]) for row in retained]
+        self._last_admission_report = admission_report
+        if len(set(retained_supports)) != len(retained_supports):
+            raise ValueError("duplicate admitted support in adaptive cycle")
+        stage_ids = final.report.get("knowledge_stage_ids", ())
+        if stage_ids:
+            stage_store = KnowledgeRuntime(
+                knowledge / "structure_library.jsonl",
+                knowledge / "runtime_ledger.jsonl")
+            for stage_id in stage_ids:
+                stage_store.finalize_gap_stage(
+                    stage_id,
+                    admission_identity=cycle_admission.fingerprint,
+                    target_identity=gap["target"].stable_hash,
+                    candidate_records=admission_report.get("candidates", ()))
+        admitted_rows.extend(dict(row) for row in retained)
+        after_rows = [*gap["core_rows"], *retained]
+        next_identity = sha256(json.dumps(after_rows,
+            sort_keys=True, allow_nan=False).encode()).hexdigest()
+        after_model = model_factory_for_policy(policy)(
+            after_rows, n_features=selection.development.X.shape[1],
+            prior=gap_prior, exploration_identity=next_identity,
+            coefficient_policy=policy)
+        after_target = freeze_discovery_target(
+            after_model, selection.development, selection.acquisition_pool.X,
+            measurement_budget=gap_measurement_budget,
+            expected_model_identity=after_model.stable_hash)
+        return after_rows, after_model, after_target
+
+    def _cycle_feedback_trace(self, after_rows, after_model, after_target, parser, retained,
+                              admission_report, optional, admitted_rows, final, selection,
+                              cycle_audit, cycle_admission, gap):
+        map_id = after_target.initial_posterior.map_structure_id
+        map_expressions = sorted(expression for _, expression, identifier
+                                 in after_model.candidate_bindings
+                                 if identifier == map_id)
+        if not map_expressions:
+            raise ValueError("posterior MAP structure lacks a bank expression")
+        support_key = lambda row: json.dumps(parser(
+            str(row["expression"]), selection.development.X.shape[1]))
+        brief_identity = sha256(json.dumps(gap["prompt"],
+            sort_keys=True, allow_nan=False).encode()).hexdigest()
+        proposal_audits = [island.get("memory", {})
+            for round_row in final.report.get("llm_rounds", ())
+            for island in round_row.get("islands", ())]
+        if gap["prompt"].get("propose_allowed"):
+            if not proposal_audits or any(
+                    row.get("posterior_gap_identity") != brief_identity
+                    for row in proposal_audits):
+                raise ValueError("proposal batch was not bound to current gap")
+        payload_identity = (brief_identity if not proposal_audits else
+            proposal_audits[0]["posterior_gap_identity"])
+        return {
+            "bank_before": gap["model"].stable_hash,
+            "core_rows_before": [dict(r) for r in gap["core_rows"]],
+            "posterior_before": gap["target"].stable_hash,
+            "gap_bank": gap["model"].stable_hash,
+            "gap_posterior": gap["target"].stable_hash,
+            "gap_identity": brief_identity,
+            "proposal_gap_identity": payload_identity,
+            "bank_after": after_model.stable_hash,
+            "posterior_after": after_target.stable_hash,
+            "bank_supports_after": [support_key(r) for r in after_rows],
+            "bank_rows_after": [dict(r) for r in after_rows],
+            "posterior_map_structure_id": map_id,
+            "posterior_map_expression": map_expressions[0],
+            "admitted_supports": [support_key(r) for r in retained],
+            "fit_rows": sorted(selection.development.row_fingerprints),
+            "selection_rows": sorted(selection.validation.row_fingerprints),
+            "gap_rows": sorted(cycle_audit.row_fingerprints),
+            "admission_rows": sorted(cycle_admission.row_fingerprints),
+            "admission_report": admission_report,
+            "attempted_candidate_count": len(optional),
+            "proposal_batch_count": len(proposal_audits),
+            "cumulative_admitted_count": len(admitted_rows),
+            "conditional_bank_posterior_only": True,
+        }
+
+    def _prepare_run(self, selection, output_dir, knowledge_dir, gap_audit, gap_prior,
+                     gap_measurement_budget, gap_cycle_roles, task_name, task_description,
+                     variable_metadata):
+        iterative = self.config.iterative_posterior_refinement
+        self._development_validity_history = []
+        self._last_admission_report = {}
         if iterative:
             if gap_audit is not None:
                 raise ValueError("iterative mode forbids a reused single gap audit")
@@ -931,13 +1103,6 @@ class DiscoveryAgent:
         if iterative and output.exists() and any(output.iterdir()):
             raise ValueError("iterative output already exists; provider calls cannot be replayed")
         output.mkdir(parents=True, exist_ok=True)
-        previous: tuple[Mapping[str, str], ...] = ()
-        admitted_rows: list[dict[str, Any]] = []
-        attempted_lineages: set[str] = set()
-        feedback_trace: list[dict[str, Any]] = []
-        expected_next_bank = expected_next_target = None
-        history: list[DiscoveryCycle] = []
-        final: DiscoveryRunResult | None = None
         planner = ProposalRuntime(
             EquationRuntime(
                 selection.development.X.shape[1],
@@ -956,146 +1121,61 @@ class DiscoveryAgent:
                 gap_audit is None or gap_prior is None
                 or gap_measurement_budget < 1):
             raise ValueError("posterior gap needs independent rows, prior and budget")
+        return output, knowledge, planner, base_task_context, scientist_state
+
+    def _cycle_acquisition_status(self, review, cycle):
+        if review.stop and cycle + 1 < self.config.cycles:
+            acquisition = {"reason": "scientist_stop_condition",
+                "stop_reason": review.stop_reason,
+                "cycle_continues_without_labels": True,
+                "registered_cycles_continue": True}
+        elif cycle + 1 >= self.config.cycles:
+            acquisition = {"reason": "final_cycle"}
+        else:
+            acquisition = {
+                "reason": "canonical_p3b_acquisition_required",
+                "cycle_continues_without_labels": True}
+        return acquisition
+
+    def run(
+        self, *, selection: SelectionData,
+        task_name: str, task_description: str, output_dir: str | Path,
+        knowledge_dir: str | Path, variable_metadata: Mapping[str, Any],
+        gap_audit: RoleDataset | None = None,
+        gap_prior: NormalInverseGammaPrior | None = None,
+        gap_measurement_budget: int = 0,
+        gap_cycle_roles: Sequence[tuple[RoleDataset, RoleDataset]] | None = None,
+    ) -> DiscoveryAgentResult:
+        iterative = self.config.iterative_posterior_refinement
+        output, knowledge, planner, base_task_context, scientist_state = self._prepare_run(
+            selection, output_dir, knowledge_dir, gap_audit, gap_prior,
+            gap_measurement_budget, gap_cycle_roles, task_name, task_description, variable_metadata)
+        previous, admitted_rows, attempted_lineages = (), [], set()
+        feedback_trace, history, final = [], [], None
+        expected_next_bank = expected_next_target = None
         for cycle in range(max(1, self.config.cycles)):
             cycle_audit = gap_cycle_roles[cycle][0] if iterative else gap_audit
             cycle_admission = gap_cycle_roles[cycle][1] if iterative else None
             state_before = scientist_state.to_dict()
             context = {**base_task_context, "scientist_state": state_before}
-            plan, review, engines, evidence, orchestration, usage = (
-                self._orchestrate_cycle(
-                    selection, cycle, planner, context, cycle_audit,
-                    gap_prior, gap_measurement_budget,
-                    admitted_rows=tuple(admitted_rows) if iterative else ()))
-            gap = self._last_cycle_gap if iterative else None
-            if iterative and (gap is None or (
-                    expected_next_bank is not None and (
-                        gap["model"].stable_hash != expected_next_bank or
-                        gap["target"].stable_hash != expected_next_target))):
-                raise ValueError("next gap did not use the admitted posterior bank")
-            synthesized, synthesis_audit = self._compile_cycle_synthesis(
-                review, evidence, selection.development.X.shape[1])
-            if (self.config.posterior_gap_directed
-                    and not orchestration["posterior_gap_brief"]["propose_allowed"]):
-                synthesized = []
-                synthesis_audit = {**synthesis_audit,
-                    "deferred_no_independent_gap": True}
-            orchestration = {
-                **orchestration, "evidence_synthesis": synthesis_audit}
-            final = self._discover(
-                selection, engines, previous, task_name, task_description,
-                output, knowledge, variable_metadata, cycle=cycle,
-                orchestration_context=orchestration,
-                synthesized_candidates=synthesized,
-            )
+            final, plan, review, engines, evidence, orchestration, usage, gap = self._execute_discovery_cycle(
+                selection, cycle, planner, context, cycle_audit, gap_prior,
+                gap_measurement_budget, admitted_rows, expected_next_bank,
+                expected_next_target, task_name, task_description, output, knowledge,
+                variable_metadata, previous)
             if iterative:
-                parser = support_parser_for_policy(EXPANDED_FORMULA_POLICY
-                    if self.config.expanded_formula_synthesis else
-                    "discard-fitted-coefficients-refit-closed-basis")
-                policy = (EXPANDED_FORMULA_POLICY
-                    if self.config.expanded_formula_synthesis else
-                    "discard-fitted-coefficients-refit-closed-basis")
-                optional = []
-                for row in final.report.get("evaluated_hypothesis_bank", ()):
-                    if row.get("origin") != "llm":
-                        continue
-                    lineage = str(row.get("lineage_id") or "")
-                    if not lineage:
-                        raise ValueError("iterative candidate lacks an auditable lineage")
-                    if lineage not in attempted_lineages:
-                        optional.append(dict(row))
-                        attempted_lineages.add(lineage)
-                if len(optional) > (self.config.llm_evaluation_reserve
-                                    + self.config.synthesis_evaluation_reserve):
-                    raise ValueError("iterative candidate attempt budget exceeded")
-                eligible = tuple(sorted({int(r["region"]) for r in
-                    gap["prompt"].get("regions", ())}))
-                if optional and eligible and gap["prompt"].get("propose_allowed"):
-                    retained, admission_report = admit_regional_candidates(
-                        gap["core_rows"], optional, selection.development,
-                        cycle_audit, cycle_admission,
-                        selection.acquisition_pool.X, gap["regions"], eligible,
-                        gap_prior, gap_measurement_budget,
-                        alpha=.05 / self.config.cycles,
-                        coefficient_policy=policy)
-                else:
-                    retained, admission_report = [], {
-                        "attempts": len(optional), "admitted": 0,
-                        "reason": "no-independent-gap-or-no-new-candidate",
-                        "admission_identity": cycle_admission.fingerprint}
-                retained_supports = [parser(str(row["expression"]),
-                    selection.development.X.shape[1]) for row in retained]
-                if len(set(retained_supports)) != len(retained_supports):
-                    raise ValueError("duplicate admitted support in adaptive cycle")
-                stage_ids = final.report.get("knowledge_stage_ids", ())
-                if stage_ids:
-                    stage_store = KnowledgeRuntime(
-                        knowledge / "structure_library.jsonl",
-                        knowledge / "runtime_ledger.jsonl")
-                    for stage_id in stage_ids:
-                        stage_store.finalize_gap_stage(
-                            stage_id,
-                            admission_identity=cycle_admission.fingerprint,
-                            target_identity=gap["target"].stable_hash,
-                            candidate_records=admission_report.get("candidates", ()))
-                admitted_rows.extend(dict(row) for row in retained)
-                after_rows = [*gap["core_rows"], *retained]
-                next_identity = sha256(json.dumps(after_rows,
-                    sort_keys=True, allow_nan=False).encode()).hexdigest()
-                after_model = model_factory_for_policy(policy)(
-                    after_rows, n_features=selection.development.X.shape[1],
-                    prior=gap_prior, exploration_identity=next_identity,
-                    coefficient_policy=policy)
-                after_target = freeze_discovery_target(
-                    after_model, selection.development, selection.acquisition_pool.X,
-                    measurement_budget=gap_measurement_budget,
-                    expected_model_identity=after_model.stable_hash)
-                expected_next_bank = after_model.stable_hash
-                expected_next_target = after_target.stable_hash
-                map_id = after_target.initial_posterior.map_structure_id
-                map_expressions = sorted(expression for _, expression, identifier
-                                         in after_model.candidate_bindings
-                                         if identifier == map_id)
-                if not map_expressions:
-                    raise ValueError("posterior MAP structure lacks a bank expression")
-                support_key = lambda row: json.dumps(parser(
-                    str(row["expression"]), selection.development.X.shape[1]))
-                brief_identity = sha256(json.dumps(gap["prompt"],
-                    sort_keys=True, allow_nan=False).encode()).hexdigest()
-                proposal_audits = [island.get("memory", {})
-                    for round_row in final.report.get("llm_rounds", ())
-                    for island in round_row.get("islands", ())]
-                if gap["prompt"].get("propose_allowed"):
-                    if not proposal_audits or any(
-                            row.get("posterior_gap_identity") != brief_identity
-                            for row in proposal_audits):
-                        raise ValueError("proposal batch was not bound to current gap")
-                payload_identity = (brief_identity if not proposal_audits else
-                    proposal_audits[0]["posterior_gap_identity"])
-                feedback_trace.append({
-                    "bank_before": gap["model"].stable_hash,
-                    "core_rows_before": [dict(r) for r in gap["core_rows"]],
-                    "posterior_before": gap["target"].stable_hash,
-                    "gap_bank": gap["model"].stable_hash,
-                    "gap_posterior": gap["target"].stable_hash,
-                    "gap_identity": brief_identity,
-                    "proposal_gap_identity": payload_identity,
-                    "bank_after": after_model.stable_hash,
-                    "posterior_after": after_target.stable_hash,
-                    "bank_supports_after": [support_key(r) for r in after_rows],
-                    "bank_rows_after": [dict(r) for r in after_rows],
-                    "posterior_map_structure_id": map_id,
-                    "posterior_map_expression": map_expressions[0],
-                    "admitted_supports": [support_key(r) for r in retained],
-                    "fit_rows": sorted(selection.development.row_fingerprints),
-                    "selection_rows": sorted(selection.validation.row_fingerprints),
-                    "gap_rows": sorted(cycle_audit.row_fingerprints),
-                    "admission_rows": sorted(cycle_admission.row_fingerprints),
-                    "admission_report": admission_report,
-                    "attempted_candidate_count": len(optional),
-                    "proposal_batch_count": len(proposal_audits),
-                    "cumulative_admitted_count": len(admitted_rows),
-                    "conditional_bank_posterior_only": True,
-                })
+                parser, policy, optional, retained, admission_report = self._admit_cycle_candidates(
+                    final, selection, cycle_audit, cycle_admission, gap, gap_prior,
+                    gap_measurement_budget, attempted_lineages)
+                after_rows, after_model, after_target = self._update_cycle_posterior(
+                    parser, policy, optional, retained, admission_report, final, knowledge,
+                    selection, cycle_admission, gap, gap_prior,
+                    gap_measurement_budget, admitted_rows)
+                expected_next_bank, expected_next_target = after_model.stable_hash, after_target.stable_hash
+                feedback_trace.append(self._cycle_feedback_trace(
+                    after_rows, after_model, after_target, parser, retained,
+                    admission_report, optional, admitted_rows, final, selection,
+                    cycle_audit, cycle_admission, gap))
             previous = (tuple(dict(row) for row in admitted_rows)
                         if iterative else _survivors(final.report, final.expression))
             scientist_state = scientist_state.advance(
@@ -1105,17 +1185,7 @@ class DiscoveryAgent:
                 attach_scientist_policy_evidence(
                     final, cycle, state_before, scientist_state.to_dict(),
                     plan.to_dict(), review.to_dict())
-            if review.stop and cycle + 1 < self.config.cycles:
-                acquisition = {"reason": "scientist_stop_condition",
-                    "stop_reason": review.stop_reason,
-                    "cycle_continues_without_labels": True,
-                    "registered_cycles_continue": True}
-            elif cycle + 1 >= self.config.cycles:
-                acquisition = {"reason": "final_cycle"}
-            else:
-                acquisition = {
-                    "reason": "canonical_p3b_acquisition_required",
-                    "cycle_continues_without_labels": True}
+            acquisition = self._cycle_acquisition_status(review, cycle)
             history.append(self._cycle_record(
                 cycle, final, selection, engines, acquisition, usage,
                 plan, review, state_before, scientist_state.to_dict(),

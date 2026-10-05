@@ -9,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.special import logsumexp
 from scipy.stats import beta, t as student_t
 
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
@@ -183,24 +182,15 @@ def screen_independent_adequacy(
         df=components.degrees_freedom[:, None]), axis=0)
     if not np.all(np.isfinite(cdf)):
         raise ValueError("nonfinite frozen-bank predictive CDF")
-    core_log_score = logsumexp(
-        np.log(components.structure_probabilities[:, None])
-        + student_t.logpdf(screen_y[None, :],
-            df=components.degrees_freedom[:, None],
-            loc=components.locations, scale=components.scales), axis=0)
+    core_log_score = model.engine(model.stable_hash).predictive_logpdf(
+        target.initial_posterior, screen_X, screen_y)
     if not np.all(np.isfinite(core_log_score)):
         raise ValueError("nonfinite frozen-bank predictive log score")
     reference_log_score = None
     if score_reference_model is not None:
-        reference = predictive_components_for_partition(
-            score_reference_model.engine(score_reference_model.stable_hash),
-            score_reference_target.initial_posterior,
-            score_reference_target.partition, screen_X)
-        reference_log_score = logsumexp(
-            np.log(reference.structure_probabilities[:, None])
-            + student_t.logpdf(screen_y[None, :],
-                df=reference.degrees_freedom[:, None],
-                loc=reference.locations, scale=reference.scales), axis=0)
+        reference_log_score = score_reference_model.engine(
+            score_reference_model.stable_hash).predictive_logpdf(
+                score_reference_target.initial_posterior, screen_X, screen_y)
         if not np.all(np.isfinite(reference_log_score)):
             raise ValueError("nonfinite frozen-reference predictive log score")
     misses = (cdf < tail_probability / 2) | (cdf > 1 - tail_probability / 2)

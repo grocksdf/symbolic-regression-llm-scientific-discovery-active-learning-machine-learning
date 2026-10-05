@@ -103,9 +103,9 @@ def test_total_typed_operators_compile_to_domain_safe_formulas():
         {"op": "decay_exp", "args": [{
             "op": "signed_log", "args": [{
                 "op": "safe_sqrt", "args": [{
-                    "ref": {"lineage_id": "b", "term_index": 0}},
+                                 "ref": {"lineage_id": "b", "term_index": 0}},
+                ],
                 }],
-            }],
         }]},
     ]}
     expression, _ = compile_typed_formula_ast(

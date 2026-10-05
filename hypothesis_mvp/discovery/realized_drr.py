@@ -141,6 +141,81 @@ def compare_paired_reporting(full, no_llm):
     }
 
 
+def _query_record(step, global_index, predicted, upper, local, resolution,
+                  selection_mode, certified, exact, before, after):
+    return {
+        "step": step + 1, "action_index": global_index,
+        "predicted_lower_bound": predicted,
+        "predicted_upper_bound": float(upper[local]),
+        "familywise_resolution": resolution,
+        "selection_mode": ("numerical-decision-risk" if certified and not exact.rigorous_enclosure else selection_mode),
+        "certified_targeted_selection": bool(certified and exact.rigorous_enclosure),
+        "numerical_targeted_selection": bool(certified),
+        "interval_kind": exact.error_kind,
+        "rigorous_enclosure": exact.rigorous_enclosure,
+        "realized_risk_reduction": float(before - after),
+        "risk_before": before, "risk_after": after,
+        "response_opened_after_selection": True,
+        }
+
+
+def _run_queries(engine, posterior, partition, actions, responses, remaining,
+                 random_order, policy, measurement_budget, reporting_data,
+                 reporting_mse, reporting_log_score, risks, queries):
+    for step in range(measurement_budget):
+        available = actions[remaining]
+        components = predictive_components_for_partition(
+            engine, posterior, partition, available)
+        exact = exact_class_decision_risk_reduction_shared_actions(
+            components, epsabs=EXACT_CLASS_EIG_EPSABS)
+        lower = np.maximum(0.0, exact.scores - exact.quadrature_errors)
+        upper = exact.scores + exact.quadrature_errors
+        resolution = float(len(available) * EXACT_CLASS_EIG_EPSABS)
+        local, selection_mode, certified = _select_realized_action(
+            lower, upper, remaining, random_order, policy=policy,
+            resolution=resolution)
+        global_index = int(remaining[local])
+        predicted = float(lower[local])
+        response = float(responses[global_index])
+        before = risks[-1]
+        posterior = engine.update_one(
+            posterior, actions[global_index], response)
+        if reporting_data is not None:
+            mse, log_score = _independent_predictive_score(
+                engine, posterior, reporting_data)
+            reporting_mse.append(mse)
+            reporting_log_score.append(log_score)
+        probabilities = fixed_partition_probabilities(
+            posterior, partition)
+        after = bayes_zero_one_decision_risk(probabilities)
+        queries.append(_query_record(step, global_index, predicted, upper, local,
+            resolution, selection_mode, certified, exact, before, after))
+        risks.append(after)
+        remaining = np.delete(remaining, local)
+    return posterior
+
+
+def _reporting_payload(reporting_data, initial, actions, measurement_budget,
+                       reporting_mse, reporting_log_score):
+    x = np.arange(measurement_budget + 1)
+    return {
+        "schema": "scientific-independent-predictive-trajectory-v1",
+        "reporting_fingerprint": reporting_data.fingerprint,
+        "initial_data_fingerprint": initial.fingerprint,
+        "action_covariate_fingerprint": covariate_fingerprint(actions),
+        "measurement_budget": measurement_budget,
+        "mse_curve": reporting_mse,
+        "log_score_curve": reporting_log_score,
+        "mse_aulc": float(np.trapezoid(reporting_mse, x) / measurement_budget),
+        "log_score_aulc": float(
+            np.trapezoid(reporting_log_score, x) / measurement_budget),
+        "reporting_excluded_from_selection": True,
+        "claim_boundary": (
+            "independent predictive loss on one shared development target; "
+            "not operational-class truth or held-out confirmation"),
+    }
+
+
 def run_realized_drr_trajectory(
     candidates: Sequence[Mapping[str, Any]],
     initial_X, initial_y, action_X, action_y, *, condition: str,
@@ -204,45 +279,9 @@ def run_realized_drr_trajectory(
             engine, posterior, reporting_data)
         reporting_mse.append(mse)
         reporting_log_score.append(log_score)
-    for step in range(measurement_budget):
-        available = actions[remaining]
-        components = predictive_components_for_partition(
-            engine, posterior, partition, available)
-        exact = exact_class_decision_risk_reduction_shared_actions(
-            components, epsabs=EXACT_CLASS_EIG_EPSABS)
-        lower = np.maximum(0.0, exact.scores - exact.quadrature_errors)
-        upper = exact.scores + exact.quadrature_errors
-        resolution = float(len(available) * EXACT_CLASS_EIG_EPSABS)
-        local, selection_mode, certified = _select_realized_action(
-            lower, upper, remaining, random_order, policy=policy,
-            resolution=resolution)
-        global_index = int(remaining[local])
-        predicted = float(lower[local])
-        response = float(responses[global_index])
-        before = risks[-1]
-        posterior = engine.update_one(
-            posterior, actions[global_index], response)
-        if reporting_data is not None:
-            mse, log_score = _independent_predictive_score(
-                engine, posterior, reporting_data)
-            reporting_mse.append(mse)
-            reporting_log_score.append(log_score)
-        probabilities = fixed_partition_probabilities(
-            posterior, partition)
-        after = bayes_zero_one_decision_risk(probabilities)
-        queries.append({
-            "step": step + 1, "action_index": global_index,
-            "predicted_lower_bound": predicted,
-            "predicted_upper_bound": float(upper[local]),
-            "familywise_resolution": resolution,
-            "selection_mode": selection_mode,
-            "certified_targeted_selection": certified,
-            "realized_risk_reduction": float(before - after),
-            "risk_before": before, "risk_after": after,
-            "response_opened_after_selection": True,
-        })
-        risks.append(after)
-        remaining = np.delete(remaining, local)
+    posterior = _run_queries(engine, posterior, partition, actions, responses,
+        remaining, random_order, policy, measurement_budget, reporting_data,
+        reporting_mse, reporting_log_score, risks, queries)
     metrics = _risk_curve_metrics(risks, measurement_budget)
     payload = {
         "schema": "scientific-realized-drr-trajectory-v1",
@@ -259,26 +298,9 @@ def run_realized_drr_trajectory(
         "heldout_opened": False,
     }
     if reporting_data is not None:
-        x = np.arange(measurement_budget + 1)
-        payload["independent_reporting"] = {
-            "schema": "scientific-independent-predictive-trajectory-v1",
-            "reporting_fingerprint": reporting_data.fingerprint,
-            "initial_data_fingerprint": initial.fingerprint,
-            "action_covariate_fingerprint": covariate_fingerprint(actions),
-            "measurement_budget": measurement_budget,
-            "mse_curve": reporting_mse,
-            "log_score_curve": reporting_log_score,
-            "mse_aulc": float(np.trapezoid(reporting_mse, x) / measurement_budget),
-            "log_score_aulc": float(
-                np.trapezoid(reporting_log_score, x) / measurement_budget),
-            "reporting_excluded_from_selection": True,
-            "claim_boundary": (
-                "independent predictive loss on one shared development target; "
-                "not operational-class truth or held-out confirmation"),
-        }
+        payload["independent_reporting"] = _reporting_payload(
+            reporting_data, initial, actions, measurement_budget, reporting_mse, reporting_log_score)
     payload["identity"] = sha256(
         repr(payload).encode()).hexdigest()
     return payload
-
-
 __all__ = ["compare_paired_reporting", "run_realized_drr_trajectory"]

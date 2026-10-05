@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .candidate_validity import CandidateValidityError, numerical_definedness_preflight
+
 """EvaluationRuntime: refit, pruning, semantic retention and Pareto policy.
 
 It accepts and returns immutable EquationState objects. It never calls a
@@ -219,22 +221,52 @@ class MultiDomainEvaluator:
         proxy = self._block(y_val[idx], self.runtime.predict(expression, X_val[idx]))
 
         X_all, y_all = np.vstack([X_train, X_val]), np.concatenate([y_train, y_val])
-        probe = self.covariate_domains(X_train, X_val)[-1][1]
         center = np.median(X_all, axis=0)
         span = np.maximum(np.quantile(X_all, 0.95, axis=0) - np.quantile(X_all, 0.05, axis=0), 1.0e-9)
+        probe, near_probe = self._ood_probe_pair(X_all, center, span)
         y_scale = max(float(np.quantile(np.abs(y_all), 0.95)), math.sqrt(max(float(np.var(y_all)), 1.0e-15)), 1.0e-9)
         try:
             observed = self.runtime.predict(expression, X_all)
             far = self.runtime.predict(expression, probe)
-            near = self.runtime.predict(expression, probe + 1.0e-4 * span)
+            near = self.runtime.predict(expression, near_probe)
         except Exception:
             return proxy["nmse"], proxy["strict"], float("inf")
         observed_amp = max(1.0, float(np.quantile(np.abs(observed), 0.99) / y_scale))
         far_amp = float(np.quantile(np.abs(far), 0.99) / y_scale)
-        sensitivity = float(np.quantile(np.abs(near - far), 0.99) / y_scale / 1.0e-4)
+        step = (np.max(np.abs((near_probe - probe) / span), axis=1)
+                if self.runtime.refit_policy == "pcpi-expanded-fixed-inner-v1"
+                else np.full(len(probe), 1.0e-4))
+        # Identical registered points have zero finite-difference effect.
+        effects = np.divide(np.abs(near - far), step,
+                            out=np.zeros_like(far), where=step > 0)
+        sensitivity = float(np.quantile(effects, 0.99) / y_scale)
         penalty = max(0.0, math.log1p(far_amp / observed_amp) - math.log(3.0))
         penalty += max(0.0, math.log1p(sensitivity) - math.log(1.0e5))
         return proxy["nmse"], proxy["strict"], penalty
+
+    def _ood_probe_pair(
+        self, X_all: np.ndarray, center: np.ndarray, span: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Return the response-free far probe and its finite-difference neighbour.
+
+        Under the expanded policy the probes are *registered* rows: a
+        fabricated Cartesian box or extrapolation can kill a valid log or
+        ratio law.  Every other policy keeps the historical randomized box.
+        """
+        n_probe = min(max(16, int(self.config.ood_probe_count)), max(16, len(X_all)))
+        if self.runtime.refit_policy == "pcpi-expanded-fixed-inner-v1":
+            index = np.linspace(0, len(X_all) - 1, n_probe, dtype=int)
+            probe = np.ascontiguousarray(X_all[index], dtype=np.float64)
+            near_probe = np.ascontiguousarray(
+                X_all[np.minimum(index + 1, len(X_all) - 1)], dtype=np.float64)
+            return probe, near_probe
+        rng = np.random.default_rng(
+            int(self.config.random_seed) + 65537 * X_all.shape[1] + len(X_all))
+        probe = center + (
+            rng.choice(np.array([-1.0, 1.0]), size=(n_probe, X_all.shape[1]))
+            * rng.uniform(0.75, 1.50, size=(n_probe, X_all.shape[1]))
+            * span)
+        return np.ascontiguousarray(probe, dtype=np.float64), probe + 1.0e-4 * span
 
     def covariate_domains(
         self, X_train: np.ndarray, X_val: np.ndarray,
@@ -249,25 +281,11 @@ class MultiDomainEvaluator:
             - np.quantile(X_all, 0.05, axis=0),
             1.0e-9,
         )
-        rng = np.random.default_rng(
-            int(self.config.random_seed)
-            + 65537 * X_all.shape[1] + len(X_all))
-        n_probe = min(
-            max(16, int(self.config.ood_probe_count)),
-            max(16, len(X_all)),
-        )
-        probe = center + (
-            rng.choice(
-                np.array([-1.0, 1.0]),
-                size=(n_probe, X_all.shape[1]))
-            * rng.uniform(
-                0.75, 1.50, size=(n_probe, X_all.shape[1]))
-            * span
-        )
+        probe = self._ood_probe_pair(X_all, center, span)[0]
         return (
             ("train", train),
             ("validation", validation),
-            ("ood_proxy", np.ascontiguousarray(probe)),
+            ("ood_proxy", np.ascontiguousarray(probe, dtype=np.float64)),
         )
 
     def evaluate(
@@ -578,6 +596,9 @@ class EvaluationRuntime:
         self.budget = EvaluationBudget(config.evaluation_budget)
         self._rejections: list[dict[str, Any]] = []
         self._warnings: list[dict[str, Any]] = []
+        self.validity_attempts: list[dict[str, Any]] = []
+        self.registered_covariates = None
+        self._active_validity_attempt = None
         self._on_rejection = on_rejection
         self._on_warning = on_warning
 
@@ -593,9 +614,13 @@ class EvaluationRuntime:
         """Clear per-run audit state when a runtime instance is reused."""
         self._rejections.clear()
         self._warnings.clear()
+        self.validity_attempts.clear()
+        self._active_validity_attempt = None
         self.budget.reset()
 
     def _reject(self, reason: str, **payload: Any) -> None:
+        if self._active_validity_attempt is not None:
+            self._active_validity_attempt["rejection_reason"] = str(reason)
         row = {"reason": str(reason), **json_safe(payload)}
         self._rejections.append(row)
         if self._on_rejection is not None:
@@ -980,6 +1005,52 @@ class EvaluationRuntime:
             )
         return proposal_dag, proposal_edit, action_match
 
+    def _expanded_domain_certificate(
+        self, proposal_dag: EquationDAG, X_train: np.ndarray, X_val: np.ndarray,
+        proposal: Optional[ProposalCandidate], source: str, island: str,
+        round_id: int,
+    ) -> Optional[dict[str, Any]]:
+        """Certify the support is defined on every registered covariate domain."""
+        from .expanded_formula_synthesis import (
+            ExpandedFormulaDomainError,
+            certify_expanded_formula_domains,
+        )
+        try:
+            certificate = certify_expanded_formula_domains(
+                proposal_dag.expression,
+                self.n_features,
+                self.evaluator.covariate_domains(X_train, X_val),
+            )
+        except ExpandedFormulaDomainError as error:
+            self._reject(
+                "expanded_formula_undefined_before_fit",
+                source=source, island=island, round_id=round_id,
+                candidate_id=(proposal.candidate_id if proposal else ""),
+                failed_domain=error.domain_name,
+                response_accessed=False,
+            )
+            return None
+        self.budget.record("expanded_domain_certificates")
+        return certificate
+
+    def _safe_refit(
+        self, normalized: str, X_train: np.ndarray, y_train: np.ndarray,
+        proposal: Optional[ProposalCandidate], source: str, island: str,
+        round_id: int,
+    ) -> Optional[RefitResult]:
+        """Refit global constants, classifying a numeric failure before fitting."""
+        try:
+            return self.runtime.refit_global_constants(
+                normalized, X_train, y_train, ridge=self.config.ridge_alpha,
+                maxiter=self.config.optimizer_maxiter,
+                random_seed=self.config.random_seed + 1009 * int(round_id))
+        except Exception as error:
+            self._reject("parameter_fit_failed", source=source, island=island,
+                         round_id=round_id,
+                         candidate_id=proposal.candidate_id if proposal else "",
+                         error=repr(error))
+            return None
+
     def _refit_and_validate(
         self, normalized: str, X_train: np.ndarray, y_train: np.ndarray,
         X_val: np.ndarray, y_val: np.ndarray, parent: Optional[EquationState],
@@ -987,35 +1058,19 @@ class EvaluationRuntime:
         proposal_edit: Mapping[str, Any], origin: str, source: str, island: str, round_id: int,
     ) -> Optional[tuple[RefitResult, EquationDAG, MetricVector, dict[str, Any], dict[str, Any]]]:
         if self.config.refit_policy == "pcpi-expanded-fixed-inner-v1":
-            from .expanded_formula_synthesis import (
-                ExpandedFormulaDomainError,
-                certify_expanded_formula_domains,
-            )
-            try:
-                domain_certificate = certify_expanded_formula_domains(
-                    proposal_dag.expression,
-                    self.n_features,
-                    self.evaluator.covariate_domains(X_train, X_val),
-                )
-            except ExpandedFormulaDomainError as error:
-                self._reject(
-                    "expanded_formula_undefined_before_fit",
-                    source=source, island=island, round_id=round_id,
-                    candidate_id=(
-                        proposal.candidate_id if proposal else ""),
-                    failed_domain=error.domain_name,
-                    response_accessed=False,
-                )
+            domain_certificate = self._expanded_domain_certificate(
+                proposal_dag, X_train, X_val, proposal, source, island, round_id)
+            if domain_certificate is None:
                 return None
-            self.budget.record("expanded_domain_certificates")
         else:
             domain_certificate = {}
-        refit = self.runtime.refit_global_constants(
-            normalized, X_train, y_train, ridge=self.config.ridge_alpha,
-            maxiter=self.config.optimizer_maxiter,
-            random_seed=self.config.random_seed + 1009 * int(round_id),
-        )
+        refit = self._safe_refit(
+            normalized, X_train, y_train, proposal, source, island, round_id)
+        if refit is None:
+            return None
         self.budget.record("parameter_refits")
+        if self._active_validity_attempt is not None:
+            self._active_validity_attempt["fit_survived"] = True
         dag = self.runtime.dag(refit.expression)
         metrics = self.evaluator.evaluate(dag.expression, X_train, y_train, X_val, y_val)
         self.budget.record("multi_domain_metric_evaluations")
@@ -1132,6 +1187,14 @@ class EvaluationRuntime:
         island: str, round_id: int, parent: Optional[EquationState] = None,
         proposal: Optional[ProposalCandidate] = None,
     ) -> Optional[EquationState]:
+        attempt = {"expression": expression, "origin": origin, "source": source,
+                   "candidate_id": proposal.candidate_id if proposal else "",
+                   "lineage_id": proposal.lineage_id if proposal else "",
+                   "compiled": False, "domain_valid": False,
+                   "fit_survived": False, "evaluated": False,
+                   "rejection_reason": "", "reused": False}
+        self.validity_attempts.append(attempt)
+        self._active_validity_attempt = attempt
         category = {
             "llm": "llm_candidate",
             "deterministic": "anchor_candidate" if parent is None else "deterministic_candidate",
@@ -1144,6 +1207,8 @@ class EvaluationRuntime:
             return None
         try:
             normalized = self.registry.normalize(expression)
+            if not self._preflight_candidate(normalized, X_train, X_val, attempt):
+                return None
             checked = self._check_proposal(normalized, parent, proposal, origin, source, island, round_id)
             if checked is None:
                 return None
@@ -1155,6 +1220,7 @@ class EvaluationRuntime:
             if fitted is None:
                 return None
             refit, dag, metrics, pruning, retention = fitted
+            attempt["evaluated"] = True
         except Exception as exc:
             self._reject(
                 "candidate_build_exception", source=source, island=island, round_id=round_id,
@@ -1179,17 +1245,53 @@ class EvaluationRuntime:
             edit=edit, refit=refit_payload, lineage=lineage,
         )
 
+    def _preflight_candidate(self, expression, X_train, X_val, attempt):
+        if self.config.refit_policy != "pcpi-expanded-fixed-inner-v1":
+            attempt.update(compiled=True, domain_valid=True)
+            return True
+        from hypothesis_mvp.pcpi.reference.expanded_formula_basis import (
+            compile_fixed_formula_support, decode_fixed_formula_term,
+        )
+        points = [X_train, X_val]
+        if self.registered_covariates is not None:
+            points.append(self.registered_covariates)
+        values = np.vstack(points)
+        try:
+            # Evaluate unsimplified syntax first: DAG normalization must not
+            # erase a singularity or an overflowing intermediate expression.
+            audit = numerical_definedness_preflight(expression, values)
+            support = compile_fixed_formula_support(expression, self.n_features)
+            for token in support:
+                if token != "intercept":
+                    numerical_definedness_preflight(
+                        decode_fixed_formula_term(token, self.n_features), values)
+        except CandidateValidityError as error:
+            attempt["compiled"] = True
+            self._reject(error.reason, source=attempt["source"], origin=attempt["origin"],
+                         candidate_id=attempt["candidate_id"], stage="before_parameter_fit",
+                         expression=expression, detail=error.detail, failing_node=error.node)
+            return False
+        attempt.update(compiled=True, domain_valid=True, preflight=audit,
+                       structural_support=list(support))
+        return True
+
 
     def build_state(
         self, expression: str, X_train: np.ndarray, y_train: np.ndarray,
         X_val: np.ndarray, y_val: np.ndarray, *, source: str, origin: str,
         island: str, round_id: int, parent: Optional[EquationState] = None,
         proposal: Optional[ProposalCandidate] = None,
+        audit_lineage_id: str = "",
     ) -> Optional[EquationState]:
-        return self._make_hypothesis(
+        state = self._make_hypothesis(
             expression, X_train, y_train, X_val, y_val, source, origin, island, round_id,
             parent=parent, proposal=proposal,
         )
+        if audit_lineage_id:
+            if proposal is not None and proposal.lineage_id != audit_lineage_id:
+                raise ValueError("validity audit lineage mismatch")
+            self.validity_attempts[-1]["lineage_id"] = audit_lineage_id
+        return state
 
     def seed_survivor(
         self, base_candidates: Sequence[Any], X_train: np.ndarray, y_train: np.ndarray,
@@ -1226,6 +1328,10 @@ class EvaluationRuntime:
             state = self.build_state(
                 expression, X_train, y_train, X_val, y_val,
                 source=source, origin=origin, island="anchor", round_id=0)
+            if self.validity_attempts:
+                self.validity_attempts[-1].update(
+                    lineage_id=seed_lineage,
+                    reused=bool(isinstance(seed, Mapping) and seed.get("reused_candidate")))
             if state is not None:
                 if seed_lineage:
                     state = dataclasses.replace(state, lineage_id=seed_lineage)

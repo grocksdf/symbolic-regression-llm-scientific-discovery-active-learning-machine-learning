@@ -10,6 +10,7 @@ from typing import Any, Mapping, Sequence
 from .pcpi_adapter import (additive_closed_form, structural_terms,
     EXPANDED_FORMULA_POLICY, support_parser_for_policy)
 from .expanded_formula_synthesis import compile_typed_formula_ast
+from .candidate_validity import domain_obligations
 from .scientist_policy import SynthesisDirective
 
 
@@ -186,6 +187,8 @@ def compile_evidence_synthesis(
         records.append({
             **identity_payload, "candidate_identity": identity,
             "expression": expression,
+            "domain_obligations": (list(domain_obligations(expression, n_features))
+                if coefficient_policy == EXPANDED_FORMULA_POLICY else []),
             "candidate_response_accessed": False,
             "heldout_opened": False})
     return candidates, {

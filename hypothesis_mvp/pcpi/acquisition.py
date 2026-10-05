@@ -84,6 +84,8 @@ class PredictiveComponents:
 class ExactEIGResult:
     scores: np.ndarray
     quadrature_errors: np.ndarray
+    error_kind: str = "numerical-quadrature-estimate"
+    rigorous_enclosure: bool = False
 
 
 @dataclass(frozen=True)
@@ -436,8 +438,8 @@ def exact_class_eig_shared_actions(
     This is algebraically the same finite-mixture class EIG integral as
     :func:`exact_class_eig`.  ``quad_vec`` refines a vector-valued integrand,
     so density evaluations and interval subdivision are shared across actions.
-    Its max-norm error bound applies to every returned coordinate and is
-    therefore conservatively repeated for each action.  No response value is
+    Its max-norm error estimate is repeated for each action; it is not a
+    rigorous enclosure certificate. No response value is
     accepted by this function.
     """
 
@@ -517,9 +519,12 @@ def exact_class_decision_risk_reduction_shared_actions(
             joint[class_index] += weights[structure_index] * density[structure_index]
         return np.max(joint, axis=0)
 
-    posterior_accuracy, error = quad_vec(
+    posterior_accuracy, error, info = quad_vec(
         integrand, -np.inf, np.inf, epsabs=epsabs, epsrel=epsrel,
-        norm="max", limit=250)
+        norm="max", limit=250, full_output=True)
+    if (not info.success or not np.isfinite(error)
+            or not np.all(np.isfinite(posterior_accuracy))):
+        raise FloatingPointError("decision-risk quadrature did not converge")
     prior_accuracy = max(components.partition.class_probabilities)
     scores = np.maximum(0.0, np.asarray(posterior_accuracy) - prior_accuracy)
     prior_risk = 1.0 - prior_accuracy

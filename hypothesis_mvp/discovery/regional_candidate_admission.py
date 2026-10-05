@@ -10,11 +10,8 @@ import json
 import math
 
 import numpy as np
-from scipy.special import logsumexp
-from scipy.stats import t as student_t
 
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
-from hypothesis_mvp.pcpi.acquisition import predictive_components_for_partition
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
 
 from .candidate_region_expansion import FrozenAxisRegions, RegionSelectorPosterior
@@ -38,16 +35,8 @@ def _fixed_predictive_logpdf(candidates, fit, observations, domain,
     target = freeze_discovery_target(
         model, fit, domain, measurement_budget=measurement_budget,
         expected_model_identity=model.stable_hash)
-    components = predictive_components_for_partition(
-        model.engine(model.stable_hash), target.initial_posterior,
-        target.partition, observations.X)
-    component_likelihood = student_t.logpdf(
-        observations.y[None, :],
-        df=components.degrees_freedom[:, None],
-        loc=components.locations, scale=components.scales)
-    values = logsumexp(
-        np.log(components.structure_probabilities[:, None])
-        + component_likelihood, axis=0)
+    values = model.engine(model.stable_hash).predictive_logpdf(
+        target.initial_posterior, observations.X, observations.y)
     if not np.all(np.isfinite(values)):
         raise ValueError("nonfinite fixed-expert predictive scores")
     return values, model.stable_hash
