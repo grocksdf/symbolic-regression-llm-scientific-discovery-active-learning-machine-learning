@@ -120,6 +120,25 @@ def test_provider_typed_directive_and_inner_equation_share_the_expanded_parser()
     assert "division or compound transforms" not in proposer._system_message(True)
 
 
+def test_expanded_refit_preserves_ratio_and_log_inner_support():
+    expression = (
+        "(x0+x1)*log(1+Abs(x2))/x2 + "
+        "(x1+x2)*sin(x1)")
+    x = np.column_stack((
+        np.linspace(.2, 1.4, 40),
+        np.linspace(.3, 1.5, 40),
+        np.linspace(.5, 1.7, 40)))
+    y = (1.3 * (x[:, 0] + x[:, 1])
+         * np.log1p(np.abs(x[:, 2])) / x[:, 2]
+         - .7 * (x[:, 1] + x[:, 2]) * np.sin(x[:, 1]))
+    runtime = EquationRuntime(
+        3, refit_policy="pcpi-expanded-fixed-inner-v1")
+    refitted = runtime.refit_global_constants(expression, x, y)
+    assert compile_fixed_formula_support(
+        expression, 3) == compile_fixed_formula_support(
+        runtime.dag(refitted.expression).expression, 3)
+
+
 def test_scientist_prompt_exposes_versioned_witness_indices_without_provider(monkeypatch):
     proposer = ProposalRuntime(
         EquationRuntime(1, refit_policy="pcpi-expanded-fixed-inner-v1"),

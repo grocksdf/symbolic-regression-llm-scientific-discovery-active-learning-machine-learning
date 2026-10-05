@@ -70,6 +70,43 @@ def test_additive_support_refuses_duplicate_structures():
         compile_fixed_formula_support("x0 - 2*x0", 1)
 
 
+@pytest.mark.parametrize(("proposal", "refitted"), [
+    (
+        "(x0+x1)*log(1+Abs(x2))/x2",
+        "-0.76985240254872178*(x0+x1)*log(1+Abs(x2))/x2",
+    ),
+    (
+        "x0/(1+x1**2)",
+        "0.125*x0/(1+x1**2)",
+    ),
+    (
+        "x0/(2*x1)",
+        "-3*x0/(2*x1)",
+    ),
+    (
+        "sin(1.7*x0)",
+        "-4.2*sin(1.7*x0)",
+    ),
+])
+def test_outer_amplitude_factorization_preserves_fixed_inner_support(
+        proposal, refitted):
+    assert compile_fixed_formula_support(
+        proposal, 3) == compile_fixed_formula_support(refitted, 3)
+
+
+def test_outer_amplitude_factorization_keeps_inner_literals_frozen():
+    assert compile_fixed_formula_support(
+        "2*sin(1.7*x0)", 1) != compile_fixed_formula_support(
+        "2*sin(1.8*x0)", 1)
+
+
+def test_commutative_syntax_order_has_one_fixed_inner_identity():
+    assert compile_fixed_formula_support(
+        "(x0+x1)*log(1+Abs(x2))/x2", 3
+    ) == compile_fixed_formula_support(
+        "(x1+x0)*log(Abs(x2)+1)/x2", 3)
+
+
 def test_expanded_bank_is_opt_in_and_has_distinct_model_identity():
     rows = [{"expression": "x0", "source": "engine:a"},
             {"expression": "x0*exp(-Abs(x0))", "source": "llm",

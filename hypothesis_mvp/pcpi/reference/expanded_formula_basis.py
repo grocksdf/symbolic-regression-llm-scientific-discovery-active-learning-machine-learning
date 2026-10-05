@@ -97,31 +97,90 @@ def _parse(expression, n_features):
     return root.body
 
 
+def _canonicalize_commutative(node):
+    """Canonicalize syntax-only Add/Mult ordering without algebraic simplify."""
+    if isinstance(node, ast.BinOp):
+        left = _canonicalize_commutative(node.left)
+        right = _canonicalize_commutative(node.right)
+        if isinstance(node.op, (ast.Add, ast.Mult)):
+            operation = type(node.op)
+
+            def flatten(value):
+                if isinstance(value, ast.BinOp) and isinstance(
+                        value.op, operation):
+                    return flatten(value.left) + flatten(value.right)
+                return [value]
+
+            values = flatten(left) + flatten(right)
+            values.sort(key=lambda value: ast.dump(
+                value, annotate_fields=True, include_attributes=False))
+            result = values[0]
+            for value in values[1:]:
+                result = ast.BinOp(
+                    left=result, op=operation(), right=value)
+            return result
+        return ast.BinOp(left=left, op=type(node.op)(), right=right)
+    if isinstance(node, ast.UnaryOp):
+        return ast.UnaryOp(
+            op=type(node.op)(),
+            operand=_canonicalize_commutative(node.operand))
+    if isinstance(node, ast.Call):
+        return ast.Call(
+            func=node.func,
+            args=[_canonicalize_commutative(value)
+                  for value in node.args],
+            keywords=node.keywords)
+    return node
+
+
 def compile_fixed_formula_term(expression: str, n_features: int) -> str:
     """Compile one basis term; strip only its outer fitted numeric amplitude."""
     node = _parse(expression, n_features)
-    while isinstance(node, ast.UnaryOp) and type(node.op) in (ast.USub, ast.UAdd):
-        node = node.operand
-    def multiply_factors(value):
-        if isinstance(value, ast.BinOp) and isinstance(value.op, ast.Mult):
-            return multiply_factors(value.left) + multiply_factors(value.right)
-        return [value]
-    factors = multiply_factors(node)
-    retained = []
-    for factor in factors:
+
+    def split_outer_scalar(value):
+        """Factor only the multiplicative shell surrounding one additive term."""
         try:
-            amplitude = _constant(factor)
+            scalar = _constant(value)
         except ValueError:
-            retained.append(factor)
+            pass
         else:
-            if amplitude == 0:
-                raise ValueError("zero outer formula amplitude")
-    if len(retained) < len(factors):
-        if not retained:
-            raise ValueError("fixed formula has no structural covariate")
-        node = retained[0]
-        for factor in retained[1:]:
-            node = ast.BinOp(left=node, op=ast.Mult(), right=factor)
+            return scalar, None
+        if (isinstance(value, ast.UnaryOp)
+                and type(value.op) in (ast.USub, ast.UAdd)):
+            scalar, structural = split_outer_scalar(value.operand)
+            if isinstance(value.op, ast.USub):
+                scalar = -scalar
+            return scalar, structural
+        if isinstance(value, ast.BinOp) and isinstance(
+                value.op, (ast.Mult, ast.Div)):
+            left_scalar, left = split_outer_scalar(value.left)
+            right_scalar, right = split_outer_scalar(value.right)
+            if isinstance(value.op, ast.Div):
+                if right_scalar == 0:
+                    raise ValueError("zero outer formula amplitude denominator")
+                scalar = left_scalar / right_scalar
+            else:
+                scalar = left_scalar * right_scalar
+            if left is None:
+                structural = right
+                if isinstance(value.op, ast.Div) and right is not None:
+                    structural = ast.BinOp(
+                        left=ast.Constant(value=1.0),
+                        op=ast.Div(), right=right)
+            elif right is None:
+                structural = left
+            else:
+                structural = ast.BinOp(
+                    left=left, op=type(value.op)(), right=right)
+            return scalar, structural
+        return 1.0, value
+
+    amplitude, node = split_outer_scalar(node)
+    if not math.isfinite(amplitude) or amplitude == 0:
+        raise ValueError("zero or nonfinite outer formula amplitude")
+    if node is None:
+        raise ValueError("fixed formula has no structural covariate")
+    node = _canonicalize_commutative(node)
     canonical = ast.unparse(node)
     _parse(canonical, n_features)
     encoded = base64.urlsafe_b64encode(canonical.encode("utf-8")).decode("ascii")
