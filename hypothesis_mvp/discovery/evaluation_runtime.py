@@ -219,11 +219,9 @@ class MultiDomainEvaluator:
         proxy = self._block(y_val[idx], self.runtime.predict(expression, X_val[idx]))
 
         X_all, y_all = np.vstack([X_train, X_val]), np.concatenate([y_train, y_val])
+        probe = self.covariate_domains(X_train, X_val)[-1][1]
         center = np.median(X_all, axis=0)
         span = np.maximum(np.quantile(X_all, 0.95, axis=0) - np.quantile(X_all, 0.05, axis=0), 1.0e-9)
-        rng = np.random.default_rng(int(self.config.random_seed) + 65537 * X_all.shape[1] + len(X_all))
-        n_probe = min(max(16, int(self.config.ood_probe_count)), max(16, len(X_all)))
-        probe = center + rng.choice(np.array([-1.0, 1.0]), size=(n_probe, X_all.shape[1])) * rng.uniform(0.75, 1.50, size=(n_probe, X_all.shape[1])) * span
         y_scale = max(float(np.quantile(np.abs(y_all), 0.95)), math.sqrt(max(float(np.var(y_all)), 1.0e-15)), 1.0e-9)
         try:
             observed = self.runtime.predict(expression, X_all)
@@ -237,6 +235,40 @@ class MultiDomainEvaluator:
         penalty = max(0.0, math.log1p(far_amp / observed_amp) - math.log(3.0))
         penalty += max(0.0, math.log1p(sensitivity) - math.log(1.0e5))
         return proxy["nmse"], proxy["strict"], penalty
+
+    def covariate_domains(
+        self, X_train: np.ndarray, X_val: np.ndarray,
+    ) -> tuple[tuple[str, np.ndarray], ...]:
+        """Return the exact response-free domains used by candidate checks."""
+        train = np.ascontiguousarray(X_train, dtype=np.float64)
+        validation = np.ascontiguousarray(X_val, dtype=np.float64)
+        X_all = np.vstack([train, validation])
+        center = np.median(X_all, axis=0)
+        span = np.maximum(
+            np.quantile(X_all, 0.95, axis=0)
+            - np.quantile(X_all, 0.05, axis=0),
+            1.0e-9,
+        )
+        rng = np.random.default_rng(
+            int(self.config.random_seed)
+            + 65537 * X_all.shape[1] + len(X_all))
+        n_probe = min(
+            max(16, int(self.config.ood_probe_count)),
+            max(16, len(X_all)),
+        )
+        probe = center + (
+            rng.choice(
+                np.array([-1.0, 1.0]),
+                size=(n_probe, X_all.shape[1]))
+            * rng.uniform(
+                0.75, 1.50, size=(n_probe, X_all.shape[1]))
+            * span
+        )
+        return (
+            ("train", train),
+            ("validation", validation),
+            ("ood_proxy", np.ascontiguousarray(probe)),
+        )
 
     def evaluate(
         self,
@@ -954,6 +986,30 @@ class EvaluationRuntime:
         proposal: Optional[ProposalCandidate], proposal_dag: EquationDAG,
         proposal_edit: Mapping[str, Any], origin: str, source: str, island: str, round_id: int,
     ) -> Optional[tuple[RefitResult, EquationDAG, MetricVector, dict[str, Any], dict[str, Any]]]:
+        if self.config.refit_policy == "pcpi-expanded-fixed-inner-v1":
+            from .expanded_formula_synthesis import (
+                ExpandedFormulaDomainError,
+                certify_expanded_formula_domains,
+            )
+            try:
+                domain_certificate = certify_expanded_formula_domains(
+                    proposal_dag.expression,
+                    self.n_features,
+                    self.evaluator.covariate_domains(X_train, X_val),
+                )
+            except ExpandedFormulaDomainError as error:
+                self._reject(
+                    "expanded_formula_undefined_before_fit",
+                    source=source, island=island, round_id=round_id,
+                    candidate_id=(
+                        proposal.candidate_id if proposal else ""),
+                    failed_domain=error.domain_name,
+                    response_accessed=False,
+                )
+                return None
+            self.budget.record("expanded_domain_certificates")
+        else:
+            domain_certificate = {}
         refit = self.runtime.refit_global_constants(
             normalized, X_train, y_train, ridge=self.config.ridge_alpha,
             maxiter=self.config.optimizer_maxiter,
@@ -1020,6 +1076,7 @@ class EvaluationRuntime:
                     "proposal_support": list(proposed_support),
                     "refitted_support": list(refitted_support),
                     "response_accessed": False,
+                    "domain_certificate": domain_certificate,
                 }
             else:
                 retention = self._structure_retention_evidence(

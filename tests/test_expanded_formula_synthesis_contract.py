@@ -5,7 +5,11 @@ import pytest
 
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.discovery.evidence_synthesis import compile_evidence_synthesis
-from hypothesis_mvp.discovery.expanded_formula_synthesis import compile_typed_formula_ast
+from hypothesis_mvp.discovery.expanded_formula_synthesis import (
+    ExpandedFormulaDomainError,
+    certify_expanded_formula_domains,
+    compile_typed_formula_ast,
+)
 from hypothesis_mvp.discovery.formula_recovery import assess_formula_recovery
 from hypothesis_mvp.discovery.pcpi_adapter import (
     EXPANDED_FORMULA_POLICY, freeze_expanded_formula_model,
@@ -86,6 +90,40 @@ def test_unwitnessed_or_unsafe_tree_is_rejected_before_inference():
         [directive], evidence, 1, coefficient_policy=EXPANDED_FORMULA_POLICY)
     assert candidates == []
     assert audit["rejected_directive_count"] == 1
+
+
+def test_total_typed_operators_compile_to_domain_safe_formulas():
+    evidence = [{"lineage_id": "a", "expression": "x0"},
+                {"lineage_id": "b", "expression": "x1"}]
+    tree = {"op": "add", "args": [
+        {"op": "safe_div", "args": [
+            {"ref": {"lineage_id": "a", "term_index": 0}},
+            {"ref": {"lineage_id": "b", "term_index": 0}},
+        ]},
+        {"op": "decay_exp", "args": [{
+            "op": "signed_log", "args": [{
+                "op": "safe_sqrt", "args": [{
+                    "ref": {"lineage_id": "b", "term_index": 0}},
+                }],
+            }],
+        }]},
+    ]}
+    expression, _ = compile_typed_formula_ast(
+        tree, ("a", "b"), evidence, 2)
+    domain = np.array([[0., 0.], [1., -1.], [-2., 3.]])
+    certificate = certify_expanded_formula_domains(
+        expression, 2, (("registered", domain),))
+    assert certificate["passed"] is True
+    assert certificate["response_accessed"] is False
+
+
+def test_domain_certificate_rejects_singular_formula_without_responses():
+    domain = np.array([[-1.], [0.], [1.]])
+    with pytest.raises(
+            ExpandedFormulaDomainError,
+            match="registered domain: validation"):
+        certify_expanded_formula_domains(
+            "1/x0", 1, (("validation", domain),))
 
 
 def test_provider_typed_directive_and_inner_equation_share_the_expanded_parser():

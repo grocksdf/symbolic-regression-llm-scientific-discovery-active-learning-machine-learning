@@ -7,15 +7,65 @@ from __future__ import annotations
 
 import json
 import math
+from hashlib import sha256
 from collections.abc import Mapping, Sequence
+
+import numpy as np
 
 from hypothesis_mvp.pcpi.reference.expanded_formula_basis import (
     compile_fixed_formula_support, decode_fixed_formula_term,
 )
+from hypothesis_mvp.pcpi.reference.basis import design_matrix
 
 
 _OPERATORS = {"add": "+", "sub": "-", "mul": "*", "div": "/", "pow": "**"}
 _FUNCTIONS = {"sin", "cos", "tanh", "exp", "log", "sqrt", "Abs"}
+_TOTAL_OPERATORS = {"safe_div", "signed_log", "safe_sqrt", "decay_exp"}
+
+
+class ExpandedFormulaDomainError(ValueError):
+    """A compiled support is undefined on one frozen covariate domain."""
+
+    def __init__(self, domain_name: str) -> None:
+        super().__init__(
+            f"expanded formula undefined on registered domain: {domain_name}")
+        self.domain_name = str(domain_name)
+
+
+def certify_expanded_formula_domains(
+    expression: str,
+    n_features: int,
+    domains: Sequence[tuple[str, np.ndarray]],
+) -> dict[str, object]:
+    """Certify finite design columns on response-free registered X domains."""
+    support = compile_fixed_formula_support(expression, n_features)
+    rows = []
+    for name, raw in domains:
+        values = np.ascontiguousarray(raw, dtype=np.float64)
+        if (values.ndim != 2 or values.shape[1] != n_features
+                or not len(values) or not np.all(np.isfinite(values))):
+            raise ValueError("invalid registered formula covariate domain")
+        try:
+            matrix = design_matrix(values, support)
+        except (ArithmeticError, FloatingPointError, OverflowError, ValueError):
+            raise ExpandedFormulaDomainError(str(name)) from None
+        if (matrix.shape != (len(values), len(support))
+                or not np.all(np.isfinite(matrix))):
+            raise ExpandedFormulaDomainError(str(name))
+        rows.append({
+            "name": str(name),
+            "row_count": len(values),
+            "covariate_sha256": sha256(
+                str(values.shape).encode("ascii") + values.tobytes()
+            ).hexdigest(),
+        })
+    return {
+        "schema": "expanded-formula-domain-certificate-v1",
+        "response_accessed": False,
+        "support": list(support),
+        "domains": rows,
+        "passed": True,
+    }
 
 
 def witness_formula_terms(expression: str, n_features: int) -> tuple[str, ...]:
@@ -78,8 +128,17 @@ def compile_typed_formula_ast(
         if op in _OPERATORS and len(children) == 2:
             left, right = (render(child, depth + 1) for child in children)
             return f"({left}{_OPERATORS[op]}{right})"
+        if op == "safe_div" and len(children) == 2:
+            left, right = (render(child, depth + 1) for child in children)
+            return f"({left}/(1+Abs({right})))"
         if op == "neg" and len(children) == 1:
             return f"(-{render(children[0], depth + 1)})"
+        if op == "signed_log" and len(children) == 1:
+            return f"log(1+Abs({render(children[0], depth + 1)}))"
+        if op == "safe_sqrt" and len(children) == 1:
+            return f"sqrt(Abs({render(children[0], depth + 1)}))"
+        if op == "decay_exp" and len(children) == 1:
+            return f"exp(-Abs({render(children[0], depth + 1)}))"
         if op in _FUNCTIONS and len(children) == 1:
             return f"{op}({render(children[0], depth + 1)})"
         raise ValueError("operator outside expanded typed grammar")
