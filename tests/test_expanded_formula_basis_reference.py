@@ -10,6 +10,7 @@ from hypothesis_mvp.pcpi.reference import (
 from hypothesis_mvp.pcpi.reference.basis import design_matrix
 from hypothesis_mvp.pcpi.reference.expanded_formula_basis import (
     compile_fixed_formula_support, compile_fixed_formula_term,
+    decode_fixed_formula_term,
     evaluate_fixed_formula_term,
 )
 from hypothesis_mvp.discovery.pcpi_adapter import (
@@ -105,6 +106,38 @@ def test_commutative_syntax_order_has_one_fixed_inner_identity():
         "(x0+x1)*log(1+Abs(x2))/x2", 3
     ) == compile_fixed_formula_support(
         "(x1+x0)*log(Abs(x2)+1)/x2", 3)
+
+
+def test_unary_wrapped_addition_remains_outer_amplitude_terms():
+    assert compile_fixed_formula_support(
+        "-(2*x0 + .5*sin(x1))", 2
+    ) == compile_fixed_formula_support(
+        "-(7*x0 + 3.1*sin(x1))", 2)
+
+
+def test_common_scale_inside_structural_numerator_is_quotiented():
+    assert compile_fixed_formula_support(
+        "(-.25*x0 + .5*sin(x1))/(1+Abs(x1))", 2
+    ) == compile_fixed_formula_support(
+        "(-1.5*x0 + 3*sin(x1))/(1+Abs(x1))", 2)
+
+
+def test_changed_inner_relative_ratio_remains_a_distinct_support():
+    assert compile_fixed_formula_support(
+        "(-.25*x0 + .5*sin(x1))/(1+Abs(x1))", 2
+    ) != compile_fixed_formula_support(
+        "(-.25*x0 + .7*sin(x1))/(1+Abs(x1))", 2)
+
+
+@pytest.mark.parametrize("expression", [
+    "(sin(x0)-2)/x0",
+    "(-.25*x0 + .5*sin(x1))/(1+Abs(x1))",
+    "-(2*x0 + .5*sin(x1))",
+])
+def test_fixed_formula_token_canonicalization_is_idempotent(expression):
+    token = compile_fixed_formula_term(expression, 2)
+    decoded = decode_fixed_formula_term(token, 2)
+    assert compile_fixed_formula_term(decoded, 2) == token
 
 
 def test_expanded_bank_is_opt_in_and_has_distinct_model_identity():

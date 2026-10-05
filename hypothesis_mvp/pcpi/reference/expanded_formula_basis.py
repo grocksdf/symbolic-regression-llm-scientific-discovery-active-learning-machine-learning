@@ -152,6 +152,53 @@ def compile_fixed_formula_term(expression: str, n_features: int) -> str:
                 scalar = -scalar
             return scalar, structural
         if isinstance(value, ast.BinOp) and isinstance(
+                value.op, (ast.Add, ast.Sub)):
+            terms = []
+
+            def additive_terms(node, sign=1.0):
+                if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+                    additive_terms(node.left, sign)
+                    additive_terms(node.right, sign)
+                elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Sub):
+                    additive_terms(node.left, sign)
+                    additive_terms(node.right, -sign)
+                elif isinstance(node, ast.UnaryOp) and isinstance(
+                        node.op, (ast.USub, ast.UAdd)):
+                    additive_terms(
+                        node.operand,
+                        -sign if isinstance(node.op, ast.USub) else sign)
+                else:
+                    scalar, structural = split_outer_scalar(node)
+                    terms.append((
+                        sign * scalar,
+                        (ast.Constant(value=1.0)
+                         if structural is None else structural)))
+
+            additive_terms(value)
+            terms.sort(key=lambda row: ast.dump(
+                row[1], annotate_fields=True, include_attributes=False))
+            pivot = next(
+                (scalar for scalar, _ in terms if scalar != 0), None)
+            if pivot is None:
+                raise ValueError("zero outer formula amplitude")
+            normalized = []
+            for scalar, structural in terms:
+                ratio = scalar / pivot
+                if ratio == 0:
+                    continue
+                if ratio == 1:
+                    term = structural
+                else:
+                    term = ast.BinOp(
+                        left=ast.Constant(value=ratio),
+                        op=ast.Mult(), right=structural)
+                normalized.append(term)
+            result = normalized[0]
+            for term in normalized[1:]:
+                result = ast.BinOp(
+                    left=result, op=ast.Add(), right=term)
+            return pivot, result
+        if isinstance(value, ast.BinOp) and isinstance(
                 value.op, (ast.Mult, ast.Div)):
             left_scalar, left = split_outer_scalar(value.left)
             right_scalar, right = split_outer_scalar(value.right)
@@ -199,6 +246,9 @@ def compile_fixed_formula_support(expression: str, n_features: int
         if not any(isinstance(child, ast.Name) and _VARIABLE.fullmatch(child.id)
                    for child in ast.walk(node)):
             return [node]
+        if isinstance(node, ast.UnaryOp) and isinstance(
+                node.op, (ast.USub, ast.UAdd)):
+            return summands(node.operand)
         if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub)):
             return summands(node.left) + summands(node.right)
         return [node]
