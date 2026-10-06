@@ -19,13 +19,18 @@ from scripts.iterative_matrix_contract import (
 )
 from scripts.effective_structural_contract import verify_frozen_policy
 from scripts.effective_structural_generator import LEGACY_POLICY, POLICY
+from scripts.attribution_claim_contract import (
+    FREEZE_SCHEMA, LEGACY_FREEZE_SCHEMA, STATISTICS_SCHEMA,
+    summarize_registered, validate_registered_freeze, verify_protocol_binding,
+)
 
 
-SCHEMA = "matched-structural-attribution-freeze-v1"
+SCHEMA = FREEZE_SCHEMA
 INTERRUPTION_EXIT_CODES = {130, 3221225786}  # POSIX SIGINT / Windows 0xC000013A
 
 
 def verify_freeze(freeze):
+    validate_registered_freeze(freeze)
     s_policy = verify_frozen_policy(freeze)
     if (freeze.get("schema") != SCHEMA
             or freeze.get("execution_authorized") is not True
@@ -47,6 +52,11 @@ def verify_freeze(freeze):
     for path, expected in freeze["files"].items():
         if digest(path) != expected:
             raise ValueError(f"matched frozen file changed: {path}")
+    verify_protocol_binding(freeze, read(freeze["protocol_path"]),
+                            digest(freeze["protocol_path"]))
+    for name in ("numpy", "scipy"):
+        if name not in freeze["dependency_versions"]:
+            raise ValueError("bootstrap dependency identity missing")
     for path, expected in freeze["exclusion_sources"].items():
         if digest(path) != expected:
             raise ValueError(f"matched exclusion source changed: {path}")
@@ -88,6 +98,12 @@ def verify_freeze(freeze):
         gate = read(freeze["gates"][name])
         if gate.get("passed") is not True:
             raise ValueError(f"matched prerequisite Gate failed: {name}")
+        if name == "end_to_end" and (
+                gate.get("schema") != "matched-attribution-response-free-gate-v1"
+                or gate.get("formal_dependency_end_to_end_gate_executed") is not True
+                or gate.get("statistical_gate_schema") != STATISTICS_SCHEMA
+                or gate.get("attribution_claim_contract_tests_passed") is not True):
+            raise ValueError("task-bootstrap/claim correctness Gate missing")
         if s_policy == POLICY and (
                 gate.get("generator_policy") != s_policy
                 or gate.get("generator_contract") != freeze["s_generator_contract"]
@@ -287,7 +303,7 @@ def _report_command(freeze, item, output):
     ]
 
 
-def summarize(freeze, rows):
+def _legacy_screen(freeze, rows):
     by_task = defaultdict(list)
     for row in rows:
         by_task[f"{row['family']}/{row['task']}"].append(row)
@@ -315,7 +331,9 @@ def summarize(freeze, rows):
         "schema": "matched-structural-attribution-result-v1",
         "s_generator_policy": verify_frozen_policy(freeze),
         "equal_effective_opportunities_established": False,
-        "passed": passed, "coordinate_count": len(rows),
+        "passed": False, "legacy_mean_only_screen_passed": passed,
+        "scientific_verdict": "UNREGISTERED_STATISTICAL_GATE",
+        "coordinate_count": len(rows),
         "task_effects": task_effects,
         "task_mean_effects": means,
         "verified_feedback_pairs": {
@@ -323,17 +341,27 @@ def summarize(freeze, rows):
             "E_plus_S_gap_matched": s_feedback},
         "rows": rows,
         "matched_non_llm_skeleton_attempts": True,
-        "matched_predictive_attribution_authorized": passed,
+        "matched_predictive_attribution_authorized": False,
+        "nominal_slot_matched_predictive_effect_authorized": False,
+        "equal_effective_opportunity_attribution_authorized": False,
         "formula_recovery_attribution_authorized": False,
         "measured_action_authorized": False,
         "confirmation_responses_opened": False,
         "test_or_ood_accessed": False,
         "claim_boundary": (
-            "Fresh development matched predictive-attribution matrix; "
+            "Historical mean-only screen without prospective claim authority; "
             "no formula exact-recovery attribution, "
             "no measured acquisition, test/OOD, untouched confirmation "
             "or universal superiority claim."),
     }
+
+
+def summarize(freeze, rows):
+    if freeze.get("schema") == LEGACY_FREEZE_SCHEMA:
+        return _legacy_screen(freeze, rows)
+    result = summarize_registered(freeze, rows)
+    result["s_generator_policy"] = verify_frozen_policy(freeze)
+    return result
 
 
 def main(argv=None):

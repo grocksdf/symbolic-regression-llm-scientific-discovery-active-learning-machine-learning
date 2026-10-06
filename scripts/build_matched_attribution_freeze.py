@@ -6,6 +6,8 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import sys
+import numpy as np
+import scipy
 
 import h5py
 import pyarrow as pa
@@ -18,9 +20,12 @@ from scripts.iterative_matrix_contract import (
     FAMILY_PATHS, digest, read, source_identity, validate_config,
 )
 from scripts.effective_structural_contract import validate_registration
+from scripts.attribution_claim_contract import (
+    FREEZE_SCHEMA, STATISTICS_SCHEMA, protocol_analysis_fields,
+)
 
 
-SCHEMA = "matched-structural-attribution-freeze-v1"
+SCHEMA = FREEZE_SCHEMA
 
 
 def _metadata(rows, families):
@@ -65,14 +70,21 @@ def main(argv=None):
     composition = read(composition_gate)
     correctness = read(correctness_gate)
     protocol = read(protocol_path)
-    families = tuple(protocol["data_design"]["families"])
-    tasks_per_family = int(protocol["data_design"]["tasks_per_family"])
-    seeds = [int(value) for value in protocol["data_design"]["seeds"]]
-    namespace = str(
-        protocol["data_design"]["task_selection_namespace"])
+    analysis_fields = protocol_analysis_fields(protocol)
+    design = protocol["data_design"]
+    if (not isinstance(design.get("families"), list)
+            or type(design.get("tasks_per_family")) is not int
+            or not isinstance(design.get("seeds"), list)
+            or any(type(seed) is not int for seed in design["seeds"])
+            or not isinstance(design.get("task_selection_namespace"), str)):
+        raise ValueError("registered coordinate types must be explicit")
+    families = tuple(design["families"])
+    tasks_per_family = design["tasks_per_family"]
+    seeds = list(design["seeds"])
+    namespace = design["task_selection_namespace"]
     if (not families or len(set(families)) != len(families)
             or any(family not in FAMILY_PATHS for family in families)
-            or tasks_per_family < 1 or not seeds
+            or tasks_per_family < 1 or len(families) * tasks_per_family < 2 or not seeds
             or len(seeds) != len(set(seeds)) or not namespace):
         raise ValueError("matched protocol family capacity invalid")
     metadata = _metadata(args.metadata, families)
@@ -92,6 +104,13 @@ def main(argv=None):
             or generator.get("passed") is not True
             or composition.get("passed") is not True
             or correctness.get("passed") is not True
+            or correctness.get("schema") != "matched-attribution-response-free-gate-v1"
+            or correctness.get("formal_dependency_end_to_end_gate_executed") is not True
+            or not isinstance(correctness.get("julia_runtime"), dict)
+            or correctness.get("statistical_gate_schema") != STATISTICS_SCHEMA
+            or correctness.get("attribution_claim_contract_tests_passed") is not True
+            or correctness.get("dependencies", {}).get("numpy") != np.__version__
+            or correctness.get("dependencies", {}).get("scipy") != scipy.__version__
             or correctness.get("benchmark_source") != benchmark_source
             or correctness.get("mainline_source") != mainline_source
             or correctness.get("config_sha256") != digest(config_path)
@@ -138,6 +157,9 @@ def main(argv=None):
         ROOT / "scripts/matched_gap_structural_generator.py",
         ROOT / "scripts/effective_structural_generator.py",
         ROOT / "scripts/effective_structural_contract.py",
+        ROOT / "scripts/attribution_claim_contract.py",
+        ROOT / "scripts/build_matched_attribution_freeze.py",
+        ROOT / "scripts/check_matched_attribution_correctness.py",
         ROOT / "scripts/matched_three_arm_projection.py",
         ROOT / "scripts/run_matched_s_branch.py",
         ROOT / "scripts/audit_matched_three_arm_reporting.py",
@@ -152,6 +174,10 @@ def main(argv=None):
     ]
     freeze = {
         "schema": SCHEMA,
+        "formal_dependency_end_to_end_gate_verified": True,
+        **analysis_fields,
+        "protocol_path": str(protocol_path),
+        "protocol_sha256": digest(protocol_path),
         "selected_tasks": selected,
         "registered_families": list(families),
         "tasks_per_family": tasks_per_family,
@@ -159,6 +185,7 @@ def main(argv=None):
             family: sorted(excluded[family]) for family in families},
         "task_selection_rule":
             f"SHA-256 sorted {namespace}:{{family}}:{{task}}",
+        "task_selection_namespace": namespace,
         "seeds": seeds,
         "coordinate_count": (
             len(families) * tasks_per_family * len(seeds)),
@@ -200,12 +227,6 @@ def main(argv=None):
         },
         "primary_estimand":
             "task_mean_L_gap_minus_S_gap_matched_reporting_log_score",
-        "primary_pass_conditions": {
-            "all_coordinates_included": True,
-            "task_mean_L_minus_S_strictly_positive": True,
-            "task_mean_L_minus_E_strictly_positive": True,
-            "at_least_one_verified_L_feedback_pair": True,
-        },
         "ground_truth_expression_opened": False,
         "candidate_response_accessed": False,
         "test_or_ood_accessed": False,

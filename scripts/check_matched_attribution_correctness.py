@@ -17,6 +17,7 @@ from scripts.iterative_matrix_contract import (
     digest, julia_runtime_identity, source_identity, validate_config,
 )
 from scripts.effective_structural_generator import LEGACY_POLICY, POLICY, policy_contract
+from scripts.attribution_claim_contract import STATISTICS_SCHEMA
 
 
 def main(argv=None):
@@ -34,7 +35,7 @@ def main(argv=None):
     validate_config(config)
     benchmark_source, mainline_source = source_identity(ROOT, mainline)
     dependencies = {}
-    for module in ("h5py", "pyarrow", "pysr", "yaml", "pytest"):
+    for module in ("h5py", "pyarrow", "pysr", "yaml", "pytest", "numpy", "scipy"):
         try:
             imported = importlib.import_module(module)
             dependencies[module] = str(getattr(
@@ -48,6 +49,7 @@ def main(argv=None):
         ROOT / "tests/test_matched_s_branch.py",
         ROOT / "tests/test_matched_three_arm_reporting.py",
         ROOT / "tests/test_matched_attribution_matrix.py",
+        ROOT / "tests/test_attribution_claim_contract.py",
         ROOT / "tests/test_llm_proposal_mechanism_diagnostic.py",
         ROOT / "tests/test_llm_proposal_diagnostic_matrix.py",
         ROOT / "tests/test_iterative_formula_roles.py",
@@ -74,6 +76,9 @@ def main(argv=None):
         for value in dependencies.values())
     result = {
         "schema": "matched-attribution-response-free-gate-v1",
+        "formal_dependency_end_to_end_gate_executed": True,
+        "statistical_gate_schema": STATISTICS_SCHEMA,
+        "attribution_claim_contract_tests_passed": process.returncode == 0,
         "generator_policy": args.generator_policy,
         "generator_contract": policy_contract() if args.generator_policy == POLICY else None,
         "passed": passed, "tests_exit_code": process.returncode,

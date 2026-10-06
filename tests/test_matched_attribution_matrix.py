@@ -4,11 +4,19 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import run_matched_attribution_matrix as matrix
+from scripts.attribution_claim_contract import (
+    NOMINAL_SCOPE, primary_pass_conditions, statistical_contract,
+)
 
 
 def _freeze():
     return {
         "schema": matrix.SCHEMA, "execution_authorized": True,
+        "formal_dependency_end_to_end_gate_verified": True,
+        "claim_scope": NOMINAL_SCOPE, "complete_experiment_protocol": True,
+        "historical_no_go_preserved": True,
+        "statistical_analysis": statistical_contract(method="percentile", resamples=2048, seed=17),
+        "primary_pass_conditions": primary_pass_conditions(),
         "matched_non_llm_skeleton_attempts": True,
         "formula_recovery_attribution_authorized": False,
         "measured_action_authorized": False,
@@ -38,18 +46,22 @@ def _freeze():
 
 def test_summary_requires_both_L_contrasts_positive():
     freeze = _freeze()
+    coordinates = [(family, task, seed) for family, tasks in freeze["selected_tasks"].items()
+                   for task in tasks for seed in freeze["seeds"]]
     rows = [{
-        "family": "chem_react", "task": f"T{index}", "seed": 1,
+        "family": family, "task": task, "seed": seed,
         "effects": {
             "L_minus_S_log_score": .2,
             "L_minus_E_log_score": .1,
             "S_minus_E_log_score": -.1},
         "L_feedback_verified": index == 0,
         "S_feedback_verified": False,
-    } for index in range(18)]
+    } for index, (family, task, seed) in enumerate(coordinates)]
     result = matrix.summarize(freeze, rows)
     assert result["passed"]
-    assert result["matched_predictive_attribution_authorized"] is True
+    assert result["matched_predictive_attribution_authorized"] is False
+    assert result["nominal_slot_matched_predictive_effect_authorized"] is True
+    assert result["equal_effective_opportunity_attribution_authorized"] is False
     assert result["formula_recovery_attribution_authorized"] is False
     rows[0]["effects"]["L_minus_E_log_score"] = -3.
     assert not matrix.summarize(freeze, rows)["passed"]

@@ -6,7 +6,7 @@ This branch is a clean source snapshot exported from:
 
 - upstream project: `deep-symbolic-mathematics/llm-srbench`
 - local source branch: `codex/restart-experiment-adapter`
-- source commit: `8979f769` (Plan response-free S structural opportunities)
+- source commit: `3ba9d12b` (Gate attribution claims and registered bootstrap CI)
 
 The snapshot intentionally excludes the upstream Git history because that
 history contains experimental ledgers larger than GitHub's 100 MB per-file
@@ -127,6 +127,38 @@ GO criteria, it does not claim an equal number of materialized or evaluable
 opportunities for L and S (the registered basis is
 `nominal-slots-with-response-free-feasibility`), and it does not claim any
 predictive-effect improvement.
+
+The 2026-10-06 third increment brings the branch up to local source commit
+`3ba9d12b` (1 commit, 8 changed files: +1203 / -66, all under `docs/`,
+`scripts/` and `tests/`). It closes two over-authorization paths in the matched
+attribution runner. First, a nominal-slot comparison no longer grants an
+equal-effective-opportunity causal attribution:
+`equal_effective_opportunity_attribution_authorized` and
+`equal_effective_opportunities_established` are fixed `false` and cannot be
+turned on by post-hoc candidate counts, the legacy generic field
+`matched_predictive_attribution_authorized` is disabled, and downstream readers
+must address the explicit claim scope
+`nominal_slot_matched_predictive_effect` instead. Second, a positive task mean
+alone no longer grants GO: `passed` / `scientific_verdict` now additionally
+require the task-paired bootstrap two-sided 95% CI lower bound to be strictly
+greater than zero for **both** primary contrasts (`L_minus_S_log_score` and
+`L_minus_E_log_score`), with NO-GO and no fallback when a bound is zero,
+crosses zero, or the interval is missing, degenerate or non-finite; missing,
+duplicated, unregistered or non-finite coordinates are rejected rather than
+dropped from the analysis. Seeds are averaged within a task before resampling,
+tasks are the resampling unit with equal weights and shared draws across
+contrasts, and seeds never act as independent tasks; `S_minus_E` stays an
+exploratory contrast. New files are
+`scripts/attribution_claim_contract.py`, `scripts/run_attribution_claim_correctness.py`,
+`docs/attribution_claim_and_ci_contract.md` and their tests; the freeze schema
+advances to `matched-structural-attribution-freeze-v2`, v1 can no longer
+authorize an execution, and the builder rejects an incomplete protocol, legacy
+mean-only rules, an unexecuted formal dependency gate, or a fixture gate
+substituted for the real one before any HDF5 task selection. The S planner, the
+LLM code, admission and the reporting log-score are untouched. The statistical
+method, resample count and bootstrap seed are deliberately left null and must be
+registered in a full protocol before any outcome is read: this increment is a
+contract supplement, not an executable experiment.
 
 The `configs/aistats_three_arm_formula_expanded_candidate.yaml` copies are no
 longer byte-identical between the two repositories: this branch freezes
