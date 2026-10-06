@@ -23,11 +23,15 @@ from scripts.matched_gap_structural_generator import (
 from scripts.matched_three_arm_projection import (
     project_matched_three_arms,
 )
+from scripts.effective_structural_generator import LEGACY_POLICY, POLICY, policy_contract
+from scripts.run_matched_gap_structural_correctness import _effective_schedule
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--generator-policy", choices=(LEGACY_POLICY, POLICY),
+                        default=LEGACY_POLICY)
     args = parser.parse_args(argv)
     if args.output.exists():
         raise ValueError("matched composition Gate output exists")
@@ -53,7 +57,8 @@ def main(argv=None) -> int:
         "candidate_response_accessed": False,
         "heldout_opened": False,
     }] * 2
-    schedule = generate_matched_schedule(
+    schedule_fn = _effective_schedule if args.generator_policy == POLICY else generate_matched_schedule
+    schedule = schedule_fn(
         engine_rows_by_cycle=[engine_rows, engine_rows],
         gap_briefs=gap_briefs,
         parent_dispersion_by_cycle=[
@@ -102,6 +107,8 @@ def main(argv=None) -> int:
     }
     result = {
         "schema": "matched-three-arm-composition-gate-v1",
+        "generator_policy": args.generator_policy,
+        "generator_contract": policy_contract() if args.generator_policy == POLICY else None,
         "passed": all(checks.values()), "checks": checks,
         "schedule": schedule, "projection": projection,
         "benchmark_source": verify_clean_git_source(ROOT),

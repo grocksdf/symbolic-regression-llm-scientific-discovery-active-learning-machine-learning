@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 from scripts.iterative_matrix_contract import (
     FAMILY_PATHS, digest, read, source_identity, validate_config,
 )
+from scripts.effective_structural_contract import validate_registration
 
 
 SCHEMA = "matched-structural-attribution-freeze-v1"
@@ -80,6 +81,9 @@ def main(argv=None):
         "configs/aistats_three_arm_formula_expanded_candidate.yaml")
     config = validate_config(config_path)
     benchmark_source, mainline_source = source_identity(ROOT, mainline)
+    s_policy, s_contract = validate_registration(
+        protocol, (generator, composition, correctness),
+        benchmark_source, mainline_source)
     if (provider.get("classification") != "transport_2xx"
             or provider.get("http_status") != 200
             or provider.get("openai_completion_contract_valid") is not True
@@ -132,6 +136,8 @@ def main(argv=None):
             symbols[f"{family}/{task}"] = values[1:]
     tracked = [
         ROOT / "scripts/matched_gap_structural_generator.py",
+        ROOT / "scripts/effective_structural_generator.py",
+        ROOT / "scripts/effective_structural_contract.py",
         ROOT / "scripts/matched_three_arm_projection.py",
         ROOT / "scripts/run_matched_s_branch.py",
         ROOT / "scripts/audit_matched_three_arm_reporting.py",
@@ -158,6 +164,9 @@ def main(argv=None):
             len(families) * tasks_per_family * len(seeds)),
         "arms": ["E", "E_plus_S_gap_matched", "E_plus_L_gap"],
         "matched_non_llm_skeleton_attempts": True,
+        "s_generator_policy": s_policy,
+        "s_generator_contract": s_contract,
+        "historical_no_go_preserved": protocol.get("historical_no_go_preserved", True),
         "formula_recovery_attribution_authorized": False,
         "measured_action_authorized": False,
         "durable_resume_authorized": bool(

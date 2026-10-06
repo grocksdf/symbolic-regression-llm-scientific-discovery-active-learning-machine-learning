@@ -6,7 +6,7 @@ This branch is a clean source snapshot exported from:
 
 - upstream project: `deep-symbolic-mathematics/llm-srbench`
 - local source branch: `codex/restart-experiment-adapter`
-- source commit: `d018628c` (Read each reporting role from HDF5 once)
+- source commit: `8979f769` (Plan response-free S structural opportunities)
 
 The snapshot intentionally excludes the upstream Git history because that
 history contains experimental ledgers larger than GitHub's 100 MB per-file
@@ -100,6 +100,33 @@ column is no longer materialized twice with different orderings. This adapter
 requires mainline `3f659d52` or later for the candidate-validity modules
 (`candidate_validity`, `mechanism_funnel`, `proposal_calibration`) and the
 legacy fixed-formula token replay.
+
+The 2026-10-06 second increment brings the branch up to local source commit
+`8979f769` (1 commit, 12 changed files: +917 / -18, all under `docs/`,
+`scripts/` and `tests/`). It repairs the response-free planning of the matched
+S comparator: `scripts/effective_structural_generator.py` and
+`scripts/effective_structural_contract.py` select parents by the true arity of
+each operation (`bounded_power` is single-parent), predict the full AST node
+count and source length before an operation is committed so the existing
+compile budget is preserved, check compilation, support novelty and numerical
+definedness on legitimate covariate points before parameter fitting, and
+abstain explicitly when no feasible candidate remains or the planning budget is
+exhausted - keeping the gap-activated denominator and performing no top-up,
+retry or extra budget after a fit or admission rejection. The S-branch funnel
+now accounts for registered slots, gap activation, candidate formation, fitting,
+validation, structure preservation and independent admission, plus the point
+counts of planning checks, compile calls, numerical checks and submission
+checks. The new policy `effective-response-free-v1` is fixed by
+`docs/effective_structural_comparator_contract.md` and is opt-in; the previous
+policy remains the default, and every gate, freeze and S child must carry a
+matching policy and source identity. S action covariates are read from HDF5
+with the label column excluded at the bottom layer. This is a correctness and
+opportunity-design upgrade only: it does not change the LLM, the independent
+admission implementation or its thresholds, reporting scores or the existing
+GO criteria, it does not claim an equal number of materialized or evaluable
+opportunities for L and S (the registered basis is
+`nominal-slots-with-response-free-feasibility`), and it does not claim any
+predictive-effect improvement.
 
 The `configs/aistats_three_arm_formula_expanded_candidate.yaml` copies are no
 longer byte-identical between the two repositories: this branch freezes

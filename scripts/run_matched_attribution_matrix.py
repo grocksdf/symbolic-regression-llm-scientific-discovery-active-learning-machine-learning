@@ -17,6 +17,8 @@ from scripts.iterative_matrix_contract import (
     digest, julia_runtime_identity, read, source_identity,
     validate_config,
 )
+from scripts.effective_structural_contract import verify_frozen_policy
+from scripts.effective_structural_generator import LEGACY_POLICY, POLICY
 
 
 SCHEMA = "matched-structural-attribution-freeze-v1"
@@ -24,6 +26,7 @@ INTERRUPTION_EXIT_CODES = {130, 3221225786}  # POSIX SIGINT / Windows 0xC000013A
 
 
 def verify_freeze(freeze):
+    s_policy = verify_frozen_policy(freeze)
     if (freeze.get("schema") != SCHEMA
             or freeze.get("execution_authorized") is not True
             or freeze.get("matched_non_llm_skeleton_attempts") is not True
@@ -85,6 +88,12 @@ def verify_freeze(freeze):
         gate = read(freeze["gates"][name])
         if gate.get("passed") is not True:
             raise ValueError(f"matched prerequisite Gate failed: {name}")
+        if s_policy == POLICY and (
+                gate.get("generator_policy") != s_policy
+                or gate.get("generator_contract") != freeze["s_generator_contract"]
+                or gate.get("benchmark_source") != freeze["benchmark_source"]
+                or gate.get("mainline_source") != freeze["mainline_source"]):
+            raise ValueError(f"effective S Gate identity changed: {name}")
     if freeze.get("durable_resume_authorized"):
         maximum = freeze.get("maximum_recovery_attempts_per_coordinate")
         if type(maximum) is not int or not 1 <= maximum <= 3:
@@ -94,6 +103,7 @@ def verify_freeze(freeze):
 def _plan(freeze, root):
     return [{
         "family": family, "task": task, "seed": seed,
+        "s_generator_policy": verify_frozen_policy(freeze),
         "root": str(root / "children" / family / task / str(seed)),
     } for family, tasks in sorted(freeze["selected_tasks"].items())
       for task in tasks for seed in freeze["seeds"]]
@@ -223,6 +233,7 @@ def _s_command(freeze, item):
         "--hdf5", freeze["hdf5"]["path"],
         "--family", item["family"], "--task", item["task"],
         "--seed", str(item["seed"]),
+        "--generator-policy", verify_frozen_policy(freeze),
         "--output", str(root / "S" / "MATCHED_S_BRANCH.json"),
     ]
 
@@ -238,6 +249,8 @@ def _check_generation(item):
     if (s.get("family") != item["family"]
             or s.get("task") != item["task"]
             or s.get("seed") != item["seed"]
+            or s.get("generator_policy", LEGACY_POLICY)
+            != item.get("s_generator_policy", LEGACY_POLICY)
             or s.get("source_artifact_sha256") != digest(l_artifact)
             or s.get("engine_execution_reused_from_source") is not True
             or s.get("provider_called") is not False
@@ -300,6 +313,8 @@ def summarize(freeze, rows):
         and l_feedback > 0)
     return {
         "schema": "matched-structural-attribution-result-v1",
+        "s_generator_policy": verify_frozen_policy(freeze),
+        "equal_effective_opportunities_established": False,
         "passed": passed, "coordinate_count": len(rows),
         "task_effects": task_effects,
         "task_mean_effects": means,

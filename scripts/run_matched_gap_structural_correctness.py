@@ -16,11 +16,17 @@ from hypothesis_mvp.hypotheses.source_identity import verify_clean_git_source
 from scripts.matched_gap_structural_generator import (
     generate_matched_schedule,
 )
+from scripts.effective_structural_generator import (
+    LEGACY_POLICY, POLICY, generate_effective_cycle, policy_contract,
+)
+import numpy as np
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--generator-policy", choices=(LEGACY_POLICY, POLICY),
+                        default=LEGACY_POLICY)
     args = parser.parse_args(argv)
     if args.output.exists():
         raise ValueError("matched structural correctness output exists")
@@ -38,11 +44,14 @@ def main(argv=None) -> int:
     dispersions = [{
         "linear": 0.2 + cycle, "oscillatory": 0.9 + cycle,
     } for cycle in range(2)]
-    first = generate_matched_schedule(
+    schedule_fn = generate_matched_schedule
+    if args.generator_policy == POLICY:
+        schedule_fn = _effective_schedule
+    first = schedule_fn(
         engine_rows_by_cycle=engines, gap_briefs=gaps,
         parent_dispersion_by_cycle=dispersions, n_features=2,
         task_identity="fixture", seed=1001)
-    replay = generate_matched_schedule(
+    replay = schedule_fn(
         engine_rows_by_cycle=engines, gap_briefs=gaps,
         parent_dispersion_by_cycle=dispersions, n_features=2,
         task_identity="fixture", seed=1001)
@@ -61,7 +70,7 @@ def main(argv=None) -> int:
         "non_llm_origin_is_explicit": all(
             row["origin"] == "non_llm_matched" for row in materialized),
         "gap_identity_changes_schedule": (
-            generate_matched_schedule(
+            schedule_fn(
                 engine_rows_by_cycle=engines,
                 gap_briefs=[{**row, "region_identity": row[
                     "region_identity"] + "-changed"} for row in gaps],
@@ -73,6 +82,8 @@ def main(argv=None) -> int:
     }
     result = {
         "schema": "matched-gap-structural-correctness-v1",
+        "generator_policy": args.generator_policy,
+        "generator_contract": policy_contract() if args.generator_policy == POLICY else None,
         "passed": all(checks.values()), "checks": checks,
         "schedule": first,
         "benchmark_source": verify_clean_git_source(ROOT),
@@ -95,6 +106,22 @@ def main(argv=None) -> int:
         "materialized_count": first["materialized_count"],
     }, indent=2, sort_keys=True))
     return 0 if result["passed"] else 1
+
+
+def _effective_schedule(*, engine_rows_by_cycle, gap_briefs,
+                        parent_dispersion_by_cycle, n_features, task_identity, seed):
+    points = np.column_stack([np.linspace(.2, 1.2, 8)] * n_features)
+    cycles = [generate_effective_cycle(
+        engine_rows=engine_rows_by_cycle[cycle],
+        gap_brief={**gap_briefs[cycle], "propose_allowed": True},
+        parent_dispersion=parent_dispersion_by_cycle[cycle], covariates=points,
+        task_identity=task_identity, seed=seed, cycle=cycle) for cycle in range(2)]
+    return {"registered_slot_count": 6,
+            "attempt_count": sum(row["counts"]["effective_opportunities"] for row in cycles),
+            "retry_count": 0,
+            "materialized_count": sum(row["counts"]["effective_opportunities"] for row in cycles),
+            "slots": [slot for row in cycles for slot in row["slots"]],
+            "candidate_response_accessed": False, "heldout_opened": False}
 
 
 if __name__ == "__main__":

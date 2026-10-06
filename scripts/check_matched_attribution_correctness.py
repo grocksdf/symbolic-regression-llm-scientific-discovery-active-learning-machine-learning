@@ -16,12 +16,15 @@ sys.path.insert(0, str(ROOT))
 from scripts.iterative_matrix_contract import (
     digest, julia_runtime_identity, source_identity, validate_config,
 )
+from scripts.effective_structural_generator import LEGACY_POLICY, POLICY, policy_contract
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mainline-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--generator-policy", choices=(LEGACY_POLICY, POLICY),
+                        default=LEGACY_POLICY)
     args = parser.parse_args(argv)
     if args.output.exists():
         raise ValueError("matched correctness output exists")
@@ -51,6 +54,9 @@ def main(argv=None):
         mainline / "tests/test_iterative_refinement_gate.py",
         mainline / "tests/test_iterative_posterior_feedback.py",
     ]
+    if args.generator_policy == POLICY:
+        tests.extend((ROOT / "tests/test_effective_structural_generator.py",
+                      ROOT / "tests/test_effective_structural_contract.py"))
     args.output.parent.mkdir(parents=True, exist_ok=False)
     with tempfile.TemporaryDirectory(
             prefix="matched-attribution-gate-",
@@ -68,6 +74,8 @@ def main(argv=None):
         for value in dependencies.values())
     result = {
         "schema": "matched-attribution-response-free-gate-v1",
+        "generator_policy": args.generator_policy,
+        "generator_contract": policy_contract() if args.generator_policy == POLICY else None,
         "passed": passed, "tests_exit_code": process.returncode,
         "pytest_output_tail":
             (process.stdout + process.stderr)[-2000:],

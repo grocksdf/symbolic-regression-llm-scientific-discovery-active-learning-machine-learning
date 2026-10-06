@@ -43,6 +43,9 @@ from hypothesis_mvp.symbolic.scheduler import (
 from scripts.matched_gap_structural_generator import (
     ISLANDS, generate_matched_slot,
 )
+from scripts.effective_structural_generator import (
+    LEGACY_POLICY, POLICY, generate_effective_cycle, policy_contract,
+)
 
 
 GROUPS = {
@@ -68,10 +71,11 @@ def _digest(path: Path):
 def _opened(dataset, indices, *, response):
     original = [int(index) for index in indices]
     ordered = sorted(original)
-    values = np.asarray(dataset[ordered, :], dtype=float)
+    values = np.asarray(dataset[ordered, :] if response else (
+        dataset[ordered, 1:]), dtype=float)
     lookup = dict(zip(ordered, values, strict=True))
     values = np.asarray([lookup[index] for index in original])
-    return (values[:, 1:], values[:, 0]) if response else values[:, 1:]
+    return (values[:, 1:], values[:, 0]) if response else values
 
 
 def _roles(report, hdf5: Path, family: str, task: str, seed: int):
@@ -217,14 +221,23 @@ def _materialize(slots, selection):
             audit.append({**slot, "materialization": slot["status"]})
             continue
         raw = slot["candidate"]
+        stage = "parameter_fit"
+        fit_passed = validation_passed = False
         try:
             fitted = runtime.refit_global_constants(
                 raw["expression"], selection.development.X,
                 selection.development.y)
+            fit_passed = True
+            stage = "validation_definedness"
             runtime.predict(
                 fitted.expression, selection.validation.X)
+            validation_passed = True
+            stage = "semantic_retention"
             support = parser(
                 fitted.expression, selection.development.X.shape[1])
+            if (raw.get("generator_policy") == POLICY
+                    and tuple(raw["support"]) != support):
+                raise ValueError("effective S structure changed during refit")
             if support in seen:
                 raise ValueError("matched materialization duplicated support")
             seen.add(support)
@@ -232,7 +245,9 @@ def _materialize(slots, selection):
                 TypeError, ValueError) as error:
             audit.append({
                 **slot, "materialization": "rejected",
-                "materialization_reason": str(error)})
+                "materialization_reason": str(error), "rejection_stage": stage,
+                "parameter_fit_passed": fit_passed,
+                "validation_definedness_passed": validation_passed})
             continue
         row = {
             **dict(raw), "expression": fitted.expression,
@@ -241,12 +256,56 @@ def _materialize(slots, selection):
         rows.append(row)
         audit.append({
             **slot, "materialization": "validated",
+            "parameter_fit_passed": True, "validation_definedness_passed": True,
             "materialized_lineage_id": row["lineage_id"]})
     return rows, audit
 
 
+def _structural_slots(policy, parent_rows, brief, dispersion,
+                      selection, task_identity, seed, cycle):
+    if policy == POLICY:
+        points = np.vstack((selection.development.X, selection.validation.X,
+                            selection.acquisition_pool.X))
+        plan = generate_effective_cycle(
+            engine_rows=parent_rows, gap_brief=brief,
+            parent_dispersion=dispersion, covariates=points,
+            task_identity=task_identity, seed=seed, cycle=cycle)
+        return plan["slots"], plan
+    if policy != LEGACY_POLICY:
+        raise ValueError("unregistered S generator policy")
+    return [generate_matched_slot(
+        engine_rows=parent_rows, gap_brief=brief,
+        parent_dispersion=dispersion,
+        n_features=selection.development.X.shape[1],
+        task_identity=task_identity, seed=seed, cycle=cycle, island=island)
+        for island in ISLANDS], None
+
+
+def _opportunity_funnel(slots, materialization, admission_report):
+    ledger = admission_report.get("candidates", ())
+    return {
+        "registered_slots": len(slots),
+        "gap_activated_slots": sum(row.get("gap_activated", bool(
+            row["attempt_count"])) for row in slots),
+        "materialized_before_fit": sum(
+            row["status"] == "materialized" for row in slots),
+        "fit_and_validation_survived": sum(
+            row["materialization"] == "validated" for row in materialization),
+        "parameter_fit_survived": sum(row.get("parameter_fit_passed") is True
+                                      for row in materialization),
+        "validation_definedness_survived": sum(row.get(
+            "validation_definedness_passed") is True for row in materialization),
+        "independent_admission_evaluated": len(ledger),
+        "independent_admitted": sum(row.get("admitted") is True for row in ledger),
+        "planning_checks": sum(row.get("planning_checks", 0) for row in slots),
+        "retry_count": sum(row["retry_count"] for row in slots),
+    }
+
+
 def run(artifact: Path, config_path: Path, hdf5: Path,
-        family: str, task: str, seed: int):
+        family: str, task: str, seed: int, *, generator_policy=LEGACY_POLICY):
+    if generator_policy not in (LEGACY_POLICY, POLICY):
+        raise ValueError("unregistered S generator policy")
     frozen = _read(artifact)
     if frozen.get("task_name") != task:
         raise ValueError("matched S source artifact task changed")
@@ -287,14 +346,9 @@ def run(artifact: Path, config_path: Path, hdf5: Path,
         brief = {
             **gap["prompt"], "heldout_opened": False,
             "candidate_response_accessed": False}
-        slots = [
-            generate_matched_slot(
-                engine_rows=parent_rows, gap_brief=brief,
-                parent_dispersion=dispersion,
-                n_features=selection.development.X.shape[1],
-                task_identity=f"{family}/{task}", seed=seed,
-                cycle=cycle, island=island)
-            for island in ISLANDS]
+        slots, structural_plan = _structural_slots(
+            generator_policy, parent_rows, brief, dispersion, selection,
+            f"{family}/{task}", seed, cycle)
         optional, materialization = _materialize(slots, selection)
         eligible = tuple(sorted({
             int(row["region"]) for row in gap["prompt"].get("regions", ())}))
@@ -370,6 +424,9 @@ def run(artifact: Path, config_path: Path, hdf5: Path,
             "cycle": cycle, "gap_prompt": gap["prompt"],
             "gap_audit": gap["audit"],
             "parent_dispersion": dispersion, "slots": slots,
+            "structural_plan": structural_plan,
+            "opportunity_funnel": _opportunity_funnel(
+                slots, materialization, admission_report),
             "materialization": materialization,
             "admission_report": admission_report,
             "bank_before": gap["model"].stable_hash,
@@ -378,6 +435,8 @@ def run(artifact: Path, config_path: Path, hdf5: Path,
     gate = verify_iterative_refinement(trace)
     return {
         "schema": "matched-s-iterative-branch-v1",
+        "generator_policy": generator_policy,
+        "generator_contract": policy_contract() if generator_policy == POLICY else None,
         "family": family, "task": task, "seed": seed,
         "source_artifact": str(artifact.resolve()),
         "source_artifact_sha256": _digest(artifact),
@@ -404,13 +463,15 @@ def main(argv=None):
     parser.add_argument("--family", choices=tuple(GROUPS), required=True)
     parser.add_argument("--task", required=True)
     parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument("--generator-policy", choices=(LEGACY_POLICY, POLICY),
+                        default=LEGACY_POLICY)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.output.exists():
         raise ValueError("matched S branch output exists")
     result = run(
         args.artifact, args.config, args.hdf5,
-        args.family, args.task, args.seed)
+        args.family, args.task, args.seed, generator_policy=args.generator_policy)
     args.output.parent.mkdir(parents=True, exist_ok=False)
     args.output.write_text(
         json.dumps(result, indent=2, sort_keys=True) + "\n",
