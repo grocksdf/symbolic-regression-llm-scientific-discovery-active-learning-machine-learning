@@ -11,7 +11,8 @@ from hypothesis_mvp.discovery.pcpi_adapter import (
 )
 from hypothesis_mvp.discovery.posterior_gap_diagnosis import diagnose_frozen_bank
 from hypothesis_mvp.discovery.posterior_gap_evidence import screen_independent_adequacy
-from hypothesis_mvp.discovery.regional_candidate_admission import admit_regional_candidates
+from hypothesis_mvp.discovery.regional_candidate_admission import (
+    admit_regional_candidates, support_parser_for_policy)
 from hypothesis_mvp.discovery.proposal_runtime import ProposalContext, ProposalRuntime
 from hypothesis_mvp.discovery.equation_runtime import EquationRuntime
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
@@ -73,6 +74,31 @@ def test_independent_undercoverage_unblocks_search_but_not_admission():
     assert report["decision_contribution_assessed"] is False
     assert report["candidates"][0]["region_selector_mass"][1] > .5
     assert rows and rows[0]["expression"] == "x0**2"
+
+
+def test_duplicate_admitted_support_is_dropped_instead_of_aborting_cycle():
+    """Two admitted proposals may parse to one support.
+
+    Admitting both made ``DiscoveryAgent._update_cycle_posterior`` raise
+    ``duplicate admitted support in adaptive cycle`` and destroyed the whole
+    child execution (observed three times in formal run v2).  Admission now
+    keeps the first occurrence, exactly like the engine-support rule.
+    """
+    fit, selection, gap, admit = _roles()
+    prior, core, domain, model, target, regions, diagnosis = _frozen_bank(fit)
+    proposals = [{"expression": "x0**2", "source": "llm", "origin": "llm"},
+                 {"expression": "x0*x0", "source": "llm", "origin": "llm"}]
+    rows, report = admit_regional_candidates(
+        core, proposals, fit, gap, admit, domain, regions, (1,), prior, 4)
+    assert report["attempts"] == 2
+    assert [row["admitted"] for row in report["candidates"]] == [True, False]
+    assert [row["reason"] for row in report["candidates"]] == [
+        "independent-region-evidence", "duplicate-admitted-support"]
+    assert [row["expression"] for row in rows] == ["x0**2"]
+    parser = support_parser_for_policy(
+        "discard-fitted-coefficients-refit-closed-basis")
+    supports = [parser(row["expression"], 1) for row in rows]
+    assert len(set(supports)) == len(supports)
 
 
 def test_reused_selection_or_admission_rows_fail_before_screening():

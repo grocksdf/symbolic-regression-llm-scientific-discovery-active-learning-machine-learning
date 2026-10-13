@@ -188,8 +188,8 @@ LEGACY_LONG_FUNCTIONS = frozenset({
     (
         "discovery/contracts.py",
         "from_mapping",
-        101,
-        "a0d69c07e2e08ac5626566c3271a8da6371a5e2477734f234c2a42ccf0c5530e",
+        103,
+        "af14313230a417a1d5d4fb7cc54acb1ae0a09570d4746416fba1b6311e96a1a3",
     ),
     # Candidate admission before the next posterior Gap (contract
     # docs/iterative_posterior_feedback_20261003.md): cycle role preflight,

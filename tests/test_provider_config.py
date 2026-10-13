@@ -1,7 +1,22 @@
 from pathlib import Path
 
+from hypothesis_mvp.discovery.contracts import DiscoveryConfig
 from hypothesis_mvp.discovery.equation_runtime import EquationRuntime
 from hypothesis_mvp.discovery.proposal_runtime import ProposalRuntime, ProviderSettings
+
+
+def test_llm_transport_knobs_default_to_the_historical_values() -> None:
+    """Every registration predating Correction-005 must keep 3 attempts / 4.0 s."""
+    config = DiscoveryConfig.from_mapping({})
+    assert config.llm_attempts == 3
+    assert config.llm_retry_backoff_s == 4.0
+
+
+def test_llm_transport_knobs_are_read_from_the_discovery_mapping() -> None:
+    config = DiscoveryConfig.from_mapping(
+        {"llm_attempts": 6, "llm_retry_backoff_s": 30.0})
+    assert config.llm_attempts == 6
+    assert config.llm_retry_backoff_s == 30.0
 
 
 def test_bigmodel_glm_5_2_route_is_exact() -> None:

@@ -22,6 +22,10 @@ from .pcpi_adapter import (
 
 CLOSED_POLICY = "discard-fitted-coefficients-refit-closed-basis"
 
+_ADMIT = "independent-region-evidence"
+_INSUFFICIENT = "insufficient-independent-region-evidence"
+_DUPLICATE = "duplicate-admitted-support"
+
 
 def _fixed_predictive_logpdf(candidates, fit, observations, domain,
                              prior, measurement_budget, *,
@@ -85,6 +89,7 @@ def admit_regional_candidates(
     assignments = regions.assign(admission.X)
     threshold = math.log(len(proposals) * len(eligible_regions) / alpha)
     retained, results = [], []
+    admitted_supports = set()
     for candidate in proposals:
         support = parser(candidate["expression"], fit.X.shape[1])
         identity = sha256(json.dumps(candidate, sort_keys=True,
@@ -109,8 +114,15 @@ def admit_regional_candidates(
         factors = selector.log_bayes_factor_vs_core(identity)
         passed = any(np.isfinite(factors[r]) and factors[r] > threshold
                      for r in eligible_regions)
+        # Two proposals can parse to one support: admitting both aborted the
+        # cycle (v2, three runs).  Keep the first, as for engine duplicates.
+        duplicate = passed and support in admitted_supports
+        passed = passed and not duplicate
+        reason = (_DUPLICATE if duplicate
+                  else _ADMIT if passed else _INSUFFICIENT)
         if passed:
             retained.append(candidate)
+            admitted_supports.add(support)
         results.append({"candidate_identity": identity,
                         "lineage_id": str(candidate.get("lineage_id") or ""),
                         "composed_expression": candidate["expression"],
@@ -123,8 +135,7 @@ def admit_regional_candidates(
                         "eligible_regions": list(eligible_regions),
                         "log_evidence_threshold": threshold,
                         "admitted": passed,
-                        "reason": "independent-region-evidence" if passed
-                                  else "insufficient-independent-region-evidence"})
+                        "reason": reason})
     return retained, {"schema": "candidate-regional-admission-v1",
                       "core_identity": core_identity,
                       "region_identity": regions.identity,

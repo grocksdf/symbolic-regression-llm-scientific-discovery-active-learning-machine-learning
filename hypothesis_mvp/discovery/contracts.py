@@ -114,6 +114,8 @@ class DiscoveryConfig:
     llm_temperature: float = 0.25
     llm_max_tokens: int = 1800
     llm_timeout_s: float = 150.0
+    llm_attempts: int = 3
+    llm_retry_backoff_s: float = 4.0
     structure_library_topk: int = 8
     structure_library_max_entries: int = 64
     structure_library_read: bool = False
@@ -201,6 +203,8 @@ class DiscoveryConfig:
             llm_temperature=max(0.0, min(1.5, _env_float("HYPOTHESIS_DISCOVERY_LLM_TEMPERATURE", float(_pick(m, "llm_temperature", 0.25))))),
             llm_max_tokens=max(700, _env_int("HYPOTHESIS_DISCOVERY_LLM_MAX_TOKENS", int(_pick(m, "llm_max_tokens", 1800)))),
             llm_timeout_s=max(10.0, _env_float("HYPOTHESIS_DISCOVERY_LLM_TIMEOUT_S", float(_pick(m, "llm_timeout_s", 150.0)))),
+            llm_attempts=max(1, _env_int("HYPOTHESIS_DISCOVERY_LLM_ATTEMPTS", int(_pick(m, "llm_attempts", 3)))),
+            llm_retry_backoff_s=max(0.0, _env_float("HYPOTHESIS_DISCOVERY_LLM_RETRY_BACKOFF_S", float(_pick(m, "llm_retry_backoff_s", 4.0)))),
             structure_library_topk=(max(0, _env_int(
                 "HYPOTHESIS_DISCOVERY_LIBRARY_TOPK",
                 int(_pick(m, "structure_library_topk", 8))))
