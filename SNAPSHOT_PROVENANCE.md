@@ -170,6 +170,22 @@ development run keeps its `passed=false` result; see
 `docs/expanded_formula_benchmark_repair_20261002.md` and the mainline note
 `docs/expanded_formula_failure_repair_20261002.md`.
 
+The 2026-10-17 increment brings the three gain-localization files up to local
+source commit `0dba03b1`. `methods/hypothesis_mvp_pcpi/drr_searcher.py` is the
+Correction-005 complement: `DRRBenchmarkSearcher` now reads the two new
+`DiscoveryConfig` transport knobs `llm_attempts` and `llm_retry_backoff_s`
+through `getattr` defaults of 3 attempts / 4.0 s, so every earlier registration
+keeps observing exactly the hard-coded transport behaviour it was executed
+under. `configs/aistats_three_arm_formula_expanded_candidate.yaml` and the new
+`configs/aistats_three_arm_formula_no_gap_block.yaml` then set those knobs to
+6 attempts and 30.0 s of exponential backoff, identically on both L arms, which
+spans roughly 15.5 min of provider outage before a call is declared an
+infrastructure failure. The new config also carries Arm B's own legal
+non-iterative `three_arm_formula_no_gap_block` condition and the explicit
+`decoded_response_fraction: 0.75` control that used to be an implicit side
+effect of the condition string. The `glm-5.3-flash` freeze noted above still
+holds on this branch. No mainline `hypothesis_mvp` code is touched.
+
 Canonical scientific-system code and the compact experiment-evidence index
 live on the repository's `main` branch.
 

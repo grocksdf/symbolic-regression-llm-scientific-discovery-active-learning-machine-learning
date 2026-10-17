@@ -76,10 +76,14 @@ class DRRBenchmarkSearcher(PCPISearcher):
         if self.llm_enabled:
             provider = ProviderSettings.from_environment(**{
                 "base_url": self.llm_api_url, "model": self.llm_model,
-                "api_key": self.llm_api_key, "attempts": 3,
+                "api_key": self.llm_api_key,
+                # getattr keeps every suite that predates the two knobs on the
+                # original hard-coded defaults (3 attempts / 4.0 s backoff).
+                "attempts": int(getattr(self.config, "llm_attempts", 3)),
                 "connect_timeout_s": 15.0,
                 "read_timeout_s": self.llm_timeout_s,
-                "retry_backoff_s": 4.0,
+                "retry_backoff_s": float(
+                    getattr(self.config, "llm_retry_backoff_s", 4.0)),
                 "temperature": self.config.llm_temperature,
                 "max_tokens": self.config.llm_max_tokens,
                 "thinking_type": self.llm_thinking_type,

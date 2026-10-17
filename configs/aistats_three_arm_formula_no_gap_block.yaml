@@ -1,0 +1,67 @@
+name: AISTATS-Three-Arm-Formula-No-Gap-Block
+class_name: DRRBenchmarkSearcher
+api_type: openai
+# O2 harness fix. The condition string can no longer stay
+# three_arm_formula_expanded_candidate: drr_searcher requires that condition to
+# imply iterative_posterior_refinement=True, so "same condition + block removed"
+# is an illegal state. Arm B therefore runs under its own legal non-iterative
+# three_arm_* condition, and the decoded response horizon - which used to be a
+# side effect of the condition string - is now the explicit frozen control below,
+# set to the same 75% cut Arm A opens. Nothing in hypothesis_mvp is relaxed.
+condition: three_arm_formula_no_gap_block
+decoded_response_fraction: 0.75
+portfolio_method: v6
+use_llm: true
+llm_rl_enabled: true
+llm_model: glm-5.3-flash
+llm_api_url: https://open.bigmodel.cn/api/paas/v4
+llm_timeout_s: 300.0
+llm_temperature: 0.25
+llm_max_tokens: 2400
+llm_thinking_type: ""
+llm_reasoning_effort: low
+llm_do_sample: false
+# Correction-005 transport resilience (identical on both L arms): six attempts
+# with 30 s exponential backoff span ~15.5 min of provider-side outage before a
+# call is declared an infrastructure failure. Absent, both knobs fall back to
+# 3 attempts / 4.0 s, i.e. the behaviour every earlier registration observed.
+llm_attempts: 6
+llm_retry_backoff_s: 30.0
+top_k_results: 1
+random_seed: 0
+use_library: false
+strict_train_val_only: true
+agent_config:
+  engines: [pysr, polynomial_lasso]
+  engine_repeats: 1
+  engine_budget: 4
+  engine_workers: 1
+  engine_timeout_s: 300.0
+  engine_retries: 0
+  cycles: 2
+  discovery_budget: 55
+  random_seed: 0
+  search_iterations: 12
+  acquisition_enabled: false
+  use_knowledge: false
+  task_local_memory: false
+  discovery_rounds: 2
+  candidates_per_island: 2
+  task_local_memory_topk: 8
+  synthesis_evaluation_reserve: 3
+  llm_evaluation_reserve: 6
+  new_skeleton_quota: 1
+  refit_policy: pcpi-expanded-fixed-inner-v1
+  expanded_formula_synthesis: true
+  discovery_islands: [low_complexity, nmse, novelty]
+  scientist_orchestration: true
+  require_explicit_skill_controls: true
+  typed_evidence_synthesis: true
+  typed_inner_augmentation: true
+  # Ablated: the coupled posterior-gap feedback block.
+  posterior_gap_directed: false
+  iterative_posterior_refinement: false
+  protected_counterfactual_backbone: true
+  provider_failure_mode: abort
+  conservative_allocation_policy: {}
+  dataset_family: llm_srbench_frozen

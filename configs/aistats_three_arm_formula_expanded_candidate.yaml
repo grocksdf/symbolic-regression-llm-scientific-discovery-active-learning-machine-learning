@@ -13,6 +13,12 @@ llm_max_tokens: 2400
 llm_thinking_type: ""
 llm_reasoning_effort: low
 llm_do_sample: false
+# Correction-005 transport resilience (identical on both L arms): six attempts
+# with 30 s exponential backoff span ~15.5 min of provider-side outage before a
+# call is declared an infrastructure failure. Absent, both knobs fall back to
+# 3 attempts / 4.0 s, i.e. the behaviour every earlier registration observed.
+llm_attempts: 6
+llm_retry_backoff_s: 30.0
 top_k_results: 1
 random_seed: 0
 use_library: false
