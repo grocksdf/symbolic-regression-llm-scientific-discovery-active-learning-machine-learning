@@ -71,6 +71,41 @@ def test_additive_support_refuses_duplicate_structures():
         compile_fixed_formula_support("x0 - 2*x0", 1)
 
 
+# A real polynomial-lasso output from the gain-localization E arm: 17 additive
+# terms (16 structural + intercept) and 204 AST nodes.  The original 128-node /
+# 16-term caps sat INSIDE the measured distribution of legitimate engine output
+# and clipped this arm while leaving the L arms, which top out at exactly 128
+# nodes, untouched.  Raising the caps is a de-biasing change, not a relaxation.
+_LASSO_POLYNOMIAL = (
+    "-1.307267890584689e-6*x0**4 - 3.548166629345148e-5*x0**3*x3 "
+    "- 4.454720938192162e-5*x0**3*x5 + 0.0004273778638153389*x0**3 "
+    "- 0.00019734481625690898*x0**2*x3*x5 + 0.004486835591360316*x0**2*x3 "
+    "+ 0.005138465255818977*x0**2*x5 - 0.03652511136297161*x0**2 "
+    "- 0.128409515976008*x0*x3 - 0.1391245724923443*x0*x5 "
+    "+ 0.59236597285685425*x0 - 0.25530951489304367*x1*x2**2 "
+    "+ 1.253743311622216*x1*x2 - 0.25597619159114993*x2**2*x4 "
+    "- 0.47555786117753443*x2**2 + 1.257201452937371*x2*x4 "
+    "+ 9.71313266644076*x2 - 32.28560888301153")
+
+
+def test_finite_budget_admits_legitimate_polynomial_lasso_output():
+    import ast as _ast
+    assert len(list(_ast.walk(_ast.parse(_LASSO_POLYNOMIAL, mode="eval")))) > 128
+    support = compile_fixed_formula_support(_LASSO_POLYNOMIAL, 6)
+    assert len(support) == 18
+    assert len(set(support)) == len(support)
+    assert "intercept" in support
+
+
+def test_finite_budget_still_rejects_pathological_expression():
+    # 300 structurally repeated summands: well under the 4096-character input
+    # bound but far past the node budget, so the guard must still fire.
+    deep = " + ".join(f"{i}*x0" for i in range(300))
+    assert len(deep) <= 4096
+    with pytest.raises(ValueError, match="finite budget"):
+        compile_fixed_formula_support(deep, 6)
+
+
 @pytest.mark.parametrize(("proposal", "refitted"), [
     (
         "(x0+x1)*log(1+Abs(x2))/x2",

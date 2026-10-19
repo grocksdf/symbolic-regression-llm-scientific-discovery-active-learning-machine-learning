@@ -21,6 +21,15 @@ _FUNCTIONS = {"sin": np.sin, "cos": np.cos, "tanh": np.tanh,
               "exp": np.exp, "log": np.log, "sqrt": np.sqrt,
               "Abs": np.abs, "abs": np.abs}
 
+# Finite-budget guards.  They must reject pathological input while admitting
+# every expression the frozen engines legitimately emit.  The original values
+# (128 nodes / 16 terms) sat INSIDE the measured distribution: the E-arm
+# polynomial-lasso bank holds expressions of up to 204 AST nodes and 19
+# additive terms, and the L arms top out at exactly 128 nodes - the signature
+# of a cap that was being clipped against, not a boundary being enforced.
+AST_NODE_BUDGET = 512
+SUPPORT_TERM_BUDGET = 32
+
 
 def _constant(node):
     if isinstance(node, ast.Constant) and type(node.value) in (int, float):
@@ -88,7 +97,7 @@ def _parse(expression, n_features):
             or not isinstance(expression, str) or not 0 < len(expression) <= 4096):
         raise ValueError("invalid fixed-formula contract")
     root = ast.parse(expression, mode="eval")
-    if len(list(ast.walk(root))) > 128:
+    if len(list(ast.walk(root))) > AST_NODE_BUDGET:
         raise ValueError("formula AST exceeds finite budget")
     _check(root.body, n_features)
     if not any(isinstance(node, ast.Name)
@@ -240,7 +249,7 @@ def compile_fixed_formula_support(expression: str, n_features: int
     if not isinstance(expression, str) or not 0 < len(expression) <= 4096:
         raise ValueError("invalid bounded formula expression")
     root = ast.parse(expression, mode="eval")
-    if len(list(ast.walk(root))) > 128:
+    if len(list(ast.walk(root))) > AST_NODE_BUDGET:
         raise ValueError("formula AST exceeds finite budget")
     def summands(node):
         if not any(isinstance(child, ast.Name) and _VARIABLE.fullmatch(child.id)
@@ -260,7 +269,7 @@ def compile_fixed_formula_support(expression: str, n_features: int
                 terms.append("intercept")
         else:
             terms.append(compile_fixed_formula_term(ast.unparse(node), n_features))
-    if len(terms) > 16:
+    if len(terms) > SUPPORT_TERM_BUDGET:
         raise ValueError("fixed formula support exceeds finite budget")
     if not terms:
         raise ValueError("empty fixed formula support")
