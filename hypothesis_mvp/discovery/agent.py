@@ -37,6 +37,9 @@ from .posterior_gap_evidence import screen_independent_adequacy
 from .regional_candidate_admission import admit_regional_candidates
 from .knowledge_runtime import KnowledgeRuntime
 from .iterative_refinement_gate import verify_iterative_refinement
+from .iterative_refinement_gate import (
+    verify_iterative_masked_generation_control,
+)
 from .candidate_validity import proposal_domain_context
 from .proposal_calibration import development_failure_feedback
 from .mechanism_funnel import candidate_mechanism_funnel
@@ -90,6 +93,7 @@ class DiscoveryAgentConfig:
     expanded_formula_synthesis: bool = False
     posterior_gap_directed: bool = False
     iterative_posterior_refinement: bool = False
+    mask_posterior_gap_from_generation: bool = False
     synthesis_evaluation_reserve: int = 0
     skill_reliability: Mapping[str, Mapping[str, float]] = field(
         default_factory=dict)
@@ -305,6 +309,11 @@ class DiscoveryAgent:
                 not config.posterior_gap_directed or config.cycles < 2
                 or config.task_local_memory or config.use_knowledge):
             raise ValueError("iterative posterior refinement requires separate gap roles and no memory")
+        if config.mask_posterior_gap_from_generation and (
+                not config.posterior_gap_directed
+                or not config.iterative_posterior_refinement):
+            raise ValueError(
+                "gap-generation mask requires iterative posterior refinement")
         if (config.iterative_posterior_refinement
                 and config.expanded_formula_synthesis
                 and config.new_skeleton_quota < 1):
@@ -523,8 +532,11 @@ class DiscoveryAgent:
         context = dict(orchestration_context or {})
         context["seed_bank"] = seed_audit
         context["typed_inner_augmentation"] = self.config.typed_inner_augmentation
-        gap_allowed = (not self.config.posterior_gap_directed or bool(
-            context.get("posterior_gap_brief", {}).get("propose_allowed")))
+        gap_allowed = (
+            self.config.mask_posterior_gap_from_generation
+            or not self.config.posterior_gap_directed
+            or bool(context.get(
+                "posterior_gap_brief", {}).get("propose_allowed")))
         synthesis_budget = (self.config.synthesis_evaluation_reserve
                             if self.config.typed_inner_augmentation and gap_allowed else 0)
         llm_budget = self.config.llm_evaluation_reserve if gap_allowed else 0
@@ -700,7 +712,10 @@ class DiscoveryAgent:
             if self.config.posterior_gap_directed else None)
         if self.config.iterative_posterior_refinement:
             self._last_cycle_gap = gap
-        if gap is not None and not gap["prompt"]["propose_allowed"]:
+        generation_masked = bool(
+            self.config.mask_posterior_gap_from_generation)
+        if (gap is not None and not generation_masked
+                and not gap["prompt"]["propose_allowed"]):
             review = ScientistReview(
                 ("independent region screen did not identify inadequacy",),
                 (), (), ("retain engine candidates",), False,
@@ -716,7 +731,7 @@ class DiscoveryAgent:
                 "posterior_gap_existing_supports": gap["existing_supports"],
                 "candidate_response_accessed": False,
                 "heldout_opened": False,
-            } if gap is not None else {})}
+            } if gap is not None and not generation_masked else {})}
             review, review_telemetry, fallback, review_calls = (
                 self._resolve_review(
                     planner, plan, evidence, fallback,
@@ -735,6 +750,10 @@ class DiscoveryAgent:
             **({"posterior_gap_brief": gap["prompt"],
                 "posterior_gap_existing_supports": gap["existing_supports"],
                 "posterior_gap_audit": gap["audit"]} if gap else {}),
+            "posterior_gap_masked_from_generation": generation_masked,
+            "posterior_gap_used_for_admission": bool(
+                gap is not None
+                and self.config.iterative_posterior_refinement),
             "candidate_response_accessed": False, "heldout_opened": False}
         usage = (plan_calls + review_calls,
                  planner.attempt_count - counters[1],
@@ -943,16 +962,24 @@ class DiscoveryAgent:
         synthesized, synthesis_audit = self._compile_cycle_synthesis(
             review, evidence, selection.development.X.shape[1])
         if (self.config.posterior_gap_directed
+                and not self.config.mask_posterior_gap_from_generation
                 and not orchestration["posterior_gap_brief"]["propose_allowed"]):
             synthesized = []
             synthesis_audit = {**synthesis_audit,
                 "deferred_no_independent_gap": True}
         orchestration = {
             **orchestration, "evidence_synthesis": synthesis_audit}
+        generation_orchestration = dict(orchestration)
+        if self.config.mask_posterior_gap_from_generation:
+            generation_orchestration.pop("posterior_gap_brief", None)
+            generation_orchestration.pop(
+                "posterior_gap_existing_supports", None)
+            generation_orchestration[
+                "posterior_gap_masked_from_generation"] = True
         final = self._discover(
             selection, engines, previous, task_name, task_description,
             output, knowledge, variable_metadata, cycle=cycle,
-            orchestration_context=orchestration,
+            orchestration_context=generation_orchestration,
             synthesized_candidates=synthesized,
         )
         # Cross-cycle calibration persists only enum failure categories;
@@ -1051,13 +1078,21 @@ class DiscoveryAgent:
         proposal_audits = [island.get("memory", {})
             for round_row in final.report.get("llm_rounds", ())
             for island in round_row.get("islands", ())]
-        if gap["prompt"].get("propose_allowed"):
+        masked = self.config.mask_posterior_gap_from_generation
+        if gap["prompt"].get("propose_allowed") and not masked:
             if not proposal_audits or any(
                     row.get("posterior_gap_identity") != brief_identity
                     for row in proposal_audits):
                 raise ValueError("proposal batch was not bound to current gap")
-        payload_identity = (brief_identity if not proposal_audits else
-            proposal_audits[0]["posterior_gap_identity"])
+        if masked:
+            if any(row.get("posterior_gap_identity")
+                   for row in proposal_audits):
+                raise ValueError(
+                    "masked control leaked posterior gap to proposal batch")
+            payload_identity = "masked-no-gap-context-v1"
+        else:
+            payload_identity = (brief_identity if not proposal_audits else
+                proposal_audits[0]["posterior_gap_identity"])
         return {
             "bank_before": gap["model"].stable_hash,
             "core_rows_before": [dict(r) for r in gap["core_rows"]],
@@ -1066,6 +1101,7 @@ class DiscoveryAgent:
             "gap_posterior": gap["target"].stable_hash,
             "gap_identity": brief_identity,
             "proposal_gap_identity": payload_identity,
+            "generation_gap_masked": masked,
             "bank_after": after_model.stable_hash,
             "posterior_after": after_target.stable_hash,
             "bank_supports_after": [support_key(r) for r in after_rows],
@@ -1194,8 +1230,11 @@ class DiscoveryAgent:
             raise RuntimeError("discovery agent executed no cycle")
         remaining = (len(selection.acquisition_pool.X)
                      if selection.acquisition_pool is not None else 0)
-        feedback_gate = (verify_iterative_refinement(feedback_trace)
-                         if iterative else None)
+        feedback_gate = (
+            (verify_iterative_masked_generation_control(feedback_trace)
+             if self.config.mask_posterior_gap_from_generation
+             else verify_iterative_refinement(feedback_trace))
+            if iterative else None)
         return DiscoveryAgentResult(
             final, tuple(history), selection, remaining, self.provider_settings is not None,
             {**system_evaluation(history),

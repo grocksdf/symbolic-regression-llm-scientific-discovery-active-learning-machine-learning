@@ -1,6 +1,7 @@
 """Inference-correctness diagnostic fixture; no benchmark responses."""
 
 from hypothesis_mvp.discovery.iterative_refinement_gate import (
+    verify_iterative_masked_generation_control,
     verify_iterative_refinement,
 )
 
@@ -48,3 +49,25 @@ def test_reused_admission_rows_and_stale_proposal_fail():
     assert not result["passed"]
     assert any("overlapping_role_rows" in x for x in result["problems"])
     assert any("proposal_used_stale_gap" in x for x in result["problems"])
+
+
+def test_masked_generation_control_verifies_update_without_gap_exposure():
+    trace = _trace()
+    for row in trace:
+        row["generation_gap_masked"] = True
+        row["proposal_gap_identity"] = "masked-no-gap-context-v1"
+    result = verify_iterative_masked_generation_control(trace)
+    assert result["passed"] and result["linked_updates"] == 1
+    assert result["posterior_gap_exposed_to_generation"] is False
+    assert result["posterior_gap_used_for_independent_admission"] is True
+
+
+def test_masked_generation_control_rejects_unmasked_cycle():
+    trace = _trace()
+    for row in trace:
+        row["generation_gap_masked"] = True
+        row["proposal_gap_identity"] = "masked-no-gap-context-v1"
+    trace[1]["generation_gap_masked"] = False
+    result = verify_iterative_masked_generation_control(trace)
+    assert not result["passed"]
+    assert any("not_explicitly_masked" in x for x in result["problems"])

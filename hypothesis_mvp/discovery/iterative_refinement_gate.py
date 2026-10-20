@@ -101,3 +101,32 @@ def verify_iterative_refinement(
             "passed": not problems, "linked_updates": linked_updates,
             "problems": sorted(set(problems)),
             "measured_action_authorized": False}
+
+
+def verify_iterative_masked_generation_control(
+    cycles: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    """Verify the update-only control without claiming gap-directed generation."""
+    problems: list[str] = []
+    normalized = []
+    for number, cycle in enumerate(cycles):
+        row = dict(cycle)
+        if row.get("generation_gap_masked") is not True:
+            problems.append(
+                f"cycle_{number}:generation_gap_not_explicitly_masked")
+        if row.get("proposal_gap_identity") != "masked-no-gap-context-v1":
+            problems.append(
+                f"cycle_{number}:masked_generation_identity_changed")
+        row["proposal_gap_identity"] = row.get("gap_identity")
+        normalized.append(row)
+    base = verify_iterative_refinement(normalized)
+    problems.extend(base.get("problems", ()))
+    return {
+        "schema": "iterative-masked-generation-update-control-gate-v1",
+        "passed": not problems,
+        "linked_updates": int(base.get("linked_updates") or 0),
+        "problems": sorted(set(problems)),
+        "posterior_gap_exposed_to_generation": False,
+        "posterior_gap_used_for_independent_admission": True,
+        "measured_action_authorized": False,
+    }

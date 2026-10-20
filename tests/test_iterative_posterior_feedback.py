@@ -147,6 +147,82 @@ def test_reused_cycle_response_role_fails_before_output(tmp_path):
     assert not (tmp_path / "run").exists()
 
 
+def test_masked_generation_control_hides_gap_but_forwards_admission(
+        tmp_path, monkeypatch):
+    selection, roles = _selection_and_roles()
+    config = DiscoveryAgentConfig(
+        engines=("polynomial_lasso", "mcts"), engine_budget=2,
+        engine_repeats=1, engine_workers=1, cycles=2,
+        discovery_budget=55, scientist_orchestration=True,
+        typed_evidence_synthesis=True, typed_inner_augmentation=True,
+        posterior_gap_directed=True, iterative_posterior_refinement=True,
+        mask_posterior_gap_from_generation=True,
+        expanded_formula_synthesis=True,
+        refit_policy="pcpi-expanded-fixed-inner-v1",
+        discovery_islands=("novelty",), discovery_rounds=1,
+        new_skeleton_quota=1, synthesis_evaluation_reserve=3,
+        llm_evaluation_reserve=4)
+    agent = DiscoveryAgent(config, ProviderSettings(routes=(ProviderRoute(
+        "https://example.invalid", "fixture", "fixture"),)))
+    rows = tuple(SimpleNamespace(
+        engine=engine, expression=expression, mse_val=1.,
+        complexity=2, score=1., lineage_id=engine, diagnostics={})
+        for engine, expression in (
+            ("polynomial_lasso", "x0"), ("mcts", "x0**3")))
+    monkeypatch.setattr(
+        agent, "_run_engines",
+        lambda *args: SimpleNamespace(all_results=rows))
+    monkeypatch.setattr(agent, "_resolve_plan", lambda *args:
+        (deterministic_plan(config.engines, config.engine_budget),
+         {}, None, 0))
+    review = ScientistReview(
+        ("fixture",), (), (), ("fixture",), False, "fixture")
+    monkeypatch.setattr(agent, "_resolve_review", lambda *args, **kwargs:
+        (review, {}, None, 0))
+    monkeypatch.setattr(ScientistState, "advance", lambda self, **kwargs: self)
+    monkeypatch.setattr(agent, "_compile_cycle_synthesis", lambda *args:
+        ([], {"fixture": True}))
+    monkeypatch.setattr(agent, "_cycle_record", lambda *args:
+        SimpleNamespace(posterior_gap_brief={}))
+    import hypothesis_mvp.discovery.agent as agent_module
+    monkeypatch.setattr(agent_module, "system_evaluation", lambda *args: {})
+    candidate = {
+        "expression": "x0**2", "source": "llm_proposal_1_novelty",
+        "origin": "llm", "lineage_id": "fixture-masked-L1"}
+    seen = []
+
+    def fake_discover(*args, **kwargs):
+        context = kwargs["orchestration_context"]
+        seen.append(dict(context))
+        assert "posterior_gap_brief" not in context
+        assert "posterior_gap_existing_supports" not in context
+        assert context["posterior_gap_masked_from_generation"] is True
+        return SimpleNamespace(expression="x0", report={
+            "evaluated_hypothesis_bank": [candidate],
+            "final_topk": [candidate],
+            "llm_rounds": [{"islands": [{"memory": {}}]}],
+        })
+
+    monkeypatch.setattr(agent, "_discover", fake_discover)
+    result = agent.run(
+        selection=selection, task_name="fixture",
+        task_description="fixture", output_dir=tmp_path / "run",
+        knowledge_dir=tmp_path / "knowledge", variable_metadata={},
+        gap_prior=NormalInverseGammaPrior(), gap_measurement_budget=4,
+        gap_cycle_roles=roles)
+    trace = result.system_evaluation["iterative_feedback_trace"]
+    assert len(seen) == 2 and len(trace) == 2
+    assert trace[0]["generation_gap_masked"] is True
+    assert trace[0]["proposal_gap_identity"] == (
+        "masked-no-gap-context-v1")
+    assert trace[0]["admitted_supports"]
+    assert trace[0]["bank_after"] == trace[1]["gap_bank"]
+    gate = result.system_evaluation["iterative_feedback_gate"]
+    assert gate["schema"] == (
+        "iterative-masked-generation-update-control-gate-v1")
+    assert gate["passed"]
+
+
 def test_inner_proposal_context_binds_actual_gap_identity():
     runtime = object.__new__(ScientificDiscoveryRuntime)
     brief = {"target_identity": "posterior-1", "regions": [{"region": 0}],
