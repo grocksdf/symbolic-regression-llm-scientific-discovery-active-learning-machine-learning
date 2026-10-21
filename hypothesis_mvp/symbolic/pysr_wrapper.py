@@ -23,7 +23,10 @@ class PySRSymbolicRegressor(SymbolicRegressor):
             from pysr import PySRRegressor
         except Exception as error:
             raise ImportError(
-                "the requested pysr backend is unavailable; install the symbolic extra"
+                "the requested pysr backend failed to initialize; install the "
+                "symbolic extra and bind both PYTHON_JULIACALL_EXE and "
+                "PYTHON_JULIACALL_PROJECT to one validated Julia runtime "
+                f"(cause: {type(error).__name__}: {error})"
             ) from error
         self.config = config
         self._regressor_type = PySRRegressor
@@ -38,7 +41,7 @@ class PySRSymbolicRegressor(SymbolicRegressor):
         options: dict[str, Any] = {
             "niterations": self.config.niterations,
             "population_size": self.config.population_size,
-            "loss": self.config.loss,
+            "elementwise_loss": self.config.loss,
             "binary_operators": self.config.binary_operators,
             "unary_operators": unary_operators,
             "model_selection": self.config.pysr_model_selection,

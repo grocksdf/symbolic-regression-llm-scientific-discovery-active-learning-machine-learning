@@ -266,6 +266,36 @@ def _execute_isolated(job, values, arrays, timeout_s):
         receiver.close()
 
 
+def _refuse_partial_engine_degradation(records) -> None:
+    """Fail closed when a registered engine produced no candidate at all.
+
+    A single attempt failing is legitimate: the scheduler retries within its
+    budget and other attempts for the same engine may succeed. What must never
+    happen silently is an allocated engine contributing zero candidates while
+    the run still reports success on the strength of the remaining engines --
+    that turns an infrastructure failure (e.g. an unusable PySR/Julia runtime)
+    into a quietly changed experiment. Set FORMULA_ENGINE_ALLOW_DEGRADED=1 to
+    restore the pre-fix behaviour explicitly.
+    """
+    if os.environ.get("FORMULA_ENGINE_ALLOW_DEGRADED") == "1":
+        return
+    by_engine: dict[str, list] = {}
+    for row in records:
+        by_engine.setdefault(row.engine, []).append(row)
+    silent = sorted(
+        engine for engine, rows in by_engine.items()
+        if all(row.status != "succeeded" for row in rows))
+    if not silent:
+        return
+    summary = "; ".join(
+        f"{row.engine}:{row.status}:{row.error_type}" for row in records
+        if row.engine in silent)
+    raise RuntimeError(
+        "allocated symbolic engine(s) produced no candidate and the run "
+        "refused to degrade silently (set FORMULA_ENGINE_ALLOW_DEGRADED=1 to "
+        f"override): {summary}")
+
+
 def _aggregate(results: Sequence[EngineResult], budget: int, used: int) -> tuple[EngineResult, ...]:
     grouped: dict[str, list[EngineResult]] = {}
     for result in results:
@@ -363,6 +393,7 @@ class EngineScheduler:
                 "all allocated symbolic engines failed; no fallback was used: " + summary)
         aggregated = _aggregate(results, budget, len(records))
         failures = tuple(asdict(row) for row in records if row.status != "succeeded")
+        _refuse_partial_engine_degradation(records)
         return MultiEngineResult(
             aggregated[0], aggregated, tuple(records), failures, budget, len(records))
 

@@ -84,4 +84,4 @@ def test_pysr_is_registered_for_expanded_expression_contract():
     try:
         get_symbolic_regressor(config)
     except ImportError as error:
-        assert "pysr backend is unavailable" in str(error)
+        assert "pysr backend failed to initialize" in str(error)
