@@ -6,7 +6,7 @@ This branch is a clean source snapshot exported from:
 
 - upstream project: `deep-symbolic-mathematics/llm-srbench`
 - local source branch: `codex/restart-experiment-adapter`
-- source commit: `3ba9d12b` (Gate attribution claims and registered bootstrap CI)
+- source commit: `68a40647` (Bind both JuliaCall runtime variables in the child from the frozen Gate)
 
 The snapshot intentionally excludes the upstream Git history because that
 history contains experimental ledgers larger than GitHub's 100 MB per-file
@@ -185,6 +185,51 @@ non-iterative `three_arm_formula_no_gap_block` condition and the explicit
 `decoded_response_fraction: 0.75` control that used to be an implicit side
 effect of the condition string. The `glm-5.3-flash` freeze noted above still
 holds on this branch. No mainline `hypothesis_mvp` code is touched.
+
+The 2026-10-21 increment brings the branch up to local source commit
+`68a40647`. It carries three strands.
+
+*Mechanism ablation (Experiment 2) adapter.* New files
+`scripts/mechanism_ablation_contract.py`,
+`scripts/build_mechanism_ablation_freeze.py`,
+`scripts/run_mechanism_ablation_matrix.py`, `scripts/score_mechanism_arm.py`,
+`scripts/ablation_decode_control.py` and
+`scripts/ablation_equivalence_gate.py`, with their contract tests, register
+the E / `L_no_feedback` / `L_full` ablation together with its freeze builder
+and its three gates.
+
+*Feedback-mechanism factorial adapter.* New files
+`scripts/feedback_mechanism_factorial_contract.py`,
+`scripts/build_feedback_mechanism_factorial_registration.py`,
+`scripts/authorize_feedback_mechanism_factorial.py` and
+`scripts/run_feedback_mechanism_factorial.py`, plus the four arm configs
+`configs/feedback_mechanism_A_no_gap_no_update.yaml`,
+`..._B_gap_generation_no_update.yaml`,
+`..._C_masked_generation_update.yaml` and `..._D_full.yaml`, register the
+96-child factorial. This protocol is published together with the
+infrastructure fault it uncovered, described next.
+
+*PySR / Julia runtime repair.* Three defects compounded into an experiment that
+degraded silently. JuliaCall 0.9.36 needs `PYTHON_JULIACALL_EXE` and
+`PYTHON_JULIACALL_PROJECT` bound to one validated runtime, and binding only
+`PROJECT` raised an initialization error; the wrapper rewrote that error into
+the generic `the requested pysr backend is unavailable`, discarding the cause;
+and the scheduler then treated the engine failure as degradable, so a run
+completed with a registered engine that had contributed no candidate. The
+runtime is now bound from the frozen response-free Gate
+(`configs/pysr_runtime_gate.json`, produced once by
+`scripts/check_pysr_runtime.py`) before the output directory is created and
+before any HDF5 or provider access, and `run_allocated` fails closed when a
+registered engine produces nothing across all of its attempts
+(`FORMULA_ENGINE_ALLOW_DEGRADED=1` restores the previous behaviour). The Gate
+resolves the Juliaup binary rather than the zero-byte WindowsApps alias, and
+freezes both the `julia.exe` and `libjulia.dll` SHA-256.
+`methods/hypothesis_mvp_pcpi/drr_searcher.py` additionally replaces the
+hard-coded condition-string tests for the gap cycle with the
+`posterior_gap_directed` and `iterative_posterior_refinement` config switches,
+so Arm B's non-iterative `three_arm_formula_no_gap_block` condition is legal.
+No scoring rule, statistical method, resample count or bootstrap seed is
+touched, and no historical row is rescored.
 
 Canonical scientific-system code and the compact experiment-evidence index
 live on the repository's `main` branch.

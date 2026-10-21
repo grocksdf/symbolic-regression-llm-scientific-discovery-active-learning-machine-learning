@@ -1,0 +1,39 @@
+{
+  "heldout_opened": false,
+  "interpreter": "D:\\01\\666\\.venvs\\llm_srbench_metadata_py312\\Scripts\\python.exe",
+  "julia_runtime": {
+    "executable": "C:\\Users\\19708\\.julia\\juliaup\\julia-1.12.5+0.x64.w64.mingw32\\bin\\julia.exe",
+    "executable_sha256": "db34f9b61b8f0edb1491044512d71528ba4c768173e210feeded5099d3a363fc",
+    "libjulia": "C:\\Users\\19708\\.julia\\juliaup\\julia-1.12.5+0.x64.w64.mingw32\\bin\\libjulia.dll",
+    "libjulia_sha256": "848826c77cee495b187b449248e55a886856089aaa145cc9dd01e1fefecd1c15",
+    "manifest_sha256": "1cb8a6997f25a1f34747f48ff617b21b0ecf62d05bec60d3022f4f393d33a972",
+    "meta_path": "D:\\01\\666\\.venvs\\llm_srbench_metadata_py312\\julia_env\\pyjuliapkg\\meta.json",
+    "meta_sha256": "6b71012f3c328ef6142f82f16a01ad737d7d51e5d41447e7e8e13744b7b4e436",
+    "project": "D:\\01\\666\\.venvs\\llm_srbench_metadata_py312\\julia_env",
+    "project_sha256": "1c36d1709faa8afbd837754bd558e21b0ca62376fd01758146007efa553db13f",
+    "python_juliacall_exe_explicit": true,
+    "python_juliacall_project_explicit": true,
+    "version": "julia version 1.12.5"
+  },
+  "julia_version": "1.12.5",
+  "juliacall_version": "0.9.36",
+  "juliapkg_version": "0.1.27",
+  "passed": true,
+  "provider_calls": 0,
+  "pysr_version": "2.5.0",
+  "python_version": "3.12.14 (main, Aug 25 2026, 14:01:42) [MSC v.1944 64 bit (AMD64)]",
+  "registered_symbolic_regression_compat": "~2.4.1",
+  "schema": "pysr-response-free-runtime-gate-v1",
+  "scientific_data_accessed": false,
+  "symbolic_regression_version": "2.4.2",
+  "synthetic_fit": {
+    "expression": "Abs(x0*(x0 + 0.5669622))",
+    "finite_predictions": true,
+    "fixture": "y=x0**2+0.5*x0",
+    "mse": 0.004283411668003624,
+    "niterations": 1,
+    "population_size": 20,
+    "row_count": 24
+  },
+  "test_or_ood_accessed": false
+}

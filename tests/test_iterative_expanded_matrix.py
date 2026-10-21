@@ -1,6 +1,7 @@
 """Response-free orchestration and integrity tests for the new matrix."""
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -42,6 +43,44 @@ def test_child_rejects_an_existing_empty_path(tmp_path):
     fresh = tmp_path / "fresh"
     _require_clean_output_dir(fresh)
     assert fresh.is_dir()
+
+
+def test_pysr_child_preflight_binds_both_julia_variables_from_gate(
+        monkeypatch):
+    """A registered pysr engine must not depend on manual shell setup.
+
+    JuliaCall 0.9.36 needs PYTHON_JULIACALL_EXE *and* PYTHON_JULIACALL_PROJECT
+    bound to one validated runtime. Binding only PROJECT made the failure
+    surface as a generic "backend unavailable", which the scheduler then
+    treated as a degradable event. The child now injects both from the frozen
+    response-free Gate, so the preflight has to succeed with the shell
+    variables unset -- and it has to run before any scientific data is read.
+    """
+    from scripts.run_aistats_three_arm_formula_child import (
+        _require_pysr_runtime,
+    )
+    monkeypatch.delenv("PYTHON_JULIACALL_EXE", raising=False)
+    monkeypatch.delenv("PYTHON_JULIACALL_PROJECT", raising=False)
+    binding = _require_pysr_runtime({
+        "agent_config": {"engines": ["pysr", "polynomial_lasso"]},
+    })
+    assert binding is not None
+    assert binding["gate_passed"] is True
+    assert binding["import_passed"] is True
+    assert binding["scientific_data_accessed"] is False
+    assert os.environ["PYTHON_JULIACALL_EXE"]
+    assert os.environ["PYTHON_JULIACALL_PROJECT"]
+
+
+def test_non_pysr_child_does_not_require_julia(monkeypatch):
+    from scripts.run_aistats_three_arm_formula_child import (
+        _require_pysr_runtime,
+    )
+    monkeypatch.delenv("PYTHON_JULIACALL_EXE", raising=False)
+    monkeypatch.delenv("PYTHON_JULIACALL_PROJECT", raising=False)
+    assert _require_pysr_runtime({
+        "agent_config": {"engines": ["polynomial_lasso"]},
+    }) is None
 
 
 def test_matrix_requires_explicit_unmatched_claim_boundary(monkeypatch):

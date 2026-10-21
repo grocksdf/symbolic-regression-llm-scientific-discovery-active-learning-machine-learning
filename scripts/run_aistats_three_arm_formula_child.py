@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -24,18 +25,93 @@ sys.path.insert(0, str(ROOT.parent / "hypothesis_mvp"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from bench.dataclasses import SEDTask
+from ablation_decode_control import (
+    DATASET_GROUPS, DECODE_FRACTION_KEY, decoded_response_roles,
+    feedback_block_connected, opened_row_indices, resolve_decode_fraction,
+)
 from methods.hypothesis_mvp_pcpi.drr_adapter import _ordered_indices
 from methods.hypothesis_mvp_pcpi.drr_searcher import DRRBenchmarkSearcher
 from provider_health_contract import bounded_messages
+from iterative_matrix_contract import julia_runtime_identity
 
 
-DATASET_GROUPS = {
-    "bio_pop_growth": "lsr_synth/bio_pop_growth",
-    "chem_react": "lsr_synth/chem_react",
-    "lsr_transform": "lsr_transform",
-    "matsci": "lsr_synth/matsci",
-    "phys_osc": "lsr_synth/phys_osc",
-}
+def _julia_gate_paths():
+    candidates = []
+    override = os.environ.get("PYSR_RUNTIME_GATE_JSON")
+    if override:
+        candidates.append(Path(override))
+    candidates.append(ROOT / "configs" / "pysr_runtime_gate.json")
+    return candidates
+
+
+def _inject_julia_runtime_env():
+    """Bind PYTHON_JULIACALL_EXE *and* PYTHON_JULIACALL_PROJECT from the Gate.
+
+    JuliaCall 0.9.36 needs both variables bound to one validated runtime.
+    Setting only PROJECT made the initialization failure surface as a generic
+    "the requested pysr backend is unavailable", and the scheduler then
+    degraded silently onto the remaining engines, so a run could finish with
+    a registered engine that never produced a candidate. Binding both from the
+    frozen response-free Gate removes the dependence on manual shell setup.
+    """
+    for path in _julia_gate_paths():
+        if not path.exists():
+            continue
+        try:
+            gate = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        runtime = gate.get("julia_runtime") or {}
+        if not gate.get("passed") or not runtime.get("executable") \
+                or not runtime.get("project"):
+            continue
+        injected, already = {}, {}
+        for key in ("PYTHON_JULIACALL_EXE", "PYTHON_JULIACALL_PROJECT"):
+            value = str(runtime["executable"] if key.endswith("EXE")
+                        else runtime["project"])
+            if os.environ.get(key):
+                already[key] = os.environ[key]
+            else:
+                os.environ[key] = value
+                injected[key] = value
+        return {
+            "gate_path": str(path),
+            "gate_sha256": sha256(path.read_bytes()).hexdigest(),
+            "gate_passed": True,
+            "env_injected": injected,
+            "env_already_set": already,
+        }
+    return {
+        "gate_path": None,
+        "gate_sha256": None,
+        "gate_passed": False,
+        "env_injected": {},
+        "env_already_set": {},
+    }
+
+
+def _require_pysr_runtime(config):
+    engines = tuple((config.get("agent_config") or {}).get("engines") or ())
+    if "pysr" not in engines:
+        return None
+    binding = _inject_julia_runtime_env()
+    identity = julia_runtime_identity()
+    try:
+        import importlib.metadata
+        from pysr import PySRRegressor  # noqa: F401
+    except Exception as error:
+        raise RuntimeError(
+            "registered PySR engine failed before scientific data access: "
+            f"{type(error).__name__}: {error} "
+            f"(julia binding: {json.dumps(binding, sort_keys=True)})") from error
+    return {
+        **identity,
+        **binding,
+        "pysr_version": importlib.metadata.version("pysr"),
+        "juliacall_version": importlib.metadata.version("juliacall"),
+        "import_passed": True,
+        "scientific_data_accessed": False,
+    }
 
 
 def _provider_key(path: Path) -> str:
@@ -154,23 +230,23 @@ def main(argv=None) -> int:
     parser.add_argument("--input-symbols-json", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args(argv)
-    _require_clean_output_dir(args.output_dir)
     config = yaml.safe_load(args.config.read_text(encoding="utf-8"))
     if config["condition"] != args.condition:
         raise ValueError("three-arm child condition/config mismatch")
+    pysr_runtime = _require_pysr_runtime(config)
+    _require_clean_output_dir(args.output_dir)
     with h5py.File(args.hdf5, "r") as handle:
         dataset = handle[
             f"{DATASET_GROUPS[args.family]}/{args.task}/train"]
         count, columns = dataset.shape
         X = np.asarray(dataset[:, 1:], dtype=float)
         order = _ordered_indices(count, args.task, args.seed)
-        cuts = tuple(int(round(fraction * count)) for fraction in (
-            .40, .55, .65, .75, .80, .85, .90, .95))
-        # The iterative method consumes a fresh admission slice after each
-        # proposal cycle. Historical generation still opens only the old
-        # development, validation and Gap responses.
-        opened_indices = tuple(order[:cuts[3] if args.condition ==
-            "three_arm_formula_expanded_candidate" else cuts[2]])
+        # Decoded response horizon is an explicit frozen benchmark control
+        # (config key ``decoded_response_fraction``), no longer a side effect of
+        # --condition.  Absent key replays the historical condition-derived cut.
+        decode_fraction = resolve_decode_fraction(
+            args.condition, config.get(DECODE_FRACTION_KEY))
+        opened_indices = opened_row_indices(order, count, decode_fraction)
         sorted_indices = sorted(opened_indices)
         opened_rows = np.asarray(dataset[sorted_indices, :])
         response_lookup = dict(zip(
@@ -306,15 +382,15 @@ def main(argv=None) -> int:
         "wall_time_seconds": time.monotonic() - started,
         "artifact": str(artifact.resolve()),
         "task_train_covariates_accessed": True,
-        "decoded_response_roles": [
-            "discovery_development", "discovery_validation", "gap_audit",
-            *(["gap_admission"] if args.condition ==
-              "three_arm_formula_expanded_candidate" else [])],
+        "decoded_response_fraction": decode_fraction,
+        "decoded_response_roles": list(decoded_response_roles(decode_fraction)),
+        "gap_admission_connected": feedback_block_connected(args.condition),
         "decoded_response_count": len(opened_indices),
         "sealed_response_values_decoded": False,
         "metadata_columns_opened": metadata_columns,
         "ground_truth_expression_opened": False,
         "provider_cost": provider_cost,
+        "pysr_runtime": pysr_runtime,
         "test_or_ood_accessed": False,
         "heldout_opened": False,
     }

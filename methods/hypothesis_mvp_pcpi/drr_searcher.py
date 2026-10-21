@@ -52,8 +52,14 @@ class DRRBenchmarkSearcher(PCPISearcher):
     def discover(self, task):
         self._task_counter += 1
         three_arm = self.condition.startswith("three_arm_")
-        iterative_formula = self.condition == "three_arm_formula_expanded_candidate"
-        if iterative_formula != self.agent_config.iterative_posterior_refinement:
+        iterative_formula = bool(
+            self.agent_config.iterative_posterior_refinement)
+        legacy_iterative_condition = (
+            self.condition == "three_arm_formula_expanded_candidate")
+        if (self.condition in {
+                "three_arm_formula_expanded_candidate",
+                "three_arm_formula_no_gap_block"}
+                and iterative_formula != legacy_iterative_condition):
             raise ValueError("iterative formula condition/config mismatch")
         roles = (
             split_three_arm_training_samples(
@@ -130,12 +136,15 @@ class DRRBenchmarkSearcher(PCPISearcher):
             gap_cycle_roles=cycle_roles,
             gap_audit=(RoleDataset(
                 DataRole.VALIDATION, roles.X_gap_audit, roles.y_gap_audit)
-                if self.condition == "three_arm_l_gap_v1" else None),
+                if self.agent_config.posterior_gap_directed
+                and not iterative_formula else None),
             gap_prior=(NormalInverseGammaPrior()
-                if self.condition == "three_arm_l_gap_v1" or iterative_formula
+                if self.agent_config.posterior_gap_directed
+                or iterative_formula
                 else None),
             gap_measurement_budget=(2
-                if self.condition == "three_arm_l_gap_v1" or iterative_formula
+                if self.agent_config.posterior_gap_directed
+                or iterative_formula
                 else 0))
         report = dict(result.discovery.report)
         protected = [
