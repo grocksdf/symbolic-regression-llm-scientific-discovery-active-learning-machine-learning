@@ -10,6 +10,7 @@ import dataclasses
 import hashlib
 import math
 import re
+import ast
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Optional, Sequence
@@ -49,7 +50,46 @@ def json_safe(value: Any) -> Any:
         return {str(k): json_safe(v) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [json_safe(v) for v in value]
-    return str(value)
+        return str(value)
+
+
+_EFFECTFUL_NODES = (
+    ast.Attribute, ast.Subscript, ast.ListComp, ast.SetComp, ast.DictComp,
+    ast.GeneratorExp, ast.Lambda, ast.Starred, ast.Await, ast.Yield,
+    ast.YieldFrom, ast.NamedExpr, ast.JoinedStr, ast.FormattedValue,
+)
+
+
+def _reject_effectful_syntax(text: str, allowed: Mapping[str, Any]) -> None:
+    """Refuse anything that is not a pure arithmetic expression over ``allowed``.
+
+    The check is syntactic and runs before ``sympify``, so no attribute,
+    subscript, comprehension or mis-arity call can execute. Every legitimate
+    arithmetic expression passes unchanged.
+    """
+    try:
+        tree = ast.parse(text, mode="eval")
+    except (SyntaxError, ValueError, MemoryError, RecursionError) as error:
+        raise ValueError(f"unparsable_expression:{type(error).__name__}") from error
+    for node in ast.walk(tree):
+        if isinstance(node, _EFFECTFUL_NODES):
+            raise ValueError(f"effectful_syntax:{type(node).__name__}")
+        if isinstance(node, ast.Call):
+            target = node.func
+            if node.keywords or not isinstance(target, ast.Name) or target.id not in allowed:
+                raise ValueError("effectful_syntax:call_form_not_whitelisted")
+            # sympy exposes ``nargs`` either as a bounded ``FiniteSet`` of
+            # accepted counts or as an unbounded set (``Naturals0``); only a
+            # bounded set may be enforced, and membership already yields a
+            # plain truth value for a concrete argument count.
+            arity = getattr(allowed[target.id], "nargs", None)
+            if arity is None:
+                continue
+            try:
+                if len(node.args) not in arity:
+                    raise ValueError(f"effectful_syntax:wrong_arity:{target.id}")
+            except TypeError:
+                continue
 
 
 class PrimitiveRegistry:
@@ -111,8 +151,14 @@ class PrimitiveRegistry:
     def parse(self, expression: str, n_features: int, evaluate: bool = False) -> sp.Expr:
         text = self.normalize(expression)
         symbols = {f"x{i}": sp.Symbol(f"x{i}", real=True) for i in range(int(n_features))}
-        from .safe_math_parser import parse_math_expression
-        expr = parse_math_expression(text, symbols, self.sympy_locals, evaluate=evaluate)
+        local = dict(self.sympy_locals)
+        local.update(symbols)
+        # Reject effectful syntax before any evaluation can reach Python: the
+        # normalize() token blacklist cannot see attribute access, subscripting,
+        # comprehensions or mis-arity calls. This is a pure syntactic gate, so
+        # every legitimate expression keeps its previous parsed value.
+        _reject_effectful_syntax(text, local)
+        expr = sp.sympify(text, locals=local, evaluate=evaluate)
         unknown = sorted(str(s) for s in expr.free_symbols if str(s) not in symbols)
         if unknown:
             raise ValueError("unknown_symbols:" + ",".join(unknown))

@@ -122,10 +122,8 @@ def _lineage(job: _Job, expression: str, X: np.ndarray) -> str:
 
 
 def _score(expression: str, prediction: np.ndarray, target: np.ndarray, penalty: float) -> tuple[float, float, float]:
-    from hypothesis_mvp.discovery.equation_runtime import PrimitiveRegistry
     mse = float(evaluate_predictions(target, prediction, None, None)["mse_val"])
-    feature_count = 1 + max((int(v) for v in re.findall(r"\bx(\d+)\b", expression)), default=-1)
-    complexity = float(sp.count_ops(PrimitiveRegistry().parse(expression, feature_count, evaluate=True), visual=False))
+    complexity = float(sp.count_ops(sp.sympify(expression), visual=False))
     collapse = 0.0
     if not re.search(r"\bx\d+\b", expression):
         baseline = float(np.mean((target - np.mean(target)) ** 2))
@@ -156,9 +154,7 @@ def _execute(
         results = []
         symbols = tuple(sp.Symbol(f"x{i}") for i in range(X_val.shape[1]))
         for rank, expression in enumerate(expressions):
-            from hypothesis_mvp.discovery.equation_runtime import PrimitiveRegistry
-            parsed = PrimitiveRegistry().parse(expression, len(symbols), evaluate=True)
-            function = sp.lambdify(symbols, parsed, "numpy")
+            function = sp.lambdify(symbols, sp.sympify(expression), "numpy")
             with np.errstate(all="ignore"):
                 prediction = function(*X_val.T)
             if np.isscalar(prediction):
@@ -200,12 +196,10 @@ def _run_jobs(
     *, parallel: bool, workers: int, timeout_s: float,
 ) -> list[tuple[tuple[EngineResult, ...], EngineRunRecord]]:
     values = asdict(config)
-    if os.environ.get("FORMULA_ENGINE_PROCESS_ISOLATION", "1") != "0":
-        if not parallel or len(jobs) == 1:
-            return [_execute_isolated(job, values, arrays, timeout_s) for job in jobs]
-        with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
-            return list(executor.map(
-                lambda job: _execute_isolated(job, values, arrays, timeout_s), jobs))
+    if os.environ.get("FORMULA_ENGINE_PROCESS_ISOLATION") == "1":
+        return [
+            _execute_isolated(job, values, arrays, timeout_s)
+            for job in jobs]
     if not parallel or len(jobs) == 1:
         return [_execute(job, values, *arrays) for job in jobs]
     output: list[tuple[tuple[EngineResult, ...], EngineRunRecord]] = []
@@ -249,7 +243,7 @@ def _execute_isolated(job, values, arrays, timeout_s):
             result = receiver.recv()
             process.join(5.)
             if (not isinstance(result, tuple) or len(result) != 2
-                    or isinstance(result[0], str)):
+                    or result[0] == "worker-error"):
                 raise RuntimeError("isolated engine worker failed")
             return result
         process.terminate()
