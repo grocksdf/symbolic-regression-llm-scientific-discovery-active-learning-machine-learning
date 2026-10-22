@@ -6,7 +6,7 @@ This branch is a clean source snapshot exported from:
 
 - upstream project: `deep-symbolic-mathematics/llm-srbench`
 - local source branch: `codex/restart-experiment-adapter`
-- source commit: `68a40647` (Bind both JuliaCall runtime variables in the child from the frozen Gate)
+- source commit: `d8bceca7` (Add the R-v2 cumulative execution-audit hotfix)
 
 The snapshot intentionally excludes the upstream Git history because that
 history contains experimental ledgers larger than GitHub's 100 MB per-file
@@ -230,6 +230,54 @@ hard-coded condition-string tests for the gap cycle with the
 so Arm B's non-iterative `three_arm_formula_no_gap_block` condition is legal.
 No scoring rule, statistical method, resample count or bootstrap seed is
 touched, and no historical row is rescored.
+
+The 2026-10-22 increment brings the branch up to local source commit
+`d8bceca7`. It is the R-v2 rerun gate: the execution-audit hotfix for the
+72-child C/D/R design, in `scripts/feedback_repair_audit.py`,
+`scripts/feedback_repair_contract.py`, `scripts/run_feedback_repair.py`,
+`scripts/build_feedback_repair_registration.py`,
+`scripts/run_feedback_repair_runtime_gate.py`,
+`scripts/verify_feedback_repair_child_emitter.py` and
+`tests/test_feedback_repair_audit_offline.py`, plus the no-response acceptance
+harness `scripts/Invoke-FeedbackRepairNoResponseAcceptance.ps1`.
+
+The hotfix makes four families of guarantees. Child identity: the result JSON
+must agree with the artifact on task, seed (a strict JSON integer), family and
+condition, the artifact carries `task_name`, and every path must resolve inside
+the child's own output directory; conflicting or genuinely out-of-bounds
+coordinates are rejected. Generation isolation: a successful payload states all
+of `test_or_ood_accessed`, `heldout_opened`, `ground_truth_expression_opened`
+and `sealed_response_values_decoded` explicitly as false, and a missing, true
+or non-boolean flag fails; contradictory flags already inside the artifact are
+rejected too. Provider cost: the evidence is captured from the successful
+payload before the identity, artifact and engine checks run, fsynced and read
+back, and retained on nonzero exit, timeout and failure artifacts, while any
+capture conflict, fsync failure or illegal record ends the child as `failed`
+rather than `generated`. Runtime gate: public input symbols are checked against
+a fail-closed whitelist, and both synthetic engines go through the production
+scheduler's isolated dispatch under `FORMULA_ENGINE_PROCESS_ISOLATION=1`
+instead of an in-process `fit()` call.
+
+*How this was applied.* The hotfix is cumulative onto an
+`feedback-r-v2-complete-benchmark.patch` state that this branch has never
+carried, so four of its seven files had no base here and `git apply` refused.
+The delivered final files were copied in instead, and their blobs were verified
+equal to the patch's own target index for all seven files, so the result is
+byte-identical to a clean application. This is recorded because the inbound
+package states the hotfix must not be stacked blindly.
+
+*One known environment limitation.* In this Windows account
+`Path.symlink_to()` returns without raising but produces a link that does not
+exist, so `test_symlink_to_external_artifact_rejected` raises
+`FileNotFoundError` at the later `resolve(strict=True)` before the symlink
+guard is reached: 58 passed, 1 failed. The guard itself is correct; the test
+needs an account that can create symlinks.
+
+No R-v2 generation, skeleton quota, admission, posterior, scorer, C/D
+configuration, v1/v2 protocol or statistical threshold is changed by this
+increment, and the mechanistic interpretation boundary is untouched. No scoring
+rule, statistical method, resample count or bootstrap seed is touched, and no
+historical row is rescored.
 
 Canonical scientific-system code and the compact experiment-evidence index
 live on the repository's `main` branch.
