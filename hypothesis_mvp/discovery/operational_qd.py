@@ -215,6 +215,9 @@ def fit_emitter_credit(
 ) -> dict[str, Mapping[str, float]]:
     if not 0.5 < credible_level < 1.0:
         raise ValueError("invalid emitter credible level")
+    keys = [(row.task_identity, row.emitter) for row in evidence]
+    if len(keys) != len(set(keys)):
+        raise ValueError("duplicate task/emitter evidence")
     output = {}
     for emitter in sorted({row.emitter for row in evidence}):
         rows = [row for row in evidence if row.emitter == emitter]
@@ -242,7 +245,8 @@ def _candidate_metrics(candidate, support_count):
     complexity = float(metrics.get("complexity", support_count))
     invalid = int(metrics.get("invalid_predictions", 0))
     verified = bool(
-        np.isfinite(val_nmse) and np.isfinite(complexity)
+        {"val_nmse", "complexity", "invalid_predictions"}.issubset(metrics)
+        and np.isfinite(val_nmse) and np.isfinite(complexity)
         and complexity >= 0.0 and invalid == 0)
     quality = -val_nmse if np.isfinite(val_nmse) else -np.finfo(float).max
     return quality, max(0.0, complexity), verified
@@ -306,16 +310,16 @@ def build_operational_qd_repertoire(
                 exploration_identity=qd_identity,
                 measurement_budget=measurement_budget)
             quality, complexity, verified = _candidate_metrics(
-                candidate, max(0, len(support) - 1))
+                candidate, sum(term != "intercept" for term in support))
         except Exception:
             lower = np.zeros(len(descriptor_actions), dtype=float)
             quality, complexity, verified = (
                 -np.finfo(float).max,
-                float(max(0, len(support) - 1)), False)
+                float(sum(term != "intercept" for term in support)), False)
         elite = OperationalQDElite(
             identity, str(candidate["expression"]),
             source_family(candidate),
-            operational_descriptor(lower, max(0, len(support) - 1)),
+            operational_descriptor(lower, sum(term != "intercept" for term in support)),
             float(np.max(lower)), quality, complexity, verified)
         archive.add(elite)
         rows_by_identity[identity] = dict(candidate)

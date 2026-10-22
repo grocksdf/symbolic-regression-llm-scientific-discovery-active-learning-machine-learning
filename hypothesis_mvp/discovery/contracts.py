@@ -88,6 +88,7 @@ class DiscoveryConfig:
     synthesis_evaluation_reserve: int = 0
     max_rounds: int = 3
     candidates_per_island: int = 4
+    feedback_generation_policy: str = "legacy"
     new_skeleton_quota: int = 0
     patience: int = 2
     max_complexity: int = 160
@@ -178,6 +179,7 @@ class DiscoveryConfig:
             synthesis_evaluation_reserve=int(_pick(m, "synthesis_evaluation_reserve", 0)),
             max_rounds=min(8, max(1, _env_int("HYPOTHESIS_DISCOVERY_MAX_ROUNDS", int(_pick(m, "max_rounds", 3))))),
             candidates_per_island=candidates,
+            feedback_generation_policy=str(_pick(m, "feedback_generation_policy", "legacy")),
             new_skeleton_quota=quota,
             patience=max(1, _env_int("HYPOTHESIS_DISCOVERY_PATIENCE", int(_pick(m, "patience", 2)))),
             max_complexity=max(16, _env_int("HYPOTHESIS_DISCOVERY_MAX_COMPLEXITY", int(_pick(m, "max_complexity", 160)))),
@@ -200,11 +202,7 @@ class DiscoveryConfig:
             optimizer_maxiter=max(20, _env_int("HYPOTHESIS_DISCOVERY_OPTIMIZER_MAXITER", int(_pick(m, "optimizer_maxiter", 220)))),
             max_abs_coefficient=max(1.0, _env_float("HYPOTHESIS_DISCOVERY_MAX_ABS_COEFFICIENT", float(_pick(m, "max_abs_coefficient", 1.0e4)))),
             random_seed=int(_pick(m, "random_seed", 0)),
-            llm_temperature=max(0.0, min(1.5, _env_float("HYPOTHESIS_DISCOVERY_LLM_TEMPERATURE", float(_pick(m, "llm_temperature", 0.25))))),
-            llm_max_tokens=max(700, _env_int("HYPOTHESIS_DISCOVERY_LLM_MAX_TOKENS", int(_pick(m, "llm_max_tokens", 1800)))),
-            llm_timeout_s=max(10.0, _env_float("HYPOTHESIS_DISCOVERY_LLM_TIMEOUT_S", float(_pick(m, "llm_timeout_s", 150.0)))),
-            llm_attempts=max(1, _env_int("HYPOTHESIS_DISCOVERY_LLM_ATTEMPTS", int(_pick(m, "llm_attempts", 3)))),
-            llm_retry_backoff_s=max(0.0, _env_float("HYPOTHESIS_DISCOVERY_LLM_RETRY_BACKOFF_S", float(_pick(m, "llm_retry_backoff_s", 4.0)))),
+            **_provider_config(m),
             structure_library_topk=(max(0, _env_int(
                 "HYPOTHESIS_DISCOVERY_LIBRARY_TOPK",
                 int(_pick(m, "structure_library_topk", 8))))
@@ -243,6 +241,15 @@ class DiscoveryConfig:
         )
 
 
+def _provider_config(m):
+    return dict(
+        llm_temperature=max(0.0, min(1.5, _env_float("HYPOTHESIS_DISCOVERY_LLM_TEMPERATURE", float(_pick(m, "llm_temperature", 0.25))))),
+        llm_max_tokens=max(700, _env_int("HYPOTHESIS_DISCOVERY_LLM_MAX_TOKENS", int(_pick(m, "llm_max_tokens", 1800)))),
+        llm_timeout_s=max(10.0, _env_float("HYPOTHESIS_DISCOVERY_LLM_TIMEOUT_S", float(_pick(m, "llm_timeout_s", 150.0)))),
+        llm_attempts=max(1, _env_int("HYPOTHESIS_DISCOVERY_LLM_ATTEMPTS", int(_pick(m, "llm_attempts", 3)))),
+        llm_retry_backoff_s=max(0.0, _env_float("HYPOTHESIS_DISCOVERY_LLM_RETRY_BACKOFF_S", float(_pick(m, "llm_retry_backoff_s", 4.0)))))
+
+
 class DiscoveryPhase(str, Enum):
     INITIALIZE = "initialize"
     DETERMINISTIC_EXPLORE = "deterministic_explore"
@@ -276,6 +283,9 @@ class LineageStep:
     after_metrics: Mapping[str, Any]
     refit: Mapping[str, Any]
     retention: Mapping[str, Any]
+    generation_stream: str = ""
+    generation_slot: int = 0
+    generation_context_hash: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)

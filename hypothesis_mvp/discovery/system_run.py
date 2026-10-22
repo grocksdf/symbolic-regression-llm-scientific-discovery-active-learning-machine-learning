@@ -98,7 +98,10 @@ def audit_decision_risk_target(model, target, actions, exact_epsabs):
     upper = exact.scores + exact.quadrature_errors
     leader = int(np.argmax(lower))
     resolution = float(len(actions) * exact_epsabs)
+    rank_resolved = all(lower[leader] > upper[index] + resolution
+                        for index in range(len(lower)) if index != leader)
     decisions = {
+        "action_ranking_resolved": rank_resolved,
         "all_intervals_finite_and_ordered": bool(
             np.all(np.isfinite(lower)) and np.all(np.isfinite(upper))
             and np.all(lower <= upper)),

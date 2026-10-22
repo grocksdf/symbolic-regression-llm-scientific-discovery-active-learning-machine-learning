@@ -163,8 +163,10 @@ closed. The P3D.2 result audit and P3E.1 root-cause matrix are in
 `docs/pcpi_p3e1_root_cause_and_update_coherence.md`. The subsequent
 posterior-adequacy contract is in
 `docs/pcpi_p3e2_posterior_adequacy_repair.md`.
-The current P3F.2 source tree passes the full collected test suite; the exact
-count is recorded in `DELIVERY_MANIFEST.json`.
+The historical P3F.2 source tree passed its collected test suite; the exact
+count was recorded in the historical P3F.2 `DELIVERY_MANIFEST.json`; that
+manifest does not describe the current tree. Current feedback-repair scope and
+validation are documented in `docs/feedback_repair_v2.md`.
 
 The frozen real-audit protocol covers CCPP only, because the
 registered P3E.2 e-process guarantee requires the proper `eta=1` nominal

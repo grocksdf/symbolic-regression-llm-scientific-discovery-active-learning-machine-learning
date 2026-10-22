@@ -94,6 +94,7 @@ class DiscoveryAgentConfig:
     posterior_gap_directed: bool = False
     iterative_posterior_refinement: bool = False
     mask_posterior_gap_from_generation: bool = False
+    feedback_generation_policy: str = "legacy"
     synthesis_evaluation_reserve: int = 0
     skill_reliability: Mapping[str, Mapping[str, float]] = field(
         default_factory=dict)
@@ -276,6 +277,8 @@ class DiscoveryAgent:
         self, config: DiscoveryAgentConfig,
         provider_settings: ProviderSettings | None = None,
     ) -> None:
+        from .feedback_generation import validate_policy
+        validate_policy(config)
         self.config = config
         self.provider_settings = provider_settings
         if config.expanded_formula_synthesis and (
@@ -532,8 +535,10 @@ class DiscoveryAgent:
         context = dict(orchestration_context or {})
         context["seed_bank"] = seed_audit
         context["typed_inner_augmentation"] = self.config.typed_inner_augmentation
+        context["generation_cycle"] = cycle
         gap_allowed = (
-            self.config.mask_posterior_gap_from_generation
+            self.config.feedback_generation_policy != "legacy"
+            or self.config.mask_posterior_gap_from_generation
             or not self.config.posterior_gap_directed
             or bool(context.get(
                 "posterior_gap_brief", {}).get("propose_allowed")))
@@ -563,6 +568,7 @@ class DiscoveryAgent:
                 "max_rounds": self.config.discovery_rounds,
                 "candidates_per_island": self.config.candidates_per_island,
                 "new_skeleton_quota": self.config.new_skeleton_quota,
+                "feedback_generation_policy": self.config.feedback_generation_policy,
             }),
             provider_settings=(self.provider_settings if gap_allowed and (
                 not self.config.typed_evidence_synthesis
@@ -1079,6 +1085,10 @@ class DiscoveryAgent:
             for round_row in final.report.get("llm_rounds", ())
             for island in round_row.get("islands", ())]
         masked = self.config.mask_posterior_gap_from_generation
+        protected = self.config.feedback_generation_policy != "legacy"
+        if protected:
+            from .feedback_generation import verify_slot_audits
+            verify_slot_audits(proposal_audits, gap["prompt"])
         if gap["prompt"].get("propose_allowed") and not masked:
             if not proposal_audits or any(
                     row.get("posterior_gap_identity") != brief_identity
@@ -1093,6 +1103,9 @@ class DiscoveryAgent:
         else:
             payload_identity = (brief_identity if not proposal_audits else
                 proposal_audits[0]["posterior_gap_identity"])
+        if protected:
+            payload_identity = brief_identity
+        from .feedback_generation import generation_diagnostics
         return {
             "bank_before": gap["model"].stable_hash,
             "core_rows_before": [dict(r) for r in gap["core_rows"]],
@@ -1102,6 +1115,9 @@ class DiscoveryAgent:
             "gap_identity": brief_identity,
             "proposal_gap_identity": payload_identity,
             "generation_gap_masked": masked,
+            "generation_policy": self.config.feedback_generation_policy,
+            "generation_slots": [slot for row in proposal_audits
+                                 for slot in row.get("generation_slots", ())],
             "bank_after": after_model.stable_hash,
             "posterior_after": after_target.stable_hash,
             "bank_supports_after": [support_key(r) for r in after_rows],
@@ -1109,6 +1125,8 @@ class DiscoveryAgent:
             "posterior_map_structure_id": map_id,
             "posterior_map_expression": map_expressions[0],
             "admitted_supports": [support_key(r) for r in retained],
+            "admitted_lineages": [str(r.get("lineage_id", "")) for r in retained],
+            "generation_diagnostics": generation_diagnostics(final.report),
             "fit_rows": sorted(selection.development.row_fingerprints),
             "selection_rows": sorted(selection.validation.row_fingerprints),
             "gap_rows": sorted(cycle_audit.row_fingerprints),

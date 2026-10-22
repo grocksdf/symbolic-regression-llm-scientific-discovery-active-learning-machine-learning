@@ -1,0 +1,199 @@
+{
+  "baseline_benchmark_commit": "7ad6065f2722d9d7bed0e4bcfcd8dcaefc6e0cc1",
+  "baseline_main_commit": "a5e275ee4fda5a7f9b3c26c9e0e612d3a82ded5f",
+  "benchmark_tests": {
+    "all_passed": true,
+    "junit_sha256": "346ba6aeda48fa025389441092ee7cb4a7bdeb501325c7559d6a6ab107782aa1",
+    "test_count": 38,
+    "test_ids": [
+      "tests.test_drr_adapter_contract::test_candidate_pool_recovers_distinct_core_before_optional_sources",
+      "tests.test_drr_adapter_contract::test_drr_adapter_public_signature_has_no_test_or_ood_surface",
+      "tests.test_drr_adapter_contract::test_drr_split_never_exports_action_targets",
+      "tests.test_drr_adapter_contract::test_operational_qd_handover_requires_prefix_noninferiority",
+      "tests.test_drr_adapter_contract::test_operational_qd_replaces_optional_topk",
+      "tests.test_drr_adapter_contract::test_prefix_adapter_has_fixed_response_free_surface",
+      "tests.test_drr_adapter_contract::test_protected_backbone_support_overrides_optional_engine_family",
+      "tests.test_drr_adapter_contract::test_three_arm_split_is_complete_disjoint_and_response_sealed",
+      "tests.test_drr_searcher_configs::test_drr_conditions_use_true_agent_variants",
+      "tests.test_drr_searcher_configs::test_three_arm_configs_match_engine_and_llm_budgets",
+      "tests.test_feedback_mechanism_factorial_contract::test_factorial_arms_differ_only_in_registered_mechanism_flags",
+      "tests.test_feedback_mechanism_factorial_contract::test_factorial_contrasts_are_task_paired_and_have_expected_signs",
+      "tests.test_feedback_mechanism_factorial_contract::test_mask_is_not_a_general_configuration_escape_hatch",
+      "tests.test_feedback_repair_v2::test_engine_usage_deduplicates_reused_cycle_evidence",
+      "tests.test_feedback_repair_v2::test_exact_72_matrix_primary_and_precommitted_selection",
+      "tests.test_feedback_repair_v2::test_frozen_primary_bank_must_match_actual_admitted_trace",
+      "tests.test_feedback_repair_v2::test_hidden_response_objects_are_not_coerced_by_role_split",
+      "tests.test_feedback_repair_v2::test_incomplete_generation_matrix_never_opens_reporting",
+      "tests.test_feedback_repair_v2::test_invalid_prediction_is_not_a_perfect_reduced_sample[-inf]",
+      "tests.test_feedback_repair_v2::test_invalid_prediction_is_not_a_perfect_reduced_sample[inf]",
+      "tests.test_feedback_repair_v2::test_invalid_prediction_is_not_a_perfect_reduced_sample[nan]",
+      "tests.test_feedback_repair_v2::test_primary_never_uses_evaluated_bank",
+      "tests.test_feedback_repair_v2::test_registration_refuses_admission_or_scorer_changes",
+      "tests.test_feedback_repair_v2::test_reporting_opens_only_after_durable_whole_matrix_freeze",
+      "tests.test_feedback_repair_v2::test_train_only_loader_never_opens_other_tasks_or_test_datasets",
+      "tests.test_feedback_repair_v2::test_train_only_metadata_projects_out_formula_before_loading",
+      "tests.test_feedback_repair_v2::test_train_only_pipeline_does_not_touch_evaluation_properties",
+      "tests.test_feedback_repair_v2::test_v1_archive_identity_and_only_generation_config_changes",
+      "tests.test_feedback_repair_v2::test_worker_boundary_failures_remain_children_without_retry",
+      "tests.test_feedback_repair_v2::test_wrong_runtime_gate_fails_without_backend_or_scientific_access",
+      "tests.test_hypothesis_mvp_mainline_contract::test_active_adapter_contains_no_scientific_runtime_copy",
+      "tests.test_hypothesis_mvp_mainline_contract::test_mainline_exports_the_only_adapter_contract",
+      "tests.test_hypothesis_mvp_mainline_contract::test_paper_profile_locks_published_experiment_constants",
+      "tests.test_iterative_formula_roles::test_expanded_candidate_export_keeps_nonlinear_support",
+      "tests.test_iterative_formula_roles::test_iterative_roles_reject_duplicate_or_insufficient_indices",
+      "tests.test_iterative_formula_roles::test_post_generation_reporting_includes_no_admission_task",
+      "tests.test_iterative_formula_roles::test_searcher_forwards_two_role_pairs_and_exports_admitted_map",
+      "tests.test_iterative_formula_roles::test_two_cycle_roles_partition_only_gap_and_admission"
+    ]
+  },
+  "claim_boundary": "Implementation correctness follow-up only; no admitted-bank improvement or mechanism efficacy claim.",
+  "date": "2026-10-21",
+  "development_experiment_executed": false,
+  "experiment_provider_calls": 0,
+  "mainline_tests": {
+    "all_passed": true,
+    "junit_sha256": "617437d97dc30ab625eff754a7811deb58c1c6c8083642c314270c4373b4732f",
+    "test_count": 28,
+    "test_ids": [
+      "tests.test_feedback_generation_repair::test_actual_inner_runtime_protects_blind_and_never_expands_slots[False]",
+      "tests.test_feedback_generation_repair::test_actual_inner_runtime_protects_blind_and_never_expands_slots[True]",
+      "tests.test_feedback_generation_repair::test_blind_payload_is_invariant_to_gap_and_other_slot_state",
+      "tests.test_feedback_generation_repair::test_invalid_second_slot_does_not_trigger_provider_repair",
+      "tests.test_feedback_generation_repair::test_no_winner_does_not_stop_protected_round_schedule",
+      "tests.test_feedback_generation_repair::test_outer_agent_routes_abstention_to_actual_protected_runtime",
+      "tests.test_feedback_generation_repair::test_policy_only_accepts_registered_two_slot_design",
+      "tests.test_feedback_generation_repair::test_raw_protocol_accepts_both_registered_slots_with_real_lineages[False]",
+      "tests.test_feedback_generation_repair::test_raw_protocol_accepts_both_registered_slots_with_real_lineages[True]",
+      "tests.test_feedback_generation_repair::test_raw_protocol_blind_new_skeleton_rejects_its_own_parent_without_retry",
+      "tests.test_feedback_generation_repair::test_slot_audit_rejects_empty_repeated_batches_and_reused_lineages",
+      "tests.test_feedback_generation_repair::test_slot_audit_rejects_invalid_budget_and_batch_bindings[candidate_count--1]",
+      "tests.test_feedback_generation_repair::test_slot_audit_rejects_invalid_budget_and_batch_bindings[candidate_count-True]",
+      "tests.test_feedback_generation_repair::test_slot_audit_rejects_invalid_budget_and_batch_bindings[candidate_lineages-value2]",
+      "tests.test_feedback_generation_repair::test_slot_audit_rejects_invalid_budget_and_batch_bindings[fallback-True]",
+      "tests.test_feedback_generation_repair::test_slot_audit_rejects_invalid_budget_and_batch_bindings[new_skeleton_quota-True]",
+      "tests.test_feedback_generation_repair::test_slot_audit_rejects_invalid_budget_and_batch_bindings[round_id-2]",
+      "tests.test_iterative_posterior_feedback::test_admission_changes_actual_frozen_posterior_used_by_second_gap",
+      "tests.test_iterative_posterior_feedback::test_inner_proposal_context_binds_actual_gap_identity",
+      "tests.test_iterative_posterior_feedback::test_masked_generation_control_hides_gap_but_forwards_admission",
+      "tests.test_iterative_posterior_feedback::test_nonclosed_formula_uses_expanded_independent_admission",
+      "tests.test_iterative_posterior_feedback::test_old_paired_runner_rejects_adaptive_mode_before_output",
+      "tests.test_iterative_posterior_feedback::test_reused_cycle_response_role_fails_before_output",
+      "tests.test_proposal_protocol::test_all_invalid_candidates_trigger_one_protocol_repair",
+      "tests.test_proposal_protocol::test_invalid_y_hat_candidate_does_not_discard_valid_peer",
+      "tests.test_proposal_protocol::test_provider_failure_is_explicit_without_aborting_search",
+      "tests.test_proposal_protocol::test_top_level_protocol_error_triggers_one_audited_repair",
+      "tests.test_proposal_protocol::test_y_assignment_is_normalized_to_rhs"
+    ]
+  },
+  "new_scientific_data_accessed": false,
+  "pre_fix_reproductions": [
+    {
+      "log_sha256": "af058b0bdcf88d5565d3bcb487b3e5458c102d5a8d56f86c1bcf24152a3c8888",
+      "observed": "parent accepted as PROPOSE_NEW_SKELETON before incumbent binding fix",
+      "test": "raw_protocol_blind_new_skeleton_rejects_its_own_parent_without_retry"
+    },
+    {
+      "log_sha256": "9a2399c82061c9d9896f5867a0edb78de9743544e89bd2ed0f3a907c070aef3b",
+      "observed": "71-child matrix triggered reporting callback before completeness rejection",
+      "test": "incomplete_generation_matrix_never_opens_reporting"
+    }
+  ],
+  "previous_validation_preserved": true,
+  "previous_validation_sha256": "00c4402f57c2bff85160390aaa63c4e0f01026b86fd1a4d918c9b38250fe0f7c",
+  "protocol_identities": {
+    "canonical_json": {
+      "protocols/archive/feedback_repair_v1.json": "436eb6ef875b6713045e647f411e95c7bdf575d57e1984caa3e6ddb131bfb243",
+      "protocols/feedback_repair_v2.json": "815d6f137f908efd2f459935e4d3d3fe1bcaf5a59675205763c9a92f546f33e6"
+    },
+    "execution_authorized": false,
+    "hash_algorithm": "SHA-256",
+    "historical_forensics_raw_sha256": "186d16b11427f71b1efab1438f592850ec1df424ffd46df67379e46e58daf9bf",
+    "raw_bytes": {
+      "configs/feedback_mechanism_C_masked_generation_update.yaml": "01efe5d6eaffca754a900ebf8d5949dd41ad29ef73cc1f7d3873ca7482909552",
+      "configs/feedback_mechanism_D_full.yaml": "f4ac7302d45fc9288793fe63df65a12decb84ebb547b74b6e858971445d01a0d",
+      "configs/feedback_repair_R_v2.yaml": "27f5e5114d0057bfe14714ed49f507ad32473253ff6a94d86837b50dc1962cab",
+      "protocols/archive/feedback_repair_v1.json": "5e30aea594307ff4606fe2528e458b72546e893d8e8a757fa071f5093628b2a2",
+      "protocols/feedback_repair_v2.json": "9ea869b1733d9511c0bc79aa302302e7caf2d79859d0003b1ce0a42240a15d15"
+    },
+    "schema": "feedback-repair-input-identities-v2"
+  },
+  "pysr_actual_runtime_gate": "Still pending in the registered user runtime; PySR is absent in this environment.",
+  "regression_scope": "Changed generation/parser boundary and matrix/reporting boundary; not a full historical-suite rerun.",
+  "schema": "feedback-repair-v2-followup-correctness",
+  "source_audit": {
+    "failure_count": 0,
+    "failures": [],
+    "llm_transport_modules": [
+      "discovery/proposal_runtime.py"
+    ],
+    "maximum_function": {
+      "file": "pcpi/open_target/particle.py",
+      "lines": 556,
+      "name": "run"
+    },
+    "python_file_count": 188,
+    "python_line_count": 68097,
+    "status": "passed",
+    "verified_legacy_long_functions": [
+      "discovery/agent.py:_independent_gap_brief=118:f43e5c9b43c98d7c06dfe6aa9983cd28de885191dcd59ae52257e1a6818c705b",
+      "discovery/proposal_runtime.py:_normalize_scientist_review=82:e9d862fea5c5f52e861ab6950f769a8cb46c86b1e92f5e1fb5b9d38166531023",
+      "discovery/system_ablation.py:_run_variant=107:57f1049e56d0c35101711e4ef7de0c872edce352bb824f86bff6d948a1088eba",
+      "discovery/system_ablation.py:run_exploration_ablations=154:3ffe054c0e6beceed9a3fc82fb5aa308ae43c42f24e16c7cac1c07898bf53131",
+      "discovery/system_ablation.py:_screen_gap_candidates=141:ef180a729ba69e339d0c08c89206d7074d91a7df042ef5aeb0983461d03f9291",
+      "discovery/system_executor.py:execute_registered_system=104:2a042ec595d7e7a7e5d79234d02fb78be0bbbc69f75c4840a4c9834e5908a9e6",
+      "pcpi/open_target/adapted_knot.py:run=342:1aaf9a37c00613b7af4ff976f2b23619e4c1eee6567d60d3c928760f4f13afa5",
+      "pcpi/open_target/full_population.py:run=243:5255fd51d7fa47e1b8a6ba4fbfeb85be2b8c13fa4335add8b35ca6cbc60b6915",
+      "pcpi/open_target/particle.py:proposal_invariance_certificate=156:06bdde579332a316f0c8f750bc1d4cc1d8bfe2bfe951ffda1f68f7538ab23ce7",
+      "pcpi/open_target/particle.py:__post_init__=165:b85b5b8676f5ff59c172b0ae4cd4800bee129e20494e51d0300a73f488b20939",
+      "pcpi/open_target/particle.py:__post_init__=102:15a1b92b5f49910362da372d766c85d8b84e4629cef3f35886bf4a3e23a85ebe",
+      "pcpi/open_target/particle.py:evidence_record=134:5b6125697f4773e0bbcc9f7e293654aeb7ee7636b60b093552f621e54271042d",
+      "pcpi/open_target/particle.py:_rejuvenate=320:e49c067b10be3f727a3eabd5cd7b075ecb7de9fb6d3877458f40599575c8f934",
+      "pcpi/open_target/particle.py:_compress_waste_free_pool=105:37546caf10a3ef8e242fc4790040ab1e058f4c914ec4fd1315c16ff9dd7957fb",
+      "pcpi/open_target/particle.py:run=556:6d7a9ad167d8ea589bbdbf821fb8a3983ce547456d4523a7c238939f357fd0bd",
+      "pcpi/open_target/raw_state_anchor.py:build_raw_state_envelope_anchor_plan=137:630da7525e76906870c2d9466b355b86beeeb433d5de639b9ff307ba5523d15a",
+      "pcpi/open_target/resident_h0_parameter_balls.py:certify_state=129:b572b035067ba628fe0caf7191a8d3658447097bac7de854858e42a134400f70"
+    ]
+  },
+  "source_files": {
+    "benchmark": {
+      "scripts/feedback_repair_contract.py": "08007a02dd2330f327f5a21db70d386189fddf0459990459fd98808e1e7a318f",
+      "scripts/run_feedback_repair.py": "a57522c1b8534b1ab8d819822fd8547524a1bc4ca944630bb0d50a81d655c685",
+      "tests/test_feedback_repair_v2.py": "db381988dfea3902f1581b37f3404fa7d9c4765a9714005fa4a38e70fa23d02b"
+    },
+    "mainline": {
+      "hypothesis_mvp/discovery/feedback_generation.py": "deb58c420ec28e8349a560da9070f22e87d38792c404098bd5d3611d16795a68",
+      "tests/test_feedback_generation_repair.py": "5c5b214c347220b949eea56f63f017a8ee076b9a31a165d0e44bef11b5abc722"
+    }
+  },
+  "statistics_equivalence": {
+    "contrasts": {
+      "D_minus_C": {
+        "ci95": [
+          -0.13602336635510817,
+          0.13671286842881122
+        ],
+        "task_mean": 0.001785375160399889
+      },
+      "R_minus_C": {
+        "ci95": [
+          -0.24206110456721475,
+          0.2698140193556254
+        ],
+        "task_mean": 0.003994350138231901
+      },
+      "R_minus_D": {
+        "ci95": [
+          -0.12686298730291068,
+          0.13358510728547335
+        ],
+        "task_mean": 0.0022089749778320075
+      }
+    },
+    "development_selected": false,
+    "protected_functions_preserved": 8,
+    "protocol_C_D_and_R_config_raw_hashes_unchanged": true,
+    "results_bit_identical": true,
+    "schema": "feedback-repair-followup-statistics-equivalence",
+    "synthetic_fixture_only": true
+  }
+}

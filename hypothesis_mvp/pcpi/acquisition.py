@@ -498,39 +498,22 @@ def exact_class_decision_risk_reduction_shared_actions(
     posterior Bayes accuracy after observing ``y`` has expectation
     ``integral max_c p(c,y) dy``.  Subtracting the prior Bayes accuracy
     ``max_c p(c)`` gives the exact expected reduction in 0--1 decision risk.
+    Outward Arb cell bounds cover the supplied binary mixture, including tails.
+    Parameter construction rounding is outside this conditional certificate.
     The calculation accepts predictive components only and is response-free.
     """
 
     if (not np.isfinite(epsabs) or not np.isfinite(epsrel)
             or epsabs <= 0.0 or epsrel <= 0.0):
         raise ValueError("decision-risk integration tolerances must be positive and finite")
-    weights = components.structure_probabilities
-    locations, scales = components.locations, components.scales
-    degrees = components.degrees_freedom
-    class_count = len(components.partition.class_ids)
-    action_count = locations.shape[1]
+    from .decision_risk_bounds import decision_risk_intervals
+    lower, upper = decision_risk_intervals(components, epsabs=epsabs, epsrel=epsrel)
+    scores = lower / 2. + upper / 2.
+    errors = np.maximum(scores - lower, upper - scores)
+    errors = np.nextafter(errors, np.inf)
+    return ExactEIGResult(scores, errors,
+        error_kind="conditional-float-mixture-arb-cell-enclosure", rigorous_enclosure=False)
 
-    def integrand(value: float) -> np.ndarray:
-        density = student_t.pdf(
-            value, df=degrees[:, None], loc=locations, scale=scales)
-        joint = np.zeros((class_count, action_count), dtype=float)
-        for structure_index, class_index in enumerate(
-                components.partition.structure_to_class):
-            joint[class_index] += weights[structure_index] * density[structure_index]
-        return np.max(joint, axis=0)
-
-    posterior_accuracy, error, info = quad_vec(
-        integrand, -np.inf, np.inf, epsabs=epsabs, epsrel=epsrel,
-        norm="max", limit=250, full_output=True)
-    if (not info.success or not np.isfinite(error)
-            or not np.all(np.isfinite(posterior_accuracy))):
-        raise FloatingPointError("decision-risk quadrature did not converge")
-    prior_accuracy = max(components.partition.class_probabilities)
-    scores = np.maximum(0.0, np.asarray(posterior_accuracy) - prior_accuracy)
-    prior_risk = 1.0 - prior_accuracy
-    if np.any(scores > prior_risk + float(error) + 32.0 * np.finfo(float).eps):
-        raise FloatingPointError("decision-risk reduction exceeds prior Bayes risk")
-    return ExactEIGResult(scores, np.full(action_count, float(error)))
 
 
 def _validated_quantization_levels(

@@ -27,6 +27,9 @@ class DRRPrefixCurve:
         return {
             "schema": "scientific-drr-prefix-curve-v1",
             "method": METHOD,
+            "metric_semantics": "one-step-expected-risk-reduction-over-current-Bayes-risk",
+            "bank_and_partition_reselected_per_prefix": True,
+            "integration_axis": "log2(prefix); no zero-response point",
             "condition": self.condition,
             "prefixes": list(self.prefixes),
             "normalized_lower_bounds": list(

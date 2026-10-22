@@ -300,11 +300,17 @@ For each candidate action, adaptive integration returns an interval
 Eq.~\eqref{eq:riskutility}. An action is released only when one lower bound
 exceeds every competing upper bound by a registered numerical tolerance.
 Otherwise the system abstains or executes the registered reference policy.
-The decision is persisted before one matching response is opened.
+The live runner persists its decision before opening one matching response.
+The lightweight historical replay records selection order; it provides durable
+decisions only when an explicit decision directory is supplied.
 
-For short-prefix screening, we evaluate risks after \(0,8,16,\) and \(32\)
-responses and report normalized risk-reduction AULC. The prefixes and
-normalization are frozen before evaluating a condition. This repaired an
+For short-prefix screening, we recompute the bank and class partition at
+\(8,16,32\) initial responses. At each prefix, the score is a lower bound
+on one-step expected risk reduction divided by the current Bayes risk.
+The reported AULC integrates these ratios over \(\log_2\) prefix size;
+there is no zero-response point. It is not accumulated acquisition benefit
+on a single frozen bank. The prefixes and normalization are frozen before
+evaluating a condition. This repaired an
 earlier binary-readiness statistic that was identically zero across many
 rows.
 

@@ -8,7 +8,7 @@ version = "1.4.0"
 description = "Auditable real-only scientific hypothesis discovery agent"
 requires-python = ">=3.11"
 dependencies = [
-  "numpy>=1.24",
+  "numpy>=2.0",
   "scipy>=1.11",
   "sympy>=1.12",
   "python-flint==0.8.0",

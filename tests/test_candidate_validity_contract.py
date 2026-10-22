@@ -213,18 +213,19 @@ def test_formula_false_has_explicit_unresolved_proof_status():
     assert result['false_is_proof_of_inequivalence'] is False
 
 
-def test_failed_quad_vec_convergence_fails_closed(monkeypatch):
-    from types import SimpleNamespace
+def test_decision_risk_bounds_do_not_trust_quad_vec_convergence(monkeypatch):
+    from scipy.stats import t
     import hypothesis_mvp.pcpi.acquisition as acquisition
     partition = acquisition.ClassPartition(('a', 'b'), ((0,), (1,)), (.5, .5), (0, 1))
     components = acquisition.PredictiveComponents(np.array([.5, .5]), np.array([5., 5.]),
         np.array([[0.], [1.]]), np.ones((2, 1)), partition)
     def failed(*args, **kwargs):
-        assert kwargs['full_output'] is True
-        return np.array([.6]), .1, SimpleNamespace(success=False)
+        raise AssertionError('raw-real-line quad_vec is not a certificate')
     monkeypatch.setattr(acquisition, 'quad_vec', failed)
-    with pytest.raises(FloatingPointError, match='converge'):
-        acquisition.exact_class_decision_risk_reduction_shared_actions(components)
+    result = acquisition.exact_class_decision_risk_reduction_shared_actions(components)
+    truth = t.cdf(.5, 5) - .5
+    assert result.scores[0] - result.quadrature_errors[0] <= truth
+    assert truth <= result.scores[0] + result.quadrature_errors[0]
 
 
 def test_numerical_error_estimate_is_not_reported_as_rigorous_certificate():

@@ -343,6 +343,9 @@ class ScientificDiscoveryRuntime:
         arrays: tuple[np.ndarray, ...],
         refinements: list[dict[str, Any]],
     ) -> tuple[dict[str, EquationState], list[EquationState], list[EquationState], dict[str, Any]]:
+        if self.config.feedback_generation_policy != "legacy":
+            from .feedback_generation import protected_round
+            return protected_round(self, islands, round_id, arrays)
         batches, explorations, memory_audits = self._request_batches(
             islands, round_id, arrays, refinements
         )
@@ -384,6 +387,8 @@ class ScientificDiscoveryRuntime:
         llm_states: list[EquationState] = []
         records: list[dict[str, Any]] = []
         refinements: list[dict[str, Any]] = []
+        if self.config.feedback_generation_policy != "legacy":
+            self._protected_gap_parents = dict(islands)
         for round_id in range(1, self.config.max_rounds + 1):
             if self.evaluation.budget.exhausted:
                 break
@@ -400,7 +405,7 @@ class ScientificDiscoveryRuntime:
                 round_id=round_id, islands=islands,
                 accepted=(*state.accepted, *additions), payload=record,
             )
-            if not additions:
+            if not additions and self.config.feedback_generation_policy == "legacy":
                 break
         return state, llm_states, records
 
@@ -611,6 +616,9 @@ class ScientificDiscoveryRuntime:
             islands=tuple((name, anchor) for name in self.config.islands),
         )
         state = self._transition(state, DiscoveryPhase.INITIALIZE, "anchor_selected")
+        if self.config.feedback_generation_policy != "legacy":
+            from .feedback_generation import initialize_streams
+            initialize_streams(self, seeds, state.island_map())
         deterministic_states: list[EquationState] = []
         deterministic_rounds: list[dict[str, Any]] = []
         if refinement_enabled:

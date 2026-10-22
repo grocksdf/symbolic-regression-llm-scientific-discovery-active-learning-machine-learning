@@ -111,9 +111,8 @@ class PrimitiveRegistry:
     def parse(self, expression: str, n_features: int, evaluate: bool = False) -> sp.Expr:
         text = self.normalize(expression)
         symbols = {f"x{i}": sp.Symbol(f"x{i}", real=True) for i in range(int(n_features))}
-        local = dict(self.sympy_locals)
-        local.update(symbols)
-        expr = sp.sympify(text, locals=local, evaluate=evaluate)
+        from .safe_math_parser import parse_math_expression
+        expr = parse_math_expression(text, symbols, self.sympy_locals, evaluate=evaluate)
         unknown = sorted(str(s) for s in expr.free_symbols if str(s) not in symbols)
         if unknown:
             raise ValueError("unknown_symbols:" + ",".join(unknown))

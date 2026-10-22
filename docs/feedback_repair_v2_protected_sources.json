@@ -1,0 +1,18 @@
+{
+  "benchmark": {
+    "scripts/score_mechanism_arm.py:_dedupe_bank_rows": "65bd3725bc215883a6836acecde3a5b63e46ad498a284aa33740ec48c875615e",
+    "scripts/score_mechanism_arm.py:_freeze_and_score": "7e0d62ca155d15c055b3498cab6d4e7b6fb6f3c36d03159b030ad0368d111c9c",
+    "scripts/score_mechanism_arm.py:_reporting_sets": "16708e7c7a04f6bd5000ea95cfda4e3d53e6d6a2f4bf2bb354010ae6afaec8c7"
+  },
+  "benchmark_base": "b25ace147a2e5a616bffc0d8137b762fc36af247",
+  "function_bodies_identical_to_base": true,
+  "mainline": {
+    "hypothesis_mvp/discovery/agent.py:_admit_cycle_candidates": "b316e3d2749451637ffea8a4d5b770c3243a81949eff3399b7f964d5bd5cd269",
+    "hypothesis_mvp/discovery/agent.py:_independent_gap_brief": "bf387f74bfadca293f153076c470692a609576813e9e8cc187dc7234869ec7fc",
+    "hypothesis_mvp/discovery/agent.py:_update_cycle_posterior": "cce7ea03b51d3213cbd2b93c75bbb502af11c7b82b78ed2d8961ae74ba276a96",
+    "hypothesis_mvp/discovery/realized_drr.py:_independent_predictive_score": "b7bc55b3e602c37b21c6f1372396fa6c490fb1d0a9b8617dcf0d5a3d7b86f004",
+    "hypothesis_mvp/discovery/regional_candidate_admission.py:admit_regional_candidates": "4eaa90f70c829a99d5e9165b4e7d2e0a893bbffef70f3ae5a0b12bd5c3a26565"
+  },
+  "mainline_base": "2cf68b778f2d3303bc6cb43ca7631e6b0aec7e3b",
+  "schema": "feedback-repair-protected-functions-v2"
+}

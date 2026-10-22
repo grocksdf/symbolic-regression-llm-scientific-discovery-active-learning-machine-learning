@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 from hashlib import sha256
+import json
+import os
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import numpy as np
@@ -159,9 +162,36 @@ def _query_record(step, global_index, predicted, upper, local, resolution,
         }
 
 
+def _persist_selection(directory, step, index, actions, posterior):
+    if directory is None:
+        return False
+    decision = {"step": step + 1, "action_index": index,
+                "action_covariate_fingerprint": covariate_fingerprint(actions),
+                "posterior_identity": sha256(repr(posterior).encode()).hexdigest(),
+                "candidate_response_accessed": False}
+    with (Path(directory) / f"DECISION-{step + 1:03d}.json").open("x", encoding="utf-8") as handle:
+        handle.write(json.dumps(decision, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    return True
+
+
+def _validate_reporting(reporting_data, initial, actions, excluded):
+    if reporting_data is None:
+        return
+    if (not isinstance(reporting_data, RoleDataset)
+            or reporting_data.role is not DataRole.VALIDATION
+            or reporting_data.X.shape[1] != initial.X.shape[1] or not excluded):
+        raise ValueError("reporting requires an excluded validation target")
+    # Covariate overlap needs no unselected response validation or decoding.
+    rows = lambda values: {np.ascontiguousarray(row, dtype=float).tobytes() for row in values}
+    if rows(reporting_data.X) & (rows(initial.X) | rows(actions)):
+        raise ValueError("reporting responses overlap discovery or actions")
+
+
 def _run_queries(engine, posterior, partition, actions, responses, remaining,
                  random_order, policy, measurement_budget, reporting_data,
-                 reporting_mse, reporting_log_score, risks, queries):
+                 reporting_mse, reporting_log_score, risks, queries, decision_directory):
     for step in range(measurement_budget):
         available = actions[remaining]
         components = predictive_components_for_partition(
@@ -176,7 +206,10 @@ def _run_queries(engine, posterior, partition, actions, responses, remaining,
             resolution=resolution)
         global_index = int(remaining[local])
         predicted = float(lower[local])
+        persisted = _persist_selection(decision_directory, step, global_index, actions, posterior)
         response = float(responses[global_index])
+        if not np.isfinite(response):
+            raise ValueError("selected action returned a nonfinite response")
         before = risks[-1]
         posterior = engine.update_one(
             posterior, actions[global_index], response)
@@ -190,6 +223,7 @@ def _run_queries(engine, posterior, partition, actions, responses, remaining,
         after = bayes_zero_one_decision_risk(probabilities)
         queries.append(_query_record(step, global_index, predicted, upper, local,
             resolution, selection_mode, certified, exact, before, after))
+        queries[-1]["decision_persisted_before_response"] = persisted
         risks.append(after)
         remaining = np.delete(remaining, local)
     return posterior
@@ -223,28 +257,21 @@ def run_realized_drr_trajectory(
     measurement_budget: int = 2,
     reporting_data: RoleDataset | None = None,
     reporting_excluded_from_selection: bool = False,
+    decision_directory: str | Path | None = None,
 ) -> dict[str, Any]:
     if policy not in {"decision_risk", "random"}:
         raise ValueError("unknown realized DRR policy")
     X0, y0 = _matrix(initial_X, "initial_X"), _vector(
         initial_y, "initial_y")
-    actions, responses = _matrix(action_X, "action_X"), _vector(
-        action_y, "action_y")
+    actions, responses = _matrix(action_X, "action_X"), action_y
     if (len(X0) != len(y0) or len(actions) != len(responses)
             or X0.shape[1] != actions.shape[1]
             or measurement_budget != 2 or len(actions) < measurement_budget):
         raise ValueError("realized DRR arrays or budget are inconsistent")
     initial = RoleDataset(DataRole.DEVELOPMENT, X0, y0)
-    if reporting_data is not None:
-        if (not isinstance(reporting_data, RoleDataset)
-                or reporting_data.role is not DataRole.VALIDATION
-                or reporting_data.X.shape[1] != X0.shape[1]
-                or not reporting_excluded_from_selection):
-            raise ValueError("reporting requires an excluded validation target")
-        action_rows = RoleDataset(DataRole.DEVELOPMENT, actions, responses)
-        if (reporting_data.row_fingerprints & initial.row_fingerprints
-                or reporting_data.row_fingerprints & action_rows.row_fingerprints):
-            raise ValueError("reporting responses overlap discovery or actions")
+    _validate_reporting(reporting_data, initial, actions, reporting_excluded_from_selection)
+    if decision_directory is not None:
+        Path(decision_directory).mkdir(parents=True, exist_ok=False)
     selected, selection = select_operational_capacity_bank(
         candidates, initial, actions,
         n_features=X0.shape[1], prior=NormalInverseGammaPrior(),
@@ -281,7 +308,7 @@ def run_realized_drr_trajectory(
         reporting_log_score.append(log_score)
     posterior = _run_queries(engine, posterior, partition, actions, responses,
         remaining, random_order, policy, measurement_budget, reporting_data,
-        reporting_mse, reporting_log_score, risks, queries)
+        reporting_mse, reporting_log_score, risks, queries, decision_directory)
     metrics = _risk_curve_metrics(risks, measurement_budget)
     payload = {
         "schema": "scientific-realized-drr-trajectory-v1",
@@ -294,6 +321,7 @@ def run_realized_drr_trajectory(
         "selected_bank_identity": selection["target"],
         "candidate_response_accessed": True,
         "action_response_accessed": True,
+        "durable_decisions": decision_directory is not None,
         "test_or_ood_accessed": False,
         "heldout_opened": False,
     }

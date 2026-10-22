@@ -1178,6 +1178,9 @@ class EvaluationRuntime:
             before_metrics=parent.metrics.as_dict(), after_metrics=metrics.as_dict(),
             refit=dict(refit_payload),
             retention={**retention, "declared_action_matches_actual": action_match},
+            generation_stream=proposal.generation_stream,
+            generation_slot=proposal.generation_slot,
+            generation_context_hash=proposal.generation_context_hash,
         )
         return tuple(parent.lineage) + (step,), lineage_id, parent_hash, edit
 

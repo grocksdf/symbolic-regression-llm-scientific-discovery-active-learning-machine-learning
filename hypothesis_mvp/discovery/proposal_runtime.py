@@ -236,6 +236,9 @@ class ProposalCandidate:
     prompt_hash: str = ""
     response_hash: str = ""
     proposal_index: int = 0
+    generation_stream: str = ""
+    generation_slot: int = 0
+    generation_context_hash: str = ""
 
 
 @dataclass(frozen=True)
@@ -1562,16 +1565,21 @@ class ProposalRuntime:
             "structure_prompt_context_hash": hashlib.sha256(library_text.encode()).hexdigest(),
         }
 
+    def _candidate_limit(self, requested):
+        limit = self.candidates_per_island if requested is None else requested
+        if type(limit) is not int or not 1 <= limit <= self.candidates_per_island:
+            raise ProtocolError("invalid_candidate_limit")
+        return limit
+
     def propose(
         self, *, task_name: str, task_desc: str, round_id: int, island: str,
         parent_hash: str, island_context: Mapping[str, Any],
         library_rows: Sequence[Mapping[str, Any]],
         ephemeral_refinements: Sequence[Mapping[str, Any]],
+        max_candidates: int | None = None, allow_protocol_repair: bool = True,
     ) -> ProposalBatch:
-        expanded = (
-            self.equation_runtime.refit_policy
-            == "pcpi-expanded-fixed-inner-v1"
-        )
+        candidate_limit = self._candidate_limit(max_candidates)
+        expanded = self.equation_runtime.refit_policy == "pcpi-expanded-fixed-inner-v1"
         gap_directed = bool(
             island_context.get("posterior_gap_brief", {}).get(
                 "propose_allowed", False)
@@ -1583,14 +1591,14 @@ class ProposalRuntime:
                                    island_context.get("expanded_formula_discovery", False))
                 else 0
             )
-            quota = min(self.candidates_per_island, quota)
+            quota = min(candidate_limit, quota)
         else:
             if (type(supplied_quota) is not int or supplied_quota < 0
-                    or supplied_quota > self.candidates_per_island):
+                    or supplied_quota > candidate_limit):
                 raise ProtocolError("invalid_new_skeleton_quota")
             quota = supplied_quota
         context = ProposalContext(
-            round_id, island, parent_hash, self.n_features, self.candidates_per_island,
+            round_id, island, parent_hash, self.n_features, candidate_limit,
             incumbent_expression=str(island_context.get("current_expression") or ""),
             existing_supports=tuple(tuple(row) for row in
                 island_context.get("posterior_gap_existing_supports", ())),
@@ -1606,7 +1614,7 @@ class ProposalRuntime:
             first = self._request_validated(payload, context)
             responses = [first]
             selected = first
-            if not first.candidates:
+            if not first.candidates and allow_protocol_repair:
                 repair_payload = {
                     **payload,
                     "protocol_repair": {
