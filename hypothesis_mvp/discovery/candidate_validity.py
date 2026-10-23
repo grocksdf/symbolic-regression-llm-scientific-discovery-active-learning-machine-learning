@@ -29,7 +29,7 @@ def _tree(expression, n_features):
     if not isinstance(expression, str) or not 0 < len(expression) <= 4096:
         raise ValueError("invalid validity expression budget")
     root = ast.parse(expression, mode="eval").body
-    if len(list(ast.walk(root))) > 128:
+    if len(list(ast.walk(root))) > 512:
         raise ValueError("validity AST exceeds finite budget")
     for node in ast.walk(root):
         if isinstance(node, ast.Constant) and type(node.value) in (int, float):
