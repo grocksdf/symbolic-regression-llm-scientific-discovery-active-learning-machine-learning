@@ -14,6 +14,8 @@ import re
 
 import numpy as np
 
+from hypothesis_mvp.hypotheses.expression_limits import AST_NODE_BUDGET
+
 
 PREFIX = "formula_ast_v1:"
 _VARIABLE = re.compile(r"x(?:0|[1-9][0-9]*)\Z")
@@ -27,7 +29,6 @@ _FUNCTIONS = {"sin": np.sin, "cos": np.cos, "tanh": np.tanh,
 # polynomial-lasso bank holds expressions of up to 204 AST nodes and 19
 # additive terms, and the L arms top out at exactly 128 nodes - the signature
 # of a cap that was being clipped against, not a boundary being enforced.
-AST_NODE_BUDGET = 512
 SUPPORT_TERM_BUDGET = 32
 
 

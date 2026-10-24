@@ -173,6 +173,8 @@ def _engine_payload(result: Any) -> dict[str, Any]:
         "all_results": [asdict(row) for row in result.all_results],
         "run_records": [asdict(row) for row in result.run_records],
         "failures": list(result.failures),
+        "isolated_failures": [
+            dict(row) for row in result.isolated_failures],
         "evaluation_budget": result.evaluation_budget,
         "evaluations_used": result.evaluations_used,
     }

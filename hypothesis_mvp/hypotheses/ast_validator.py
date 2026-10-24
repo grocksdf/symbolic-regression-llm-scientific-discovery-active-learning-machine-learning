@@ -14,9 +14,12 @@ from hashlib import sha256
 import math
 from typing import Collection, Mapping
 
+from .expression_limits import AST_NODE_BUDGET
+
 
 DEFAULT_FUNCTION_ARITIES: Mapping[str, tuple[int, ...]] = {
     "abs": (1,),
+    "Abs": (1,),
     "sqrt": (1,),
     "exp": (1,),
     "log": (1,),
@@ -58,7 +61,7 @@ class SafeExpressionValidator:
         *,
         function_arities: Mapping[str, tuple[int, ...]] = DEFAULT_FUNCTION_ARITIES,
         constants: Collection[str] = DEFAULT_CONSTANTS,
-        maximum_nodes: int = 256,
+        maximum_nodes: int = AST_NODE_BUDGET,
         maximum_depth: int = 32,
         maximum_absolute_constant: float = 1.0e12,
         maximum_absolute_literal_exponent: float = 12.0,

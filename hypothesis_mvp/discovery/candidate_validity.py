@@ -12,6 +12,7 @@ from hashlib import sha256
 
 import numpy as np
 
+from hypothesis_mvp.hypotheses.expression_limits import AST_NODE_BUDGET
 from hypothesis_mvp.pcpi.reference.expanded_formula_basis import (
     _check, _constant, _FUNCTIONS,
 )
@@ -28,9 +29,10 @@ class CandidateValidityError(ValueError):
 def _tree(expression, n_features):
     if not isinstance(expression, str) or not 0 < len(expression) <= 4096:
         raise ValueError("invalid validity expression budget")
-    root = ast.parse(expression, mode="eval").body
-    if len(list(ast.walk(root))) > 512:
+    parsed = ast.parse(expression, mode="eval")
+    if len(list(ast.walk(parsed))) > AST_NODE_BUDGET:
         raise ValueError("validity AST exceeds finite budget")
+    root = parsed.body
     for node in ast.walk(root):
         if isinstance(node, ast.Constant) and type(node.value) in (int, float):
             try:

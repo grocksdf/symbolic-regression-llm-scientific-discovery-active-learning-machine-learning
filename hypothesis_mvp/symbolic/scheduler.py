@@ -63,6 +63,7 @@ class MultiEngineResult:
     failures: tuple[Mapping[str, Any], ...] = ()
     evaluation_budget: int = 0
     evaluations_used: int = 0
+    isolated_failures: tuple[Mapping[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -266,7 +267,9 @@ def _execute_isolated(job, values, arrays, timeout_s):
         receiver.close()
 
 
-def _refuse_partial_engine_degradation(records) -> None:
+def _refuse_partial_engine_degradation(
+    records,
+) -> tuple[Mapping[str, Any], ...]:
     """Fail closed when a registered engine produced no candidate at all.
 
     A single attempt failing is legitimate: the scheduler retries within its
@@ -278,7 +281,7 @@ def _refuse_partial_engine_degradation(records) -> None:
     restore the pre-fix behaviour explicitly.
     """
     if os.environ.get("FORMULA_ENGINE_ALLOW_DEGRADED") == "1":
-        return
+        return ()
     by_engine: dict[str, list] = {}
     for row in records:
         by_engine.setdefault(row.engine, []).append(row)
@@ -286,7 +289,33 @@ def _refuse_partial_engine_degradation(records) -> None:
         engine for engine, rows in by_engine.items()
         if all(row.status != "succeeded" for row in rows))
     if not silent:
-        return
+        return ()
+    if os.environ.get("FORMULA_ENGINE_ISOLATE_LASSO_TIMEOUT") == "1":
+        silent_rows = [
+            row for row in records if row.engine in silent]
+        pysr_succeeded = any(
+            row.engine == "pysr" and row.status == "succeeded"
+            for row in records)
+        if (silent == ["polynomial_lasso"] and pysr_succeeded
+                and silent_rows
+                and all(
+                    row.status == "timeout"
+                    and row.error_type == "TimeoutError"
+                    for row in silent_rows)):
+            return ({
+                "schema": "isolated-symbolic-engine-timeout-v1",
+                "engine": "polynomial_lasso",
+                "reason": "registered-engine-timeout",
+                "peer_engine": "pysr",
+                "peer_success_verified": True,
+                "discarded_partial_output": True,
+                "timeout_records": [{
+                    key: getattr(row, key, None) for key in (
+                        "engine", "repeat", "attempt", "seed", "status",
+                        "elapsed_seconds", "lineage_id", "expression",
+                        "error_type", "error_message", "controls")
+                } for row in silent_rows],
+            },)
     summary = "; ".join(
         f"{row.engine}:{row.status}:{row.error_type}" for row in records
         if row.engine in silent)
@@ -393,9 +422,10 @@ class EngineScheduler:
                 "all allocated symbolic engines failed; no fallback was used: " + summary)
         aggregated = _aggregate(results, budget, len(records))
         failures = tuple(asdict(row) for row in records if row.status != "succeeded")
-        _refuse_partial_engine_degradation(records)
+        isolated_failures = _refuse_partial_engine_degradation(records)
         return MultiEngineResult(
-            aggregated[0], aggregated, tuple(records), failures, budget, len(records))
+            aggregated[0], aggregated, tuple(records), failures,
+            budget, len(records), isolated_failures)
 
     def run(
         self, *, engines: Sequence[str], config: SymbolicConfig,
@@ -430,12 +460,14 @@ def merge_multi_engine_results(
     results = tuple(row for part in parts for row in part.all_results)
     records = tuple(row for part in parts for row in part.run_records)
     failures = tuple(row for part in parts for row in part.failures)
+    isolated = tuple(
+        row for part in parts for row in part.isolated_failures)
     aggregated = _aggregate(results, evaluation_budget, len(records))
     if not aggregated:
         raise RuntimeError("staged symbolic engines produced no result")
     return MultiEngineResult(
         aggregated[0], aggregated, records, failures,
-        evaluation_budget, len(records))
+        evaluation_budget, len(records), isolated)
 
 
 __all__ = [
