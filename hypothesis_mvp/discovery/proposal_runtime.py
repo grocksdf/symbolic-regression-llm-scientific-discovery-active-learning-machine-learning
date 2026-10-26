@@ -1273,6 +1273,29 @@ class ProposalRuntime:
             if expanded or not context.gap_directed
             else ["candidate_id", "parent_hash", "action", "rationale"]
         )
+        instruction_mode = str(
+            island_context.get("diagnostic_instruction_mode")
+            or "historical-hard")
+        if instruction_mode not in {
+                "historical-hard", "non-mandatory-evidence",
+                "refinement-only-neutral"}:
+            raise ProtocolError("invalid_diagnostic_instruction_mode")
+        diagnostic_instruction = (
+            "Treat the supplied posterior-gap diagnostic as non-mandatory "
+            "search evidence. You may disagree with it or ignore a suggested "
+            "direction when the frozen parent and registered covariates support "
+            "a different refinement. The operator grammar, candidate count, "
+            "and new-skeleton quota remain unchanged."
+            if context.gap_directed
+            and instruction_mode == "non-mandatory-evidence"
+            else
+            "Use the supplied independently audited posterior-gap diagnostic "
+            "to target the eligible regions without claiming admission."
+            if context.gap_directed
+            else
+            "No posterior-gap direction is supplied. Refine only the frozen "
+            "parent under the unchanged grammar and candidate budget."
+        )
         grammar_instruction = self._proposal_grammar_instruction(context, expanded)
         return {
             "runtime_id": DISCOVERY_RUNTIME_ID,
@@ -1318,7 +1341,9 @@ class ProposalRuntime:
                           "variables; the system substitutes current_expression and "
                           "rejects nonnovel supports. If both exist correction takes precedence.")
                        if context.gap_directed else "")
+                    + " " + diagnostic_instruction
                 ),
+                "diagnostic_instruction_mode": instruction_mode,
             },
         }
 

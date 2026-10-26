@@ -109,6 +109,59 @@ def test_zero_quota_payload_does_not_request_forbidden_action():
     assert "not registered" in payload["contract"]["instruction"]
 
 
+def test_gap_diagnostic_instruction_mode_changes_guidance_not_support():
+    runtime = _runtime()
+    context = ProposalContext(
+        1, "novelty", "p", 2, 1,
+        incumbent_expression="x0",
+        gap_directed=True,
+        new_skeleton_quota=0)
+    common = {
+        "posterior_gap_brief": {"propose_allowed": True, "regions": []},
+        "current_expression": "x0",
+        "posterior_gap_existing_supports": (),
+        "new_skeleton_quota": 0,
+    }
+    hard = runtime._proposal_payload(
+        "fixture", "fixture", context,
+        {**common, "diagnostic_instruction_mode": "historical-hard"},
+        (), ())
+    soft = runtime._proposal_payload(
+        "fixture", "fixture", context,
+        {**common, "diagnostic_instruction_mode": "non-mandatory-evidence"},
+        (), ())
+    assert hard["contract"]["allowed_actions"] == (
+        soft["contract"]["allowed_actions"])
+    assert hard["contract"]["new_skeleton_quota"] == (
+        soft["contract"]["new_skeleton_quota"]) == 0
+    assert hard["contract"]["max_candidates"] == (
+        soft["contract"]["max_candidates"]) == 1
+    assert "non-mandatory search evidence" not in (
+        hard["contract"]["instruction"])
+    assert "non-mandatory search evidence" in (
+        soft["contract"]["instruction"])
+
+
+def test_invalid_gap_diagnostic_instruction_mode_fails_closed():
+    runtime = _runtime()
+    context = ProposalContext(
+        1, "novelty", "p", 2, 1,
+        incumbent_expression="x0",
+        gap_directed=True,
+        new_skeleton_quota=0)
+    with pytest.raises(
+            ProtocolError, match="diagnostic_instruction_mode"):
+        runtime._proposal_payload(
+            "fixture", "fixture", context, {
+                "posterior_gap_brief": {
+                    "propose_allowed": True, "regions": []},
+                "current_expression": "x0",
+                "posterior_gap_existing_supports": (),
+                "new_skeleton_quota": 0,
+                "diagnostic_instruction_mode": "result-dependent",
+            }, (), ())
+
+
 def test_registered_iterative_config_has_real_topology_budget():
     from pathlib import Path
     import yaml
