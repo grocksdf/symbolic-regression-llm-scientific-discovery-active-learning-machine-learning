@@ -178,6 +178,28 @@ def test_scheduler_binds_controls_to_engine_diagnostics_and_lineage():
     assert result.run_records[0].lineage_id
 
 
+def test_scheduler_run_forwards_controls_to_allocated_entrypoint(monkeypatch):
+    from hypothesis_mvp.symbolic import EngineScheduler
+    scheduler = EngineScheduler()
+    observed = {}
+
+    def allocated(**kwargs):
+        observed.update(kwargs)
+        return "sentinel"
+
+    monkeypatch.setattr(scheduler, "run_allocated", allocated)
+    X, y = _fixture()
+    result = scheduler.run(
+        engines=("sparse_library",),
+        engine_controls={"sparse_library": ("trigonometric",)},
+        config=SymbolicConfig(expression_contract="pcpi-closed-basis-v1"),
+        X_train=X, y_train=y, X_val=X, y_val=y,
+        evaluation_budget=1, max_retries=0, parallel=False)
+    assert result == "sentinel"
+    assert observed["engine_controls"] == {
+        "sparse_library": ("trigonometric",)}
+
+
 def test_four_skill_scheduler_preserves_one_job_per_engine_and_lineage():
     from hypothesis_mvp.symbolic import EngineScheduler
     X, y = _fixture()

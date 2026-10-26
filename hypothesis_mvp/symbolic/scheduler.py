@@ -433,6 +433,7 @@ class EngineScheduler:
         repeats: int = 1, base_seed: int = 0, max_retries: int = 1,
         evaluation_budget: int | None = None, parallel: bool = True,
         max_workers: int = 2, timeout_s: float = 300.0,
+        engine_controls: Mapping[str, Sequence[str]] | None = None,
     ) -> MultiEngineResult:
         names = tuple(dict.fromkeys(name.strip() for name in engines if name.strip()))
         if not names:
@@ -447,7 +448,8 @@ class EngineScheduler:
             X_train=X_train, y_train=y_train, X_val=X_val, y_val=y_val,
             base_seed=base_seed, max_retries=retry_count,
             evaluation_budget=budget, parallel=parallel,
-            max_workers=max_workers, timeout_s=timeout_s)
+            max_workers=max_workers, timeout_s=timeout_s,
+            engine_controls=engine_controls)
 
 
 def merge_multi_engine_results(
