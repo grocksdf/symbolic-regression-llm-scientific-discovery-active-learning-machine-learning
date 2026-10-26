@@ -48,6 +48,13 @@ class PySRSymbolicRegressor(SymbolicRegressor):
             "maxsize": self.config.maxsize,
             "complexity_of_constants": self.config.complexity_of_constants,
             "constraints": {"^": (-1, 1), "pow": (-1, 1)},
+            # PySR documents that a fixed random_state is not sufficient:
+            # deterministic searches also require serial backend execution.
+            # The scheduler already assigns one immutable job seed through
+            # mcts_random_seed; bind that same seed to Julia/PySR here.
+            "random_state": int(self.config.mcts_random_seed),
+            "deterministic": True,
+            "parallelism": "serial",
         }
         if self.config.complexity_of_operators:
             options["complexity_of_operators"] = self.config.complexity_of_operators
@@ -66,7 +73,13 @@ class PySRSymbolicRegressor(SymbolicRegressor):
         return str(self._model.sympy())
 
     def info(self) -> dict[str, Any]:
-        return {"engine": "pysr", **asdict(self.config)}
+        return {
+            "engine": "pysr",
+            "pysr_random_state": int(self.config.mcts_random_seed),
+            "pysr_deterministic": True,
+            "pysr_parallelism": "serial",
+            **asdict(self.config),
+        }
 
 
 class PolynomialLassoRegressor(SymbolicRegressor):
