@@ -15,6 +15,7 @@ from .proposal_calibration import assert_generation_context_safe
 
 
 POLICY = "protected-blind-with-blind-fallback-v2"
+SUPPORT_PRESERVING_POLICY = "support-preserving-gap-v3"
 LEGACY = "legacy"
 
 
@@ -25,9 +26,9 @@ def context_identity(value):
 
 def validate_policy(config):
     policy = config.feedback_generation_policy
-    if policy not in {LEGACY, POLICY}:
+    if policy not in {LEGACY, POLICY, SUPPORT_PRESERVING_POLICY}:
         raise ValueError("unregistered feedback generation policy")
-    if policy == POLICY and (
+    if policy in {POLICY, SUPPORT_PRESERVING_POLICY} and (
             not config.iterative_posterior_refinement
             or not config.posterior_gap_directed
             or config.mask_posterior_gap_from_generation
@@ -45,6 +46,14 @@ def slot_plan(gap_allowed):
             ("gap" if gap_allowed else "blind", 2, 0))
 
 
+def support_preserving_slot_plan(gap_allowed):
+    """Gap context changes information, never the proposal support."""
+    if type(gap_allowed) is not bool:
+        raise ValueError("gap decision must be boolean")
+    return (("blind", 1, 1),
+            ("gap" if gap_allowed else "blind", 2, 1))
+
+
 def initialize_streams(runtime, seeds, islands):
     core = [row for row in seeds if row.origin != "llm"
             and row.source.startswith("engine:")]
@@ -57,6 +66,7 @@ def initialize_streams(runtime, seeds, islands):
     for island in islands:
         parent = min(core, key=lambda row: (
             runtime.evaluation.policy.score(row, island), row.dag.canonical_hash))
+        runtime._protected_gap_parents[island] = parent
         for slot in (1, 2):
             runtime._protected_blind_parents[(island, slot)] = parent
             runtime._protected_blind_failures[(island, slot)] = []
@@ -97,8 +107,11 @@ def _request_slot(runtime, island, slot, stream, quota, round_id, arrays):
         context.update(new_skeleton_quota=quota, generation_slot=slot,
                        registered_task_context=runtime.task_context.prompt_payload(
                            runtime.proposal.n_features))
-        context["allowed_edits"] = [edit for edit in context["allowed_edits"]
-                                    if edit != "PROPOSE_NEW_SKELETON"]
+        if (runtime.config.feedback_generation_policy
+                != SUPPORT_PRESERVING_POLICY):
+            context["allowed_edits"] = [
+                edit for edit in context["allowed_edits"]
+                if edit != "PROPOSE_NEW_SKELETON"]
     task = runtime.task_context.prompt_payload(runtime.proposal.n_features)
     identity = context_identity(context)
     batch = runtime.proposal.propose(
@@ -132,11 +145,19 @@ def _request_slot(runtime, island, slot, stream, quota, round_id, arrays):
 def protected_round(runtime, islands, round_id, arrays):
     brief = runtime.orchestration_context.get("posterior_gap_brief") or {}
     allowed = brief.get("propose_allowed")
-    plan = slot_plan(allowed)
+    support_preserving = (
+        runtime.config.feedback_generation_policy
+        == SUPPORT_PRESERVING_POLICY)
+    plan = (support_preserving_slot_plan(allowed)
+            if support_preserving else slot_plan(allowed))
     next_islands, accepted, exploratory, records = dict(islands), [], [], []
     for island in islands:
         # Materialize both contexts before evaluating either candidate. No
         # within-batch candidate, score, failure or stop signal crosses slots.
+        if support_preserving:
+            shared = runtime._protected_blind_parents[(island, 1)]
+            runtime._protected_blind_parents[(island, 2)] = shared
+            runtime._protected_gap_parents[island] = shared
         slots = [_request_slot(runtime, island, slot, stream, quota, round_id, arrays)
                  for stream, slot, quota in plan]
         winners, audits, slot_audits = [], [], []
@@ -173,13 +194,15 @@ def protected_round(runtime, islands, round_id, arrays):
         records.append({"island": island, "protocol_valid": all(
             batch.protocol_valid for _, _, batch, _ in slots),
             "candidate_audit": audits,
-            "memory": {"generation_policy": POLICY, "generation_slots": slot_audits,
+            "memory": {"generation_policy": runtime.config.feedback_generation_policy,
+                       "generation_slots": slot_audits,
                        "posterior_gap_identity": context_identity_legacy(brief)
                        if allowed else "", "supplied_count": 0},
             "telemetry": {"generation_slots": slot_audits},
             "exploration": slots[0][1].as_audit_dict()})
     return next_islands, accepted, exploratory, {
-        "round_id": round_id, "generation_policy": POLICY,
+        "round_id": round_id,
+        "generation_policy": runtime.config.feedback_generation_policy,
         "accepted_transition_count": len(accepted), "islands": records,
         "stop_rule": "registered-round-or-evaluation-budget-only"}
 
@@ -210,7 +233,10 @@ def verify_slot_audits(audits, brief):
     batches, lineages = set(), set()
     for row in audits:
         slots = row.get("generation_slots", ())
-        expected = slot_plan(brief["propose_allowed"])
+        policy = row.get("generation_policy", POLICY)
+        expected = (support_preserving_slot_plan(brief["propose_allowed"])
+                    if policy == SUPPORT_PRESERVING_POLICY
+                    else slot_plan(brief["propose_allowed"]))
         if len(slots) != 2:
             raise ValueError("protected proposal lacks both registered slots")
         key = (slots[0].get("cycle"), slots[0].get("round_id"), slots[0].get("island"))

@@ -11,7 +11,8 @@ from hypothesis_mvp.discovery.agent import DiscoveryAgentConfig
 from hypothesis_mvp.discovery.contracts import DiscoveryConfig
 from hypothesis_mvp.discovery.factory import build_scientific_discovery_runtime
 from hypothesis_mvp.discovery.feedback_generation import (
-    POLICY, blind_context, initialize_streams, slot_plan, validate_policy,
+    POLICY, SUPPORT_PRESERVING_POLICY, blind_context, initialize_streams,
+    slot_plan, support_preserving_slot_plan, validate_policy,
     verify_slot_audits,
 )
 from hypothesis_mvp.discovery.proposal_runtime import (
@@ -194,6 +195,32 @@ def test_policy_only_accepts_registered_two_slot_design():
             validate_policy(replace(config, **changed))
     assert slot_plan(False) == (("blind", 1, 1), ("blind", 2, 0))
     assert slot_plan(True) == (("blind", 1, 1), ("gap", 2, 0))
+
+
+def test_support_preserving_policy_equalizes_parent_and_structure_rights(
+        tmp_path, monkeypatch):
+    runtime, _ = _runtime(tmp_path, True, monkeypatch)
+    runtime.config = replace(
+        runtime.config,
+        feedback_generation_policy=SUPPORT_PRESERVING_POLICY)
+    validate_policy(DiscoveryAgentConfig(
+        feedback_generation_policy=SUPPORT_PRESERVING_POLICY,
+        iterative_posterior_refinement=True,
+        posterior_gap_directed=True,
+        expanded_formula_synthesis=True,
+        candidates_per_island=2, new_skeleton_quota=1))
+    x = np.linspace(-1., 1., 12)[:, None]
+    arrays = (x, x[:, 0] ** 2, x + .01, (x[:, 0] + .01) ** 2)
+    parent, seeds = runtime.evaluation.seed_survivor(
+        [{"expression": "x0**2", "source": "engine:polynomial_lasso"}],
+        *arrays)
+    initialize_streams(runtime, seeds, {"nmse": parent})
+    assert support_preserving_slot_plan(True) == (
+        ("blind", 1, 1), ("gap", 2, 1))
+    assert support_preserving_slot_plan(False) == (
+        ("blind", 1, 1), ("blind", 2, 1))
+    assert runtime._protected_blind_parents[("nmse", 1)].dag.canonical_hash == (
+        runtime._protected_gap_parents["nmse"].dag.canonical_hash)
 
 
 def test_invalid_second_slot_does_not_trigger_provider_repair(tmp_path, monkeypatch):

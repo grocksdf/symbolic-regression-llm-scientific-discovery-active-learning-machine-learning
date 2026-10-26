@@ -1022,7 +1022,14 @@ class DiscoveryAgent:
             raise ValueError("iterative candidate attempt budget exceeded")
         eligible = tuple(sorted({int(r["region"]) for r in
             gap["prompt"].get("regions", ())}))
-        if optional and eligible and gap["prompt"].get("propose_allowed"):
+        support_preserving = (
+            self.config.feedback_generation_policy
+            == "support-preserving-gap-v3")
+        if support_preserving:
+            eligible = tuple(range(len(gap["regions"].cuts) + 1))
+        if optional and eligible and (
+                gap["prompt"].get("propose_allowed")
+                or support_preserving):
             retained, admission_report = admit_regional_candidates(
                 gap["core_rows"], optional, selection.development,
                 cycle_audit, cycle_admission,
