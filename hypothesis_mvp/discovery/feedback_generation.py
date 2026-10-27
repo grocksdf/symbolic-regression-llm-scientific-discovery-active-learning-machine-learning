@@ -37,6 +37,10 @@ def validate_policy(config):
             or config.new_skeleton_quota != 1
             or config.task_local_memory or config.use_knowledge):
         raise ValueError("protected generation requires two slots, one skeleton and isolated iterative mode")
+    if (getattr(config, "localized_gap_refinement", False)
+            and policy != SUPPORT_PRESERVING_POLICY):
+        raise ValueError(
+            "localized Gap refinement requires support-preserving policy")
 
 
 def slot_plan(gap_allowed):
@@ -112,6 +116,15 @@ def _request_slot(runtime, island, slot, stream, quota, round_id, arrays):
             context["allowed_edits"] = [
                 edit for edit in context["allowed_edits"]
                 if edit != "PROPOSE_NEW_SKELETON"]
+        if getattr(runtime.config, "localized_gap_refinement", False):
+            from .localized_gap_refinement import (
+                compile_executable_gap_brief,
+            )
+            executable = compile_executable_gap_brief(
+                context["posterior_gap_brief"])
+            context.update(
+                localized_refinement_contract=True,
+                executable_gap_brief=executable)
     task = runtime.task_context.prompt_payload(runtime.proposal.n_features)
     identity = context_identity(context)
     batch = runtime.proposal.propose(
@@ -119,6 +132,28 @@ def _request_slot(runtime, island, slot, stream, quota, round_id, arrays):
         round_id=round_id, island=island, parent_hash=parent.dag.canonical_hash,
         island_context=context, library_rows=(), ephemeral_refinements=(),
         max_candidates=1, allow_protocol_repair=False)
+    locality = []
+    if (stream == "gap"
+            and getattr(runtime.config, "localized_gap_refinement", False)
+            and batch.candidates):
+        from .localized_gap_refinement import (
+            certify_localized_refinement, executable_target_assignments,
+        )
+        domain = runtime.evaluation.registered_covariates
+        executable = context["executable_gap_brief"]
+        assignments, targets = executable_target_assignments(
+            executable, domain)
+        kept = []
+        for candidate in batch.candidates:
+            certificate = certify_localized_refinement(
+                runtime.equation, parent.dag.expression,
+                candidate.equation, candidate.local_gate,
+                domain, assignments, targets)
+            locality.append({
+                "candidate_id": candidate.candidate_id, **certificate})
+            if certificate["passed"]:
+                kept.append(candidate)
+        batch = replace(batch, candidates=tuple(kept))
     if batch.reason == "provider_or_protocol_failure":
         raise RuntimeError("protected generation provider failed; no retry or fallback")
     if len(batch.candidates) > 1:
@@ -138,6 +173,7 @@ def _request_slot(runtime, island, slot, stream, quota, round_id, arrays):
              "candidate_count": len(candidates), "new_skeleton_quota": quota,
              "candidate_lineages": [row.lineage_id for row in candidates],
              "provider_requests": json_safe(batch.telemetry),
+             "locality_certificates": locality,
              "fallback": stream == "blind" and slot == 2}
     return parent, exploration, replace(batch, candidates=candidates), audit
 

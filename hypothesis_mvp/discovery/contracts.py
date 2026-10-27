@@ -89,6 +89,7 @@ class DiscoveryConfig:
     max_rounds: int = 3
     candidates_per_island: int = 4
     feedback_generation_policy: str = "legacy"
+    localized_gap_refinement: bool = False
     new_skeleton_quota: int = 0
     patience: int = 2
     max_complexity: int = 160
@@ -180,6 +181,8 @@ class DiscoveryConfig:
             max_rounds=min(8, max(1, _env_int("HYPOTHESIS_DISCOVERY_MAX_ROUNDS", int(_pick(m, "max_rounds", 3))))),
             candidates_per_island=candidates,
             feedback_generation_policy=str(_pick(m, "feedback_generation_policy", "legacy")),
+            localized_gap_refinement=bool(
+                _pick(m, "localized_gap_refinement", False)),
             new_skeleton_quota=quota,
             patience=max(1, _env_int("HYPOTHESIS_DISCOVERY_PATIENCE", int(_pick(m, "patience", 2)))),
             max_complexity=max(16, _env_int("HYPOTHESIS_DISCOVERY_MAX_COMPLEXITY", int(_pick(m, "max_complexity", 160)))),

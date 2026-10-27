@@ -95,6 +95,7 @@ class DiscoveryAgentConfig:
     iterative_posterior_refinement: bool = False
     mask_posterior_gap_from_generation: bool = False
     feedback_generation_policy: str = "legacy"
+    localized_gap_refinement: bool = False
     synthesis_evaluation_reserve: int = 0
     skill_reliability: Mapping[str, Mapping[str, float]] = field(
         default_factory=dict)
@@ -571,6 +572,8 @@ class DiscoveryAgent:
                 "candidates_per_island": self.config.candidates_per_island,
                 "new_skeleton_quota": self.config.new_skeleton_quota,
                 "feedback_generation_policy": self.config.feedback_generation_policy,
+                "localized_gap_refinement":
+                    self.config.localized_gap_refinement,
             }),
             provider_settings=(self.provider_settings if gap_allowed and (
                 not self.config.typed_evidence_synthesis

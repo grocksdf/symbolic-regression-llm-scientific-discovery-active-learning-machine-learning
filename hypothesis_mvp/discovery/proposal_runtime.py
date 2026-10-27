@@ -239,6 +239,8 @@ class ProposalCandidate:
     generation_stream: str = ""
     generation_slot: int = 0
     generation_context_hash: str = ""
+    local_gate: str = ""
+    local_correction: str = ""
 
 
 @dataclass(frozen=True)
@@ -1273,6 +1275,14 @@ class ProposalRuntime:
             if expanded or not context.gap_directed
             else ["candidate_id", "parent_hash", "action", "rationale"]
         )
+        localized = bool(
+            island_context.get("localized_refinement_contract"))
+        if localized:
+            if not context.gap_directed or context.new_skeleton_quota:
+                raise ProtocolError(
+                    "localized_refinement_requires_gap_refinement_only")
+            required_fields = [
+                "local_gate", "local_correction", "rationale"]
         instruction_mode = str(
             island_context.get("diagnostic_instruction_mode")
             or "historical-hard")
@@ -1319,6 +1329,7 @@ class ProposalRuntime:
                 **({"correction_field_enabled": True}
                     if context.gap_directed and not expanded else {}),
                 "required_candidate_fields": required_fields,
+                "localized_refinement_contract": localized,
                 "instruction": (
                     "Each equation is only an executable right-hand-side expression. "
                     "Never emit y=, f(x)=, y_hat, or any symbol outside allowed_symbols. "
@@ -1342,6 +1353,13 @@ class ProposalRuntime:
                           "rejects nonnovel supports. If both exist correction takes precedence.")
                        if context.gap_directed else "")
                     + " " + diagnostic_instruction
+                    + (" Return local_gate and local_correction instead of "
+                       "equation. The runtime constructs "
+                       "parent + local_gate*local_correction. local_gate must "
+                       "be an x-only smooth expression numerically bounded in "
+                       "[0,1] on the registered domain; local_correction must "
+                       "be x-only and low complexity."
+                       if localized else "")
                 ),
                 "diagnostic_instruction_mode": instruction_mode,
             },
@@ -1385,8 +1403,27 @@ class ProposalRuntime:
                 raise ProtocolError("new_skeleton_not_registered_for_round")
             if item.get("correction") is not None or not str(item.get("equation") or "").strip():
                 raise ProtocolError("new_skeleton_requires_complete_equation")
+        localized = (
+            item.get("local_gate") is not None
+            or item.get("local_correction") is not None)
         correction = item.get("correction")
-        if correction is not None:
+        if localized:
+            if (item.get("local_gate") is None
+                    or item.get("local_correction") is None
+                    or not context.gap_directed
+                    or context.new_skeleton_quota):
+                raise ProtocolError("invalid_localized_refinement")
+            from .localized_gap_refinement import (
+                materialize_localized_refinement,
+            )
+            equation, normalization = materialize_localized_refinement(
+                self.equation_runtime, context.incumbent_expression,
+                str(item["local_gate"]), str(item["local_correction"]))
+            if (self.equation_runtime.refit_policy
+                    == "pcpi-expanded-fixed-inner-v1"):
+                compile_fixed_formula_support(
+                    equation, context.n_features)
+        elif correction is not None:
             if self.equation_runtime.refit_policy == "pcpi-expanded-fixed-inner-v1":
                 raise ProtocolError("expanded-correction-not-registered")
             if not context.gap_directed or not isinstance(correction, str):
@@ -1426,6 +1463,11 @@ class ProposalRuntime:
             dict(item.get("expected_effect") or {}),
             tuple(str(value) for value in item.get("library_refs") or ()),
             lineage, prompt_hash, response_hash, index,
+            local_gate=(
+                str(item.get("local_gate") or "") if localized else ""),
+            local_correction=(
+                str(item.get("local_correction") or "")
+                if localized else ""),
         )
         return candidate, {"candidate_id": identifier, "proposal_index": index,
             "parent_hash_projected": supplied_parent != context.parent_hash,
@@ -1480,6 +1522,7 @@ class ProposalRuntime:
                 if (normalization.get("assignment_removed")
                         or normalization.get("parent_hash_projected")
                         or normalization.get("materialized_correction")
+                        or normalization.get("localized_refinement")
                         or normalization.get("new_skeleton_action")):
                     normalizations.append(normalization)
             except Exception as error:
@@ -1556,6 +1599,30 @@ class ProposalRuntime:
             parsed = strict_json_loads(content)
             if not isinstance(parsed, Mapping):
                 raise ProtocolError("root_must_be_object")
+            if payload.get("contract", {}).get(
+                    "localized_refinement_contract"):
+                items = parsed.get("candidates")
+                if not isinstance(items, list):
+                    raise ProtocolError("candidate_count_out_of_range")
+                parsed = {
+                    "protocol_id": PROPOSAL_PROTOCOL_ID,
+                    "round_id": context.round_id,
+                    "island": context.island,
+                    "candidates": [{
+                        "candidate_id":
+                            f"localized-{context.round_id}-{context.island}-{index}",
+                        "parent_hash": context.parent_hash,
+                        "action": "ADD",
+                        "local_gate": (
+                            item.get("local_gate")
+                            if isinstance(item, Mapping) else None),
+                        "local_correction": (
+                            item.get("local_correction")
+                            if isinstance(item, Mapping) else None),
+                        "rationale": (
+                            item.get("rationale")
+                            if isinstance(item, Mapping) else None),
+                    } for index, item in enumerate(items)]}
             candidates, rejections, normalizations = self._validate_batch(
                 parsed, context, prompt_hash, response_hash
             )
