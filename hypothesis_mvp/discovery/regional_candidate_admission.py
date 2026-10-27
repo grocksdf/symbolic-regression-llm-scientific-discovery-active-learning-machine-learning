@@ -25,6 +25,55 @@ CLOSED_POLICY = "discard-fitted-coefficients-refit-closed-basis"
 _ADMIT = "independent-region-evidence"
 _INSUFFICIENT = "insufficient-independent-region-evidence"
 _DUPLICATE = "duplicate-admitted-support"
+_GLOBAL_ADMIT = "independent-global-and-region-safe-evidence"
+_GLOBAL_INSUFFICIENT = "insufficient-global-or-region-safe-evidence"
+
+
+def global_protected_evidence_decision(
+    pointwise_log_ratios: np.ndarray,
+    assignments: np.ndarray,
+    eligible_regions: tuple[int, ...],
+    threshold: float,
+) -> dict:
+    """Certify a global law without borrowing authority from one good region.
+
+    A candidate that will enter a global hypothesis bank must clear the
+    multiplicity-adjusted fixed-law evidence threshold globally and must have
+    nonnegative cumulative evidence in every registered eligible region.
+    Empty, nonfinite, or shape-inconsistent evidence fails closed.
+    """
+    values = np.asarray(pointwise_log_ratios, dtype=float).reshape(-1)
+    labels = np.asarray(assignments, dtype=int).reshape(-1)
+    regions = tuple(int(region) for region in eligible_regions)
+    if (values.shape != labels.shape or not len(values)
+            or not regions or len(set(regions)) != len(regions)
+            or not np.isfinite(threshold)
+            or not np.all(np.isfinite(values))):
+        raise ValueError("global protected evidence requires finite aligned inputs")
+    regional = []
+    for region in regions:
+        mask = labels == region
+        if not np.any(mask):
+            return {
+                "passed": False,
+                "global_log_predictive_ratio": float(np.sum(values)),
+                "region_log_predictive_ratios": [],
+                "minimum_region_log_predictive_ratio": None,
+                "log_evidence_threshold": float(threshold),
+                "reason": "empty-eligible-admission-region",
+            }
+        regional.append(float(np.sum(values[mask])))
+    global_ratio = float(np.sum(values))
+    minimum = float(min(regional))
+    passed = bool(global_ratio > threshold and minimum >= 0.0)
+    return {
+        "passed": passed,
+        "global_log_predictive_ratio": global_ratio,
+        "region_log_predictive_ratios": regional,
+        "minimum_region_log_predictive_ratio": minimum,
+        "log_evidence_threshold": float(threshold),
+        "reason": _GLOBAL_ADMIT if passed else _GLOBAL_INSUFFICIENT,
+    }
 
 
 def _fixed_predictive_logpdf(candidates, fit, observations, domain,
@@ -146,3 +195,101 @@ def admit_regional_candidates(
                       "decision_contribution_assessed": False,
                       "candidate_response_accessed": False,
                       "heldout_opened": False}
+
+
+def admit_global_protected_candidates(
+    engine_rows, llm_rows, fit: RoleDataset, gap_audit: RoleDataset,
+    admission: RoleDataset, domain: np.ndarray, regions: FrozenAxisRegions,
+    eligible_regions: tuple[int, ...], prior: NormalInverseGammaPrior,
+    measurement_budget: int, *, alpha: float = .05,
+    coefficient_policy: str = CLOSED_POLICY,
+) -> tuple[list[dict], dict]:
+    """Independent evidence for candidates entering a global hypothesis bank.
+
+    The fixed optional/core predictive likelihood ratio is evaluated on the
+    independent admission role. Candidate multiplicity is controlled by
+    ``K/alpha``. Because the accepted candidate is global rather than a
+    region-gated expert, every eligible region must additionally have
+    nonnegative cumulative log evidence. Gap-audit responses remain unused by
+    the decision and are retained only as a disjoint-role identity.
+    """
+    if (fit.role is not DataRole.DEVELOPMENT
+            or gap_audit.role is not DataRole.VALIDATION
+            or admission.role is not DataRole.VALIDATION
+            or admission.row_fingerprints & (
+                fit.row_fingerprints | gap_audit.row_fingerprints)
+            or gap_audit.row_fingerprints & fit.row_fingerprints
+            or not 0 < alpha < 1
+            or regions.n_features != fit.X.shape[1]
+            or not eligible_regions
+            or any(r < 0 or r > len(regions.cuts)
+                   for r in eligible_regions)
+            or len(set(eligible_regions)) != len(eligible_regions)):
+        raise ValueError(
+            "global protected admission needs disjoint fit, gap and admission roles")
+    core = [dict(row) for row in engine_rows]
+    proposals = [dict(row) for row in llm_rows]
+    if not core or not proposals:
+        return [], {
+            "schema": "candidate-global-protected-admission-v1",
+            "attempts": len(proposals), "candidates": [],
+            "admission_identity": admission.fingerprint,
+            "candidate_response_accessed": False,
+            "heldout_opened": False}
+    parser = support_parser_for_policy(coefficient_policy)
+    core_supports = {
+        parser(row["expression"], fit.X.shape[1]) for row in core}
+    core_score, core_identity = _fixed_predictive_logpdf(
+        core, fit, admission, domain, prior, measurement_budget,
+        coefficient_policy=coefficient_policy)
+    assignments = regions.assign(admission.X)
+    threshold = math.log(len(proposals) / alpha)
+    retained, results, admitted_supports = [], [], set()
+    for candidate in proposals:
+        support = parser(candidate["expression"], fit.X.shape[1])
+        candidate_identity = sha256(json.dumps(
+            candidate, sort_keys=True, default=str).encode()).hexdigest()
+        common = {
+            "candidate_identity": candidate_identity,
+            "lineage_id": str(candidate.get("lineage_id") or ""),
+            "composed_expression": candidate["expression"],
+            "support": list(support),
+            "attempted_candidate_count": len(proposals),
+            "region_identity": regions.identity,
+            "eligible_regions": list(eligible_regions),
+        }
+        if support in core_supports:
+            results.append({
+                **common, "reason": "duplicate-engine-support",
+                "admitted": False})
+            continue
+        optional_score, law_identity = _fixed_predictive_logpdf(
+            [candidate], fit, admission, domain, prior,
+            measurement_budget, coefficient_policy=coefficient_policy)
+        decision = global_protected_evidence_decision(
+            optional_score - core_score, assignments,
+            eligible_regions, threshold)
+        duplicate = decision["passed"] and support in admitted_supports
+        passed = bool(decision["passed"] and not duplicate)
+        reason = _DUPLICATE if duplicate else decision["reason"]
+        if passed:
+            retained.append(candidate)
+            admitted_supports.add(support)
+        results.append({
+            **common, "expert_identity": law_identity,
+            **decision, "passed": passed,
+            "admitted": passed, "reason": reason})
+    return retained, {
+        "schema": "candidate-global-protected-admission-v1",
+        "core_identity": core_identity,
+        "region_identity": regions.identity,
+        "admission_identity": admission.fingerprint,
+        "gap_identity": gap_audit.fingerprint,
+        "coefficient_policy": coefficient_policy,
+        "attempts": len(proposals), "candidates": results,
+        "decision_rule": (
+            "global-log-likelihood-ratio-above-K-over-alpha-and-"
+            "nonnegative-in-every-eligible-region"),
+        "decision_contribution_assessed": False,
+        "candidate_response_accessed": False,
+        "heldout_opened": False}
