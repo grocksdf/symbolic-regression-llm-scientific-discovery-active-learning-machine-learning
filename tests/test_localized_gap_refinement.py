@@ -45,6 +45,20 @@ def test_gap_brief_compiles_to_explicit_region_direction_and_constraints():
     assert len(target["requirements"]) == 3
 
 
+def test_multiple_gap_regions_select_exactly_one_deterministic_target():
+    brief = _brief()
+    brief["independent_adequacy"][1].update(
+        directional_pit_imbalance=True,
+        directional_pit_lower_bound=.8,
+        pit_above_median=1)
+    value = compile_executable_gap_brief(brief)
+    assert value["eligible_region_count"] == 2
+    assert len(value["target_regions"]) == 1
+    assert value["target_regions"][0]["region"] == 1
+    assert value["target_regions"][0]["direction"] == (
+        "decrease-parent-prediction")
+
+
 def test_code_owned_localized_formula_and_covariate_only_certificate():
     runtime = EquationRuntime(
         1, refit_policy="pcpi-expanded-fixed-inner-v1")

@@ -21,7 +21,7 @@ def compile_executable_gap_brief(brief: Mapping) -> dict:
     adequacy = {
         int(row["region"]): dict(row)
         for row in brief["independent_adequacy"]}
-    targets = []
+    candidates = []
     for region in sorted(regions):
         evidence = adequacy.get(region)
         if not evidence:
@@ -39,7 +39,18 @@ def compile_executable_gap_brief(brief: Mapping) -> dict:
             else "decrease-parent-prediction" if count
             else "undetermined")
         region_row = regions[region]
-        targets.append({
+        count = max(1, int(evidence.get("count") or 0))
+        severity = (
+            int(bool(evidence.get("score_degradation"))),
+            int(bool(evidence.get("undercoverage"))),
+            int(bool(evidence.get("directional_pit_imbalance"))),
+            float(evidence.get("reference_log_score_advantage") or 0.0),
+            float(evidence.get("directional_pit_lower_bound") or 0.0),
+            float(evidence.get("tail_misses") or 0) / count,
+            float(evidence.get("lower_bound") or 0.0),
+            -region,
+        )
+        candidates.append((severity, {
             "region": region,
             "axis": int(brief["region_axis"]),
             "lower_bound": region_row.get("lower_bound"),
@@ -53,13 +64,21 @@ def compile_executable_gap_brief(brief: Mapping) -> dict:
                 "target-region prediction change",
                 "express one smooth gate and one low-complexity correction",
             ],
-        })
+        }))
+    targets = (
+        [max(candidates, key=lambda row: row[0])[1]]
+        if candidates else [])
     payload = {
         "schema": "pcpi-executable-gap-brief-v1",
         "source_gap_identity": sha256(json.dumps(
             brief, sort_keys=True, allow_nan=False).encode()).hexdigest(),
         "region_axis": int(brief["region_axis"]),
         "target_regions": targets,
+        "eligible_region_count": len(candidates),
+        "target_selection_rule": (
+            "lexicographic-score-degradation-undercoverage-directional-"
+            "reference-advantage-directional-bound-tail-rate-lower-bound-"
+            "lowest-region-id"),
         "propose_allowed": bool(
             brief.get("propose_allowed") and targets),
         "candidate_response_accessed": False,
