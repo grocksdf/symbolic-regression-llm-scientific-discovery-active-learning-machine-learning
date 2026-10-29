@@ -122,10 +122,19 @@ def certify_localized_refinement(
     if (X.ndim != 2 or len(X) != len(labels) or not targets
             or not np.all(np.isfinite(X))):
         raise ValueError("localized certificate requires finite aligned domain")
-    gate = np.asarray(runtime.predict(gate_expression, X), dtype=float)
-    parent = np.asarray(runtime.predict(parent_expression, X), dtype=float)
-    candidate = np.asarray(
-        runtime.predict(candidate_expression, X), dtype=float)
+    try:
+        gate = np.asarray(runtime.predict(gate_expression, X), dtype=float)
+        parent = np.asarray(
+            runtime.predict(parent_expression, X), dtype=float)
+        candidate = np.asarray(
+            runtime.predict(candidate_expression, X), dtype=float)
+    except Exception as error:
+        return {
+            "passed": False,
+            "reason": "localized-expression-undefined-on-domain",
+            "error_type": type(error).__name__,
+            "response_accessed": False,
+        }
     if (not np.all(np.isfinite(gate))
             or not np.all(np.isfinite(parent))
             or not np.all(np.isfinite(candidate))

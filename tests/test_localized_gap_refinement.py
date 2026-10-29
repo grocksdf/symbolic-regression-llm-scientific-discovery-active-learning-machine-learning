@@ -88,6 +88,18 @@ def test_global_change_fails_locality_certificate():
     assert not certificate["passed"]
 
 
+def test_undefined_localized_candidate_is_rejected_not_raised():
+    runtime = EquationRuntime(
+        1, refit_policy="pcpi-expanded-fixed-inner-v1")
+    X = np.array([[-1.], [0.], [1.]])
+    certificate = certify_localized_refinement(
+        runtime, "x0", "1/x0", "1", X,
+        np.array([0, 0, 1]), (0,))
+    assert not certificate["passed"]
+    assert certificate["reason"] == (
+        "localized-expression-undefined-on-domain")
+
+
 def test_proposal_protocol_materializes_gate_and_correction():
     runtime = ProposalRuntime(EquationRuntime(
         1, refit_policy="pcpi-expanded-fixed-inner-v1"), 1, None, 1)
