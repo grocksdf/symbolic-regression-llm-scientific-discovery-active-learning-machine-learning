@@ -90,6 +90,22 @@ def protected_sources(mainline):
 
 _PUBLIC_SYMBOL = re.compile(r"[A-Za-z_][A-Za-z_0-9]*\Z", re.ASCII)
 
+# The frozen LSR metadata parquet labels its columns with the raw HuggingFace
+# vocabulary ("O" for the response, "V" for a variable), while the registered
+# runner normalizes the same roles to "target"/"variable".  Both spellings
+# denote exactly one leading response and only variables after it; anything
+# else stays refused.
+_RESPONSE_TOKENS = frozenset({"target", "O"})
+_VARIABLE_TOKENS = frozenset({"variable", "V"})
+
+
+def _symbol_role(token):
+    if token in _RESPONSE_TOKENS:
+        return "response"
+    if token in _VARIABLE_TOKENS:
+        return "variable"
+    return None
+
 
 def validated_public_input_symbols(raw, metadata_path, children):
     """Validate exactly the frozen per-task public input names, no formulas.
@@ -132,7 +148,10 @@ def validated_public_input_symbols(raw, metadata_path, children):
         columns, props = metadata.get("symbols"), metadata.get("symbol_properties")
         if (not isinstance(columns, list) or len(columns) < 2
                 or not isinstance(props, list) or len(props) != len(columns)
-                or props[0] != "target" or any(p != "variable" for p in props[1:])):
+                or any(not isinstance(token, str) for token in props)):
+            raise ValueError("public task symbol/target structure malformed: " + key)
+        roles = [_symbol_role(token) for token in props]
+        if roles[0] != "response" or any(role != "variable" for role in roles[1:]):
             raise ValueError("public task symbol/target structure malformed: " + key)
         if (any(type(symbol) is not str or not _PUBLIC_SYMBOL.fullmatch(symbol)
                 for symbol in columns)

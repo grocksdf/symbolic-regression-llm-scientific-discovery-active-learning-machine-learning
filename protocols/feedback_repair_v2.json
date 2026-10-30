@@ -1,0 +1,182 @@
+{
+  "schema": "feedback-repair-protected-blind-fallback-design-v2",
+  "status": "DESIGN_FROZEN_OFFLINE_IMPLEMENTATION",
+  "claim_boundary": "Development selection of a minimal feedback-generation repair only; not confirmation, universal superiority, formula-recovery attribution, acquisition efficacy, or optimization success.",
+  "diagnostic_sources": {
+    "factorial_result": {
+      "path": "D:\\01\\666\\outputs\\feedback_mechanism_factorial_v1_run_20261020\\FACTORIAL_RESULT.json",
+      "sha256": "eabb535670cd2e218f541377cfb1ee3e337464045ff037f9e44801e9daecdbc5"
+    },
+    "readonly_forensics": {
+      "path": "D:\\01\\666\\outputs\\feedback_mechanism_forensics_20261021\\READONLY_FORENSICS.json",
+      "sha256": "186d16b11427f71b1efab1438f592850ec1df424ffd46df67379e46e58daf9bf",
+      "observed_raw_sha256": "186d16b11427f71b1efab1438f592850ec1df424ffd46df67379e46e58daf9bf"
+    }
+  },
+  "selected_intervention": {
+    "name": "protected-blind-with-blind-fallback-v2",
+    "reason": "Hard abstention explains candidate-pool losses but not admitted-bank losses; generated-but-lower-value gap-conditioned proposals explain the strongest final-bank loss. A protected blind slot addresses both without changing Bayesian diagnosis or independent admission.",
+    "required_behavior": [
+      "Keep the current posterior-gap computation unchanged.",
+      "Keep independent admission, prior, posterior update and thresholds unchanged.",
+      "Keep total materialized candidate slots per island and round equal to the original D maximum.",
+      "Reserve at least one candidate slot per island and round whose generation context contains no posterior-gap brief or gap-derived stop decision.",
+      "Slot 1 is always blind; slot 2 is gap-directed iff propose_allowed is true, otherwise independently blind.",
+      "The two slots each request at most one materialized candidate; no gap- or outcome-dependent extra request or protocol repair.",
+      "One PROPOSE_NEW_SKELETON quota is reserved for slot 1; slot 2 has quota zero. Total quota remains one per island/round.",
+      "Blind stream parents initialize only from evaluated frozen engine seeds; they never consume prior admitted or gap-slot winners.",
+      "Each blind slot keeps only its own development-validation failures and own winner; no library, Scientist review, gap statistic, cross-slot candidate or independent-admission result enters its context.",
+      "Both slot contexts materialize before either candidate is evaluated; context hashes, mode, slot, parent, lineage and actual costs are recorded.",
+      "Stop only at the registered round or evaluation-budget ceiling, terminal provider failure, or invalid contract; no gap-driven stop of the protected stream.",
+      "Independent admission still applies unchanged; a blind fallback is not a guarantee that a candidate will be admitted."
+    ],
+    "explicitly_forbidden_changes": [
+      "admission alpha or evidence threshold",
+      "posterior family, prior or likelihood",
+      "gap diagnostic statistics or regions",
+      "engine set or engine budget",
+      "candidate evaluation budget",
+      "reporting split or scorer",
+      "task-specific prompt or formula rules",
+      "result-dependent retries, seeds or stopping rules"
+    ]
+  },
+  "comparators": {
+    "C": "byte-preserved configs/feedback_mechanism_C_masked_generation_update.yaml",
+    "D": "byte-preserved configs/feedback_mechanism_D_full.yaml",
+    "R": "configs/feedback_repair_R_v2.yaml"
+  },
+  "development_design": {
+    "data_role": "previously-opened-development-only",
+    "family": "lsr_transform",
+    "selection_rule": "first 12 unused-by-factorial tasks under SHA256(namespace|family|task)",
+    "selection_namespace": "feedback-repair-exploration-floor-development-v1-20261021",
+    "candidate_task_count": 41,
+    "selected_tasks": [
+      "I.10.7_1_0",
+      "III.10.19_1_1",
+      "I.37.4_0_1",
+      "I.50.26_0_0",
+      "II.6.15b_3_0",
+      "I.48.2_1_0",
+      "II.34.29b_4_0",
+      "I.43.43_3_0",
+      "II.24.17_0_1",
+      "I.11.19_4_0",
+      "I.24.6_3_1",
+      "I.29.16_1_0"
+    ],
+    "seeds": [
+      2401,
+      2402
+    ],
+    "task_count": 12,
+    "coordinate_count": 24,
+    "arms": [
+      "C",
+      "D",
+      "R"
+    ],
+    "child_count": 72,
+    "test_or_ood_accessed": false,
+    "untouched_confirmation_accessed": false
+  },
+  "dependency_gate": {
+    "must_pass_before_data_or_provider_access": true,
+    "validated_runtime_gate": {
+      "path": "D:\\01\\666\\outputs\\PYSR_RUNTIME_GATE_20261021.json",
+      "sha256": "c9cd9cf8ec3798b2017e9f68a4980ba9f6d515924f712cbadc1d0e2a14b1cb03",
+      "passed": true,
+      "python": "3.12.14",
+      "pysr": "2.5.0",
+      "julia": "1.12.5",
+      "symbolic_regression": "2.4.2",
+      "juliacall": "0.9.36"
+    },
+    "requirements": [
+      "pysr import succeeds in the exact child interpreter",
+      "JuliaCall project and Julia executable identities are recorded",
+      "a response-free synthetic PySR fit returns at least one finite expression",
+      "polynomial_lasso remains available",
+      "all three arms resolve the identical engine schedule"
+    ],
+    "failure_policy": "PRE-RUN_NO-GO"
+  },
+  "primary_estimand": {
+    "name": "final_admitted_bank_independent_reporting_log_score",
+    "source": "iterative_feedback_trace[-1].bank_rows_after",
+    "reporting_rule": "responses open only after all generation/admission artifacts freeze",
+    "contrasts": {
+      "D_minus_C": "original feedback versus blind under the same restored runtime; no isolated PySR attribution across historical/new tasks or seeds",
+      "R_minus_D": "repair benefit over original feedback",
+      "R_minus_C": "repair versus blind control"
+    },
+    "task_aggregation": "mean over seeds within task, equal mean across tasks",
+    "bootstrap": {
+      "unit": "task",
+      "generator": "NumPy PCG64",
+      "seed": 20261021,
+      "resamples": 10000,
+      "interval": "95% percentile"
+    },
+    "development_selection_rule": "R-minus-D lower interval bound > 0 and R-minus-C lower interval bound >= 0",
+    "no_fallback_metric": true
+  },
+  "secondary_diagnostics": [
+    "evaluated_hypothesis_bank log score",
+    "proposal count by blind versus gap-directed lineage",
+    "discovery validation and acceptance rates",
+    "independent admission margins and rates",
+    "admission-to-next-gap links",
+    "gap-based abstention count",
+    "provider attempts, tokens and wall time",
+    "per-task and per-seed stability"
+  ],
+  "failure_policy": {
+    "all_registered_children_required": true,
+    "failed_children_retained_as_failures": true,
+    "resume": false,
+    "retry": false,
+    "task_or_seed_replacement": false,
+    "threshold_or_metric_change_after_results": false
+  },
+  "confirmation_boundary": {
+    "required_after_development_selection": true,
+    "implementation_and_analysis_must_be_locked": true,
+    "must_use_new_untouched_tasks_not_in_any_development_or_diagnosis": true,
+    "current_lsr_transform_fresh_pool_sufficient": false,
+    "next_action": "identify and register a new untouched equation family or dataset before confirmation",
+    "confirmation_execution_authorized": false
+  },
+  "implementation_authorized": true,
+  "execution_authorized": false,
+  "optimization_authorized": true,
+  "supersedes": {
+    "schema": "feedback-repair-exploration-floor-design-v1",
+    "archive": "protocols/archive/feedback_repair_v1.json",
+    "raw_sha256": "5e30aea594307ff4606fe2528e458b72546e893d8e8a757fa071f5093628b2a2",
+    "canonical_json_sha256": "436eb6ef875b6713045e647f411e95c7bdf575d57e1984caa3e6ddb131bfb243",
+    "interpretation": "Raw-byte and canonical-JSON identities are different hash domains; neither replaces an unknown historical expected digest."
+  },
+  "provider_cost_contract": {
+    "candidate_slots_per_island_round": 2,
+    "new_skeleton_quota_per_island_round": 1,
+    "max_slot_requests_per_island_round_R": 2,
+    "cycles": 2,
+    "rounds_per_cycle": 2,
+    "islands": 3,
+    "maximum_inner_slot_requests_R": 24,
+    "maximum_review_requests_R": 6,
+    "maximum_logical_requests_R": 30,
+    "transport_attempts_per_logical_request": 6,
+    "maximum_transport_attempts_R": 180,
+    "all_arms_same_transport_settings": true,
+    "additional_generation_calls_are_explicit_cost_not_matched_compute_evidence": true,
+    "child_wall_time_seconds": 10800,
+    "workers": 2,
+    "review_format_repairs_per_cycle": 2,
+    "child_retries": 0,
+    "inner_protocol_repairs_R": 0
+  },
+  "authorization_scope": "Current user instruction authorizes offline implementation and synthetic correctness tests only; no provider experiment or scientific data access is authorized by this file."
+}

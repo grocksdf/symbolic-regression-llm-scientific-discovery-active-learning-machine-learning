@@ -55,9 +55,9 @@ def _ordered_indices(count: int, task_name: str, seed: int):
 
 def split_training_samples(samples, *, task_name: str, seed: int):
     """Partition benchmark training rows; action responses are never returned."""
-    values = np.asarray(samples, dtype=float)
+    values = np.asarray(samples)
     if (values.ndim != 2 or values.shape[1] < 2 or len(values) < 40
-            or not np.all(np.isfinite(values))):
+            or not np.all(np.isfinite(np.asarray(values[:, 1:], dtype=float)))):
         raise ValueError("DRR adapter requires at least 40 finite training rows")
     order = _ordered_indices(len(values), task_name, seed)
     cuts = (
@@ -74,15 +74,17 @@ def split_training_samples(samples, *, task_name: str, seed: int):
         "action_covariates": tuple(order[cuts[2]:]),
     }
     def opened(role):
-        rows = values[list(row_indices[role])]
+        rows = np.asarray(values[list(row_indices[role])], dtype=float)
+        if not np.all(np.isfinite(rows[:, 0])):
+            raise ValueError("opened role has nonfinite responses")
         return rows[:, 1:], rows[:, 0]
     X_development, y_development = opened("discovery_development")
     X_validation, y_validation = opened("discovery_validation")
     X_initial, y_initial = opened("inference_initial")
-    action_rows = values[list(row_indices["action_covariates"])]
+    action_rows = np.asarray(values[list(row_indices["action_covariates"]), 1:], dtype=float)
     return DRRSelectionRoles(
         X_development, y_development, X_validation, y_validation,
-        X_initial, y_initial, action_rows[:, 1:], row_indices)
+        X_initial, y_initial, action_rows, row_indices)
 
 
 def three_arm_role_indices(count: int, *, task_name: str, seed: int):
@@ -114,9 +116,9 @@ def three_arm_role_indices(count: int, *, task_name: str, seed: int):
 
 def split_three_arm_training_samples(samples, *, task_name: str, seed: int):
     """Freeze disjoint discovery, gap, decision, report, and action roles."""
-    values = np.asarray(samples, dtype=float)
+    values = np.asarray(samples)
     if (values.ndim != 2 or values.shape[1] < 2 or len(values) < 160
-            or not np.all(np.isfinite(values))):
+            or not np.all(np.isfinite(np.asarray(values[:, 1:], dtype=float)))):
         raise ValueError(
             "three-arm adapter requires at least 160 finite training rows")
     row_indices = three_arm_role_indices(
@@ -125,11 +127,13 @@ def split_three_arm_training_samples(samples, *, task_name: str, seed: int):
     def opened(name, *, response):
         indices = row_indices[name]
         ordered = sorted(indices)
-        rows = values[ordered, :]
+        rows = np.asarray(values[ordered, :] if response else values[ordered, 1:], dtype=float)
+        if response and not np.all(np.isfinite(rows[:, 0])):
+            raise ValueError("opened role has nonfinite responses")
         lookup = dict(zip(ordered, rows, strict=True))
         restored = np.asarray([lookup[index] for index in indices])
         return ((restored[:, 1:], restored[:, 0])
-                if response else restored[:, 1:])
+                if response else restored)
 
     development = opened("discovery_development", response=True)
     validation = opened("discovery_validation", response=True)

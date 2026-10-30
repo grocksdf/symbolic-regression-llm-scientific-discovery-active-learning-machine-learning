@@ -33,10 +33,20 @@ _adapter = load("pcpi_adapter")
 class DRRBenchmarkSearcher(PCPISearcher):
     """Run the canonical DiscoveryAgent, then issue one response-free DRR certificate."""
 
-    def __init__(self, *args, condition: str, agent_config: Mapping[str, Any],
-                 portfolio_method: str, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, condition: str, execution_family: str,
+                 agent_config: Mapping[str, Any], portfolio_method: str, **kwargs):
+        outer = kwargs.get("discovery_config") or {}
+        ceiling = outer.get("evaluation_budget", outer.get("budget"))
+        required = int(agent_config["discovery_budget"]) * int(agent_config["cycles"])
+        if ceiling is not None and (int(ceiling) != ceiling or ceiling < required):
+            raise ValueError("total evaluation ceiling cannot cover the frozen cycle budgets")
+        # The condition that drives every execution branch below is the very
+        # condition the artifact attests; never re-bind it after the fact.
+        super().__init__(*args, execution_family=execution_family,
+                         execution_condition=str(condition), **kwargs)
         self.condition = str(condition)
+        if self.execution_condition != self.condition:
+            raise ValueError("execution condition diverged from the running condition")
         values = dict(agent_config)
         values["engines"] = tuple(values["engines"])
         values["discovery_islands"] = tuple(values["discovery_islands"])
@@ -67,6 +77,8 @@ class DRRBenchmarkSearcher(PCPISearcher):
             if three_arm else
             split_training_samples(
                 task.samples, task_name=str(task.name), seed=self.random_seed))
+        if not three_arm and len(roles.X_initial) < 32:
+            raise ValueError("DRR prefix search requires 32 initial rows (normally >=160 total rows)")
         selection = SelectionData(
             RoleDataset(
                 DataRole.DEVELOPMENT,
@@ -108,7 +120,7 @@ class DRRBenchmarkSearcher(PCPISearcher):
                 raise ValueError("iterative formula discovery requires the Full provider")
             partitions = iterative_gap_role_indices(
                 roles.role_row_indices, agent_config.cycles)
-            response_source = np.asarray(task.samples, dtype=float)
+            response_source = np.asarray(task.samples)
             cycle_roles = tuple(tuple(
                 RoleDataset(DataRole.VALIDATION,
                             response_source[list(indices), 1:],

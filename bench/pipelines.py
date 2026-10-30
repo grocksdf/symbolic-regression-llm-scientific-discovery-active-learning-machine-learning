@@ -2,11 +2,18 @@ from typing import List
 
 from pathlib import Path
 import json
+import os
 import numpy as np
 import time
 from .dataclasses import Problem, SearchResult
 from .searchers.base import BaseSearcher
 from scipy.stats import kendalltau
+
+
+def _train_only():
+    """Read all four runner switches; any one of them arms train-only."""
+    from .data_boundary import loader_train_only
+    return loader_train_only()
 
 
 def mean_absolute_percentage_error(y_true, y_pred):
@@ -17,16 +24,11 @@ def mean_absolute_percentage_error(y_true, y_pred):
     """
     y_true = np.asarray(y_true, dtype=float).reshape(-1)
     y_pred = np.asarray(y_pred, dtype=float).reshape(-1)
-    n = min(len(y_true), len(y_pred))
-    if n <= 0:
+    if (not len(y_true) or y_true.shape != y_pred.shape
+            or not np.all(np.isfinite(y_true)) or not np.all(np.isfinite(y_pred))):
         return float("inf")
-    y_true = y_true[:n]
-    y_pred = y_pred[:n]
-    mask = np.isfinite(y_true) & np.isfinite(y_pred)
-    if not np.any(mask):
-        return float("inf")
-    denom = np.maximum(np.abs(y_true[mask]), 1e-12)
-    return float(np.mean(np.abs((y_true[mask] - y_pred[mask]) / denom)))
+    denom = np.maximum(np.abs(y_true), 1e-12)
+    return float(np.mean(np.abs((y_true - y_pred) / denom)))
 
 
 def _failure_metrics(reason: str):
@@ -72,19 +74,16 @@ def compute_output_base_metrics(y_pred, y, acc_tau=0.1, keep_frac=0.95):
     except Exception as exc:
         return _failure_metrics(f"array_cast_failed: {exc}")
 
-    valid_idx = np.isfinite(y_pred) & np.isfinite(y)
-    y_pred = y_pred[valid_idx]
-    y = y[valid_idx]
-
-    if len(y_pred) == 0 or len(y) == 0:
-        return _failure_metrics("no_finite_predictions")
-
-    if y_pred.shape[0] != y.shape[0]:
-        n = min(y_pred.shape[0], y.shape[0])
-        if n <= 0:
-            return _failure_metrics(f"shape_mismatch: pred={y_pred.shape} y={y.shape}")
-        y_pred = y_pred[:n]
-        y = y[:n]
+    if y_pred.shape != y.shape or not len(y):
+        return _failure_metrics("shape_mismatch_or_empty")
+    if not np.all(np.isfinite(y)):
+        raise ValueError("nonfinite evaluation targets violate the data contract")
+    invalid = int(np.count_nonzero(~np.isfinite(y_pred)))
+    if invalid:
+        result = _failure_metrics("nonfinite_predictions")
+        result.update(invalid_predictions=invalid, num_total_points=len(y),
+                      num_valid_points=len(y) - invalid)
+        return result
 
     mse = float(np.mean((y - y_pred) ** 2))
     var = float(np.mean((y - np.mean(y)) ** 2))
@@ -175,6 +174,11 @@ class EvaluationPipeline:
         search_results: List[SearchResult] = searcher.discover(problem.create_task()) or []
         search_time = time.time() - start_time
 
+        if _train_only():
+            return [{"search_result": result, "search_time": search_time,
+                     "id_metrics": None, "ood_metrics": None,
+                     "test_or_ood_accessed": False} for result in search_results]
+
         X_id = problem.test_samples[:, 1:]
         y_id = problem.test_samples[:, 0]
 
@@ -226,17 +230,17 @@ class EvaluationPipeline:
 
         for problem in problems:
             if problem.equation_idx in visited_eqids:
-                print("Skipping problem: ", problem.equation_idx, f"(gt: {problem.gt_equation.expression})")
+                print("Skipping problem: ", problem.equation_idx, "" if _train_only() else f"(gt: {problem.gt_equation.expression})")
                 continue
 
-            print("Finding equation for problem: ", problem.equation_idx, f"(gt: {problem.gt_equation.expression})")
+            print("Finding equation for problem: ", problem.equation_idx, "" if _train_only() else f"(gt: {problem.gt_equation.expression})")
             outs = self.run_and_evaluate(searcher, problem)
 
             log_data = {
                 'equation_id': problem.equation_idx,
-                'gt_equation': problem.gt_equation.expression,
+                'gt_equation': None if _train_only() else problem.gt_equation.expression,
                 'num_datapoints': len(problem.train_samples),
-                'num_eval_datapoints': len(problem.test_samples),
+                'num_eval_datapoints': None if _train_only() else len(problem.test_samples),
             }
             eval_results = []
             top_level_planner_fields = {

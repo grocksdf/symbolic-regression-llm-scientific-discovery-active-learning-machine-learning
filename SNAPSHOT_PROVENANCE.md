@@ -1,12 +1,12 @@
 # LLM-SRBench experiment adapter snapshot
 
-Snapshot date: 2026-10-06
+Snapshot date: 2026-10-31
 
 This branch is a clean source snapshot exported from:
 
 - upstream project: `deep-symbolic-mathematics/llm-srbench`
 - local source branch: `codex/restart-experiment-adapter`
-- source commit: `d8bceca7` (Add the R-v2 cumulative execution-audit hotfix)
+- source commit: `f731fecf` (Fix search-rich locality filter closure)
 
 The snapshot intentionally excludes the upstream Git history because that
 history contains experimental ledgers larger than GitHub's 100 MB per-file

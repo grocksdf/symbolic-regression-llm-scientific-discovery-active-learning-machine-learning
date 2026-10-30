@@ -1,0 +1,6 @@
+# Frozen R-v2 development inputs. Their byte-exact identity is part of the
+# execution registration, so end-of-line conversion must never rewrite them.
+protocols/** text eol=lf
+configs/feedback_repair_*.yaml text eol=lf
+configs/feedback_mechanism_C_masked_generation_update.yaml text eol=lf
+configs/feedback_mechanism_D_full.yaml text eol=lf

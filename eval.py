@@ -46,13 +46,19 @@ logging.info("[PCPI][v771] eval dataset_family=%s phys_osc_mode=%s", os.environ.
 now = datetime.now()
 now_str = now.strftime("%m-%d-%Y_%H-%M-%S-%f")
 
-dm = get_datamodule(name=args.dataset, root_folder=args.ds_root_folder)
-dm.setup()
+if args.problem_name is not None:
+    os.environ["LLMSRBENCH_PROBLEM_NAME"] = str(args.problem_name)
 
 # Load searcher configuration from yaml file
 with open(args.searcher_config) as f:
     searcher_cfg = yaml.safe_load(f)
 searcher_cfg = Namespace(**searcher_cfg)
+if getattr(searcher_cfg, "strict_train_val_only", False):
+    os.environ["PCPI_STRICT_TRAIN_VAL_ONLY"] = "1"
+    os.environ["PCPI_DISABLE_HELDOUT_PROMPT_DATA"] = "1"
+
+dm = get_datamodule(name=args.dataset, root_folder=args.ds_root_folder)
+dm.setup()
 
 # Paired-run protocol overrides. The auditable runner passes these through the CLI;
 # older runners can still set LLMSRBENCH_PAIRED_SEED / PCPI_LLM_SR_BUDGET.
@@ -267,6 +273,10 @@ elif searcher_cfg.class_name in {
         restart_action_ledger_path=getattr(searcher_cfg, "restart_action_ledger_path", None),
         discovery_config=vars(searcher_cfg),
     )
+    if searcher_class is DRRBenchmarkSearcher and budget_override not in (None, ""):
+        if _budget_int < (int(searcher_cfg.agent_config["discovery_budget"])
+                          * int(searcher_cfg.agent_config["cycles"])):
+            raise ValueError("CLI total budget cannot cover the frozen agent cycle budgets")
     if searcher_class is DRRBenchmarkSearcher:
         searcher_kwargs.update({
             "condition": getattr(searcher_cfg, "condition"),

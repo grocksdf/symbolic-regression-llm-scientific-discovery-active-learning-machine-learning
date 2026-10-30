@@ -25,11 +25,8 @@ def _candidate_package_dirs() -> list[Path]:
     if configured:
         root = Path(configured).expanduser()
         candidates.extend((root / "hypothesis_mvp", root))
-    candidates.extend(
-        (
-            benchmark_root.parent / "hypothesis_mvp" / "hypothesis_mvp",
-        )
-    )
+    if not configured:
+        candidates.append(benchmark_root.parent / "hypothesis_mvp" / "hypothesis_mvp")
     unique: list[Path] = []
     seen: set[str] = set()
     for candidate in candidates:
@@ -88,10 +85,10 @@ def load(module_name: str = "") -> ModuleType:
     qualified_name = "hypothesis_mvp.discovery"
     if module_name:
         qualified_name = f"{qualified_name}.{module_name}"
-    try:
-        return importlib.import_module(qualified_name)
-    except ModuleNotFoundError as exc:
-        if exc.name not in {"hypothesis_mvp", "hypothesis_mvp.discovery", qualified_name}:
-            raise
     ensure_mainline()
-    return importlib.import_module(qualified_name)
+    module = importlib.import_module(qualified_name)
+    expected = ensure_mainline().resolve()
+    source = Path(module.__file__).resolve()
+    if expected not in source.parents:
+        raise MainlineNotFoundError("loaded discovery module is outside the pinned mainline")
+    return module

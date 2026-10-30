@@ -33,10 +33,15 @@ def test_three_arm_child_does_not_decode_sealed_responses():
     ).read_text(encoding="utf-8")
     assert "dataset[:, 1:]" in source
     assert "opened_indices = tuple(order[:cuts[2]])" in source
-    assert '"sealed_response_values_decoded": False' in source
     assert "dataset[:]" not in source
     assert "provider_cost" in source
     assert "THREE_ARM_PROMPT_BYTES" in source
+    # The four boundary flags must be derived from a real monitor, never
+    # written as a literal: a literal cannot turn True when a sealed read
+    # happens, so asserting the literal's presence used to be the defect.
+    assert '"sealed_response_values_decoded": False' not in source
+    assert "DataBoundaryMonitor(registered_train_only())" in source
+    assert "boundary.flags()" in source
 
 
 def test_three_arm_freeze_binds_correctness_and_serial_gate():

@@ -35,6 +35,13 @@ json_safe = _contracts.json_safe
 from hypothesis_mvp.data import DataRole, RoleDataset, SelectionData
 
 
+def _execution_label(value: Any, field: str) -> str:
+    """Fail closed on any execution coordinate that is not a non-empty string."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be a non-empty string, got {value!r}")
+    return value.strip()
+
+
 class PCPISearcher(BaseSearcher):
     """Benchmark I/O only. All scientific logic is delegated to five runtimes."""
 
@@ -49,9 +56,12 @@ class PCPISearcher(BaseSearcher):
         llm_api_key: Optional[str] = None, llm_timeout_s: float = 150.0,
         llm_thinking_type: str = "", llm_reasoning_effort: str = "",
         llm_do_sample: Optional[bool] = None,
+        *, execution_family: str, execution_condition: str,
         **kwargs: Any,
     ) -> None:
         super().__init__(name)
+        self.execution_family = _execution_label(execution_family, "execution_family")
+        self.execution_condition = _execution_label(execution_condition, "execution_condition")
         discovery_config = kwargs.pop("discovery_config", {})
         if not isinstance(discovery_config, Mapping):
             raise TypeError("discovery_config must be a mapping")
@@ -182,15 +192,40 @@ class PCPISearcher(BaseSearcher):
         })
         return SearchResult(equation=equation, aux=aux)
 
+    def _execution_identity(self, task_name: str) -> dict[str, Any]:
+        """Coordinates this searcher actually ran with, never a post hoc parent copy.
+
+        The seed is the very integer that drove the split permutation and the
+        agent configuration; family and condition are the ones bound at
+        construction from the executing process, not read back from a result.
+        """
+        seed = self.random_seed
+        if type(seed) is not int:
+            raise ValueError(f"random_seed must be a strict int, got {seed!r}")
+        name = str(task_name)
+        if not name:
+            raise ValueError("task_name must be a non-empty string")
+        return {
+            "task_name": name,
+            "seed": seed,
+            "family": _execution_label(self.execution_family, "execution_family"),
+            "condition": _execution_label(self.execution_condition, "execution_condition"),
+        }
+
     def _write_artifact(self, task_name: str, report: Mapping[str, Any]) -> None:
         safe = str(task_name).replace("/", "_").replace("\\", "_")
+        identity = self._execution_identity(task_name)
         atomic_write_json(self.artifacts_dir / f"{safe}.json", {
-            "artifact_version": V10_VERSION, "task_name": task_name,
+            "artifact_version": V10_VERSION,
+            **identity,
             "best_export_expression": report.get("best_export_expression"),
             "closed_loop_final_expression": report.get("closed_loop_final_expression"),
             "best_programs": report.get("best_programs", []),
             "scientific_discovery_runtime": dict(report),
-            "metrics": {"scientific_discovery_runtime": dict(report)},
+            "metrics": {
+                "scientific_discovery_runtime": dict(report),
+                "execution_identity": dict(identity),
+            },
         })
 
     def discover(self, task: SEDTask) -> List[SearchResult]:

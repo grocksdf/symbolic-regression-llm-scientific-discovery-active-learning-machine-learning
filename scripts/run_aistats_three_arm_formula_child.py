@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT.parent / "hypothesis_mvp"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from bench.dataclasses import SEDTask
+from bench.data_boundary import DataBoundaryMonitor, registered_train_only
 from ablation_decode_control import (
     DATASET_GROUPS, DECODE_FRACTION_KEY, decoded_response_roles,
     feedback_block_connected, opened_row_indices, resolve_decode_fraction,
@@ -233,6 +234,11 @@ def main(argv=None) -> int:
     config = yaml.safe_load(args.config.read_text(encoding="utf-8"))
     if config["condition"] != args.condition:
         raise ValueError("three-arm child condition/config mismatch")
+    # All four boundary flags are derived from one real monitor. The four
+    # train-only switches the registered runner injects are read here, and a
+    # partial set aborts the child instead of weakening the guarantee.
+    boundary = DataBoundaryMonitor(registered_train_only())
+    boundary.install()
     pysr_runtime = _require_pysr_runtime(config)
     _require_clean_output_dir(args.output_dir)
     with h5py.File(args.hdf5, "r") as handle:
@@ -248,12 +254,18 @@ def main(argv=None) -> int:
             args.condition, config.get(DECODE_FRACTION_KEY))
         opened_indices = opened_row_indices(order, count, decode_fraction)
         sorted_indices = sorted(opened_indices)
+        # Declare the only rows whose response column may be returned; the
+        # guarded dataset then refuses any read of the sealed remainder.
+        boundary.declare_open_rows(dataset.name, opened_indices)
         opened_rows = np.asarray(dataset[sorted_indices, :])
         response_lookup = dict(zip(
             sorted_indices, opened_rows[:, 0], strict=True))
         y = np.zeros(count, dtype=float)
         for index in opened_indices:
             y[index] = response_lookup[index]
+        # The same arrays travel into the isolated engine subprocesses, so this
+        # is the boundary that covers those channels too.
+        boundary.guard_arrays(y, count, opened_indices, "child samples")
         samples = np.column_stack((y, X))
     feature_count = samples.shape[1] - 1
     symbols, descriptions, properties, description, metadata_columns = (
@@ -274,6 +286,7 @@ def main(argv=None) -> int:
     )
     llm_enabled = bool(
         config.get("llm_rl_enabled", config.get("use_llm", False)))
+    boundary_flags = boundary.flags()
     started = time.monotonic()
     provider_cost = []
     original_post = requests.post
@@ -350,6 +363,7 @@ def main(argv=None) -> int:
         llm_do_sample=config.get("llm_do_sample"),
         discovery_config=config,
         condition=config["condition"],
+        execution_family=args.family,
         agent_config=config["agent_config"],
         portfolio_method=config["portfolio_method"],
     )
@@ -362,9 +376,7 @@ def main(argv=None) -> int:
                 not 200 <= row["http_status"] < 300
                 for row in provider_cost) else "generation_failed",
             "provider_cost": provider_cost,
-            "ground_truth_expression_opened": False,
-            "test_or_ood_accessed": False,
-            "heldout_opened": False,
+            **boundary.flags(),
         }
         (args.output_dir / "THREE_ARM_CHILD_FAILURE.json").write_text(
             json.dumps(failure, indent=2, sort_keys=True) + "\n",
@@ -386,13 +398,17 @@ def main(argv=None) -> int:
         "decoded_response_roles": list(decoded_response_roles(decode_fraction)),
         "gap_admission_connected": feedback_block_connected(args.condition),
         "decoded_response_count": len(opened_indices),
-        "sealed_response_values_decoded": False,
+        **boundary_flags,
         "metadata_columns_opened": metadata_columns,
-        "ground_truth_expression_opened": False,
         "provider_cost": provider_cost,
         "pysr_runtime": pysr_runtime,
-        "test_or_ood_accessed": False,
-        "heldout_opened": False,
+        "boundary_monitor": {
+            "train_only": boundary.train_only,
+            "guards_installed": boundary.installed,
+            "boundary_events": boundary.events,
+            "declared_response_horizon": len(opened_indices),
+            "response_rows_total": int(count),
+        },
     }
     (args.output_dir / "THREE_ARM_CHILD_RESULT.json").write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",

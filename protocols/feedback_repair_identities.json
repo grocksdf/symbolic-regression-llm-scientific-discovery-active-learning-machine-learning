@@ -1,0 +1,17 @@
+{
+  "canonical_json": {
+    "protocols/archive/feedback_repair_v1.json": "436eb6ef875b6713045e647f411e95c7bdf575d57e1984caa3e6ddb131bfb243",
+    "protocols/feedback_repair_v2.json": "815d6f137f908efd2f459935e4d3d3fe1bcaf5a59675205763c9a92f546f33e6"
+  },
+  "execution_authorized": false,
+  "hash_algorithm": "SHA-256",
+  "historical_forensics_raw_sha256": "186d16b11427f71b1efab1438f592850ec1df424ffd46df67379e46e58daf9bf",
+  "raw_bytes": {
+    "configs/feedback_mechanism_C_masked_generation_update.yaml": "1785c58da66037f2b62e179264a6080c6d5ed2fafabfa4a051bc07d2b8080a3d",
+    "configs/feedback_mechanism_D_full.yaml": "c119d8c04f704eb52208a4eca4cb188c7386cbf4d79c34ca6b55b4a908c55d3b",
+    "configs/feedback_repair_R_v2.yaml": "9fc010b1ed4a0b867b5bdf7a014a468a65d1cd27322a9d68c85ced578c60712b",
+    "protocols/archive/feedback_repair_v1.json": "5e30aea594307ff4606fe2528e458b72546e893d8e8a757fa071f5093628b2a2",
+    "protocols/feedback_repair_v2.json": "9ea869b1733d9511c0bc79aa302302e7caf2d79859d0003b1ce0a42240a15d15"
+  },
+  "schema": "feedback-repair-input-identities-v2"
+}

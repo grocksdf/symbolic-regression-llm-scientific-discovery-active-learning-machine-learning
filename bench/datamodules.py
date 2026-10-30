@@ -14,6 +14,16 @@ REPO_ID = "nnheui/llm-srbench"
 LOCAL_DATA_DIR_ENV = "LLM_SRBENCH_DATA_DIR"
 
 
+def _train_only():
+    """The registered runner injects four train-only switches; honour every one.
+
+    Arming on any single switch is the delivered loader behaviour, but all four
+    names are read here, so no injected switch can stay inert.
+    """
+    from .data_boundary import loader_train_only
+    return loader_train_only()
+
+
 def _dataset_root(root: Optional[str] = None) -> Path:
     env_root = os.getenv(LOCAL_DATA_DIR_ENV, "").strip()
     if root is not None and str(root).strip():
@@ -67,7 +77,10 @@ def _dataset_parquet_path(root: Path, dataset_identifier: str) -> Path:
     }
     if dataset_identifier not in name_map:
         raise ValueError(f"Unknown dataset identifier: {dataset_identifier}")
-    return Path(root) / name_map[dataset_identifier]
+    relative = Path(name_map[dataset_identifier])
+    candidates = (Path(root) / relative, Path(root) / relative.name)
+    return next((path for path in candidates if path.is_file()),
+                candidates[1] if Path(root).name == "data" else candidates[0])
 
 
 def _load_dataset_from_parquet(root: Path, dataset_identifier: str):
@@ -97,6 +110,12 @@ def _resolve_data_root(root: Optional[str] = None) -> Path:
 
 def _load_problem_rows(root: Path, dataset_identifier: str, split_name: str):
     root = _resolve_data_root(str(root))
+    if _train_only():
+        import pyarrow.parquet as parquet
+        requested = os.environ.get("LLMSRBENCH_PROBLEM_NAME")
+        return parquet.read_table(_dataset_parquet_path(root, dataset_identifier),
+            columns=["name", "symbols", "symbol_descs", "symbol_properties"],
+            filters=[("name", "=", requested)] if requested else None).to_pylist()
     if (root / "README.md").exists():
         try:
             ds = datasets.load_dataset(str(root), split=split_name)
@@ -120,10 +139,16 @@ def _load_from_hdf5(root: Path, dataset_identifier: str):
     with h5py.File(h5_path, "r") as sample_file:
         if prefix not in sample_file:
             return None
-        for group_name, group in sample_file[prefix].items():
+        parent = sample_file[prefix]
+        requested = os.environ.get("LLMSRBENCH_PROBLEM_NAME")
+        names = [requested] if requested else list(parent.keys())
+        train_only = _train_only()
+        for group_name in names:
+            group = parent[group_name]
             if not isinstance(group, h5py.Group):
                 continue
-            samples = {k: v[...].astype(np.float64) for k, v in group.items()}
+            keys = [key for key in ("train", "train_data") if key in group] if train_only else list(group.keys())
+            samples = {key: group[key][...].astype(np.float64) for key in keys}
             problems.append((group_name, samples))
     return problems
 
@@ -166,7 +191,7 @@ class TransformedFeynmanDataModule:
                         symbols=e["symbols"],
                         symbol_descs=e["symbol_descs"],
                         symbol_properties=e["symbol_properties"],
-                        expression=e["expression"],
+                        expression="" if _train_only() else e["expression"],
                     ),
                     samples=sample_map[name],
                 )
@@ -229,7 +254,7 @@ class BaseSynthDataModule:
                         symbols=e["symbols"],
                         symbol_descs=e["symbol_descs"],
                         symbol_properties=e["symbol_properties"],
-                        expression=e["expression"],
+                        expression="" if _train_only() else e["expression"],
                     ),
                     samples=sample_map[name],
                 )

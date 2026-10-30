@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT.parent / "hypothesis_mvp"))
 
+from bench.data_boundary import DataBoundaryMonitor, registered_train_only
 from bench.dataclasses import SEDTask
 from methods.hypothesis_mvp_pcpi.drr_adapter import _ordered_indices
 from methods.hypothesis_mvp_pcpi.drr_searcher import DRRBenchmarkSearcher
@@ -111,6 +112,11 @@ def main(argv=None) -> int:
     config = yaml.safe_load(args.config.read_text(encoding="utf-8"))
     if config["condition"] != args.condition:
         raise ValueError("three-arm child condition/config mismatch")
+    # Same rule as the R arm: the four boundary flags come from one real
+    # monitor bound to this process, never from a literal.  A partial set of
+    # the four registered train-only switches aborts the child.
+    boundary = DataBoundaryMonitor(registered_train_only())
+    boundary.install()
     with h5py.File(args.hdf5, "r") as handle:
         dataset = handle[
             f"{DATASET_GROUPS[args.family]}/{args.task}/train"]
@@ -121,12 +127,18 @@ def main(argv=None) -> int:
             .40, .55, .65, .75, .80, .85, .90, .95))
         opened_indices = tuple(order[:cuts[2]])
         sorted_indices = sorted(opened_indices)
+        # Declare the only rows whose response column may be returned; the
+        # guarded dataset then refuses any read of the sealed remainder.
+        boundary.declare_open_rows(dataset.name, opened_indices)
         opened_rows = np.asarray(dataset[sorted_indices, :])
         response_lookup = dict(zip(
             sorted_indices, opened_rows[:, 0], strict=True))
         y = np.zeros(count, dtype=float)
         for index in opened_indices:
             y[index] = response_lookup[index]
+        # The same arrays travel into the isolated engine subprocesses, so
+        # this is the boundary that covers those channels too.
+        boundary.guard_arrays(y, count, opened_indices, "child samples")
         samples = np.column_stack((y, X))
     feature_count = samples.shape[1] - 1
     symbols, descriptions, properties, description, metadata_columns = (
@@ -205,6 +217,7 @@ def main(argv=None) -> int:
         llm_do_sample=config.get("llm_do_sample"),
         discovery_config=config,
         condition=config["condition"],
+        execution_family=args.family,
         agent_config=config["agent_config"],
         portfolio_method=config["portfolio_method"],
     )
@@ -212,6 +225,7 @@ def main(argv=None) -> int:
         results = searcher.discover(task)
     finally:
         requests.post = original_post
+    boundary_flags = boundary.flags()
     artifact = args.output_dir / "pcpi_artifacts" / f"{args.task}.json"
     payload = {
         "schema": "scientific-aistats-three-arm-child-result-v1",
@@ -225,12 +239,16 @@ def main(argv=None) -> int:
         "decoded_response_roles": [
             "discovery_development", "discovery_validation", "gap_audit"],
         "decoded_response_count": len(opened_indices),
-        "sealed_response_values_decoded": False,
+        **boundary_flags,
         "metadata_columns_opened": metadata_columns,
-        "ground_truth_expression_opened": False,
         "provider_cost": provider_cost,
-        "test_or_ood_accessed": False,
-        "heldout_opened": False,
+        "boundary_monitor": {
+            "train_only": boundary.train_only,
+            "guards_installed": boundary.installed,
+            "boundary_events": boundary.events,
+            "declared_response_horizon": len(opened_indices),
+            "response_rows_total": int(count),
+        },
     }
     (args.output_dir / "THREE_ARM_CHILD_RESULT.json").write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",

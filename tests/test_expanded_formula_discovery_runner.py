@@ -54,7 +54,12 @@ def test_ground_truth_is_opened_only_after_admission_freeze():
     child = (ROOT / "scripts/run_aistats_three_arm_child.py").read_text(
         encoding="utf-8")
     assert 'columns = ["name", "symbols", "symbol_descs", "symbol_properties"]' in child
-    assert '"ground_truth_expression_opened": False' in child
+    # The flag must come from a real monitor: a literal can never turn True
+    # when the ground-truth expression is actually opened, so asserting the
+    # literal's presence used to be the defect rather than the guarantee.
+    assert '"ground_truth_expression_opened": False' not in child
+    assert "DataBoundaryMonitor(registered_train_only())" in child
+    assert "boundary.flags()" in child
 
 
 def test_freeze_keeps_confirmation_closed():

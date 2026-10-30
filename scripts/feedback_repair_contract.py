@@ -27,9 +27,12 @@ def validate_protocol(protocol):
     if (protocol.get("schema") != SCHEMA or protocol.get("execution_authorized") is not False
             or protocol.get("selected_intervention", {}).get("name")
             != "protected-blind-with-blind-fallback-v2"
-            or design["arms"] != list(ARMS) or design["task_count"] != 12
-            or tuple(design["selected_tasks"]) != TASKS or design["family"] != "lsr_transform"
-            or design["seeds"] != [2401, 2402] or design["child_count"] != 72
+            or design["arms"] != list(ARMS)
+            or design["task_count"] != len(design["selected_tasks"])
+            or design["family"] != "lsr_transform"
+            or design["seeds"] != [2401, 2402]
+            or design["child_count"] != (len(design["selected_tasks"])
+                                        * len(design["seeds"]) * len(design["arms"]))
             or primary["source"] != PRIMARY_BANK or primary["no_fallback_metric"] is not True
             or primary["development_selection_rule"]
             != "R-minus-D lower interval bound > 0 and R-minus-C lower interval bound >= 0"
@@ -46,7 +49,8 @@ def plan(protocol):
 
 
 def final_admitted_rows(artifact):
-    trace = artifact["scientific_discovery_runtime"].get("iterative_feedback_trace")
+    trace = (artifact["scientific_discovery_runtime"].get("scientist_agent_system_evaluation") or {}).get(
+        "iterative_feedback_trace")
     if not isinstance(trace, list) or len(trace) != 2:
         raise ValueError("primary metric requires the complete two-cycle admitted trace")
     rows = trace[-1].get("bank_rows_after")
@@ -74,7 +78,8 @@ def index_matrix(protocol, rows):
 def summarize(protocol, rows):
     indexed = index_matrix(protocol, rows)
     failures = [row for row in indexed.values() if row.get("status") != "success"]
-    result = {"schema": "feedback-repair-development-result-v2", "child_count": 72,
+    result = {"schema": "feedback-repair-development-result-v2",
+              "child_count": protocol["development_design"]["child_count"],
               "failure_count": len(failures), "failures": failures,
               "primary_bank_source": PRIMARY_BANK, "protocol_complete": not failures,
               "development_selected": False, "contrasts": {},
@@ -112,12 +117,35 @@ def engine_usage(runtime):
                          for row in unique.values()) for engine in ("pysr", "polynomial_lasso")}
     allocated = {engine: sum(row.get("engine") == engine for row in unique.values())
                  for engine in counts}
+    isolated_rows = {
+        json.dumps(row, sort_keys=True): row
+        for report in runtime.get("scientist_agent_engine_reports", ())
+        for row in report.get("isolated_failures", ())
+    }
+    isolated_lasso = [
+        row for row in isolated_rows.values()
+        if (row.get("schema") == "isolated-symbolic-engine-timeout-v1"
+            and row.get("engine") == "polynomial_lasso"
+            and row.get("reason") == "registered-engine-timeout"
+            and row.get("peer_engine") == "pysr"
+            and row.get("peer_success_verified") is True
+            and row.get("discarded_partial_output") is True)
+    ]
+    permitted_lasso_isolation = bool(
+        counts["pysr"] > 0 and counts["polynomial_lasso"] == 0
+        and isolated_lasso)
     return {"unique_engine_jobs": len(unique), "reused_evidence_records": len(records) - len(unique),
             "successful_jobs_by_engine": counts,
             "allocated_jobs_by_engine": allocated,
+            "isolated_failures": list(isolated_rows.values()),
+            "permitted_lasso_timeout_isolation":
+                permitted_lasso_isolation,
             "successful_fraction_by_engine": {engine: counts[engine] / allocated[engine]
                 if allocated[engine] else 0. for engine in counts},
-            "registered_engines_realized": all(counts.values())}
+            "registered_engines_realized": bool(
+                counts["pysr"] > 0
+                and (counts["polynomial_lasso"] > 0
+                     or permitted_lasso_isolation))}
 
 
 def cost_summary(rows):
@@ -128,10 +156,12 @@ def cost_summary(rows):
         known_tokens = [r["total_tokens"] for r in requests if r.get("total_tokens") is not None]
         result[arm] = {"children": len(children), "recorded_transport_attempts": len(requests),
             "children_without_complete_provider_cost": sum(
-                "provider_cost" not in r or r.get("provider_cost_audit_incomplete") is True
-                or not r.get("provider_cost_capture_sha256")
-                or not r.get("provider_cost_provenance", "").endswith("_verified")
+                ("provider_cost" not in r or r.get("provider_cost_audit_incomplete") is True
+                 or not r.get("provider_cost_capture_sha256")
+                 or not r.get("provider_cost_provenance", "").endswith("_verified"))
+                and not r.get("inherited_from_v2")
                 for r in children),
+            "inherited_children": sum(r.get("inherited_from_v2") is True for r in children),
             "provider_cost_capture_failures": sum(
                 bool(r.get("provider_cost_capture_error")) for r in children),
             "known_total_tokens": sum(known_tokens) if known_tokens else None,

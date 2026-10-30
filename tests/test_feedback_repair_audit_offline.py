@@ -34,7 +34,12 @@ def sample_artifact():
     return {"task_name": CHILD["task"], "family": CHILD["family"],
             "seed": CHILD["seed"], "condition": COND,
             "scientific_discovery_runtime": {
-                "iterative_feedback_trace": [{"bank_rows_after": rows}, {"bank_rows_after": rows}],
+                "scientist_agent_system_evaluation": {
+                    "iterative_feedback_trace": [
+                        {"bank_rows_after": rows},
+                        {"bank_rows_after": rows},
+                    ],
+                },
                 "scientist_agent_engine_reports": [{"run_records": jobs}],
                 "evaluated_hypothesis_bank": []}}
 
@@ -166,6 +171,13 @@ def test_symlink_to_external_artifact_rejected(emission):
         link.symlink_to(path)
     except (NotImplementedError, OSError):
         pytest.skip("creating symlinks is unavailable")
+    if not link.is_symlink():
+        # Unprivileged Windows accounts can return from symlink_to without
+        # creating anything, which would turn this into an unverified
+        # assertion. The boundary is then carried by the equivalent, actually
+        # executable escape vectors in test_feedback_repair_path_escape.py.
+        pytest.skip("this account cannot create file symlinks; "
+                    "equivalent junction/traversal escape tests carry the boundary")
     payload["artifact"] = str(link)
     with pytest.raises(ValueError, match="symlink forbidden"):
         validate_child_artifact(payload, CHILD, folder=folder, condition=COND)
