@@ -60,6 +60,45 @@ ARM_MODES = {
     "cbsi_frontier": "thompson_frontier",
 }
 
+# Schema v3 describes the artifact layout, not permission to run changed
+# search semantics. Old frozen protocols must never silently pick up repairs.
+IMPLEMENTATION_CONTRACT = "cbsi-parent-marginal-search-v1"
+
+
+def verify_implementation_contract(freeze):
+    if freeze.get("implementation_contract") != IMPLEMENTATION_CONTRACT:
+        raise ValueError(
+            "CB-SI implementation changed; historical freezes require their "
+            "original source, and new execution requires a reviewed new freeze")
+
+
+def parent_relative_gain(primary_folds, parent_folds):
+    """Search increment attributable to this edit, not inherited parent gain."""
+    primary = np.asarray(primary_folds, dtype=float)
+    parent = np.asarray(parent_folds, dtype=float)
+    if (primary.ndim != 1 or len(primary) < 2 or parent.shape != primary.shape
+            or not np.all(np.isfinite(primary))
+            or not np.all(np.isfinite(parent))):
+        raise ValueError("parent marginal gain needs finite aligned search folds")
+    with np.errstate(over="raise", invalid="raise"):
+        increments = primary - parent
+        gain = float(np.mean(increments))
+    if not math.isfinite(gain):
+        raise ValueError("nonfinite parent marginal gain")
+    return gain, tuple(float(value) for value in increments)
+
+
+def frontier_promotion_reason(raw_gain, marginal_gain, depth, max_depth):
+    if marginal_gain is None or not math.isfinite(marginal_gain):
+        return "parent_increment_unavailable"
+    if not math.isfinite(raw_gain) or raw_gain <= 0:
+        return "no_gain_over_initial_bank"
+    if marginal_gain <= 0:
+        return "no_gain_over_parent"
+    if depth >= max_depth:
+        return "depth_budget_exhausted"
+    return "promoted"
+
 
 def read(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
@@ -97,6 +136,13 @@ def density(rows, selection, X, y, namespace):
 
 
 class CrossfitBankScorer:
+    """Search-only folds plus a lazily opened, separately cached evaluation.
+
+    Cache keys remain exact expressions within this scorer's fixed bank,
+    roles, namespace and seed. Equal supports of two new candidates are not
+    assumed to imply interchangeable model provenance or priors.
+    """
+
     def __init__(self, E0, selection, left: RoleDataset,
                  right: RoleDataset, evaluation: RoleDataset,
                  namespace: str, seed: int):
@@ -108,39 +154,63 @@ class CrossfitBankScorer:
         self.namespace = namespace
         self.seed = int(seed)
         self.cache = {}
+        self._crossfit_cache = {}
+        self._evaluation_cache = {}
+        self._support_cache = {}
+        self._selection_frozen = False
+        self._selected_expression = None
+        self.selection_identity = None
+        # Preserve the historical successful-candidate counter while exposing
+        # all attempted density/optimizer work, including the baseline bank.
         self.score_calls = 0
+        self.density_evaluations = 0
+        self.baseline_density_evaluations = 0
+        self.candidate_density_evaluations = 0
+        self.optimizer_fits = 0
+        self.cache_hits = 0
+        self.density_cache_hits = 0
+        self.crossfit_cache_hits = 0
+        self.evaluation_cache_hits = 0
         self.e0_supports = {
             tuple(compile_fixed_formula_support(
                 str(row["expression"]),
                 selection.development.X.shape[1]))
             for row in self.E0}
-        self._base = {
-            "left": density(
-                self.E0, selection, left.X, left.y,
-                {"namespace": namespace, "bank": "E0", "fold": "left"}),
-            "right": density(
-                self.E0, selection, right.X, right.y,
-                {"namespace": namespace, "bank": "E0", "fold": "right"}),
-            "evaluation": density(
-                self.E0, selection, evaluation.X, evaluation.y,
-                {"namespace": namespace, "bank": "E0", "fold": "evaluation"}),
-        }
+        self._base = {}
+        self._baseline_density("left")
+        self._baseline_density("right")
+
+    def _role(self, fold):
+        return {"left": self.left, "right": self.right,
+                "evaluation": self.evaluation}[fold]
+
+    def _baseline_density(self, fold):
+        if fold not in self._base:
+            role_value = self._role(fold)
+            self.density_evaluations += 1
+            self.baseline_density_evaluations += 1
+            self._base[fold] = density(
+                self.E0, self.selection, role_value.X, role_value.y,
+                {"namespace": self.namespace, "bank": "E0", "fold": fold})
+        return self._base[fold]
 
     def _candidate_density(self, expression: str, fold: str):
         key = (expression, fold)
         if key in self.cache:
+            self.cache_hits += 1
+            self.density_cache_hits += 1
             return self.cache[key]
-        support = tuple(compile_fixed_formula_support(
-            expression, self.selection.development.X.shape[1]))
+        if expression not in self._support_cache:
+            self._support_cache[expression] = tuple(compile_fixed_formula_support(
+                expression, self.selection.development.X.shape[1]))
+        support = self._support_cache[expression]
         if support in self.e0_supports:
-            values = self._base[fold]
+            # The bank contains unique supports. An existing support adds no
+            # component and leaves the baseline mixture and prior unchanged.
+            values = self._baseline_density(fold)
             self.cache[key] = values
             return values
-        role_value = {
-            "left": self.left,
-            "right": self.right,
-            "evaluation": self.evaluation,
-        }[fold]
+        role_value = self._role(fold)
         row = {
             "expression": expression,
             "source": "cbsi:structural_edit",
@@ -148,6 +218,8 @@ class CrossfitBankScorer:
             "lineage_id": "cbsi-" + sha256(
                 expression.encode()).hexdigest()[:24],
         }
+        self.density_evaluations += 1
+        self.candidate_density_evaluations += 1
         values = density(
             [*self.E0, row], self.selection,
             role_value.X, role_value.y,
@@ -170,28 +242,74 @@ class CrossfitBankScorer:
         return gain, weights, audit
 
     def crossfit_gain(self, expression: str):
+        if self._selection_frozen:
+            raise ValueError("CB-SI search is closed after selection is frozen")
+        if expression in self._crossfit_cache:
+            self.cache_hits += 1
+            self.crossfit_cache_hits += 1
+            return self._crossfit_cache[expression]
         left_candidate = self._candidate_density(expression, "left")
         right_candidate = self._candidate_density(expression, "right")
+        self.optimizer_fits += 1
         left_to_right, _, _ = self._mixture_gain(
             self._base["left"], left_candidate,
             self._base["right"], right_candidate, self.seed + 1)
+        self.optimizer_fits += 1
         right_to_left, _, _ = self._mixture_gain(
             self._base["right"], right_candidate,
             self._base["left"], left_candidate, self.seed + 2)
-        return (left_to_right, right_to_left)
+        result = (left_to_right, right_to_left)
+        self._crossfit_cache[expression] = result
+        return result
+
+    def freeze_selection(self, expression: str | None) -> str:
+        """Seal one searched expression (or baseline fallback) before evaluation."""
+        if self._selection_frozen:
+            if expression != self._selected_expression:
+                raise ValueError("CB-SI selected expression is already frozen")
+            return self.selection_identity
+        if expression is not None and (
+                not isinstance(expression, str)
+                or expression not in self._crossfit_cache):
+            raise ValueError("CB-SI selection requires a scored search expression")
+        self.selection_identity = identity({
+            "schema": "cbsi-search-selection-v1",
+            "namespace": self.namespace,
+            "seed": self.seed,
+            "E0": self.E0,
+            "selected_expression": expression,
+        })
+        self._selected_expression = expression
+        self._selection_frozen = True
+        return self.selection_identity
 
     def evaluation_gain(self, expression: str):
+        from copy import deepcopy
+
+        if (not self._selection_frozen or self._selected_expression is None
+                or expression != self._selected_expression):
+            raise ValueError("CB-SI evaluation requires the frozen selected expression")
+        if expression in self._evaluation_cache:
+            self.cache_hits += 1
+            self.evaluation_cache_hits += 1
+            return deepcopy(self._evaluation_cache[expression])
         left_candidate = self._candidate_density(expression, "left")
         right_candidate = self._candidate_density(expression, "right")
+        # Evaluation covariates and responses are first read here, after the
+        # caller has frozen the selected candidate. Search never opens them.
+        evaluation_base = self._baseline_density("evaluation")
         eval_candidate = self._candidate_density(expression, "evaluation")
         calibration_base = np.concatenate((
             self._base["left"], self._base["right"]))
         calibration_candidate = np.concatenate((
             left_candidate, right_candidate))
+        self.optimizer_fits += 1
         gain, weights, audit = self._mixture_gain(
             calibration_base, calibration_candidate,
-            self._base["evaluation"], eval_candidate, self.seed + 3)
-        return gain, weights.tolist(), audit
+            evaluation_base, eval_candidate, self.seed + 3)
+        result = (gain, weights.tolist(), audit)
+        self._evaluation_cache[expression] = deepcopy(result)
+        return result
 
 
 def finite_prediction(runtime, expression, X):
@@ -377,11 +495,13 @@ class FrontierParent(NamedTuple):
     generation: int
 
 
-def select_frontier_parent(frontier, block, default_parent):
+def select_frontier_parent(frontier, block, default_parent, *, max_depth=None):
     """Exploit search-only descendants on alternating blocks, no retries."""
-    if not frontier or block % 2 == 0:
+    expandable = [item for item in frontier
+                  if max_depth is None or item["parent"].generation < max_depth]
+    if not expandable or block % 2 == 0:
         return default_parent, False
-    best = min(frontier, key=lambda item: (
+    best = min(expandable, key=lambda item: (
         -item["search_gain"], item["parent"].generation,
         item["parent"].structural_hash))
     return best["parent"], True
@@ -390,6 +510,7 @@ def select_frontier_parent(frontier, block, default_parent):
 def run_arm(arm, freeze, coordinate, archive, E0, selection,
             left, right, evaluation, context, domains,
             shared_opportunities):
+    started = time.perf_counter()
     mode = ARM_MODES[arm]
     operators = tuple(freeze["operators"])
     seed = int(coordinate["seed"]) + int(
@@ -429,7 +550,6 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
     eligible = []
     frontier = []
     lineage_depth = {}
-    started = time.perf_counter()
     shared_modes = {"random", "greedy", "thompson_raw",
                     "thompson_matched", "thompson_feasible",
                     "thompson_frontier"}
@@ -442,7 +562,8 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
             site_path = shared["site_path"]
             if mode == "thompson_frontier":
                 parent, from_frontier = select_frontier_parent(
-                    frontier, block, parent)
+                    frontier, block, parent,
+                    max_depth=int(freeze["budget"]["frontier_max_depth"]))
                 if from_frontier:
                     sites = editor.editable_paths(parent.expression)
                     # Adaptive trajectories may have a different tree shape.
@@ -525,6 +646,10 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
         credit = None
         scoring_failure = None
         raw_gain = None
+        marginal_gain = None
+        marginal_folds = None
+        parent_scoring_failure = None
+        promotion_reason = "not_frontier_or_unscored"
         if primary_usable:
             try:
                 primary_folds = scorer.crossfit_gain(str(primary.expression))
@@ -536,6 +661,13 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
                 primary_usable = False
                 primary_folds = None
                 raw_gain = None
+        if primary_usable and mode in {"thompson_feasible", "thompson_frontier"}:
+            try:
+                parent_folds = scorer.crossfit_gain(parent.expression)
+                marginal_gain, marginal_folds = parent_relative_gain(
+                    primary_folds, parent_folds)
+            except (ValueError, FloatingPointError, ArithmeticError) as error:
+                parent_scoring_failure = f"{type(error).__name__}:{error}"
         if primary_usable:
             seen_structures.add(str(primary.structural_hash))
             seen_canonicals.add(str(primary.canonical_hash))
@@ -548,10 +680,11 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
                 policy.update(
                     operator, raw_gain, reward_kind="raw_bank_gain",
                     audit={"paired_control_valid": control_usable})
-            if (mode == "thompson_frontier" and raw_gain > float(
-                    freeze["budget"]["frontier_min_search_gain"])
-                    and parent_depth < int(
-                    freeze["budget"]["frontier_max_depth"])):
+            if mode == "thompson_frontier":
+                promotion_reason = frontier_promotion_reason(
+                    raw_gain, marginal_gain, parent_depth,
+                    int(freeze["budget"]["frontier_max_depth"]))
+            if promotion_reason == "promoted":
                 descendant = FrontierParent(
                     expression=str(primary.expression),
                     structural_hash=str(primary.structural_hash),
@@ -560,6 +693,7 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
                 frontier.append({
                     "parent": descendant,
                     "search_gain": raw_gain,
+                    "parent_relative_gain": marginal_gain,
                     "progenitor": getattr(parent, "lineage_id", None),
                 })
                 frontier.sort(key=lambda row: (
@@ -591,11 +725,15 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
                     reward_kind="matched_counterfactual_credit",
                     audit={"credit": credit.row()})
         if mode in {"thompson_feasible", "thompson_frontier"}:
+            # Search credit is local to this edit. The final protected-bank
+            # candidate is still selected by its absolute gain against E0.
+            observable = primary_usable and marginal_gain is not None
             policy.observe(
                 operator=operator, context=site_context,
-                novel=primary_usable, raw_gain=raw_gain,
-                pair_valid=credit is not None,
-                matched_credit=credit.credit if credit is not None else None)
+                novel=observable, raw_gain=marginal_gain if observable else None,
+                pair_valid=observable and credit is not None,
+                matched_credit=credit.credit
+                if observable and credit is not None else None)
         records.append({
             "block": block,
             "opportunity_id": shared["opportunity_id"]
@@ -603,6 +741,7 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
             "shared_opportunity": mode in shared_modes and not from_frontier,
             "used_frontier_parent": from_frontier,
             "parent_generation": parent_depth,
+            "candidate_generation": parent_depth + 1,
             "parent_lineage_id": getattr(parent, "lineage_id", None),
             "site_context": site_context,
             "planning_eligible_operators": (
@@ -620,6 +759,10 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
             "control_planning_failure": control_planning_failure,
             "pair_identity_failure": pair_identity_failure,
             "scoring_failure": scoring_failure,
+            "parent_scoring_failure": parent_scoring_failure,
+            "parent_relative_gain": marginal_gain,
+            "parent_relative_fold_gains": marginal_folds,
+            "frontier_promotion_reason": promotion_reason,
             "parent_structural_hash": parent.structural_hash,
             "parent_fold_gains": (
                 list(parent_folds) if parent_folds is not None else None),
@@ -641,6 +784,12 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
             row["credit"] if row["credit"] is not None else -math.inf,
             str(row["result"].structural_hash)))
         if eligible else None)
+    selection_expression = (
+        str(selected["result"].expression)
+        if selected is not None and selected["search_gain"] > 0 else None)
+    # Commit the one selected formula before touching evaluation responses.
+    if hasattr(scorer, "freeze_selection"):
+        scorer.freeze_selection(selection_expression)
     if selected is not None and selected["search_gain"] > 0:
         evaluation_gain, weights, optimizer = scorer.evaluation_gain(
             str(selected["result"].expression))
@@ -651,6 +800,7 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
         selected_row = None
     return {
         "arm": arm,
+        "implementation_contract": IMPLEMENTATION_CONTRACT,
         "mode": mode,
         "shared_scorer_seed": scorer_seed,
         "edit_evaluation_budget": evaluations,
@@ -677,6 +827,8 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
             row["used_frontier_parent"] for row in records),
         "frontier_max_observed_depth": max(
             lineage_depth.values(), default=0),
+        "max_attempted_candidate_generation": max(
+            (row["candidate_generation"] for row in records), default=0),
         "final_frontier_size": len(frontier),
         "selected": selected_row,
         "selected_search_gain": (
@@ -687,6 +839,10 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
         "evaluation_stacking_weights": weights,
         "evaluation_optimizer": optimizer,
         "score_calls": scorer.score_calls,
+        "compute": {name: getattr(scorer, name, 0) for name in (
+            "density_evaluations", "baseline_density_evaluations",
+            "candidate_density_evaluations", "optimizer_fits", "cache_hits")},
+        "selection_identity": getattr(scorer, "selection_identity", None),
         "operator_preflight_count": (
             len(policy.operators) * proposal_slots
             if mode in {"thompson_feasible", "thompson_frontier"} else 0),
@@ -765,12 +921,13 @@ def main(argv=None):
     if args.output_root.exists():
         raise ValueError("CB-SI output root already exists")
     freeze = read(args.freeze)
+    verify_implementation_contract(freeze)
     if (freeze.get("schema")
             != "cbsi-zero-provider-development-freeze-v3"
             or freeze.get("execution_authorized") is not True
             or freeze.get("provider_calls_authorized") is not False
             or freeze.get("expensive_engine_runs_authorized") is not False
-            or freeze.get("protocol_id") != "cbsi-contextual-frontier-v3"
+            or freeze.get("protocol_id") != IMPLEMENTATION_CONTRACT
             or set(freeze.get("arms", ())) != set(ARM_MODES)
             or len(freeze.get("arms", ())) != len(ARM_MODES)
             or not 0 <= float(freeze.get("budget", {}).get(
@@ -948,6 +1105,7 @@ def main(argv=None):
             "cbsi_frontier_minus_bank_greedy"))
     result = {
         "schema": "cbsi-zero-provider-development-result-v3",
+        "implementation_contract": IMPLEMENTATION_CONTRACT,
         "protocol_complete": True,
         "matched_opportunity_policy_arms": [
             "blind_random", "bank_greedy", "standard_thompson",

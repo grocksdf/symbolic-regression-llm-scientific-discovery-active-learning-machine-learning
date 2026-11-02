@@ -128,7 +128,7 @@ def test_v3_runner_both_new_arms_preserve_budget_and_provenance(monkeypatch):
         assert result["primary_attempt_count"] == 4
         assert len(result["records"]) == 4
         assert result["provider_calls"] == 0
-        assert result["policy"]["schema"] == "cbsi-feasibility-contextual-policy-v1"
+        assert result["policy"]["schema"] == "cbsi-feasibility-contextual-policy-v2"
         assert all((row["credit"] is None) == (
             not row["counterfactual_pair_valid"]) for row in result["records"])
         scores[arm] = result
@@ -222,7 +222,8 @@ def test_v3_stage_does_not_inherit_authorization_or_rehash_data(tmp_path):
     assert revised["hdf5_sha256"] == "keep-hdf5-hash"
     assert revised["artifact_manifest"] == freeze["artifact_manifest"]
     assert len(revised["arms"]) == 9
-    assert revised["protocol_id"] == "cbsi-contextual-frontier-v3"
+    assert revised["protocol_id"] == MODULE.IMPLEMENTATION_CONTRACT
+    assert revised["implementation_contract"] == MODULE.IMPLEMENTATION_CONTRACT
     assert freeze["file_hashes"] == sources
 
 

@@ -1,4 +1,4 @@
-"""Stage an unauthorised CB-SI contextual-frontier v3 development freeze.
+"""Stage an unauthorised CB-SI parent-marginal development freeze.
 
 Only the registered code identities and algorithm/protocol fields change.
 The copied data, split identities and frozen candidate-pool manifests are
@@ -17,6 +17,7 @@ CHANGED_SOURCES = {
     "counterfactual_bank_symbolic_invention.py",
     "run_cbsi_zero_provider_experiment.py",
 }
+IMPLEMENTATION_CONTRACT = "cbsi-parent-marginal-search-v1"
 V3_ARMS = (
     "blind_random", "single_fitness_proxy", "residual_proxy",
     "influence_proxy", "bank_greedy", "standard_thompson",
@@ -28,16 +29,20 @@ def stage(source: dict, *, edit_evaluations_per_arm: int | None = None) -> dict:
     origin = source.get("schema")
     if (origin not in {
             "cbsi-zero-provider-development-freeze-v1",
-            "cbsi-zero-provider-development-freeze-v2"}
+            "cbsi-zero-provider-development-freeze-v2",
+            "cbsi-zero-provider-development-freeze-v3"}
             or (origin.endswith("-v2") and source.get("protocol_id")
                 != "cbsi-correctness-hotfix-v2")
-            or set(source.get("arms", ())) != set(V3_ARMS[:-2])
+            or (origin.endswith("-v3") and source.get("protocol_id")
+                not in {"cbsi-contextual-frontier-v3", IMPLEMENTATION_CONTRACT})
+            or set(source.get("arms", ())) != set(
+                V3_ARMS if origin.endswith("-v3") else V3_ARMS[:-2])
             or set(source.get("operators", ())) != {
                 "subtree_replacement", "subtree_composition",
                 "operator_substitution", "factor_or_expand",
                 "interaction_insertion", "correction_term",
                 "structural_simplification"}):
-        raise ValueError("a complete v1/v2 CB-SI source freeze is required")
+        raise ValueError("a complete v1/v2/v3 CB-SI source freeze is required")
     # JSON roundtrip copies all provenance without mutating the source.
     new = json.loads(json.dumps(source, allow_nan=False))
     previous = new["file_hashes"]
@@ -63,7 +68,9 @@ def stage(source: dict, *, edit_evaluations_per_arm: int | None = None) -> dict:
     if set(found) != CHANGED_SOURCES:
         raise ValueError("freeze must identify both patched source files")
     new["schema"] = "cbsi-zero-provider-development-freeze-v3"
-    new["protocol_id"] = "cbsi-contextual-frontier-v3"
+    new["protocol_id"] = IMPLEMENTATION_CONTRACT
+    new["implementation_contract"] = IMPLEMENTATION_CONTRACT
+    new.pop("execution_authorization", None)
     new["execution_authorized"] = False
     new["provider_calls_authorized"] = False
     new["expensive_engine_runs_authorized"] = False
@@ -88,14 +95,19 @@ def stage(source: dict, *, edit_evaluations_per_arm: int | None = None) -> dict:
     new["budget"].setdefault("complexity_cost_weight", 0.0)
     new["protocol_algorithm"] = {
         "context": "root/internal x AST node kind",
-        "credit_selection": "feasibility-weighted raw-plus-matched heuristic",
+        "credit_selection": "feasibility-weighted parent-marginal-plus-matched heuristic",
+        "pair_probability": "conditional on an observable novel primary",
         "credit_weight": 0.5,
         "counterfactual_pair": "same parent, donor, site, seed, distinct support",
         "missing_reward": "not imputed; failure updates feasibility only",
         "new_actions": "semantic edits only; no equivalence-only reward",
         "subtree_composition": "multiplication only; addition is correction_term",
         "selection": "search-side two-fold predictive stacking gain",
-        "frontier": "odd blocks use highest positive search-gain descendant",
+        "frontier": (
+            "odd blocks use highest search-gain descendant; promotion requires "
+            "positive gain over both E0 and its own parent"),
+        "evaluation_access": "lazy; exact selection sealed before response access",
+        "reward_cache": "exact expression within fixed scorer only",
         "frontier_candidate_budget": 8,
         "frontier_depth_limit": 3,
         "adaptive_opportunity_warning": "not fully matched to static arms",
