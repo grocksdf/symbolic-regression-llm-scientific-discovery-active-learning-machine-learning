@@ -1,8 +1,13 @@
+from dataclasses import asdict
+import json
+
 import numpy as np
 import pytest
 
 from hypothesis_mvp.discovery.counterfactual_bank_symbolic_invention import (
     BayesianOperatorPolicy,
+    FeasibilityAwareContextualPolicy,
+    NormalGammaArm,
     StructuralEditingEngine,
     counterfactual_edit_credit,
 )
@@ -113,6 +118,16 @@ def test_cost_adjustment_is_relative_to_matched_controls():
     assert result.cost_adjustment == pytest.approx(0.1)
 
 
+def test_counterfactual_credit_preserves_contrast_with_large_shared_parent():
+    result = counterfactual_edit_credit(
+        "correction_term",
+        primary_fold_gains=(1.0, 2.0),
+        parent_fold_gains=(1.0e20, 1.0e20),
+        control_fold_gains=((0.0, 0.0),))
+    assert result.credit == 1.5
+    assert result.standard_error == pytest.approx(0.5)
+
+
 def test_bayesian_policy_updates_without_claiming_novel_selector():
     policy = BayesianOperatorPolicy(
         operators=("correction_term", "operator_substitution"), seed=17)
@@ -194,6 +209,18 @@ def test_existing_support_cannot_be_counted_as_new_bank_member():
     assert duplicate.valid and not duplicate.novel
 
 
+def test_parent_support_is_not_novel_without_explicit_known_supports():
+    engine = StructuralEditingEngine(2)
+    request = engine.deterministic_request(
+        "llm_proposed_edit", "x0 + x1", None, seed=1,
+        mock_llm_expression="2*x0 + x1")
+    result = engine.apply(request, registered_domains=domains())
+    assert result.valid
+    assert not result.symbolically_equivalent
+    assert not result.empirically_equivalent_on_domains
+    assert not result.novel
+
+
 def test_matched_pair_identity_is_checked_before_credit_update():
     from dataclasses import replace
     from hypothesis_mvp.discovery.counterfactual_bank_symbolic_invention import (
@@ -237,6 +264,71 @@ def test_contextual_policy_keeps_invalid_pairs_out_of_credit_posterior():
         policy.observe(operator=one, context=context, novel=False,
                        raw_gain=None, pair_valid=False, matched_credit=0.0)
     assert policy.audit()["claim_boundary"].startswith("adaptive-score")
+
+
+def test_pair_identification_counts_condition_on_novel_primary():
+    policy = FeasibilityAwareContextualPolicy(operators=("correction_term",))
+    context = "root:leaf"
+    key = policy._key(context, "correction_term")
+    policy.observe(operator="correction_term", context=context, novel=False,
+                   raw_gain=None, pair_valid=False, matched_credit=None)
+    assert policy.feasible[key] == [0, 1]
+    assert key not in policy.paired
+    policy.observe(operator="correction_term", context=context, novel=True,
+                   raw_gain=0.2, pair_valid=False, matched_credit=None)
+    policy.observe(operator="correction_term", context=context, novel=True,
+                   raw_gain=0.3, pair_valid=True, matched_credit=0.1)
+    assert policy.feasible[key] == [2, 1]
+    assert policy.paired[key] == [1, 1]
+    audit = policy.audit()
+    assert audit["schema"] == "cbsi-feasibility-contextual-policy-v2"
+    assert audit["pair_identification_condition"] == "novel_primary"
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), -float("inf")])
+@pytest.mark.parametrize("reward_field", ["raw_gain", "matched_credit"])
+def test_nonfinite_contextual_observation_leaves_audit_unchanged(
+    invalid, reward_field,
+):
+    policy = FeasibilityAwareContextualPolicy(operators=("correction_term",))
+    evidence = dict(operator="correction_term", context="root:leaf", novel=True,
+                    raw_gain=0.2, pair_valid=True, matched_credit=0.1)
+    policy.observe(**evidence)
+    before = json.dumps(policy.audit(), sort_keys=True, allow_nan=False)
+    evidence[reward_field] = invalid
+    with pytest.raises(ValueError, match="nonfinite"):
+        policy.observe(**evidence)
+    assert json.dumps(policy.audit(), sort_keys=True, allow_nan=False) == before
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf"), -float("inf")])
+def test_nonfinite_normal_gamma_update_is_atomic(invalid):
+    arm = NormalGammaArm()
+    arm.update(0.25)
+    before = asdict(arm)
+    with pytest.raises(ValueError, match="nonfinite"):
+        arm.update(invalid)
+    assert asdict(arm) == before
+
+
+def test_overflowing_normal_gamma_update_is_atomic():
+    arm = NormalGammaArm()
+    arm.update(1.0e154)
+    before = asdict(arm)
+    with pytest.raises(ValueError, match="nonfinite moments"):
+        arm.update(-1.0e154)
+    assert asdict(arm) == before
+
+
+def test_late_credit_overflow_does_not_publish_raw_observation():
+    policy = FeasibilityAwareContextualPolicy(operators=("correction_term",))
+    policy.observe(operator="correction_term", context="root:leaf", novel=True,
+                   raw_gain=0.2, pair_valid=True, matched_credit=1.0e154)
+    before = json.dumps(policy.audit(), sort_keys=True, allow_nan=False)
+    with pytest.raises(ValueError, match="nonfinite moments"):
+        policy.observe(operator="correction_term", context="root:leaf", novel=True,
+                       raw_gain=0.3, pair_valid=True, matched_credit=-1.0e154)
+    assert json.dumps(policy.audit(), sort_keys=True, allow_nan=False) == before
 
 
 def test_preflight_rejects_equivalent_rewrites_and_unsupported_grammar():

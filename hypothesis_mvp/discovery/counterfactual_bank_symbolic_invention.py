@@ -492,6 +492,8 @@ class StructuralEditingEngine:
             support = tuple(compile_fixed_formula_support(
                 dag.expression, self.n_features))
             support_hash = _stable_hash(support)
+            parent_support = tuple(compile_fixed_formula_support(
+                parent.expression, self.n_features))
             candidate_predictions = []
             parent_predictions = []
             for values in checked_domains:
@@ -525,6 +527,7 @@ class StructuralEditingEngine:
                 and dag.structural_hash != parent.structural_hash
                 and dag.structural_hash not in known_structures
                 and dag.canonical_hash not in known_canonicals
+                and support != parent_support
                 and support_hash not in known_supports)
             return StructuralEditResult(
                 request.identity, request.operator,
@@ -632,9 +635,9 @@ def counterfactual_edit_credit(
             or not math.isfinite(float(cost_weight))
             or cost_weight < 0):
         raise ValueError("counterfactual credit has invalid costs")
-    paired = (
-        (primary - parent)
-        - np.mean(controls - parent[None, :], axis=0))
+    # Cancel the shared parent algebraically, before floating subtraction.
+    # Subtracting a large parent first can erase an identifiable edit contrast.
+    paired = primary - np.mean(controls, axis=0)
     cost_adjustment = float(cost_weight) * (
         float(primary_cost) - float(np.mean(control_cost_array)))
     credit = float(np.mean(paired) - cost_adjustment)
@@ -675,10 +678,13 @@ class NormalGammaArm:
         value = float(value)
         if not math.isfinite(value):
             raise ValueError("operator reward is nonfinite")
-        self.count += 1
+        next_count = self.count + 1
         delta = value - self.mean
-        self.mean += delta / self.count
-        self.m2 += delta * (value - self.mean)
+        next_mean = self.mean + delta / next_count
+        next_m2 = self.m2 + delta * (value - next_mean)
+        if not math.isfinite(next_mean) or not math.isfinite(next_m2):
+            raise ValueError("operator reward update produced nonfinite moments")
+        self.count, self.mean, self.m2 = next_count, next_mean, next_m2
 
     def posterior_parameters(self) -> tuple[float, float, float, float]:
         n = float(self.count)
@@ -803,6 +809,10 @@ class FeasibilityAwareContextualPolicy:
     inform a Beta feasibility model, while only genuinely scored matched
     pairs update the separate Normal-Gamma credit model.  Site-specific
     rewards back off to operator-wide evidence until two local observations.
+
+    The sampled score is P(novel) * (raw_gain_given_novel + credit_weight
+    * P(pair_valid | novel) * credit_given_valid_pair).  A failed primary
+    updates only novelty feasibility; it is not a conditional pair trial.
     """
 
     operators: tuple[str, ...] = INVENTION_OPERATORS
@@ -891,32 +901,51 @@ class FeasibilityAwareContextualPolicy:
                 or (matched_credit is None) != (not pair_valid)
                 or (pair_valid and not novel)):
             raise ValueError("inconsistent contextual evidence identity")
+        raw_value = float(raw_gain) if raw_gain is not None else None
+        credit_value = (
+            float(matched_credit) if matched_credit is not None else None)
+        if any(value is not None and not math.isfinite(value)
+               for value in (raw_value, credit_value)):
+            raise ValueError("contextual evidence reward is nonfinite")
         key = self._key(context, operator)
+        # Stage every update, including possible arithmetic failures, before
+        # publishing any part of this evidence event.
+        pending_updates = []
+        for value, global_arms, local_arms in (
+            (raw_value, self.raw_global, self.raw_local),
+            (credit_value, self.credit_global, self.credit_local),
+        ):
+            if value is None:
+                continue
+            global_arm = copy.deepcopy(global_arms[operator])
+            local_arm = copy.deepcopy(local_arms.get(key, NormalGammaArm()))
+            global_arm.update(value)
+            local_arm.update(value)
+            pending_updates.append((global_arms, operator, global_arm))
+            pending_updates.append((local_arms, key, local_arm))
+        for arms, arm_key, arm in pending_updates:
+            arms[arm_key] = arm
         novel_counts = self.feasible.setdefault(key, [0, 0])
         novel_counts[0 if novel else 1] += 1
-        pair_counts = self.paired.setdefault(key, [0, 0])
-        pair_counts[0 if pair_valid else 1] += 1
-        if raw_gain is not None:
-            self.raw_global[operator].update(raw_gain)
-            self.raw_local.setdefault(key, NormalGammaArm()).update(raw_gain)
-        if matched_credit is not None:
-            self.credit_global[operator].update(matched_credit)
-            self.credit_local.setdefault(key, NormalGammaArm()).update(matched_credit)
+        if novel:
+            pair_counts = self.paired.setdefault(key, [0, 0])
+            pair_counts[0 if pair_valid else 1] += 1
         self.observations.append({
             "operator": operator, "context": context,
             "novel": novel, "pair_valid": pair_valid,
-            "raw_gain": raw_gain, "matched_credit": matched_credit,
+            "raw_gain": raw_value, "matched_credit": credit_value,
         })
 
     def audit(self) -> dict:
         return {
-            "schema": "cbsi-feasibility-contextual-policy-v1",
+            "schema": "cbsi-feasibility-contextual-policy-v2",
             "operator_set": list(self.operators),
             "seed": self.seed, "credit_weight": self.credit_weight,
             "decisions": list(self.decisions),
             "observations": list(self.observations),
             "feasibility_counts": dict(self.feasible),
             "pair_identification_counts": dict(self.paired),
+            "pair_identification_condition": "novel_primary",
             "raw_posterior": {k: v.audit() for k, v in self.raw_global.items()},
             "credit_posterior": {k: v.audit() for k, v in self.credit_global.items()},
             "local_raw_posterior": {k: v.audit() for k, v in self.raw_local.items()},
