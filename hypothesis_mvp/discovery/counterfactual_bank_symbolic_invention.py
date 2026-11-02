@@ -46,6 +46,14 @@ ZERO_PROVIDER_OPERATORS = tuple(
     value for value in STRUCTURAL_OPERATORS if value != "llm_proposed_edit"
 )
 
+# Algebraic normalizers change the representation, not the predictive law.
+# They remain available for intermediate rewriting, but cannot consume a
+# semantic invention slot in the feasibility-aware search arm.
+INVENTION_OPERATORS = tuple(
+    op for op in ZERO_PROVIDER_OPERATORS
+    if op not in {"factor_or_expand", "structural_simplification"}
+)
+
 
 def _stable_hash(value: object) -> str:
     return sha256(json.dumps(
@@ -170,6 +178,9 @@ class StructuralEditResult:
     failure_reason: str | None
     registered_domain_count: int
     provider_calls: int = 0
+    symbolically_equivalent: bool = False
+    empirically_equivalent_on_domains: bool = False
+    support_hash: str | None = None
 
     def row(self) -> dict:
         return asdict(self)
@@ -195,6 +206,23 @@ class StructuralEditingEngine:
         self.runtime.dag(expression)
         return tuple(_ast_paths(_parse_body(expression)))
 
+    def eligible_paths(
+        self,
+        operator: str,
+        parent_expression: str,
+        donor_expression: str | None,
+    ) -> tuple[tuple[int, ...], ...]:
+        """Response-free, syntax-level eligibility (never inspects labels)."""
+        if operator not in STRUCTURAL_OPERATORS:
+            raise ValueError("unknown structural edit operator")
+        paths = self.editable_paths(parent_expression)
+        root = _parse_body(parent_expression)
+        return tuple(
+            path for path in paths
+            if self._operator_supported_at_site(
+                operator, _node_at_path(root, path), donor_expression)
+        )
+
     def deterministic_request(
         self,
         operator: str,
@@ -213,10 +241,17 @@ class StructuralEditingEngine:
         if not paths:
             raise ValueError("parent expression has no editable site")
         if site_path is None:
+            # Do not blindly send operator substitutions to bare variables.
+            eligible = self.eligible_paths(
+                operator, parent_expression, donor_expression)
+            if not eligible:
+                raise ValueError("no applicable edit site for operator")
             digest = sha256(
                 f"{task_identity}:{seed}:{operator}:site".encode()).digest()
-            site = paths[int.from_bytes(digest[:8], "big") % len(paths)]
+            site = eligible[int.from_bytes(digest[:8], "big") % len(eligible)]
         else:
+            # Explicit frozen opportunities are permitted to fail and must be
+            # recorded by the runner; changing them would break matching.
             site = tuple(int(index) for index in site_path)
             if site not in paths:
                 raise ValueError("requested edit site is not editable")
@@ -231,15 +266,68 @@ class StructuralEditingEngine:
             matched_control_of=matched_control_of,
         )
 
-    @staticmethod
-    def _operator_supported_at_site(operator: str, selected: ast.AST) -> bool:
+    def _operator_supported_at_site(
+        self,
+        operator: str,
+        selected: ast.AST,
+        donor_expression: str | None = None,
+    ) -> bool:
+        if operator in {
+                "subtree_replacement", "subtree_composition",
+                "correction_term"} and not donor_expression:
+            return False
+        if operator == "interaction_insertion" and self.n_features < 2:
+            return False
         if operator == "operator_substitution":
             return (isinstance(selected, (ast.BinOp, ast.UnaryOp))
                     or (isinstance(selected, ast.Call)
                         and isinstance(selected.func, ast.Name)
                         and selected.func.id in
                         {"sin", "cos", "tanh", "exp", "log"}))
-        return operator in ZERO_PROVIDER_OPERATORS
+        if operator in {"factor_or_expand", "structural_simplification"}:
+            return isinstance(selected, (ast.BinOp, ast.UnaryOp, ast.Call))
+        return operator in ZERO_PROVIDER_OPERATORS or operator == "llm_proposed_edit"
+
+    def applicable_operators(
+        self,
+        parent_expression: str,
+        donor_expression: str | None,
+        site_path: Sequence[int],
+        *,
+        seed: int,
+        operators: Sequence[str] = INVENTION_OPERATORS,
+        known_support_hashes: Iterable[str] = (),
+    ) -> tuple[str, ...]:
+        """Preflight bounded syntax/grammar without response access or retries.
+
+        Only the selected operator consumes a primary slot.  All operator
+        preflight checks must be logged as planning work by the caller.
+        """
+        root = _parse_body(parent_expression)
+        selected = _node_at_path(root, site_path)
+        parent_support = tuple(compile_fixed_formula_support(
+            parent_expression, self.n_features))
+        eligible = []
+        known_support = set(map(str, known_support_hashes))
+        for operator in operators:
+            if operator not in INVENTION_OPERATORS or not self._operator_supported_at_site(
+                    operator, selected, donor_expression):
+                continue
+            request = StructuralEditRequest(
+                operator, parent_expression, donor_expression,
+                tuple(site_path), int(seed))
+            try:
+                raw = self._raw_edit(request)
+                if len(list(ast.walk(ast.parse(raw, mode="eval")))) > self.maximum_ast_nodes:
+                    continue
+                support = tuple(compile_fixed_formula_support(
+                    raw, self.n_features))
+                if (support != parent_support
+                        and _stable_hash(support) not in known_support):
+                    eligible.append(operator)
+            except (ValueError, SyntaxError, TypeError, OverflowError):
+                continue
+        return tuple(eligible)
 
     def matched_control_request(
         self,
@@ -247,35 +335,52 @@ class StructuralEditingEngine:
         *,
         control_operator: str | None = None,
     ) -> StructuralEditRequest:
-        if control_operator is None:
-            selected = _node_at_path(
-                _parse_body(primary.parent_expression), primary.site_path)
-            alternatives = [
-                value for value in ZERO_PROVIDER_OPERATORS
-                if value != primary.operator
-                and self._operator_supported_at_site(value, selected)]
-            if not alternatives:
-                raise ValueError("no matched control operator available")
-            digest = sha256(
-                f"{primary.identity}:control".encode()).digest()
-            control_operator = alternatives[
-                int.from_bytes(digest[:8], "big") % len(alternatives)]
+        """Deterministic *distinct* control under the same frozen opportunity.
+
+        No response arrays are opened. If there is no admissible control the
+        caller must record an invalid pair, not substitute a zero reward.
+        """
         selected = _node_at_path(
             _parse_body(primary.parent_expression), primary.site_path)
-        if (control_operator not in ZERO_PROVIDER_OPERATORS
+        if control_operator is not None and (
+                control_operator not in ZERO_PROVIDER_OPERATORS
                 or control_operator == primary.operator
                 or not self._operator_supported_at_site(
-                    control_operator, selected)):
+                    control_operator, selected, primary.donor_expression)):
             raise ValueError("invalid or inapplicable matched control operator")
-        return StructuralEditRequest(
-            operator=control_operator,
-            parent_expression=primary.parent_expression,
-            donor_expression=primary.donor_expression,
-            site_path=primary.site_path,
-            seed=primary.seed,
-            task_identity=primary.task_identity,
-            matched_control_of=primary.identity,
-        )
+        # A grammar-level check avoids controls with missing donor, duplicate
+        # proposals or provably identical expanded-formula support.
+        try:
+            primary_support = tuple(compile_fixed_formula_support(
+                self._raw_edit(primary), self.n_features))
+        except (ValueError, SyntaxError, TypeError, OverflowError) as error:
+            raise ValueError("primary edit cannot form a matched pair") from error
+        eligible = []
+        options = ((control_operator,) if control_operator is not None
+                   else INVENTION_OPERATORS)
+        for operator in options:
+            if (operator == primary.operator
+                    or not self._operator_supported_at_site(
+                        operator, selected, primary.donor_expression)):
+                continue
+            trial = StructuralEditRequest(
+                operator, primary.parent_expression,
+                primary.donor_expression, primary.site_path, primary.seed,
+                primary.task_identity, matched_control_of=primary.identity)
+            try:
+                raw = self._raw_edit(trial)
+                if len(list(ast.walk(ast.parse(raw, mode="eval")))) > self.maximum_ast_nodes:
+                    continue
+                signature = tuple(compile_fixed_formula_support(
+                    raw, self.n_features))
+                if signature != primary_support:
+                    eligible.append(trial)
+            except (ValueError, SyntaxError, TypeError, OverflowError):
+                continue
+        if not eligible:
+            raise ValueError("no distinct executable matched control")
+        digest = sha256(f"{primary.identity}:control".encode()).digest()
+        return eligible[int.from_bytes(digest[:8], "big") % len(eligible)]
 
     def _raw_edit(self, request: StructuralEditRequest) -> str:
         # Requests may be constructed directly: validate the site here too.
@@ -301,7 +406,9 @@ class StructuralEditingEngine:
         elif request.operator == "subtree_composition":
             if donor is None:
                 raise ValueError("subtree composition needs donor material")
-            operation = ast.Add() if request.seed % 2 == 0 else ast.Mult()
+            # Composition means a multiplicative interaction, distinct from
+            # the additive correction_term operator (v3 protocol semantic).
+            operation = ast.Mult()
             replacement = ast.BinOp(
                 left=copy.deepcopy(selected), op=operation,
                 right=copy.deepcopy(donor))
@@ -359,44 +466,76 @@ class StructuralEditingEngine:
         *,
         registered_domains: Sequence[np.ndarray],
         known_structural_hashes: Iterable[str] = (),
+        known_canonical_hashes: Iterable[str] = (),
+        known_support_hashes: Iterable[str] = (),
     ) -> StructuralEditResult:
         lineage_id = "cbsi-" + request.identity[:24]
         try:
+            # Every registered covariate domain must contain observable rows.
+            # Empty arrays previously made allclose vacuously report equality.
+            if not registered_domains:
+                raise ValueError("registered domain set must not be empty")
+            checked_domains = []
+            for domain in registered_domains:
+                values = np.asarray(domain, dtype=float)
+                if (values.ndim != 2 or len(values) == 0
+                        or values.shape[1] != self.n_features
+                        or not np.all(np.isfinite(values))):
+                    raise ValueError("registered domain needs finite nonempty covariates")
+                checked_domains.append(values)
             parent = self.runtime.dag(request.parent_expression)
             raw = self._raw_edit(request)
             root = ast.parse(raw, mode="eval")
             if len(list(ast.walk(root))) > self.maximum_ast_nodes:
                 raise ValueError("edited expression exceeds AST budget")
             dag = self.runtime.dag(raw)
-            compile_fixed_formula_support(dag.expression, self.n_features)
-            if not registered_domains:
-                raise ValueError("registered domain set must not be empty")
+            support = tuple(compile_fixed_formula_support(
+                dag.expression, self.n_features))
+            support_hash = _stable_hash(support)
             candidate_predictions = []
             parent_predictions = []
-            for domain in registered_domains:
-                values = np.asarray(domain)
+            for values in checked_domains:
                 candidate_predictions.append(
                     self.runtime.predict(dag.expression, values))
                 parent_predictions.append(
                     self.runtime.predict(parent.expression, values))
-            equivalent = dag.canonical_hash == parent.canonical_hash
-            if not equivalent:
-                equivalent = all(
-                    np.allclose(left, right, rtol=1.0e-10, atol=1.0e-12)
-                    for left, right in zip(
-                        parent_predictions, candidate_predictions,
-                        strict=True))
-            known = set(str(value) for value in known_structural_hashes)
-            novel = (
-                not equivalent
+            empirical_equivalence = all(
+                np.allclose(left, right, rtol=1.0e-10, atol=1.0e-12)
+                for left, right in zip(
+                    parent_predictions, candidate_predictions,
+                    strict=True))
+            symbolic_equivalence = dag.canonical_hash == parent.canonical_hash
+            # Small expressions admit a symbolic identity check.  Numerical
+            # agreement on finite covariates must NEVER imply this identity.
+            if not symbolic_equivalence and len(list(ast.walk(root))) <= 96:
+                try:
+                    left = self.runtime.registry.parse(
+                        parent.expression, self.n_features, evaluate=False)
+                    right = self.runtime.registry.parse(
+                        dag.expression, self.n_features, evaluate=False)
+                    if sp.count_ops(left) + sp.count_ops(right) <= 72:
+                        symbolic_equivalence = bool(sp.simplify(left - right) == 0)
+                except (ValueError, TypeError, ArithmeticError):
+                    pass
+            known_structures = set(map(str, known_structural_hashes))
+            known_canonicals = set(map(str, known_canonical_hashes))
+            known_supports = set(map(str, known_support_hashes))
+            novelty = (
+                not symbolic_equivalence
                 and dag.structural_hash != parent.structural_hash
-                and dag.structural_hash not in known)
+                and dag.structural_hash not in known_structures
+                and dag.canonical_hash not in known_canonicals
+                and support_hash not in known_supports)
             return StructuralEditResult(
                 request.identity, request.operator,
                 request.parent_expression, request.donor_expression,
                 request.site_path, dag.expression, dag.canonical_hash,
                 dag.structural_hash, lineage_id, dag.complexity,
-                True, novel, equivalent, None, len(registered_domains), 0)
+                True, novelty, symbolic_equivalence, None,
+                len(checked_domains), 0,
+                symbolically_equivalent=symbolic_equivalence,
+                empirically_equivalent_on_domains=empirical_equivalence,
+                support_hash=support_hash)
         except Exception as error:
             return StructuralEditResult(
                 request.identity, request.operator,
@@ -405,6 +544,32 @@ class StructuralEditingEngine:
                 False, False, False,
                 f"{type(error).__name__}:{error}",
                 len(registered_domains), 0)
+
+
+def validate_matched_edit_pair(
+    primary_request: StructuralEditRequest,
+    control_request: StructuralEditRequest,
+    primary: StructuralEditResult,
+    control: StructuralEditResult,
+) -> None:
+    """Fail closed on counterfactual identity before accepting fold credit.
+
+    Numerical fold arrays cannot prove matching on their own.  The runner
+    MUST call this guard before counterfactual_edit_credit.
+    """
+    if (control_request.matched_control_of != primary_request.identity
+            or control_request.operator == primary_request.operator
+            or any(getattr(primary_request, field) !=
+                   getattr(control_request, field)
+                   for field in ("parent_expression", "donor_expression",
+                                 "site_path", "seed", "task_identity"))
+            or primary.request_identity != primary_request.identity
+            or control.request_identity != control_request.identity
+            or not primary.valid or not primary.novel
+            or not control.valid or not control.novel
+            or primary.support_hash is None or control.support_hash is None
+            or primary.support_hash == control.support_hash):
+        raise ValueError("invalid or non-distinct matched edit evidence")
 
 
 @dataclass(frozen=True)
@@ -627,3 +792,134 @@ class BayesianOperatorPolicy:
                 "Bank-conditional structural credit."),
         }
 
+
+
+@dataclass
+class FeasibilityAwareContextualPolicy:
+    """Experimental CB-SI operator policy with contextual evidence accounting.
+
+    The score is a *heuristic* feasibility-weighted posterior draw, not a
+    calibrated Bayesian posterior over scientific formula truth.  Failures
+    inform a Beta feasibility model, while only genuinely scored matched
+    pairs update the separate Normal-Gamma credit model.  Site-specific
+    rewards back off to operator-wide evidence until two local observations.
+    """
+
+    operators: tuple[str, ...] = INVENTION_OPERATORS
+    seed: int = 0
+    credit_weight: float = 0.5
+    raw_global: dict[str, NormalGammaArm] = field(init=False)
+    credit_global: dict[str, NormalGammaArm] = field(init=False)
+    raw_local: dict[str, NormalGammaArm] = field(default_factory=dict)
+    credit_local: dict[str, NormalGammaArm] = field(default_factory=dict)
+    feasible: dict[str, list[int]] = field(default_factory=dict)
+    paired: dict[str, list[int]] = field(default_factory=dict)
+    decisions: list[dict] = field(default_factory=list)
+    observations: list[dict] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if (not self.operators or len(set(self.operators)) != len(self.operators)
+                or any(op not in INVENTION_OPERATORS for op in self.operators)
+                or not math.isfinite(self.credit_weight)
+                or self.credit_weight < 0):
+            raise ValueError("invalid contextual policy contract")
+        self.raw_global = {op: NormalGammaArm() for op in self.operators}
+        self.credit_global = {op: NormalGammaArm() for op in self.operators}
+
+    @staticmethod
+    def site_context(parent_expression: str, site_path: Sequence[int]) -> str:
+        site = _node_at_path(_parse_body(parent_expression), site_path)
+        if isinstance(site, ast.BinOp):
+            kind = "binary"
+        elif isinstance(site, ast.UnaryOp):
+            kind = "unary"
+        elif isinstance(site, ast.Call):
+            kind = "function"
+        else:
+            kind = "leaf"
+        return f"{'root' if not site_path else 'internal'}:{kind}"
+
+    @staticmethod
+    def _key(context: str, operator: str) -> str:
+        return f"{context}/{operator}"
+
+    def choose(
+        self, step: int, *, context: str, eligible_operators: Sequence[str],
+    ) -> str:
+        allowed = tuple(op for op in self.operators if op in eligible_operators)
+        if not allowed:
+            raise ValueError("no eligible contextual operator")
+        rng = np.random.default_rng(
+            int(self.seed) + 104729 * (int(step) + 1))
+        scores = {}
+        for operator in allowed:
+            key = self._key(context, operator)
+            counts = self.feasible.get(key, [0, 0])
+            success = float(rng.beta(1 + counts[0], 1 + counts[1]))
+            pair_counts = self.paired.get(key, [0, 0])
+            paired_probability = float(rng.beta(
+                1 + pair_counts[0], 1 + pair_counts[1]))
+            # Local backoff is explicit to avoid overfitting a one-shot site.
+            local_raw = self.raw_local.get(key)
+            local_credit = self.credit_local.get(key)
+            raw_arm = (local_raw if local_raw is not None
+                       and local_raw.count >= 2 else self.raw_global[operator])
+            credit_arm = (local_credit if local_credit is not None
+                          and local_credit.count >= 2
+                          else self.credit_global[operator])
+            score = success * (
+                raw_arm.sample(rng)
+                + self.credit_weight * paired_probability * credit_arm.sample(rng))
+            scores[operator] = float(score)
+        choice = min(allowed, key=lambda op: (-scores[op], op))
+        self.decisions.append({
+            "step": int(step), "context": str(context),
+            "eligible": list(allowed), "choice": choice,
+            "scores": scores,
+        })
+        return choice
+
+    def observe(
+        self, *, operator: str, context: str, novel: bool,
+        raw_gain: float | None, pair_valid: bool,
+        matched_credit: float | None,
+    ) -> None:
+        if operator not in self.raw_global:
+            raise ValueError("unknown contextual operator")
+        if (type(novel) is not bool or type(pair_valid) is not bool
+                or (raw_gain is None) != (not novel)
+                or (matched_credit is None) != (not pair_valid)
+                or (pair_valid and not novel)):
+            raise ValueError("inconsistent contextual evidence identity")
+        key = self._key(context, operator)
+        novel_counts = self.feasible.setdefault(key, [0, 0])
+        novel_counts[0 if novel else 1] += 1
+        pair_counts = self.paired.setdefault(key, [0, 0])
+        pair_counts[0 if pair_valid else 1] += 1
+        if raw_gain is not None:
+            self.raw_global[operator].update(raw_gain)
+            self.raw_local.setdefault(key, NormalGammaArm()).update(raw_gain)
+        if matched_credit is not None:
+            self.credit_global[operator].update(matched_credit)
+            self.credit_local.setdefault(key, NormalGammaArm()).update(matched_credit)
+        self.observations.append({
+            "operator": operator, "context": context,
+            "novel": novel, "pair_valid": pair_valid,
+            "raw_gain": raw_gain, "matched_credit": matched_credit,
+        })
+
+    def audit(self) -> dict:
+        return {
+            "schema": "cbsi-feasibility-contextual-policy-v1",
+            "operator_set": list(self.operators),
+            "seed": self.seed, "credit_weight": self.credit_weight,
+            "decisions": list(self.decisions),
+            "observations": list(self.observations),
+            "feasibility_counts": dict(self.feasible),
+            "pair_identification_counts": dict(self.paired),
+            "raw_posterior": {k: v.audit() for k, v in self.raw_global.items()},
+            "credit_posterior": {k: v.audit() for k, v in self.credit_global.items()},
+            "local_raw_posterior": {k: v.audit() for k, v in self.raw_local.items()},
+            "local_credit_posterior": {k: v.audit() for k, v in self.credit_local.items()},
+            "claim_boundary": "adaptive-score heuristic; no posterior over formula truth",
+        }

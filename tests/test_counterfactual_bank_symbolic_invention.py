@@ -122,3 +122,128 @@ def test_bayesian_policy_updates_without_claiming_novel_selector():
     assert audit["posteriors"][first]["count"] == 1
     assert audit["novelty_claim_authorized"] is False
     assert policy.choose(1, mode="thompson") in policy.operators
+
+
+def test_missing_donor_is_not_an_eligible_primary_or_matched_control():
+    engine = StructuralEditingEngine(2)
+    assert not engine.eligible_paths("subtree_replacement", "x0 + x1", None)
+    with pytest.raises(ValueError, match="applicable"):
+        engine.deterministic_request(
+            "correction_term", "x0", None, seed=1)
+    primary = engine.deterministic_request(
+        "interaction_insertion", "x0", None, seed=1, site_path=())
+    # There are no distinct donor-free semantic controls on a leaf.
+    with pytest.raises(ValueError, match="distinct"):
+        engine.matched_control_request(primary)
+
+
+def test_operator_substitution_chooses_an_eligible_site():
+    engine = StructuralEditingEngine(2)
+    request = engine.deterministic_request(
+        "operator_substitution", "x0 + x1", "x0", seed=3)
+    assert request.site_path == ()
+    assert engine.apply(request, registered_domains=domains()).valid
+
+
+def test_semantic_composition_is_distinct_from_additive_correction():
+    engine = StructuralEditingEngine(2)
+    one = engine.deterministic_request(
+        "subtree_composition", "x0", "sin(x1)", seed=2)
+    two = engine.deterministic_request(
+        "correction_term", "x0", "sin(x1)", seed=2)
+    a = engine.apply(one, registered_domains=domains())
+    b = engine.apply(two, registered_domains=domains())
+    assert a.valid and a.novel and b.valid and b.novel
+    assert a.support_hash != b.support_hash
+    assert a.expression != b.expression
+
+
+def test_novelty_is_not_vetoed_by_finite_domain_numerical_coincidence():
+    engine = StructuralEditingEngine(2)
+    request = engine.deterministic_request(
+        "llm_proposed_edit", "x0", None, seed=1,
+        mock_llm_expression="x0 + x1")
+    domain = np.column_stack((np.linspace(0.2, 1.3, 10), np.zeros(10)))
+    result = engine.apply(request, registered_domains=(domain,))
+    assert result.valid and result.novel
+    assert result.empirically_equivalent_on_domains
+    assert not result.symbolically_equivalent
+    assert not result.equivalent_to_parent
+
+
+def test_empty_and_malformed_registered_domains_fail_closed():
+    engine = StructuralEditingEngine(2)
+    request = engine.deterministic_request(
+        "correction_term", "x0", "x1", seed=4)
+    for bad in (np.empty((0, 2)), np.empty((5, 1)),
+                np.full((4, 2), np.nan)):
+        result = engine.apply(request, registered_domains=(bad,))
+        assert not result.valid
+        assert "registered domain" in result.failure_reason
+
+
+def test_existing_support_cannot_be_counted_as_new_bank_member():
+    engine = StructuralEditingEngine(2)
+    request = engine.deterministic_request(
+        "correction_term", "x0", "x1", seed=2)
+    candidate = engine.apply(request, registered_domains=domains())
+    assert candidate.valid and candidate.novel
+    duplicate = engine.apply(
+        request, registered_domains=domains(),
+        known_support_hashes=(candidate.support_hash,))
+    assert duplicate.valid and not duplicate.novel
+
+
+def test_matched_pair_identity_is_checked_before_credit_update():
+    from dataclasses import replace
+    from hypothesis_mvp.discovery.counterfactual_bank_symbolic_invention import (
+        validate_matched_edit_pair,
+    )
+    engine = StructuralEditingEngine(2)
+    primary_request = engine.deterministic_request(
+        "correction_term", "x0", "sin(x1)", seed=3)
+    control_request = engine.matched_control_request(primary_request)
+    a = engine.apply(primary_request, registered_domains=domains())
+    b = engine.apply(control_request, registered_domains=domains())
+    assert a.novel and b.novel
+    validate_matched_edit_pair(primary_request, control_request, a, b)
+    with pytest.raises(ValueError, match="matched"):
+        validate_matched_edit_pair(
+            primary_request,
+            replace(control_request, matched_control_of="wrong"), a, b)
+
+
+def test_contextual_policy_keeps_invalid_pairs_out_of_credit_posterior():
+    from hypothesis_mvp.discovery.counterfactual_bank_symbolic_invention import (
+        FeasibilityAwareContextualPolicy,
+    )
+    policy = FeasibilityAwareContextualPolicy(
+        operators=("correction_term", "subtree_composition"), seed=7)
+    context = policy.site_context("x0 + x1", ())
+    one = policy.choose(
+        0, context=context, eligible_operators=policy.operators)
+    policy.observe(operator=one, context=context, novel=False,
+                   raw_gain=None, pair_valid=False, matched_credit=None)
+    assert policy.credit_global[one].count == 0
+    assert policy.raw_global[one].count == 0
+    policy.observe(operator=one, context=context, novel=True,
+                   raw_gain=0.12, pair_valid=False, matched_credit=None)
+    assert policy.raw_global[one].count == 1
+    assert policy.credit_global[one].count == 0
+    policy.observe(operator=one, context=context, novel=True,
+                   raw_gain=0.2, pair_valid=True, matched_credit=0.03)
+    assert policy.credit_global[one].count == 1
+    with pytest.raises(ValueError, match="evidence"):
+        policy.observe(operator=one, context=context, novel=False,
+                       raw_gain=None, pair_valid=False, matched_credit=0.0)
+    assert policy.audit()["claim_boundary"].startswith("adaptive-score")
+
+
+def test_preflight_rejects_equivalent_rewrites_and_unsupported_grammar():
+    engine = StructuralEditingEngine(2)
+    supported = engine.applicable_operators(
+        "x0 + x1", "sin(x0)", (), seed=2)
+    assert "correction_term" in supported
+    assert "subtree_composition" in supported
+    assert "factor_or_expand" not in supported
+    assert "structural_simplification" not in supported
