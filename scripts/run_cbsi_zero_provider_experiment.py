@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import argparse
 import csv
+from typing import NamedTuple
 from hashlib import sha256
 import json
 import math
+import subprocess
 from pathlib import Path
 import sys
 import time
@@ -20,8 +22,11 @@ sys.path[:0] = [str(ROOT), str(MAINLINE), str(ROOT / "scripts")]
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.discovery.counterfactual_bank_symbolic_invention import (
     BayesianOperatorPolicy,
+    FeasibilityAwareContextualPolicy,
+    INVENTION_OPERATORS,
     StructuralEditingEngine,
     counterfactual_edit_credit,
+    validate_matched_edit_pair,
 )
 from hypothesis_mvp.discovery.joint_evidence_gated_expansion import (
     CandidateArchive,
@@ -36,12 +41,10 @@ from hypothesis_mvp.pcpi.reference.expanded_formula_basis import (
     compile_fixed_formula_support,
 )
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
-from run_gap_candidate_marginal_value import (
-    _gap_admission_role,
-    _generation_roles,
-    identity,
-)
-from run_jegpe_frozen_pool_diagnostic import role
+# Only the actual HDF5 experiment imports data readers.  Importing this
+# module for response-free correctness tests must not require pyarrow, PySR,
+# provider clients or archived experiment runtime dependencies.
+from gap_minimal_harness_contract import identity
 from stacking_diagnostics import fit_stacking_weights, mixture_log_density
 
 
@@ -53,6 +56,8 @@ ARM_MODES = {
     "bank_greedy": "greedy",
     "standard_thompson": "thompson_raw",
     "cbsi_full": "thompson_matched",
+    "cbsi_feasible": "thompson_feasible",
+    "cbsi_frontier": "thompson_frontier",
 }
 
 
@@ -365,6 +370,23 @@ def _site_node(expression, site_path):
     return _node_at_path(_parse_body(expression), site_path)
 
 
+class FrontierParent(NamedTuple):
+    expression: str
+    structural_hash: str
+    lineage_id: str
+    generation: int
+
+
+def select_frontier_parent(frontier, block, default_parent):
+    """Exploit search-only descendants on alternating blocks, no retries."""
+    if not frontier or block % 2 == 0:
+        return default_parent, False
+    best = min(frontier, key=lambda item: (
+        -item["search_gain"], item["parent"].generation,
+        item["parent"].structural_hash))
+    return best["parent"], True
+
+
 def run_arm(arm, freeze, coordinate, archive, E0, selection,
             left, right, evaluation, context, domains,
             shared_opportunities):
@@ -376,103 +398,228 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
         f"{coordinate['family']}:{coordinate['task']}:shared-scorer".encode()
     ).hexdigest()[:8], 16)
     rng = np.random.default_rng(seed)
-    runtime = StructuralEditingEngine(
-        selection.development.X.shape[1])
+    editor = StructuralEditingEngine(selection.development.X.shape[1])
     scorer = CrossfitBankScorer(
         E0, selection, left, right, evaluation,
         f"{coordinate['task']}/{coordinate['seed']}/shared-scorer",
         scorer_seed)
-    policy = BayesianOperatorPolicy(operators=operators, seed=seed)
-    initial_hashes = {
-        candidate.structural_hash for candidate in archive.candidates}
-    seen = set(initial_hashes)
-    evaluations = int(
-        freeze["budget"]["edit_evaluations_per_arm"])
-    if evaluations % 2:
-        raise ValueError("CB-SI edit budget must be paired")
+    policy = (FeasibilityAwareContextualPolicy(
+        operators=tuple(op for op in operators if op in INVENTION_OPERATORS),
+        seed=seed, credit_weight=float(
+            freeze["budget"]["contextual_credit_weight"]))
+        if mode in {"thompson_feasible", "thompson_frontier"}
+        else BayesianOperatorPolicy(operators=operators, seed=seed))
+    # Archive hashes use a support-identity namespace, NOT EquationDAG's
+    # structural hash namespace.  Recompute all three compatible identities.
+    seen_structures = set()
+    seen_canonicals = set()
+    seen_supports = set()
+    for original in archive.candidates:
+        dag = editor.runtime.dag(original.expression)
+        seen_structures.add(dag.structural_hash)
+        seen_canonicals.add(dag.canonical_hash)
+        seen_supports.add(sha256(json.dumps(tuple(
+            compile_fixed_formula_support(
+                original.expression, editor.n_features)),
+            sort_keys=True, separators=(",", ":")).encode()).hexdigest())
+    evaluations = int(freeze["budget"]["edit_evaluations_per_arm"])
+    if evaluations <= 0 or evaluations % 2:
+        raise ValueError("CB-SI edit budget must be positive and paired")
     records = []
     eligible = []
+    frontier = []
+    lineage_depth = {}
     started = time.perf_counter()
     shared_modes = {"random", "greedy", "thompson_raw",
-                    "thompson_matched"}
-    for block in range(evaluations // 2):
+                    "thompson_matched", "thompson_feasible",
+                    "thompson_frontier"}
+    proposal_slots = evaluations // 2
+    for block in range(proposal_slots):
         shared = shared_opportunities[block]
+        from_frontier = False
         if mode in shared_modes:
             parent, donor = shared["parent"], shared["donor"]
             site_path = shared["site_path"]
+            if mode == "thompson_frontier":
+                parent, from_frontier = select_frontier_parent(
+                    frontier, block, parent)
+                if from_frontier:
+                    sites = editor.editable_paths(parent.expression)
+                    # Adaptive trajectories may have a different tree shape.
+                    # Use a stable path draw, not a path from the old parent.
+                    token = sha256(
+                        f"{shared['opportunity_id']}:frontier:"
+                        f"{parent.structural_hash}".encode()).digest()
+                    site_path = sites[
+                        int.from_bytes(token[:8], "big") % len(sites)]
         else:
             parent, donor = choose_parent_and_donor(
                 mode, context, rng, block)
             site_path = None
-        if mode in {"greedy", "thompson_raw", "thompson_matched"}:
+        parent_depth = int(getattr(parent, "generation", 0))
+        opportunity_seed = (
+            shared["opportunity_seed"] if mode in shared_modes
+            else seed + block)
+        task_identity = (
+            f"{coordinate['task']}:{coordinate['seed']}:"
+            f"{shared['opportunity_id'] if mode in shared_modes else arm}:"
+            f"{block}")
+        preflight_eligible = None
+        site_context = None
+        if mode in {"thompson_feasible", "thompson_frontier"}:
+            site_context = policy.site_context(parent.expression, site_path)
+            preflight_eligible = editor.applicable_operators(
+                parent.expression, donor, site_path,
+                seed=opportunity_seed, operators=policy.operators,
+                known_support_hashes=seen_supports)
+            # No rescue or re-draw. If preflight finds no actionable operator,
+            # the nominal slot is recorded as a failed attempt.
+            selection_pool = (
+                preflight_eligible if preflight_eligible else policy.operators)
+            operator = policy.choose(
+                block, context=site_context,
+                eligible_operators=selection_pool)
+        elif mode in {"greedy", "thompson_raw", "thompson_matched"}:
             operator = policy.choose(
                 block, mode="greedy" if mode == "greedy" else "thompson")
         else:
-            operator = fixed_operator(
-                mode, operators, block, rng)
-        primary_request = runtime.deterministic_request(
+            operator = fixed_operator(mode, operators, block, rng)
+        primary_request = editor.deterministic_request(
             operator, parent.expression, donor,
-            seed=(shared["opportunity_seed"] if mode in shared_modes
-                  else seed + block),
-            task_identity=(
-                f"{coordinate['task']}:{coordinate['seed']}:"
-                f"{shared['opportunity_id'] if mode in shared_modes else arm}:"
-                f"{block}"),
-            site_path=site_path)
-        control_request = runtime.matched_control_request(primary_request)
-        primary = runtime.apply(
+            seed=opportunity_seed,
+            task_identity=task_identity, site_path=site_path)
+        control_request = None
+        control = None
+        control_planning_failure = None
+        try:
+            control_request = editor.matched_control_request(primary_request)
+        except ValueError as error:
+            control_planning_failure = str(error)
+        primary = editor.apply(
             primary_request, registered_domains=domains,
-            known_structural_hashes=seen)
-        control = runtime.apply(
-            control_request, registered_domains=domains,
-            known_structural_hashes=seen)
-        # Missing/invalid edits are NOT zero-gain observations.  Only valid
-        # novel edits can be scored, and only a valid matched pair can inform
-        # the counterfactual policy.  Keep ineligible attempts in the audit.
+            known_structural_hashes=seen_structures,
+            known_canonical_hashes=seen_canonicals,
+            known_support_hashes=seen_supports)
+        if control_request is not None:
+            control = editor.apply(
+                control_request, registered_domains=domains,
+                known_structural_hashes=seen_structures,
+                known_canonical_hashes=seen_canonicals,
+                known_support_hashes=seen_supports)
+        # A valid pair needs distinct, executable novel supports and identical
+        # request lineage. Failing control is NEVER imputed as zero reward.
         primary_usable = bool(primary.valid and primary.novel)
-        control_usable = bool(control.valid and control.novel)
+        control_usable = bool(control is not None and control.valid
+                              and control.novel)
+        pair_identity_failure = None
+        if primary_usable and control_usable:
+            try:
+                validate_matched_edit_pair(
+                    primary_request, control_request, primary, control)
+            except ValueError as error:
+                pair_identity_failure = str(error)
+                control_usable = False
         parent_folds = None
         primary_folds = None
         control_folds = None
         credit = None
+        scoring_failure = None
+        raw_gain = None
         if primary_usable:
-            primary_folds = scorer.crossfit_gain(str(primary.expression))
-            seen.add(str(primary.structural_hash))
+            try:
+                primary_folds = scorer.crossfit_gain(str(primary.expression))
+                raw_gain = float(np.mean(primary_folds))
+                if not math.isfinite(raw_gain):
+                    raise ValueError("nonfinite crossfit Bank gain")
+            except (ValueError, FloatingPointError, ArithmeticError) as error:
+                scoring_failure = f"{type(error).__name__}:{error}"
+                primary_usable = False
+                primary_folds = None
+                raw_gain = None
+        if primary_usable:
+            seen_structures.add(str(primary.structural_hash))
+            seen_canonicals.add(str(primary.canonical_hash))
+            seen_supports.add(str(primary.support_hash))
             eligible.append({
-                "result": primary,
-                "search_gain": float(np.mean(primary_folds)),
+                "result": primary, "search_gain": raw_gain,
                 "credit": None,
             })
             if mode in {"greedy", "thompson_raw"}:
                 policy.update(
-                    operator, float(np.mean(primary_folds)),
-                    reward_kind="raw_bank_gain",
+                    operator, raw_gain, reward_kind="raw_bank_gain",
                     audit={"paired_control_valid": control_usable})
+            if (mode == "thompson_frontier" and raw_gain > float(
+                    freeze["budget"]["frontier_min_search_gain"])
+                    and parent_depth < int(
+                    freeze["budget"]["frontier_max_depth"])):
+                descendant = FrontierParent(
+                    expression=str(primary.expression),
+                    structural_hash=str(primary.structural_hash),
+                    lineage_id=str(primary.lineage_id),
+                    generation=parent_depth + 1)
+                frontier.append({
+                    "parent": descendant,
+                    "search_gain": raw_gain,
+                    "progenitor": getattr(parent, "lineage_id", None),
+                })
+                frontier.sort(key=lambda row: (
+                    -row["search_gain"], row["parent"].structural_hash))
+                frontier = frontier[:int(freeze["budget"]["frontier_size"])]
+                lineage_depth[descendant.lineage_id] = descendant.generation
         if primary_usable and control_usable:
-            parent_folds = scorer.crossfit_gain(parent.expression)
-            control_folds = scorer.crossfit_gain(str(control.expression))
-            parent_complexity = float(
-                runtime.runtime.dag(parent.expression).complexity)
-            credit = counterfactual_edit_credit(
-                operator, primary_folds, parent_folds,
-                (control_folds,),
-                primary_cost=float(primary.complexity) - parent_complexity,
-                control_costs=(
-                    float(control.complexity) - parent_complexity,),
-                cost_weight=float(freeze["budget"]["complexity_cost_weight"]))
+            try:
+                parent_folds = scorer.crossfit_gain(parent.expression)
+                control_folds = scorer.crossfit_gain(str(control.expression))
+                parent_complexity = float(
+                    editor.runtime.dag(parent.expression).complexity)
+                credit = counterfactual_edit_credit(
+                    operator, primary_folds, parent_folds,
+                    (control_folds,),
+                    primary_cost=float(primary.complexity) - parent_complexity,
+                    control_costs=(
+                        float(control.complexity) - parent_complexity,),
+                    cost_weight=float(
+                        freeze["budget"]["complexity_cost_weight"]))
+            except (ValueError, FloatingPointError, ArithmeticError) as error:
+                scoring_failure = f"{type(error).__name__}:{error}"
+                credit = None
+        if credit is not None:
             eligible[-1]["credit"] = credit.credit
             if mode == "thompson_matched":
                 policy.update(
                     operator, credit.credit,
                     reward_kind="matched_counterfactual_credit",
                     audit={"credit": credit.row()})
+        if mode in {"thompson_feasible", "thompson_frontier"}:
+            policy.observe(
+                operator=operator, context=site_context,
+                novel=primary_usable, raw_gain=raw_gain,
+                pair_valid=credit is not None,
+                matched_credit=credit.credit if credit is not None else None)
         records.append({
             "block": block,
-            "opportunity_id": shared["opportunity_id"] if
-                mode in shared_modes else None,
-            "shared_opportunity": mode in shared_modes,
+            "opportunity_id": shared["opportunity_id"]
+            if mode in shared_modes else None,
+            "shared_opportunity": mode in shared_modes and not from_frontier,
+            "used_frontier_parent": from_frontier,
+            "parent_generation": parent_depth,
+            "parent_lineage_id": getattr(parent, "lineage_id", None),
+            "site_context": site_context,
+            "planning_eligible_operators": (
+                list(preflight_eligible) if preflight_eligible is not None
+                else None),
+            "planning_no_eligible_action": preflight_eligible == (),
             "primary": primary.row(),
-            "control": control.row(),
+            "primary_request_identity": primary_request.identity,
+            "control": control.row() if control is not None else None,
+            "control_request_identity": (
+                control_request.identity if control_request is not None else None),
+            "control_matched_primary_identity": (
+                control_request.matched_control_of
+                if control_request is not None else None),
+            "control_planning_failure": control_planning_failure,
+            "pair_identity_failure": pair_identity_failure,
+            "scoring_failure": scoring_failure,
             "parent_structural_hash": parent.structural_hash,
             "parent_fold_gains": (
                 list(parent_folds) if parent_folds is not None else None),
@@ -483,8 +630,9 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
             "counterfactual_pair_valid": credit is not None,
             "counterfactual_pair_exclusion_reason": (
                 None if credit is not None else
-                "primary_invalid_or_non_novel" if not primary_usable else
-                "control_invalid_or_non_novel"),
+                "primary_invalid_or_non_novel_or_unscored"
+                if not primary_usable else
+                "control_absent_or_invalid_or_non_novel_or_unscored"),
             "credit": credit.row() if credit is not None else None,
         })
     selected = (
@@ -509,16 +657,27 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
         "primary_attempt_count": len(records),
         "matched_control_count": sum(
             row["counterfactual_pair_valid"] for row in records),
-        "attempted_control_count": len(records),
+        "reserved_control_slots": len(records),
+        "attempted_control_count": sum(
+            row["control"] is not None for row in records),
+        "materialized_control_count": sum(
+            row["control"] is not None for row in records),
         "invalid_pair_count": sum(
             not row["counterfactual_pair_valid"] for row in records),
-        "shared_opportunities": mode in shared_modes,
+        "shared_opportunities": (mode in shared_modes
+                                 and mode != "thompson_frontier"),
         "valid_primary_count": sum(
             row["primary"]["valid"] for row in records),
         "novel_primary_count": sum(
             row["primary"]["novel"] for row in records),
         "valid_control_count": sum(
-            row["control"]["valid"] for row in records),
+            bool(row["control"] and row["control"]["valid"])
+            for row in records),
+        "frontier_parent_reuses": sum(
+            row["used_frontier_parent"] for row in records),
+        "frontier_max_observed_depth": max(
+            lineage_depth.values(), default=0),
+        "final_frontier_size": len(frontier),
         "selected": selected_row,
         "selected_search_gain": (
             selected["search_gain"] if selected else 0.0),
@@ -528,6 +687,9 @@ def run_arm(arm, freeze, coordinate, archive, E0, selection,
         "evaluation_stacking_weights": weights,
         "evaluation_optimizer": optimizer,
         "score_calls": scorer.score_calls,
+        "operator_preflight_count": (
+            len(policy.operators) * proposal_slots
+            if mode in {"thompson_feasible", "thompson_frontier"} else 0),
         "wall_time_seconds": time.perf_counter() - started,
         "provider_calls": 0,
         "pysr_calls": 0,
@@ -548,6 +710,53 @@ def bootstrap(values, seed, count):
         float(np.percentile(samples, 97.5))]
 
 
+def paired_task_contrast(rows, method, baseline, seed, resamples):
+    """Paired *task* bootstrap; multiple seeds are not independent tasks."""
+    grouped = {}
+    for row in rows:
+        key = str(row["task"])
+        grouped.setdefault(key, []).append(row)
+    diffs = []
+    for task in sorted(grouped):
+        paired = grouped[task]
+        if len({int(row["seed"]) for row in paired}) != len(paired):
+            raise ValueError("duplicate task/seed in CB-SI contrast")
+        diffs.append(float(np.mean([
+            float(row["arms"][method]["independent_development_evaluation_gain"])
+            - float(row["arms"][baseline]["independent_development_evaluation_gain"])
+            for row in paired])))
+    if len(diffs) < 4:
+        raise ValueError("at least four distinct tasks required for v3")
+    return float(np.mean(diffs)), bootstrap(diffs, seed, resamples), len(diffs)
+
+
+def verify_source_provenance(freeze):
+    """Disallow stale/dirty v3 sources before any experiment data is opened."""
+    sources = freeze.get("source_v3")
+    if not isinstance(sources, dict) or set(sources) != {"mainline", "benchmark"}:
+        raise ValueError("v3 source provenance absent")
+    for label, path in (("mainline", MAINLINE), ("benchmark", ROOT)):
+        frozen = sources[label]
+        if Path(frozen.get("root", "")).resolve() != path.resolve():
+            raise ValueError(f"wrong {label} repository root")
+        def git(*arguments):
+            return subprocess.run(
+                ["git", *arguments], cwd=path, check=True, text=True,
+                encoding="utf-8", stdout=subprocess.PIPE).stdout.strip()
+        if (frozen.get("commit") != git("rev-parse", "HEAD")
+                or frozen.get("tree") != git("rev-parse", "HEAD^{tree}")
+                or bool(git("status", "--short", "--untracked-files=no"))):
+            raise ValueError(f"stale or dirty {label} source provenance")
+
+
+def ensure_development_roles_separate(*roles):
+    """Check labelled role row identities before selecting edit operators."""
+    for index, left in enumerate(roles):
+        for right in roles[index + 1:]:
+            if left.row_fingerprints & right.row_fingerprints:
+                raise ValueError("CB-SI development roles overlap")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--freeze", type=Path, required=True)
@@ -557,17 +766,28 @@ def main(argv=None):
         raise ValueError("CB-SI output root already exists")
     freeze = read(args.freeze)
     if (freeze.get("schema")
-            != "cbsi-zero-provider-development-freeze-v2"
+            != "cbsi-zero-provider-development-freeze-v3"
             or freeze.get("execution_authorized") is not True
             or freeze.get("provider_calls_authorized") is not False
             or freeze.get("expensive_engine_runs_authorized") is not False
-            or freeze.get("protocol_id") != "cbsi-correctness-hotfix-v2"
+            or freeze.get("protocol_id") != "cbsi-contextual-frontier-v3"
+            or set(freeze.get("arms", ())) != set(ARM_MODES)
+            or len(freeze.get("arms", ())) != len(ARM_MODES)
+            or not 0 <= float(freeze.get("budget", {}).get(
+                "contextual_credit_weight", float("nan"))) <= 2
+            or not 1 <= int(freeze.get("budget", {}).get(
+                "frontier_max_depth", 0)) <= 4
+            or not 1 <= int(freeze.get("budget", {}).get(
+                "frontier_size", 0)) <= 16
+            or float(freeze.get("budget", {}).get(
+                "frontier_min_search_gain", float("nan"))) != 0.0
             or not isinstance(freeze.get("budget", {}).get(
                 "complexity_cost_weight"), (int, float))
             or not math.isfinite(float(freeze["budget"][
                 "complexity_cost_weight"]))
             or float(freeze["budget"]["complexity_cost_weight"]) < 0):
-        raise ValueError("invalid CB-SI v2 zero-provider freeze")
+        raise ValueError("invalid CB-SI v3 zero-provider freeze")
+    verify_source_provenance(freeze)
     if digest(Path(freeze["hdf5"])) != freeze["hdf5_sha256"]:
         raise ValueError("CB-SI HDF5 identity mismatch")
     for path, expected in freeze["file_hashes"].items():
@@ -580,6 +800,11 @@ def main(argv=None):
     args.output_root.mkdir(parents=True)
     write_new(args.output_root / "RUN_FREEZE.json", freeze)
 
+    # HDF5/parquet and original generation helpers are imported only after
+    # the reviewed freeze has been validated.  Offline correctness tests can
+    # import the pure runner without expensive optional dependencies.
+    from run_gap_candidate_marginal_value import (
+        _gap_admission_role, _generation_roles)
     hdf5 = Path(freeze["hdf5"])
     rows = []
     task_csv = []
@@ -603,6 +828,8 @@ def main(argv=None):
         right = roles["gap_audit"]
         evaluation = _gap_admission_role(
             hdf5, family, task, roles["indices"])
+        ensure_development_roles_separate(
+            selection.development, left, right, evaluation)
         archive = CandidateArchive.freeze(
             [*E0, *candidate_rows],
             n_features=selection.development.X.shape[1],
@@ -615,7 +842,6 @@ def main(argv=None):
             selection.development.X,
             left.X,
             right.X,
-            evaluation.X,
             selection.acquisition_pool.X,
         )
         shared_opportunities = build_shared_opportunities(
@@ -689,30 +915,56 @@ def main(argv=None):
             "provider_calls": 0,
             "pysr_calls": 0,
         }
-    cbsi = summaries["cbsi_full"]["task_mean_evaluation_gain"]
+    cbsi = summaries["cbsi_frontier"]["task_mean_evaluation_gain"]
     strongest_baseline_name = max(
-        (arm for arm in freeze["arms"] if arm != "cbsi_full"),
+        (arm for arm in freeze["arms"]
+         if arm not in {"cbsi_full", "cbsi_feasible", "cbsi_frontier"}),
         key=lambda arm: summaries[arm]["task_mean_evaluation_gain"])
     strongest = summaries[strongest_baseline_name][
         "task_mean_evaluation_gain"]
-    mechanism_passed = bool(
-        cbsi > summaries["single_fitness_proxy"][
-            "task_mean_evaluation_gain"]
-        and cbsi > summaries["residual_proxy"][
-            "task_mean_evaluation_gain"])
+    contrasts = {}
+    for method, baseline in (
+            ("cbsi_feasible", "cbsi_full"),
+            ("cbsi_frontier", "cbsi_feasible"),
+            ("cbsi_frontier", "cbsi_full"),
+            ("cbsi_frontier", "bank_greedy")):
+        effect, interval, task_count = paired_task_contrast(
+            rows, method, baseline,
+            freeze["analysis"]["bootstrap_seed"],
+            freeze["analysis"]["bootstrap_resamples"])
+        contrasts[f"{method}_minus_{baseline}"] = {
+            "task_mean_difference": effect,
+            "task_paired_ci95": interval,
+            "task_count": task_count,
+            "development_ci_excludes_zero_positive": interval[0] > 0,
+        }
+    # This is a preregistered *development* screening rule, not proof of
+    # independent efficacy. Check both mechanism components and Bank-greedy.
+    mechanism_passed = all(
+        contrasts[name]["development_ci_excludes_zero_positive"]
+        for name in (
+            "cbsi_feasible_minus_cbsi_full",
+            "cbsi_frontier_minus_cbsi_feasible",
+            "cbsi_frontier_minus_bank_greedy"))
     result = {
-        "schema": "cbsi-zero-provider-development-result-v1",
+        "schema": "cbsi-zero-provider-development-result-v3",
         "protocol_complete": True,
         "matched_opportunity_policy_arms": [
             "blind_random", "bank_greedy", "standard_thompson",
-            "cbsi_full"],
+            "cbsi_full", "cbsi_feasible"],
         "comparison_limitations": [
+            "CB-SI frontier changes parent trajectories after a positive "
+            "search-side gain, so its adaptive opportunities are NOT "
+            "matched to the static-core arms",
+            "response-free preflight checks are planning operations and "
+            "must be included when comparing measured compute, whereas "
+            "nominal edit slots alone do not prove equal CPU budgets",
             "fitness/residual/influence proxies use their own parent/donor "
             "selection and are not fully opportunity-matched",
             "repeated crossfit feedback is search-adaptive, not an "
             "independent held-out confirmation",
-            "the archive is static in v2; multi-generation reuse requires "
-            "a separate preregistered experiment"],
+            "the new frontier arm is a development-only experimental "
+            "mechanism and cannot support discovery or truth claims"],
         "provider_calls": 0,
         "pysr_calls": 0,
         "reporting_response_accessed": False,
@@ -721,22 +973,27 @@ def main(argv=None):
         "coordinate_count": len(rows),
         "rows": rows,
         "arm_summaries": summaries,
-        "strongest_non_cbsi_arm": strongest_baseline_name,
-        "cbsi_minus_strongest_non_cbsi": cbsi - strongest,
+        "preregistered_paired_development_contrasts": contrasts,
+        "new_method_arm": "cbsi_frontier",
+        "novelty_claim_authorized": False,
+        "formal_confirmation_authorized": False,
+        "strongest_legacy_baseline_arm": strongest_baseline_name,
+        "cbsi_frontier_minus_strongest_legacy_baseline": cbsi - strongest,
         "mechanism_gate_passed": mechanism_passed,
         "go_nogo": (
-            "MECHANISM_DEVELOPMENT_GO"
-            if mechanism_passed and cbsi > 0
-            else "MECHANISM_NO_GO"),
+            "V3_DEVELOPMENT_SCREEN_GO"
+            if mechanism_passed and cbsi > max(0.0, strongest)
+            else "V3_DEVELOPMENT_SCREEN_NO_GO"),
         "claim_boundary": freeze["claim_boundary"],
     }
     write_new(
         args.output_root / "CBSI_ZERO_PROVIDER_EXPERIMENT.json", result)
     print(json.dumps({
         "go_nogo": result["go_nogo"],
-        "strongest_non_cbsi_arm": strongest_baseline_name,
-        "cbsi_minus_strongest_non_cbsi":
-            result["cbsi_minus_strongest_non_cbsi"],
+        "strongest_legacy_baseline_arm": strongest_baseline_name,
+        "cbsi_frontier_minus_strongest_legacy_baseline":
+            result["cbsi_frontier_minus_strongest_legacy_baseline"],
+        "v3_paired_contrasts": contrasts,
         "arm_means": {
             arm: value["task_mean_evaluation_gain"]
             for arm, value in summaries.items()},
