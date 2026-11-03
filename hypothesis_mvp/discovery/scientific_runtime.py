@@ -185,7 +185,7 @@ class ScientificDiscoveryRuntime:
         # simply reports no gap.
         orchestration_context = getattr(self, "orchestration_context", None) or {}
         gap_brief = orchestration_context.get("posterior_gap_brief")
-        return {
+        result = {
             "objective": island,
             "proposal_domain_context": orchestration_context.get("proposal_domain_context", {}),
             "development_failure_feedback": development_failure_feedback([
@@ -211,6 +211,11 @@ class ScientificDiscoveryRuntime:
             "new_skeleton_quota": self.config.new_skeleton_quota,
             "scientist_orchestration": generation_orchestration_context(self.orchestration_context),
         }
+        bank_feedback = getattr(self, "_bank_search_feedback", None)
+        if bank_feedback is not None:
+            from .bank_search_feedback import attach_feedback
+            result = attach_feedback(result, bank_feedback[0], mode=bank_feedback[1])
+        return result
 
     def _request_batches(
         self, islands: Mapping[str, EquationState], round_id: int,
