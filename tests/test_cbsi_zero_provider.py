@@ -23,6 +23,7 @@ def test_arm_modes_are_distinct_and_complete():
         "cbsi_full",
         "cbsi_feasible",
         "cbsi_frontier",
+        "cbsi_paired", "bank_greedy_paired",
     }
     assert MODULE.ARM_MODES["cbsi_full"] == "thompson_matched"
 
@@ -221,7 +222,7 @@ def test_v3_stage_does_not_inherit_authorization_or_rehash_data(tmp_path):
     assert revised["execution_authorized"] is False
     assert revised["hdf5_sha256"] == "keep-hdf5-hash"
     assert revised["artifact_manifest"] == freeze["artifact_manifest"]
-    assert len(revised["arms"]) == 9
+    assert len(revised["arms"]) == 11
     assert revised["protocol_id"] == MODULE.IMPLEMENTATION_CONTRACT
     assert revised["implementation_contract"] == MODULE.IMPLEMENTATION_CONTRACT
     assert freeze["file_hashes"] == sources

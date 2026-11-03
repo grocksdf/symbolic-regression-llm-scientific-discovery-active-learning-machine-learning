@@ -17,12 +17,13 @@ CHANGED_SOURCES = {
     "counterfactual_bank_symbolic_invention.py",
     "run_cbsi_zero_provider_experiment.py",
 }
-IMPLEMENTATION_CONTRACT = "cbsi-parent-marginal-search-v1"
+IMPLEMENTATION_CONTRACT = "cbsi-comparator-aware-search-v1"
 V3_ARMS = (
     "blind_random", "single_fitness_proxy", "residual_proxy",
     "influence_proxy", "bank_greedy", "standard_thompson",
     "cbsi_full", "cbsi_feasible", "cbsi_frontier",
 )
+CURRENT_ARMS = (*V3_ARMS, "cbsi_paired", "bank_greedy_paired")
 
 
 def stage(source: dict, *, edit_evaluations_per_arm: int | None = None) -> dict:
@@ -34,9 +35,11 @@ def stage(source: dict, *, edit_evaluations_per_arm: int | None = None) -> dict:
             or (origin.endswith("-v2") and source.get("protocol_id")
                 != "cbsi-correctness-hotfix-v2")
             or (origin.endswith("-v3") and source.get("protocol_id")
-                not in {"cbsi-contextual-frontier-v3", IMPLEMENTATION_CONTRACT})
+                not in {"cbsi-contextual-frontier-v3", "cbsi-parent-marginal-search-v1",
+                        IMPLEMENTATION_CONTRACT})
             or set(source.get("arms", ())) != set(
-                V3_ARMS if origin.endswith("-v3") else V3_ARMS[:-2])
+                CURRENT_ARMS if source.get("protocol_id") == IMPLEMENTATION_CONTRACT
+                else V3_ARMS if origin.endswith("-v3") else V3_ARMS[:-2])
             or set(source.get("operators", ())) != {
                 "subtree_replacement", "subtree_composition",
                 "operator_substitution", "factor_or_expand",
@@ -74,7 +77,13 @@ def stage(source: dict, *, edit_evaluations_per_arm: int | None = None) -> dict:
     new["execution_authorized"] = False
     new["provider_calls_authorized"] = False
     new["expensive_engine_runs_authorized"] = False
-    new["arms"] = list(V3_ARMS)
+    new["arms"] = list(CURRENT_ARMS)
+    mainline_module = Path(found["counterfactual_bank_symbolic_invention.py"]["path"])
+    benchmark_module = Path(found["run_cbsi_zero_provider_experiment.py"]["path"])
+    for path in (
+            mainline_module.with_name("paired_edit_policy.py"),
+            benchmark_module.with_name("cbsi_paired_search.py")):
+        previous[str(path)] = sha256(path.read_bytes()).hexdigest()
     if edit_evaluations_per_arm is not None:
         if (type(edit_evaluations_per_arm) is not int
                 or edit_evaluations_per_arm < 2
@@ -93,6 +102,8 @@ def stage(source: dict, *, edit_evaluations_per_arm: int | None = None) -> dict:
     new["budget"]["frontier_size"] = 8
     new["budget"]["frontier_min_search_gain"] = 0.0
     new["budget"].setdefault("complexity_cost_weight", 0.0)
+    if new["budget"]["complexity_cost_weight"] != 0.0:
+        raise ValueError("paired search currently requires unpenalized bank gain")
     new["protocol_algorithm"] = {
         "context": "root/internal x AST node kind",
         "credit_selection": "feasibility-weighted parent-marginal-plus-matched heuristic",
@@ -116,6 +127,19 @@ def stage(source: dict, *, edit_evaluations_per_arm: int | None = None) -> dict:
             "paired task CI lower > 0 for feasible-full, "
             "frontier-feasible, and frontier-bank_greedy"),
     }
+    new["paired_search"] = {
+        "learning_model": "joint Normal-Inverse-Gamma linear paired contrasts",
+        "primary_arm": "cbsi_paired", "comparator": "bank_greedy_paired",
+        "opportunities": "shared static parent/donor/site/seed",
+        "candidate_retention": "both novel valid scored primary and control",
+        "failure_rule": "missing score or pair stays missing; no retry",
+        "observation_unit": "one mean fold contrast per matched opportunity",
+        "posterior_prior": {"mean": 0.0, "precision": 1.0, "alpha": 1.0, "beta": 1.0},
+        "raw_plus_credit_weight": None,
+        "max_density_calls": 2 * new["budget"]["edit_evaluations_per_arm"] + 4,
+        "max_optimizer_fits": 2 * new["budget"]["edit_evaluations_per_arm"] + 1,
+        "equal_realized_compute_claim": False,
+    }
     new["source_upgrade_audit_v3"] = [found[key] for key in sorted(found)]
     new["v3_authorization_note"] = (
         "The new operator semantics and trajectory-adaptive search constitute "
@@ -123,12 +147,12 @@ def stage(source: dict, *, edit_evaluations_per_arm: int | None = None) -> dict:
         "results and claims do not transfer. Review source and data roles "
         "before setting execution_authorized=true. Sealed test stays closed.")
     new["analysis"]["primary_contrast"] = (
-        "cbsi_frontier vs cbsi_feasible, cbsi_full, and bank_greedy "
+        "cbsi_paired vs bank_greedy_paired "
         "on paired task-level independent development scores")
     new["analysis"]["mechanism_gate"] = (
-        "Positive paired task bootstrap CI lower bounds for "
-        "cbsi_feasible-cbsi_full, cbsi_frontier-cbsi_feasible, "
-        "cbsi_frontier-bank_greedy; development screening only")
+        "Positive paired task bootstrap CI lower bound for "
+        "cbsi_paired-bank_greedy_paired and positive cbsi_paired absolute mean; "
+        "development screening only; legacy contrasts diagnostic")
     new["claim_boundary"] = (
         "Provider-free post-reporting development-only study. "
         "The feasibility-aware arm keeps exogenous opportunities fixed; "

@@ -58,11 +58,13 @@ ARM_MODES = {
     "cbsi_full": "thompson_matched",
     "cbsi_feasible": "thompson_feasible",
     "cbsi_frontier": "thompson_frontier",
+    "cbsi_paired": "comparator_aware",
+    "bank_greedy_paired": "symmetric_greedy",
 }
 
 # Schema v3 describes the artifact layout, not permission to run changed
 # search semantics. Old frozen protocols must never silently pick up repairs.
-IMPLEMENTATION_CONTRACT = "cbsi-parent-marginal-search-v1"
+IMPLEMENTATION_CONTRACT = "cbsi-comparator-aware-search-v1"
 
 
 def verify_implementation_contract(freeze):
@@ -510,6 +512,11 @@ def select_frontier_parent(frontier, block, default_parent, *, max_depth=None):
 def run_arm(arm, freeze, coordinate, archive, E0, selection,
             left, right, evaluation, context, domains,
             shared_opportunities):
+    if arm in {"cbsi_paired", "bank_greedy_paired"}:
+        from cbsi_paired_search import run_paired_arm
+        return run_paired_arm(
+            arm, freeze, coordinate, archive, E0, selection, left, right,
+            evaluation, context, domains, shared_opportunities)
     started = time.perf_counter()
     mode = ARM_MODES[arm]
     operators = tuple(freeze["operators"])
@@ -870,7 +877,7 @@ def paired_task_contrast(rows, method, baseline, seed, resamples):
     """Paired *task* bootstrap; multiple seeds are not independent tasks."""
     grouped = {}
     for row in rows:
-        key = str(row["task"])
+        key = (str(row.get("family", "")), str(row["task"]))
         grouped.setdefault(key, []).append(row)
     diffs = []
     for task in sorted(grouped):
@@ -942,7 +949,9 @@ def main(argv=None):
                 "complexity_cost_weight"), (int, float))
             or not math.isfinite(float(freeze["budget"][
                 "complexity_cost_weight"]))
-            or float(freeze["budget"]["complexity_cost_weight"]) < 0):
+            or float(freeze["budget"]["complexity_cost_weight"]) != 0.0
+            or freeze.get("paired_search", {}).get("primary_arm") != "cbsi_paired"
+            or freeze.get("paired_search", {}).get("comparator") != "bank_greedy_paired"):
         raise ValueError("invalid CB-SI v3 zero-provider freeze")
     verify_source_provenance(freeze)
     if digest(Path(freeze["hdf5"])) != freeze["hdf5_sha256"]:
@@ -1072,10 +1081,10 @@ def main(argv=None):
             "provider_calls": 0,
             "pysr_calls": 0,
         }
-    cbsi = summaries["cbsi_frontier"]["task_mean_evaluation_gain"]
+    cbsi = summaries["cbsi_paired"]["task_mean_evaluation_gain"]
     strongest_baseline_name = max(
         (arm for arm in freeze["arms"]
-         if arm not in {"cbsi_full", "cbsi_feasible", "cbsi_frontier"}),
+         if arm not in {"cbsi_full", "cbsi_feasible", "cbsi_frontier", "cbsi_paired"}),
         key=lambda arm: summaries[arm]["task_mean_evaluation_gain"])
     strongest = summaries[strongest_baseline_name][
         "task_mean_evaluation_gain"]
@@ -1084,7 +1093,9 @@ def main(argv=None):
             ("cbsi_feasible", "cbsi_full"),
             ("cbsi_frontier", "cbsi_feasible"),
             ("cbsi_frontier", "cbsi_full"),
-            ("cbsi_frontier", "bank_greedy")):
+            ("cbsi_frontier", "bank_greedy"),
+            ("cbsi_paired", "bank_greedy_paired"),
+            ("bank_greedy_paired", "bank_greedy")):
         effect, interval, task_count = paired_task_contrast(
             rows, method, baseline,
             freeze["analysis"]["bootstrap_seed"],
@@ -1097,12 +1108,9 @@ def main(argv=None):
         }
     # This is a preregistered *development* screening rule, not proof of
     # independent efficacy. Check both mechanism components and Bank-greedy.
-    mechanism_passed = all(
-        contrasts[name]["development_ci_excludes_zero_positive"]
-        for name in (
-            "cbsi_feasible_minus_cbsi_full",
-            "cbsi_frontier_minus_cbsi_feasible",
-            "cbsi_frontier_minus_bank_greedy"))
+    mechanism_passed = contrasts[
+        "cbsi_paired_minus_bank_greedy_paired"][
+            "development_ci_excludes_zero_positive"] and cbsi > 0.0
     result = {
         "schema": "cbsi-zero-provider-development-result-v3",
         "implementation_contract": IMPLEMENTATION_CONTRACT,
@@ -1132,16 +1140,16 @@ def main(argv=None):
         "rows": rows,
         "arm_summaries": summaries,
         "preregistered_paired_development_contrasts": contrasts,
-        "new_method_arm": "cbsi_frontier",
+        "new_method_arm": "cbsi_paired",
+        "primary_comparator": "bank_greedy_paired",
         "novelty_claim_authorized": False,
         "formal_confirmation_authorized": False,
         "strongest_legacy_baseline_arm": strongest_baseline_name,
-        "cbsi_frontier_minus_strongest_legacy_baseline": cbsi - strongest,
+        "new_method_minus_strongest_baseline_descriptive": cbsi - strongest,
         "mechanism_gate_passed": mechanism_passed,
         "go_nogo": (
-            "V3_DEVELOPMENT_SCREEN_GO"
-            if mechanism_passed and cbsi > max(0.0, strongest)
-            else "V3_DEVELOPMENT_SCREEN_NO_GO"),
+            "PAIRED_DEVELOPMENT_SCREEN_GO" if mechanism_passed
+            else "PAIRED_DEVELOPMENT_SCREEN_NO_GO"),
         "claim_boundary": freeze["claim_boundary"],
     }
     write_new(
@@ -1149,8 +1157,8 @@ def main(argv=None):
     print(json.dumps({
         "go_nogo": result["go_nogo"],
         "strongest_legacy_baseline_arm": strongest_baseline_name,
-        "cbsi_frontier_minus_strongest_legacy_baseline":
-            result["cbsi_frontier_minus_strongest_legacy_baseline"],
+        "new_method_minus_strongest_baseline_descriptive":
+            result["new_method_minus_strongest_baseline_descriptive"],
         "v3_paired_contrasts": contrasts,
         "arm_means": {
             arm: value["task_mean_evaluation_gain"]
