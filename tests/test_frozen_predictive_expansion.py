@@ -6,6 +6,7 @@ import pytest
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.discovery.predictive_bank_expansion import ExpansionDesign
 from scripts.frozen_predictive_expansion import FrozenBankComponents, run_comparison
+from scripts.frozen_predictive_expansion import DIRECT_CANDIDATE_POLICY, NESTED_BANK_POLICY
 
 
 def setup():
@@ -158,3 +159,37 @@ def test_duplicate_support_not_hidden_by_metadata():
     duplicate = [{"expression": "x0", "source": "llm:typed", "lineage_id": "new-label"}]
     with pytest.raises(ValueError, match="unique non-core"):
         FrozenBankComponents(core, duplicate, fit, fit_row_ids=d.training_ids, design=d)
+
+
+def test_direct_component_survives_internal_model_evidence_without_forced_weight():
+    # Inference correctness fixture: globally weak candidate remains an actual
+    # predictive density. This is not a fixture claiming it should be admitted.
+    from scripts.stacking_diagnostics import fit_stacking_weights
+    x = np.linspace(-2, 2, 100)[:, None]
+    fit = RoleDataset(DataRole.DEVELOPMENT, x, 3*x[:, 0] + .01*np.sin(np.arange(100)))
+    d, _ = setup()
+    from dataclasses import replace
+    d = replace(d, training_ids=tuple(f"fit:{i}" for i in range(100)))
+    core = [{"expression": "x0", "source": "engine:fixture"}]
+    candidate = [{"expression": "x0**2", "source": "llm:fixture"}]
+    nested = FrozenBankComponents(core, candidate, fit, fit_row_ids=d.training_ids, design=d)
+    direct = FrozenBankComponents(core, candidate, fit, fit_row_ids=d.training_ids, design=d,
+                                  component_policy=DIRECT_CANDIDATE_POLICY)
+    standalone = FrozenBankComponents(candidate, [], fit, fit_row_ids=d.training_ids, design=d)
+    validation = RoleDataset(DataRole.VALIDATION, x+.001, 3*(x[:, 0]+.001))
+    old, new = nested.densities(validation), direct.densities(validation)
+    np.testing.assert_array_equal(new[:, 0], old[:, 0])
+    np.testing.assert_array_equal(new[:, 1], standalone.densities(validation)[:, 0])
+    np.testing.assert_allclose(old[:, 1], old[:, 0], atol=1e-10)
+    assert np.max(abs(new[:, 1]-new[:, 0])) > 1
+    weights, _ = fit_stacking_weights(new, seed=1, random_starts=4)
+    assert weights[1] < 1e-6  # exposing a density does not grant it positive weight
+    assert nested.component_policy == NESTED_BANK_POLICY
+    assert direct.component_ids[0] == nested.component_ids[0]
+    assert direct.component_ids[1] != nested.component_ids[1]
+
+
+def test_component_policy_cannot_be_guessed():
+    d, _ = setup()
+    with pytest.raises(ValueError, match="policy"):
+        FrozenBankComponents([], [], None, fit_row_ids=d.training_ids, design=d, component_policy="auto")

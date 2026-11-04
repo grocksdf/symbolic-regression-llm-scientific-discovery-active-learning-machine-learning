@@ -79,6 +79,62 @@ statistic are unchanged. Provider/model sampling remains stochastic, and equal
 slots do not imply equal tokens or wall time; actual costs remain diagnostics.
 This version has no efficacy conclusion and does not launch an experiment.
 
+## Direct predictive components (2026-11-05)
+
+`llm-bank-multiscale-direct-v1` is a separate explicit contract using the same
+four-scope adapter. It changes the predictive component family. Legacy callers
+retain `nested-bank-v1`: `[p(E0), p(BMA(E0+c1)), ...]`. The new contract uses
+`standalone-candidate-v1`: `[p(E0), p(c1), p(c2), ...]`. Each candidate is a
+complete expression fitted once on the declared fitting rows under the same
+conjugate coefficient/noise model. The protected E0 predictive is identical.
+There is no internal competition with E0 before a candidate's density reaches
+calibration. The existing simplex optimizer can assign a candidate zero weight.
+Independent admission still compares the frozen mixture against E0, and failure
+to pass deploys E0. This changes the statistical model family, not the posterior
+solver, data likelihood, optimizer, admission threshold or reporting metric.
+
+The reason for this change is structural: evaluating complementary predictors
+requires exposing their predictive distributions. If an inner model-selection
+average suppresses a candidate, an outer optimizer only sees another copy of E0.
+This does not establish that any suppressed candidate is useful. Direct exposure
+can also worsen calibration fit generalization; the independent screen remains
+necessary and is conditional on its existing null assumptions. Global constant
+stacking weights do not implement an input-dependent regional mixture or a
+residual-correction model. No claim of solving every local-complementarity
+problem follows from this repair.
+
+This follows the distinction between model averaging and predictive stacking in
+[Yao et al., Using stacking to average Bayesian predictive distributions](https://arxiv.org/abs/1704.02030).
+Our adapter uses a separate calibration split; it does not implement the paper's
+PSIS-LOO procedure. Stacking itself is established methodology, not a new
+contribution of this change.
+
+The direct contract additionally requires `fit_row_ids` and
+`core_generation_row_ids`. Their union must exactly equal `design.training_ids`.
+This registers ancestral search/validation access without refitting those rows.
+These are caller declarations; the owning matrix must bind them to actual source
+row indices and source artifacts. The response-free
+`scripts/bank_composition_preflight.py --manifest <freeze.json> --output <new.json>`
+checks all historical core dependencies, identities and file hashes. Missing or
+failed coordinates reject the entire dependency preflight, without silently
+dropping tasks or replacing seeds. Its receipt alone does not authorize execution.
+
+All four arms use the request-bound semantic envelope. The model generates
+semantic candidates; the synchronous caller supplies administrative protocol,
+round and island metadata. Any conflicting echoed metadata or parent is rejected.
+No second format-repair call is enabled. Raw response/prompt hashes and the binding
+receipt are retained. This removes an unnecessary metadata-echo dependency, but
+does not guarantee valid model output or attest provider-side response freshness.
+
+Calibration and reporting now expose per-component mean log-score differences
+and maximum absolute density differences in frozen component order. Reporting
+diagnostics are computed only after admission, never fed back to generation.
+This permits distinguishing ineffective candidates from weight suppression in a
+future run. Historical results and the failed real-development run are unchanged.
+No task identity, observed effect, seed or target expression selects this policy.
+The current changes were validated using correctness fixtures and mocked HTTP;
+no real-data optimization or new provider experiment was performed.
+
 The code does not fine-tune the language model or establish that an explanation
 written by the model is scientifically true. It gives the LLM a different,
 auditable generation context and preserves independent authority over the

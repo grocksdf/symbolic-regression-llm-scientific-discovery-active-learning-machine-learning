@@ -26,6 +26,9 @@ from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
 from hypothesis_mvp.pcpi.reference.expanded_formula_basis import compile_fixed_formula_support
 from scripts.stacking_diagnostics import fit_stacking_weights
 
+NESTED_BANK_POLICY = "nested-bank-v1"
+DIRECT_CANDIDATE_POLICY = "standalone-candidate-v1"
+
 
 def _posterior_id(model, posterior, fit_identity):
     payload = json.dumps({"model": model.stable_hash, "posterior": asdict(posterior),
@@ -35,10 +38,18 @@ def _posterior_id(model, posterior, fit_identity):
 
 
 class FrozenBankComponents:
-    """E0 and E0+c components fit ONCE, with identities binding actual posteriors."""
+    """Fit fixed predictive components once; explicit policy controls their support.
+
+    The legacy policy averages E0+c internally. The direct policy exposes each
+    complete candidate's own posterior predictive alongside the unchanged E0.
+    External stacking weights are predictive weights, not model probabilities.
+    """
 
     def __init__(self, core, candidates, fit, *, fit_row_ids, design: ExpansionDesign,
-                 prior=None):
+                 prior=None, component_policy=NESTED_BANK_POLICY):
+        if component_policy not in {NESTED_BANK_POLICY, DIRECT_CANDIDATE_POLICY}:
+            raise ValueError("unknown predictive component policy")
+        self.component_policy = component_policy
         fit_ids = tuple(fit_row_ids)
         if (fit.role is not DataRole.DEVELOPMENT or len(fit_ids) != len(fit.X)
                 or len(set(fit_ids)) != len(fit_ids)
@@ -58,7 +69,8 @@ class FrozenBankComponents:
                 raise ValueError("optional candidates must have unique non-core supports")
             seen_supports.add(support)
         self._components = []
-        banks = [core, *[[*core, candidate] for candidate in candidates]]
+        banks = [core, *[([candidate] if component_policy == DIRECT_CANDIDATE_POLICY
+                         else [*core, candidate]) for candidate in candidates]]
         for bank in banks:
             model = freeze_expanded_formula_model(
                 bank, n_features=fit.X.shape[1], prior=prior or NormalInverseGammaPrior(),

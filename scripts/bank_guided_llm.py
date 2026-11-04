@@ -30,13 +30,17 @@ from hypothesis_mvp.discovery.proposal_runtime import ProposalRuntime, ProviderS
 from hypothesis_mvp.pcpi.reference import NormalInverseGammaPrior
 from hypothesis_mvp.pcpi.reference.basis import design_matrix
 from hypothesis_mvp.pcpi.reference.expanded_formula_basis import compile_fixed_formula_support
-from scripts.frozen_predictive_expansion import FrozenBankComponents, _posterior_id, _publish
+from scripts.frozen_predictive_expansion import (
+    FrozenBankComponents, _posterior_id, _publish, NESTED_BANK_POLICY, DIRECT_CANDIDATE_POLICY,
+)
+from scripts.bank_composition_preflight import validate_generation_ancestry
 from scripts.stacking_diagnostics import fit_stacking_weights
 
 
 CONTRACT = "llm-bank-composition-v1"
 MODES = ("bank", "residual", "blind")
 MULTISCALE_CONTRACT = "llm-bank-multiscale-composition-v1"
+DIRECT_CONTRACT = "llm-bank-multiscale-direct-v1"
 MULTISCALE_MODES = ("blind", "global", "local", "joint")
 
 
@@ -142,11 +146,13 @@ def _generate(mode, runtime, feedback, core, fit, budget, root, *,
                 signal_mode = "blind" if mode == "blind" else "bank"
                 context = attach_feedback(context, feedback, mode=signal_mode,
                                           diagnostic_scope=diagnostic_scope)
+            envelope_options = ({"envelope_policy": "request-bound-semantic-v1"}
+                                if implementation_contract == DIRECT_CONTRACT else {})
             batch = runtime.propose(
                 task_name="registered-symbolic-discovery", task_desc="Propose complementary symbolic structures.",
                 round_id=slot, island="composition", parent_hash=parent_hash,
                 island_context=context, library_rows=(), ephemeral_refinements=(),
-                max_candidates=budget.candidates_per_call, allow_protocol_repair=False)
+                max_candidates=budget.candidates_per_call, allow_protocol_repair=False, **envelope_options)
             record = {"slot": slot, "parent": parent, "parent_hash": parent_hash,
                       "feedback": context["bank_predictive_search_feedback"],
                       "protocol_valid": batch.protocol_valid, "protocol_reason": batch.reason,
@@ -172,6 +178,11 @@ def _generate(mode, runtime, feedback, core, fit, budget, root, *,
             # Typed parser rejection is a generation outcome, never imputed
             # to an admission gain. Infrastructure failure is terminal.
             record["rejected_candidates"] = batch.telemetry.get("candidate_validation_rejections", [])
+            if envelope_options:
+                record["envelope_policy"] = envelope_options["envelope_policy"]
+                record["request_bindings"] = [request["request_binding"]
+                    for request in batch.telemetry.get("provider_requests", [])
+                    if "request_binding" in request]
             record["cost_so_far"] = _cost(runtime, time.perf_counter() - started)
             _publish(root / f"CALL_{slot:04d}.json", record)
             records.append(record)
@@ -196,23 +207,34 @@ def _generate(mode, runtime, feedback, core, fit, budget, root, *,
 
 def run_llm_comparison(*, implementation_contract, budget, design, core, fit,
                        provider_settings, read_calibration, read_admission,
-                       read_reporting, output_root, seed, diagnostic_axes=None):
+                       read_reporting, output_root, seed, diagnostic_axes=None,
+                       fit_row_ids=None, core_generation_row_ids=None):
     """Generate -> freeze ALL banks -> calibrate ALL -> admit ALL -> report.
 
     Supply opened development fitting data only. No historical archive, truth,
     free-form task hints, source dataset or environment is read by this code.
     A formal runner still needs task/provenance/provider authorization freezes.
     """
-    if implementation_contract not in {CONTRACT, MULTISCALE_CONTRACT} or not isinstance(budget, LLMCompositionBudget):
+    if implementation_contract not in {CONTRACT, MULTISCALE_CONTRACT, DIRECT_CONTRACT} or not isinstance(budget, LLMCompositionBudget):
         raise ValueError("explicit LLM composition contract/budget required")
-    modes = MULTISCALE_MODES if implementation_contract == MULTISCALE_CONTRACT else MODES
+    direct = implementation_contract == DIRECT_CONTRACT
+    multiscale = implementation_contract in {MULTISCALE_CONTRACT, DIRECT_CONTRACT}
+    modes = MULTISCALE_MODES if multiscale else MODES
     scopes = {"blind": "none", "global": "global", "local": "local", "joint": "joint"}
     if not isinstance(design, ExpansionDesign) or design.tested_mixture_count < len(modes):
         raise ValueError("register every tested mixture in the evidence policy")
-    if (fit.role is not DataRole.DEVELOPMENT or len(fit.X) != len(design.training_ids)
+    if (fit.role is not DataRole.DEVELOPMENT
             or type(seed) is not int or seed < 0 or not core):
         raise ValueError("registered fitting role, initial Bank and seed required")
-    if implementation_contract == MULTISCALE_CONTRACT:
+    ancestry = None
+    if direct:
+        ancestry = validate_generation_ancestry(design, fit_row_ids, core_generation_row_ids, len(fit.X))
+    else:
+        if fit_row_ids is not None or core_generation_row_ids is not None or len(fit.X) != len(design.training_ids):
+            raise ValueError("legacy fitting IDs must equal the registered training role")
+        fit_row_ids = design.training_ids
+    component_policy = DIRECT_CANDIDATE_POLICY if direct else NESTED_BANK_POLICY
+    if multiscale:
         validate_diagnostic_axes(diagnostic_axes, fit.X.shape[1])
     elif diagnostic_axes is not None:
         raise ValueError("diagnostic axes require the explicit multiscale contract")
@@ -235,6 +257,9 @@ def run_llm_comparison(*, implementation_contract, budget, design, core, fit,
         if diagnostic_axes is not None:
             plan.update(diagnostic_axes=diagnostic_axes, diagnostic_scopes=scopes,
                         arm_execution_order=modes)
+        if direct:
+            plan.update(component_policy=component_policy, generation_ancestry=ancestry,
+                        envelope_policy="request-bound-semantic-v1")
         _publish(root / "PLAN.json", plan)
         model = freeze_expanded_formula_model(
             core, n_features=fit.X.shape[1], prior=NormalInverseGammaPrior(),
@@ -247,7 +272,7 @@ def run_llm_comparison(*, implementation_contract, budget, design, core, fit,
         if diagnostic_axes is not None:
             feedback_options["diagnostic_axes"] = diagnostic_axes
         feedback = feedback_from_posterior(
-            engine, posterior, fit, search_row_ids=design.training_ids,
+            engine, posterior, fit, search_row_ids=fit_row_ids,
             forbidden_row_ids=(*design.calibration_ids, *design.admission_ids, *design.reporting_ids),
             bank_identity=bank_id, **feedback_options)
         generated, costs = {}, {}
@@ -268,8 +293,9 @@ def run_llm_comparison(*, implementation_contract, budget, design, core, fit,
         phase_wall_seconds[stage] = time.perf_counter() - stage_started
         stage = "component_fitting"
         stage_started = time.perf_counter()
-        components = {mode: FrozenBankComponents(core, rows, fit, fit_row_ids=design.training_ids,
-                                                 design=design) for mode, rows in generated.items()}
+        components = {mode: FrozenBankComponents(core, rows, fit, fit_row_ids=fit_row_ids,
+                                                 design=design, component_policy=component_policy)
+                      for mode, rows in generated.items()}
         sessions = {mode: PredictiveExpansionSession(design, value.component_ids)
                     for mode, value in components.items()}
         _publish(root / "COMPONENTS_FROZEN.json", {mode: value.component_ids for mode, value in components.items()})
@@ -294,6 +320,8 @@ def run_llm_comparison(*, implementation_contract, budget, design, core, fit,
             weights, optimizer = fit_stacking_weights(density, seed=seed, random_starts=4)
             frozen[mode] = {**sessions[mode].freeze(density, weights, row_ids=ids,
                             component_ids=component.component_ids), "optimizer": optimizer}
+            if direct:
+                frozen[mode]["component_diagnostics"] = _density_diagnostics(density)
         _publish(root / "CALIBRATION_FROZEN.json", frozen)
         phase_wall_seconds[stage] = time.perf_counter() - stage_started
         stage = "admission"
@@ -306,8 +334,12 @@ def run_llm_comparison(*, implementation_contract, budget, design, core, fit,
         stage = "reporting"
         stage_started = time.perf_counter()
         ids, data = read_role(read_reporting, stage)
-        results = {mode: sessions[mode].report(component.densities(data), row_ids=ids,
-                       component_ids=component.component_ids) for mode, component in components.items()}
+        results = {}
+        for mode, component in components.items():
+            density = component.densities(data)
+            results[mode] = sessions[mode].report(density, row_ids=ids, component_ids=component.component_ids)
+            if direct:
+                results[mode]["component_diagnostics"] = _density_diagnostics(density)
         phase_wall_seconds[stage] = time.perf_counter() - stage_started
         result = {"schema": implementation_contract, "protocol_complete": True, "results": results,
                   "phase_wall_seconds": phase_wall_seconds,
@@ -317,9 +349,27 @@ def run_llm_comparison(*, implementation_contract, budget, design, core, fit,
                   "statistical_core_changed": False, "independent_efficacy_established": False,
                   "claim_boundary": "Opened-development Bank-conditioned LLM generation comparison. "
                     "No innovation, universal risk improvement or LLM reasoning attribution is established."}
+        if direct:
+            result.pop("statistical_core_changed")
+            result.update(component_policy=component_policy, predictive_component_family_changed=True,
+                          posterior_solver_changed=False, admission_rule_changed=False,
+                          weights_are_posterior_probabilities=False)
         _publish(root / "RESULT.json", result)
         return result
     except Exception as error:
         _publish(root / "FAILURE.json", {"stage": stage, "error_type": type(error).__name__,
                  "protocol_complete": False, "retry_authorized": False})
         raise
+
+
+def _density_diagnostics(density):
+    """Per-component audit only; never passed to generation or admission."""
+    with np.errstate(over="raise", invalid="raise"):
+        differences = density - density[:, :1]
+        means = np.sum(differences / len(differences), axis=0)
+        maximum = np.max(np.abs(differences), axis=0)
+    if not np.all(np.isfinite(means)) or not np.all(np.isfinite(maximum)):
+        raise FloatingPointError("nonfinite component diagnostic")
+    return {"mean_log_score_minus_core": means.tolist(),
+            "maximum_absolute_log_density_difference": maximum.tolist(),
+            "component_order_matches_frozen_ids": True, "audit_only": True}

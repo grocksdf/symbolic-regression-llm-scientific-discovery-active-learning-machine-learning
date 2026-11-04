@@ -9,7 +9,7 @@ from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from hypothesis_mvp.discovery.predictive_bank_expansion import ExpansionDesign
 from hypothesis_mvp.discovery.proposal_runtime import ProviderRoute, ProviderSettings
 from scripts.bank_guided_llm import (
-    CONTRACT, MODES, MULTISCALE_CONTRACT, MULTISCALE_MODES,
+    CONTRACT, MODES, MULTISCALE_CONTRACT, MULTISCALE_MODES, DIRECT_CONTRACT,
     LLMCompositionBudget, run_llm_comparison,
 )
 
@@ -31,7 +31,8 @@ def fixture():
     return design, fit, roles, provider, core
 
 
-def fake_http(monkeypatch, payloads, *, expression="x0**2", http_status=200, usage=True, malformed=False):
+def fake_http(monkeypatch, payloads, *, expression="x0**2", http_status=200, usage=True, malformed=False,
+              semantic_only=False):
     def post(url, *, headers, json, timeout):
         import json as js
         payload = js.loads(json["messages"][1]["content"])
@@ -42,6 +43,8 @@ def fake_http(monkeypatch, payloads, *, expression="x0**2", http_status=200, usa
                    "candidates": [{"candidate_id": "candidate", "parent_hash": parent,
                        "equation": expression, "action": "PROPOSE_NEW_SKELETON",
                        "rationale": "Synthetic contract fixture, not an efficacy claim."}]}
+        if semantic_only:
+            content = {"candidates": content["candidates"]}
         class Response:
             status_code = http_status
             text = "secret-fixture-key should never enter audit"
@@ -56,9 +59,14 @@ def fake_http(monkeypatch, payloads, *, expression="x0**2", http_status=200, usa
 def execute(tmp_path, monkeypatch, *, reporting_offset=0., calls=1,
             implementation_contract=CONTRACT, diagnostic_axes=None, **fake_options):
     design, fit, roles, provider, core = fixture()
-    modes = MULTISCALE_MODES if implementation_contract == MULTISCALE_CONTRACT else MODES
-    if implementation_contract == MULTISCALE_CONTRACT:
+    modes = MULTISCALE_MODES if implementation_contract in {MULTISCALE_CONTRACT, DIRECT_CONTRACT} else MODES
+    if implementation_contract in {MULTISCALE_CONTRACT, DIRECT_CONTRACT}:
         design = replace(design, tested_mixture_count=len(modes))
+    ancestry = {}
+    if implementation_contract == DIRECT_CONTRACT:
+        fitting_ids = design.training_ids
+        design = replace(design, training_ids=(*fitting_ids, "ancestor-validation:0"))
+        ancestry = {"fit_row_ids": fitting_ids, "core_generation_row_ids": design.training_ids}
     root = tmp_path / "run"
     payloads, events = [], []
     fake_http(monkeypatch, payloads, **fake_options)
@@ -78,7 +86,7 @@ def execute(tmp_path, monkeypatch, *, reporting_offset=0., calls=1,
         implementation_contract=implementation_contract, budget=LLMCompositionBudget(calls, 1, 1),
         design=design, core=core, fit=fit, provider_settings=provider,
         read_calibration=reader("calibration"), read_admission=reader("admission"),
-        read_reporting=reader("reporting"), output_root=root, seed=12, diagnostic_axes=diagnostic_axes)
+        read_reporting=reader("reporting"), output_root=root, seed=12, diagnostic_axes=diagnostic_axes, **ancestry)
     return result, root, payloads, events
 
 
@@ -282,3 +290,39 @@ def test_multiscale_requires_explicit_contract_and_four_mixture_policy(monkeypat
             fit=fit, provider_settings=provider, read_calibration=None,
             read_admission=None, read_reporting=None, output_root=tmp_path / "invalid", seed=12)
     assert not (tmp_path / "invalid").exists()
+
+
+def test_direct_real_parser_pipeline_preserves_independent_order_and_ancestry(monkeypatch, tmp_path):
+    result, root, payloads, events = execute(tmp_path, monkeypatch,
+        implementation_contract=DIRECT_CONTRACT, diagnostic_axes=(0,), semantic_only=True)
+    assert events == ["calibration", "admission", "reporting"]
+    assert result["component_policy"] == "standalone-candidate-v1"
+    assert result["predictive_component_family_changed"]
+    assert result["candidate_counts"] == dict.fromkeys(MULTISCALE_MODES, 1)
+    assert not result["weights_are_posterior_probabilities"]
+    assert all(p["contract"]["response_envelope_policy"] == "request-bound-semantic-v1" for p in payloads)
+    assert all(c["logical_calls"] == 1 for c in result["cost"].values())
+    plan = json.loads((root/"PLAN.json").read_text())
+    assert len(plan["generation_ancestry"]["fitting_row_ids"]) == 10
+    assert len(plan["generation_ancestry"]["core_generation_row_ids"]) == 11
+    for row in result["results"].values():
+        assert len(row["component_diagnostics"]["mean_log_score_minus_core"]) == 2
+        assert row["component_diagnostics"]["mean_log_score_minus_core"][0] == 0
+    _, second, next_payloads, _ = execute(tmp_path/"different-report", monkeypatch,
+        implementation_contract=DIRECT_CONTRACT, diagnostic_axes=(0,), semantic_only=True, reporting_offset=100.)
+    assert payloads == next_payloads
+    for name in ("GENERATION_FROZEN.json", "CALIBRATION_FROZEN.json", "ADMISSION_FROZEN.json"):
+        assert (root/name).read_bytes() == (second/name).read_bytes()
+
+
+def test_direct_missing_ancestry_fails_before_provider_or_output(monkeypatch, tmp_path):
+    design, fit, _, provider, core = fixture()
+    design = replace(design, tested_mixture_count=4)
+    monkeypatch.setattr("hypothesis_mvp.discovery.proposal_runtime.requests.post",
+                        lambda *a, **k: pytest.fail("network opened"))
+    with pytest.raises(ValueError, match="source-bound"):
+        run_llm_comparison(implementation_contract=DIRECT_CONTRACT,
+            budget=LLMCompositionBudget(1,1,1), design=design, core=core, fit=fit,
+            provider_settings=provider, read_calibration=None, read_admission=None, read_reporting=None,
+            output_root=tmp_path/"invalid", seed=1, diagnostic_axes=(0,))
+    assert not (tmp_path/"invalid").exists()
