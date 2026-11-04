@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 import numpy as np
 
 from hypothesis_mvp.data.roles import DataRole
+from hypothesis_mvp.discovery.bank_diagnostic_context import validate_diagnostic_axes
 from hypothesis_mvp.discovery.bank_search_feedback import attach_feedback, feedback_from_posterior
 from hypothesis_mvp.discovery.equation_runtime import EquationRuntime
 from hypothesis_mvp.discovery.pcpi_adapter import EXPANDED_FORMULA_POLICY, freeze_expanded_formula_model
@@ -35,6 +36,8 @@ from scripts.stacking_diagnostics import fit_stacking_weights
 
 CONTRACT = "llm-bank-composition-v1"
 MODES = ("bank", "residual", "blind")
+MULTISCALE_CONTRACT = "llm-bank-multiscale-composition-v1"
+MULTISCALE_MODES = ("blind", "global", "local", "joint")
 
 
 @dataclass(frozen=True)
@@ -111,7 +114,8 @@ def _cost(runtime, elapsed):
     return result
 
 
-def _generate(mode, runtime, feedback, core, fit, budget, root):
+def _generate(mode, runtime, feedback, core, fit, budget, root, *,
+              implementation_contract=CONTRACT, diagnostic_scope=None):
     started = time.perf_counter()
     n_features = fit.X.shape[1]
     supports = tuple(tuple(compile_fixed_formula_support(r["expression"], n_features)) for r in core)
@@ -131,7 +135,13 @@ def _generate(mode, runtime, feedback, core, fit, budget, root):
         for slot in range(budget.calls_per_arm):
             parent = parent_rows[slot % len(parent_rows)]["expression"]
             parent_hash = runtime.equation_runtime.dag(parent).canonical_hash
-            context = attach_feedback({**context_base, "current_expression": parent}, feedback, mode=mode)
+            context = {**context_base, "current_expression": parent}
+            if diagnostic_scope is None:
+                context = attach_feedback(context, feedback, mode=mode)
+            else:
+                signal_mode = "blind" if mode == "blind" else "bank"
+                context = attach_feedback(context, feedback, mode=signal_mode,
+                                          diagnostic_scope=diagnostic_scope)
             batch = runtime.propose(
                 task_name="registered-symbolic-discovery", task_desc="Propose complementary symbolic structures.",
                 round_id=slot, island="composition", parent_hash=parent_hash,
@@ -169,11 +179,13 @@ def _generate(mode, runtime, feedback, core, fit, budget, root):
             if (batch.reason == "provider_or_protocol_failure" or not transport
                     or transport[-1]["failed"]):
                 raise RuntimeError("LLM provider/protocol failed; see preserved request audit")
-        audit = {"schema": CONTRACT, "mode": mode, "candidates": candidates,
+        audit = {"schema": implementation_contract, "mode": mode, "candidates": candidates,
                  "records": records, "cost": _cost(runtime, time.perf_counter() - started),
                  "new_skeleton_quota": budget.new_skeleton_quota,
                  "provider_repair_calls": 0, "memory_reads": 0, "memory_writes": 0,
                  "admission_used_for_generation": False}
+        if diagnostic_scope is not None:
+            audit["diagnostic_scope"] = diagnostic_scope
         _publish(root / "GENERATION.json", audit)
         return candidates, audit
     except Exception as error:
@@ -184,20 +196,26 @@ def _generate(mode, runtime, feedback, core, fit, budget, root):
 
 def run_llm_comparison(*, implementation_contract, budget, design, core, fit,
                        provider_settings, read_calibration, read_admission,
-                       read_reporting, output_root, seed):
+                       read_reporting, output_root, seed, diagnostic_axes=None):
     """Generate -> freeze ALL banks -> calibrate ALL -> admit ALL -> report.
 
     Supply opened development fitting data only. No historical archive, truth,
     free-form task hints, source dataset or environment is read by this code.
     A formal runner still needs task/provenance/provider authorization freezes.
     """
-    if implementation_contract != CONTRACT or not isinstance(budget, LLMCompositionBudget):
+    if implementation_contract not in {CONTRACT, MULTISCALE_CONTRACT} or not isinstance(budget, LLMCompositionBudget):
         raise ValueError("explicit LLM composition contract/budget required")
-    if not isinstance(design, ExpansionDesign) or design.tested_mixture_count < len(MODES):
-        raise ValueError("register all three tested mixtures in the unchanged evidence policy")
+    modes = MULTISCALE_MODES if implementation_contract == MULTISCALE_CONTRACT else MODES
+    scopes = {"blind": "none", "global": "global", "local": "local", "joint": "joint"}
+    if not isinstance(design, ExpansionDesign) or design.tested_mixture_count < len(modes):
+        raise ValueError("register every tested mixture in the evidence policy")
     if (fit.role is not DataRole.DEVELOPMENT or len(fit.X) != len(design.training_ids)
             or type(seed) is not int or seed < 0 or not core):
         raise ValueError("registered fitting role, initial Bank and seed required")
+    if implementation_contract == MULTISCALE_CONTRACT:
+        validate_diagnostic_axes(diagnostic_axes, fit.X.shape[1])
+    elif diagnostic_axes is not None:
+        raise ValueError("diagnostic axes require the explicit multiscale contract")
     provider = _provider_identity(provider_settings)
     core = json.loads(json.dumps(core, allow_nan=False))
     # Resolve structural validity before any provider call.
@@ -209,11 +227,15 @@ def run_llm_comparison(*, implementation_contract, budget, design, core, fit,
     stage_started = time.perf_counter()
     phase_wall_seconds = {}
     try:
-        _publish(root / "PLAN.json", {"contract": CONTRACT, "budget": asdict(budget),
+        plan = {"contract": implementation_contract, "budget": asdict(budget),
                  "design": asdict(design), "provider": provider, "core_identity": digest(core),
-                 "fitting_identity": fit.fingerprint, "seed": seed, "modes": MODES,
+                 "fitting_identity": fit.fingerprint, "seed": seed, "modes": modes,
                  "actual_compute_matching_is_performance_gate": False,
-                 "provider_seed_guaranteed": False, "historical_results_reused": False})
+                 "provider_seed_guaranteed": False, "historical_results_reused": False}
+        if diagnostic_axes is not None:
+            plan.update(diagnostic_axes=diagnostic_axes, diagnostic_scopes=scopes,
+                        arm_execution_order=modes)
+        _publish(root / "PLAN.json", plan)
         model = freeze_expanded_formula_model(
             core, n_features=fit.X.shape[1], prior=NormalInverseGammaPrior(),
             exploration_identity=digest(core), coefficient_policy=EXPANDED_FORMULA_POLICY,
@@ -221,16 +243,22 @@ def run_llm_comparison(*, implementation_contract, budget, design, core, fit,
         engine = model.engine(model.stable_hash)
         posterior = engine.fit_batch(fit.X, fit.y)
         bank_id = _posterior_id(model, posterior, fit.fingerprint)
+        feedback_options = {"include_bank_inventory": True}
+        if diagnostic_axes is not None:
+            feedback_options["diagnostic_axes"] = diagnostic_axes
         feedback = feedback_from_posterior(
             engine, posterior, fit, search_row_ids=design.training_ids,
             forbidden_row_ids=(*design.calibration_ids, *design.admission_ids, *design.reporting_ids),
-            bank_identity=bank_id, include_bank_inventory=True)
+            bank_identity=bank_id, **feedback_options)
         generated, costs = {}, {}
         # New runtime per mode: no inherited counters, disabled route or memory.
-        for mode in MODES:
+        for mode in modes:
             runtime = ProposalRuntime(EquationRuntime(fit.X.shape[1], refit_policy="pcpi-expanded-fixed-inner-v1"),
                                       fit.X.shape[1], provider_settings, budget.candidates_per_call)
-            candidates, audit = _generate(mode, runtime, feedback, core, fit, budget, root / mode)
+            scope = scopes[mode] if diagnostic_axes is not None else None
+            candidates, audit = _generate(mode, runtime, feedback, core, fit, budget, root / mode,
+                                          implementation_contract=implementation_contract,
+                                          diagnostic_scope=scope)
             generated[mode] = candidates
             costs[mode] = audit["cost"]
         _publish(root / "GENERATION_FROZEN.json", {"bank_identity": bank_id,
@@ -281,7 +309,7 @@ def run_llm_comparison(*, implementation_contract, budget, design, core, fit,
         results = {mode: sessions[mode].report(component.densities(data), row_ids=ids,
                        component_ids=component.component_ids) for mode, component in components.items()}
         phase_wall_seconds[stage] = time.perf_counter() - stage_started
-        result = {"schema": CONTRACT, "protocol_complete": True, "results": results,
+        result = {"schema": implementation_contract, "protocol_complete": True, "results": results,
                   "phase_wall_seconds": phase_wall_seconds,
                   "cost": costs, "candidate_counts": {m: len(v) for m, v in generated.items()},
                   "component_counts": {m: len(v.component_ids) for m, v in components.items()},
