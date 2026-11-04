@@ -214,7 +214,8 @@ class ScientificDiscoveryRuntime:
         bank_feedback = getattr(self, "_bank_search_feedback", None)
         if bank_feedback is not None:
             from .bank_search_feedback import attach_feedback
-            result = attach_feedback(result, bank_feedback[0], mode=bank_feedback[1])
+            result = attach_feedback(result, bank_feedback[0], mode=bank_feedback[1],
+                                     diagnostic_scope=getattr(self, "_bank_diagnostic_scope", None))
         return result
 
     def _request_batches(
@@ -289,6 +290,8 @@ class ScientificDiscoveryRuntime:
                     "bank_identity": bank_feedback[0].bank_identity,
                     "source_data_identity": bank_feedback[0].search_data_identity,
                 }
+                if getattr(self, "_bank_diagnostic_scope", None) is not None:
+                    audit["bank_feedback"]["diagnostic_scope"] = self._bank_diagnostic_scope
             return island, batch, audit
 
         workers = min(len(islands), self.config.island_provider_parallelism)

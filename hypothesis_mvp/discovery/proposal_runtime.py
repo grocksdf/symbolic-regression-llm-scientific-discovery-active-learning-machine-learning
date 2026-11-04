@@ -1757,6 +1757,8 @@ class ProposalRuntime:
                 telemetry["bank_feedback_mode"] = bank_feedback["mode"]
                 telemetry["bank_feedback_signal_identity"] = bank_feedback["signal_identity"]
                 telemetry["bank_feedback_inventory_identity"] = bank_feedback.get("bank_inventory_identity")
+                if "diagnostic_scope" in bank_feedback:
+                    telemetry["bank_feedback_diagnostic_scope"] = bank_feedback["diagnostic_scope"]
             telemetry["valid_new_skeletons"] = sum(
                 candidate.action == "PROPOSE_NEW_SKELETON"
                 for candidate in selected.candidates)

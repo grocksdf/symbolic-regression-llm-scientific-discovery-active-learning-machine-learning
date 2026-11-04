@@ -141,7 +141,9 @@ def test_rich_inventory_is_common_and_blind_has_no_empirical_diagnostics():
 def test_legacy_packet_identity_is_preserved_without_opt_in():
     from hypothesis_mvp.discovery.bank_search_feedback import _hash
     _, _, _, feedback = fitted()
-    old_fields = {k: v for k, v in feedback.__dict__.items() if k != "bank_inventory_json"}
+    old_fields = {key: getattr(feedback, key) for key in (
+        "bank_identity", "search_row_ids", "search_data_identity", "log_density",
+        "location_score", "residual", "regions_json")}
     assert feedback.identity == _hash(old_fields)
     assert feedback.prompt_payload()["schema"] == "bank-search-feedback-v1"
     assert "bank_inventory" not in feedback.prompt_payload()

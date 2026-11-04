@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 import json
+import math
 
 import numpy as np
 from scipy.special import logsumexp
@@ -18,6 +19,10 @@ from scipy.stats import t as student_t
 
 from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from .proposal_calibration import assert_generation_context_safe
+from .bank_diagnostic_context import (
+    MULTISCALE_FEEDBACK_SCHEMA, build_diagnostic_snapshot,
+    project_diagnostic_scope, validate_diagnostic_axes, validate_diagnostic_view,
+)
 
 
 BANK_PROPOSAL_FEEDBACK_SCHEMA = "bank-complementary-proposal-feedback-v1"
@@ -76,12 +81,15 @@ class BankSearchFeedback:
     residual: tuple[float, ...]
     regions_json: str
     bank_inventory_json: str = ""
+    diagnostics_json: str = ""
 
     @property
     def identity(self):
         fields = dict(self.__dict__)
         if not self.bank_inventory_json:
             fields.pop("bank_inventory_json")  # Preserve the legacy v1 identity.
+        if not self.diagnostics_json:
+            fields.pop("diagnostics_json")
         return _hash(fields)
 
     def direction(self, mode):
@@ -93,7 +101,7 @@ class BankSearchFeedback:
             return np.zeros(len(self.search_row_ids))
         raise ValueError("unknown search feedback mode")
 
-    def prompt_payload(self, mode="bank"):
+    def prompt_payload(self, mode="bank", *, diagnostic_scope=None):
         if mode not in {"bank", "residual", "blind"}:
             raise ValueError("unknown search feedback mode")
         fields = {"bank": ("mean_log_density", "mean_location_score"),
@@ -127,12 +135,36 @@ class BankSearchFeedback:
                 "Treat diagnostics as fallible search evidence, not mandatory "
                 "directions or an instruction to abstain. Explain the proposed "
                 "complementarity in rationale; that explanation is not evidence.")
+        if diagnostic_scope is not None:
+            if not self.bank_inventory_json or not self.diagnostics_json:
+                raise ValueError("multiscale feedback requires a frozen inventory and diagnostic design")
+            if mode != ("blind" if diagnostic_scope == "none" else "bank"):
+                raise ValueError("multiscale diagnostics require Bank or blind information")
+            payload.update(schema=MULTISCALE_FEEDBACK_SCHEMA,
+                           **project_diagnostic_scope(json.loads(self.diagnostics_json), diagnostic_scope))
+            payload["instruction"] = (
+                "Use the common bank_inventory as the existing structural comparison set. "
+                "Its expressions are unweighted basis sums with numerical amplitudes fitted separately. "
+                "Visible summaries describe fitting observations only. mean_location_score is the "
+                "derivative for a common small shift of all Bank predictive locations. Positive "
+                "suggests upward, negative downward; it is a fallible proposal cue. "
+                "Compare mean_abs_location_score and positive/negative fractions to detect "
+                "cancellation. Opposite regional directions may require a shape change. "
+                "global_local_links describe regional deviations from the whole dataset. "
+                "Each axis partition covers the same observations, so counts across axes overlap. "
+                "Small regional counts offer limited support; these summaries carry no confidence "
+                "certificate or verified causal explanation. Judge a proposed structure by how it "
+                "could complement the entire Bank, under the registered grammar and quota. "
+                "Describe the diagnostic basis and a testable explanation in rationale. "
+                "You may disagree with a diagnostic direction. Independent evaluation determines "
+                "predictive value after generation. Scope controls visibility, not search rights.")
+            validate_diagnostic_view(payload)
         return payload
 
 
 def feedback_from_posterior(engine, posterior, search, *, search_row_ids,
                             forbidden_row_ids, bank_identity,
-                            include_bank_inventory=False):
+                            include_bank_inventory=False, diagnostic_axes=None):
     """Read only opened generation/search roles; require explicit row exclusion.
 
     forbidden_row_ids are opaque registered admission/reporting indices, not
@@ -140,6 +172,10 @@ def feedback_from_posterior(engine, posterior, search, *, search_row_ids,
     """
     if type(include_bank_inventory) is not bool:
         raise ValueError("bank inventory must be explicitly enabled or disabled")
+    if diagnostic_axes is not None:
+        validate_diagnostic_axes(diagnostic_axes, search.X.shape[1])
+        if not include_bank_inventory or search.role is not DataRole.DEVELOPMENT:
+            raise ValueError("multiscale feedback requires fitting development rows and Bank inventory")
     ids, forbidden = tuple(search_row_ids), tuple(forbidden_row_ids)
     if (search.role not in {DataRole.DEVELOPMENT, DataRole.VALIDATION}
             or len(ids) != len(search.X) or len(set(ids)) != len(ids)
@@ -159,16 +195,27 @@ def feedback_from_posterior(engine, posterior, search, *, search_row_ids,
     lpd, score, residual = mixture_location_feedback(
         np.column_stack(locations), np.column_stack(scales), degrees,
         posterior.log_probabilities, search.y)
-    regions = []
-    for axis in range(search.X.shape[1]):
-        cut = float(np.median(search.X[:, axis]))
-        for side, mask in (("le", search.X[:, axis] <= cut), ("gt", search.X[:, axis] > cut)):
-            if not np.any(mask):
-                continue
-            regions.append({"axis": axis, "side": side, "cut": cut, "count": int(np.sum(mask)),
-                            "mean_log_density": float(np.mean(lpd[mask])),
-                            "mean_location_score": float(np.mean(score[mask])),
-                            "mean_residual": float(np.mean(residual[mask]))})
+    regions, diagnostics = [], ""
+    if diagnostic_axes is None:
+        # Keep historical summaries and identities exactly unchanged.
+        for axis in range(search.X.shape[1]):
+            cut = float(np.median(search.X[:, axis]))
+            for side, mask in (("le", search.X[:, axis] <= cut), ("gt", search.X[:, axis] > cut)):
+                if not np.any(mask):
+                    continue
+                regions.append({"axis": axis, "side": side, "cut": cut, "count": int(np.sum(mask)),
+                                "mean_log_density": float(np.mean(lpd[mask])),
+                                "mean_location_score": float(np.mean(score[mask])),
+                                "mean_residual": float(np.mean(residual[mask]))})
+    else:
+        snapshot = build_diagnostic_snapshot(search.X, lpd, score, axes=diagnostic_axes)
+        diagnostics = json.dumps(snapshot, sort_keys=True, allow_nan=False)
+        for region in snapshot["regions"]:
+            mask = search.X[:, region["axis"]] <= region["cut"]
+            if region["side"] == "gt":
+                mask = ~mask
+            regions.append({**region, "mean_residual": math.fsum(
+                float(value) / region["count"] for value in residual[mask])})
     inventory = ""
     if include_bank_inventory:
         from hypothesis_mvp.pcpi.reference.expanded_formula_basis import decode_fixed_formula_term
@@ -186,7 +233,7 @@ def feedback_from_posterior(engine, posterior, search, *, search_row_ids,
                                sort_keys=True, allow_nan=False)
     return BankSearchFeedback(bank_identity, ids, search.fingerprint,
                               tuple(map(float, lpd)), tuple(map(float, score)),
-                              tuple(map(float, residual)), json.dumps(regions, allow_nan=False), inventory)
+                              tuple(map(float, residual)), json.dumps(regions, allow_nan=False), inventory, diagnostics)
 
 
 def validate_bank_prompt_feedback(payload):
@@ -195,11 +242,14 @@ def validate_bank_prompt_feedback(payload):
     if not isinstance(payload, dict):
         raise ValueError("Bank feedback must be a typed object")
     common = {"schema", "mode", "signal_identity", "source_role", "regions", "instruction"}
-    rich = payload.get("schema") == BANK_PROPOSAL_FEEDBACK_SCHEMA
+    multiscale = payload.get("schema") == MULTISCALE_FEEDBACK_SCHEMA
+    rich = payload.get("schema") in {BANK_PROPOSAL_FEEDBACK_SCHEMA, MULTISCALE_FEEDBACK_SCHEMA}
     expected = common | ({"bank_inventory", "bank_inventory_identity"} if rich else set())
+    if multiscale:
+        expected |= {"diagnostic_scope", "global_summary", "global_local_links"}
     mode = payload.get("mode")
     if (set(payload) != expected or payload.get("schema") not in
-            {"bank-search-feedback-v1", BANK_PROPOSAL_FEEDBACK_SCHEMA}
+            {"bank-search-feedback-v1", BANK_PROPOSAL_FEEDBACK_SCHEMA, MULTISCALE_FEEDBACK_SCHEMA}
             or mode not in {"bank", "residual", "blind"}
             or payload.get("source_role") != "opened-generation-search-only"
             or not isinstance(payload.get("instruction"), str)):
@@ -213,7 +263,9 @@ def validate_bank_prompt_feedback(payload):
         raise ValueError("blind condition cannot contain feedback regions")
     metrics = {"bank": {"mean_log_density", "mean_location_score"},
                "residual": {"mean_residual"}, "blind": set()}[mode]
-    for region in regions:
+    if multiscale:
+        validate_diagnostic_view(payload)
+    for region in (() if multiscale else regions):
         if (not isinstance(region, dict) or set(region) != {"axis", "side", "cut", "count"} | metrics
                 or type(region.get("axis")) is not int or region["axis"] < 0
                 or region.get("side") not in {"le", "gt"}
@@ -272,20 +324,20 @@ def rank_materials(feedback, material_values, *, mode):
     return sorted(records, key=lambda row: (-row["priority"], row["expression"]))
 
 
-def attach_feedback(context, feedback, *, mode):
+def attach_feedback(context, feedback, *, mode, diagnostic_scope=None):
     """Explicit LLM integration hook; no grammar/quota modification or transport."""
     assert_generation_context_safe(context)
     if (context.get("posterior_gap_brief") is not None
             or (context.get("scientist_orchestration") or {}).get("posterior_gap_brief") is not None):
         raise ValueError("historical Gap prompts cannot be mixed with Bank-location guidance")
     result = json.loads(json.dumps(context, allow_nan=False))
-    result["bank_predictive_search_feedback"] = feedback.prompt_payload(mode)
+    result["bank_predictive_search_feedback"] = feedback.prompt_payload(mode, diagnostic_scope=diagnostic_scope)
     validate_bank_prompt_feedback(result["bank_predictive_search_feedback"])
     assert_generation_context_safe(result)
     return result
 
 
-def install_feedback(runtime, feedback, *, mode):
+def install_feedback(runtime, feedback, *, mode, diagnostic_scope=None):
     """Opt-in before LLM generation; legacy frozen runs never acquire this mode.
 
     A dedicated runtime per arm is required. Do not combine this intervention
@@ -295,6 +347,8 @@ def install_feedback(runtime, feedback, *, mode):
     if not isinstance(feedback, BankSearchFeedback):
         raise ValueError("a constructed BankSearchFeedback is required")
     feedback.direction(mode)
+    if diagnostic_scope is not None:
+        validate_bank_prompt_feedback(feedback.prompt_payload(mode, diagnostic_scope=diagnostic_scope))
     if (getattr(runtime.config, "feedback_generation_policy", "legacy") != "legacy"
             or (getattr(runtime, "orchestration_context", {}) or {}).get("posterior_gap_brief")
             or any(getattr(runtime.config, name, False) for name in
@@ -303,3 +357,5 @@ def install_feedback(runtime, feedback, *, mode):
             or getattr(runtime, "_bank_search_feedback", None) is not None):
         raise ValueError("Bank feedback requires a fresh dedicated unmasked runtime")
     runtime._bank_search_feedback = (feedback, mode)
+    if diagnostic_scope is not None:
+        runtime._bank_diagnostic_scope = diagnostic_scope

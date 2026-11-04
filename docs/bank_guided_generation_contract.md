@@ -50,6 +50,47 @@ These hooks do not automatically turn old frozen experiment scripts into the
 new algorithm. The new adapter contract is `bank-location-guided-search-v1`.
 There is no historical result relabeling or claim that an old freeze ran it.
 
+## Explicit whole-Bank global and regional LLM context
+
+The separate LLM adapter supports `llm-bank-multiscale-composition-v1` through
+the same proposal, compilation and independent admission implementation. It
+has four information scopes: `blind`, `global`, `local`, and `joint`. Every arm
+sees the same complete Bank structural inventory and has the same grammar,
+parent order, new-skeleton rights and request/candidate ceilings. `local` uses
+the entire predictive mixture on regional observations, not a single formula.
+
+Enable this explicitly by passing `include_bank_inventory=True` and a
+predeclared `diagnostic_axes` tuple to `feedback_from_posterior`, then selecting
+`diagnostic_scope` when attaching/installing it. Multiscale snapshots require
+fitting development rows. Historical calls without these options preserve
+their original payload and identity. The new packet schema is
+`bank-multiscale-proposal-feedback-v1`.
+
+For each registered input axis, every nonempty median half is summarized.
+Cuts depend only on fitting covariates; no direction, task, region or threshold
+is selected using admission/reporting performance. Each summary records count,
+mean log density, signed and absolute location-score means, and positive and
+negative direction fractions. Absolute magnitude and direction fractions expose
+cancellation that a signed mean alone hides. The joint view additionally gives
+regional-minus-global differences and opposite-mean-direction flags. Finite
+checks reject inconsistent projections; large finite medians and means are
+computed without overflowing sums or clipping predictive values.
+
+These are descriptive fitting diagnostics. They neither estimate a candidate's
+independent predictive gain nor prove that a suggested structural edit is
+correct. A useful response must still materialize, be fitted, and pass unchanged
+independent admission. Regions from different axes overlap. Axis-wise median
+partitions may miss interactions and finer structure; small regional counts do
+not provide a confidence guarantee. The global summaries are count-weighted
+reconstructions of any complete axis partition. Thus joint versus local tests
+explicit presentation/integration, not the addition of independent information.
+
+The fixed-bank adapter freezes every generated bank before calibration, every
+mixture before admission, and every decision before reporting. It does not
+recompute diagnostics after each proposal or automatically create a real-data
+matrix. Tests use synthetic observations and simulated HTTP only. No efficacy,
+novelty or generalization conclusion follows from this code change.
+
 ## Controls and information boundary
 
 - **Bank**: complete mixture location score.
