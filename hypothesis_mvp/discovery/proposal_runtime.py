@@ -1572,14 +1572,19 @@ class ProposalRuntime:
         return tuple(candidates), tuple(rejections), tuple(normalizations)
 
     def _system_message(self, gap_directed: bool = False,
-                        new_skeleton_quota: int = 0) -> str:
+                        new_skeleton_quota: int = 0, *, envelope_policy: str = "legacy") -> str:
         allowed = ", ".join(f"x{i}" for i in range(self.n_features))
         expanded = self.equation_runtime.refit_policy == "pcpi-expanded-fixed-inner-v1"
         return (
             "You propose falsifiable structural equations as exactly one unfenced JSON object. "
+            + ("Return only a root candidates array in that object. The runtime binds "
+               "protocol_id, runtime_id, round_id and island to this synchronous request; "
+               "omit those administrative fields. Conflicting echoed fields are rejected. "
+               "Every candidate needs candidate_id, parent_hash, action, rationale, and "
+               if envelope_policy == "request-bound-semantic-v1" else
             "Use protocol_id='hypothesis-proposal-v1', runtime_id='canonical-real-only-discovery', "
             "and preserve the requested round_id, island, and parent_hash. Every candidate needs "
-            "candidate_id, parent_hash, action, rationale, and "
+            "candidate_id, parent_hash, action, rationale, and ")
             + ("equation or correction. " if gap_directed and not expanded
                else "equation. ")
             + "The equation field is RHS only: "
@@ -1622,9 +1627,10 @@ class ProposalRuntime:
     def _request_validated(
         self, payload: Mapping[str, Any], context: ProposalContext,
     ) -> _ValidatedResponse:
+        envelope_policy = payload.get("contract", {}).get("response_envelope_policy", "legacy")
         messages, prompt_hash = self._messages(
             payload, self._system_message(context.gap_directed,
-                                          context.new_skeleton_quota))
+                                          context.new_skeleton_quota, envelope_policy=envelope_policy))
         self.call_count += 1
         content, telemetry = self._request(messages, prompt_hash)
         response_hash = hashlib.sha256(content.encode()).hexdigest()
@@ -1632,6 +1638,28 @@ class ProposalRuntime:
             parsed = strict_json_loads(content)
             if not isinstance(parsed, Mapping):
                 raise ProtocolError("root_must_be_object")
+            if envelope_policy == "request-bound-semantic-v1":
+                bound = {"protocol_id": PROPOSAL_PROTOCOL_ID, "runtime_id": DISCOVERY_RUNTIME_ID,
+                         "round_id": context.round_id, "island": context.island}
+                if set(parsed) - (set(bound) | {"parent_hash", "candidates"}):
+                    raise ProtocolError("unexpected_semantic_envelope_field")
+                for key, expected in {**bound, "parent_hash": context.parent_hash}.items():
+                    if key in parsed and (type(parsed[key]) is not type(expected) or parsed[key] != expected):
+                        raise ProtocolError("request_binding_conflict:" + key)
+                items = parsed.get("candidates")
+                if not isinstance(items, list):
+                    raise ProtocolError("candidate_count_out_of_range")
+                for item in items:
+                    if not isinstance(item, Mapping) or item.get("parent_hash") != context.parent_hash:
+                        raise ProtocolError("request_binding_conflict:parent_hash")
+                    for key, expected in bound.items():
+                        if key in item and (type(item[key]) is not type(expected) or item[key] != expected):
+                            raise ProtocolError("request_binding_conflict:" + key)
+                telemetry["request_binding"] = {**bound, "parent_hash": context.parent_hash,
+                    "prompt_hash": prompt_hash, "response_hash": response_hash,
+                    "envelope_policy": envelope_policy, "binding_source": "synchronous_request",
+                    "provider_freshness_attested": False}
+                parsed = {**parsed, **bound}
             if payload.get("contract", {}).get(
                     "localized_refinement_contract"):
                 items = parsed.get("candidates")
@@ -1702,7 +1730,13 @@ class ProposalRuntime:
         library_rows: Sequence[Mapping[str, Any]],
         ephemeral_refinements: Sequence[Mapping[str, Any]],
         max_candidates: int | None = None, allow_protocol_repair: bool = True,
+        envelope_policy: str = "legacy",
     ) -> ProposalBatch:
+        if envelope_policy not in {"legacy", "request-bound-semantic-v1"}:
+            raise ProtocolError("invalid_response_envelope_policy")
+        if envelope_policy != "legacy" and (allow_protocol_repair
+                or island_context.get("localized_refinement_contract")):
+            raise ProtocolError("request_bound_requires_no_repair_or_localized_projection")
         candidate_limit = self._candidate_limit(max_candidates)
         expanded = self.equation_runtime.refit_policy == "pcpi-expanded-fixed-inner-v1"
         gap_directed = bool(
@@ -1734,6 +1768,8 @@ class ProposalRuntime:
             task_name, task_desc, context, island_context,
             library_rows, ephemeral_refinements,
         )
+        if envelope_policy != "legacy":
+            payload["contract"]["response_envelope_policy"] = envelope_policy
         error_count_before = len(self._errors)
         try:
             first = self._request_validated(payload, context)
