@@ -225,6 +225,14 @@ class ScientificDiscoveryRuntime:
         dict[str, ProposalBatch], dict[str, ExplorationProgram],
         dict[str, Mapping[str, Any]],
     ]:
+        bank_feedback = getattr(self, "_bank_search_feedback", None)
+        if bank_feedback is not None:
+            from .bank_search_feedback import validate_feedback_source
+            validate_feedback_source(bank_feedback[0], arrays[0], arrays[1])
+            if any(getattr(self.config, name, False) for name in (
+                    "structure_library_read", "structure_library_write",
+                    "task_local_memory_read", "task_local_memory_write")):
+                raise ValueError("Bank feedback requires isolated KnowledgeRuntime")
         explorations = {
             island: self._explore(current, arrays[0], arrays[1], island)
             for island, current in islands.items()
@@ -274,6 +282,13 @@ class ScientificDiscoveryRuntime:
                 "candidate_response_accessed": False,
                 "heldout_opened": False,
             }
+            if bank_feedback is not None:
+                audit["bank_feedback"] = {
+                    "identity": bank_feedback[0].identity,
+                    "mode": bank_feedback[1],
+                    "bank_identity": bank_feedback[0].bank_identity,
+                    "source_data_identity": bank_feedback[0].search_data_identity,
+                }
             return island, batch, audit
 
         workers = min(len(islands), self.config.island_provider_parallelism)

@@ -16,8 +16,11 @@ import numpy as np
 from scipy.special import logsumexp
 from scipy.stats import t as student_t
 
-from hypothesis_mvp.data.roles import DataRole
+from hypothesis_mvp.data.roles import DataRole, RoleDataset
 from .proposal_calibration import assert_generation_context_safe
+
+
+BANK_PROPOSAL_FEEDBACK_SCHEMA = "bank-complementary-proposal-feedback-v1"
 
 
 def _hash(value):
@@ -72,10 +75,14 @@ class BankSearchFeedback:
     location_score: tuple[float, ...]
     residual: tuple[float, ...]
     regions_json: str
+    bank_inventory_json: str = ""
 
     @property
     def identity(self):
-        return _hash(self.__dict__)
+        fields = dict(self.__dict__)
+        if not self.bank_inventory_json:
+            fields.pop("bank_inventory_json")  # Preserve the legacy v1 identity.
+        return _hash(fields)
 
     def direction(self, mode):
         if mode == "bank":
@@ -94,7 +101,7 @@ class BankSearchFeedback:
         regions = [{key: value for key, value in row.items()
                     if key in ("axis", "side", "cut", "count", *fields)}
                    for row in json.loads(self.regions_json)] if fields else []
-        return {"schema": "bank-search-feedback-v1", "mode": mode,
+        payload = {"schema": "bank-search-feedback-v1", "mode": mode,
                 "signal_identity": self.identity if mode != "blind" else None,
                 "source_role": "opened-generation-search-only", "regions": regions,
                 "instruction": "Use this local diagnostic to propose structural changes. "
@@ -104,15 +111,35 @@ class BankSearchFeedback:
                                "These are not gradients of arbitrary AST replacements. "
                                "Preserve registered grammar and search rights; the signal "
                                "does not select or certify the final predictor."}
+        if self.bank_inventory_json:
+            inventory = json.loads(self.bank_inventory_json)
+            payload.update(schema=BANK_PROPOSAL_FEEDBACK_SCHEMA,
+                           bank_inventory=inventory,
+                           bank_inventory_identity=_hash(inventory))
+            payload["instruction"] += (
+                " The common bank_inventory lists the existing structural supports, "
+                "not their truth or posterior ranking. Its expressions display "
+                "unweighted basis sums, not fitted predictions; outer amplitudes "
+                "are refit by the numerical engine. Seek a falsifiable structure "
+                "whose predictive behavior could complement this whole Bank. "
+                "You may use a parent edit or a complete new structure when the "
+                "unchanged action grammar and new-skeleton quota permit it. "
+                "Treat diagnostics as fallible search evidence, not mandatory "
+                "directions or an instruction to abstain. Explain the proposed "
+                "complementarity in rationale; that explanation is not evidence.")
+        return payload
 
 
 def feedback_from_posterior(engine, posterior, search, *, search_row_ids,
-                            forbidden_row_ids, bank_identity):
+                            forbidden_row_ids, bank_identity,
+                            include_bank_inventory=False):
     """Read only opened generation/search roles; require explicit row exclusion.
 
     forbidden_row_ids are opaque registered admission/reporting indices, not
     response hashes. The caller must bind these IDs to actual dataset rows.
     """
+    if type(include_bank_inventory) is not bool:
+        raise ValueError("bank inventory must be explicitly enabled or disabled")
     ids, forbidden = tuple(search_row_ids), tuple(forbidden_row_ids)
     if (search.role not in {DataRole.DEVELOPMENT, DataRole.VALIDATION}
             or len(ids) != len(search.X) or len(set(ids)) != len(ids)
@@ -142,9 +169,81 @@ def feedback_from_posterior(engine, posterior, search, *, search_row_ids,
                             "mean_log_density": float(np.mean(lpd[mask])),
                             "mean_location_score": float(np.mean(score[mask])),
                             "mean_residual": float(np.mean(residual[mask]))})
+    inventory = ""
+    if include_bank_inventory:
+        from hypothesis_mvp.pcpi.reference.expanded_formula_basis import decode_fixed_formula_term
+        def display(term):
+            if term.startswith("formula_ast_v1:"):
+                return "(" + decode_fixed_formula_term(term, search.X.shape[1]) + ")"
+            return "1" if term == "intercept" else term
+        # All registered structures, in response-independent order. No posterior
+        # ranking, parameters, raw rows or independent outcome enter this packet.
+        structures = [{"structure_id": member.structure.structure_id,
+                       "expression": " + ".join(display(term) for term in member.structure.basis_terms),
+                       "basis_terms": list(member.structure.basis_terms)}
+                      for member in posterior.members]
+        inventory = json.dumps(sorted(structures, key=lambda row: row["structure_id"]),
+                               sort_keys=True, allow_nan=False)
     return BankSearchFeedback(bank_identity, ids, search.fingerprint,
                               tuple(map(float, lpd)), tuple(map(float, score)),
-                              tuple(map(float, residual)), json.dumps(regions, allow_nan=False))
+                              tuple(map(float, residual)), json.dumps(regions, allow_nan=False), inventory)
+
+
+def validate_bank_prompt_feedback(payload):
+    """Reject malformed opt-in diagnostics before transport; do not repair them."""
+    assert_generation_context_safe(payload)
+    if not isinstance(payload, dict):
+        raise ValueError("Bank feedback must be a typed object")
+    common = {"schema", "mode", "signal_identity", "source_role", "regions", "instruction"}
+    rich = payload.get("schema") == BANK_PROPOSAL_FEEDBACK_SCHEMA
+    expected = common | ({"bank_inventory", "bank_inventory_identity"} if rich else set())
+    mode = payload.get("mode")
+    if (set(payload) != expected or payload.get("schema") not in
+            {"bank-search-feedback-v1", BANK_PROPOSAL_FEEDBACK_SCHEMA}
+            or mode not in {"bank", "residual", "blind"}
+            or payload.get("source_role") != "opened-generation-search-only"
+            or not isinstance(payload.get("instruction"), str)):
+        raise ValueError("invalid Bank feedback schema or information condition")
+    signal = payload["signal_identity"]
+    if ((mode == "blind" and signal is not None)
+            or (mode != "blind" and (not isinstance(signal, str) or not signal))):
+        raise ValueError("invalid Bank feedback signal identity")
+    regions = payload["regions"]
+    if not isinstance(regions, list) or (mode == "blind" and regions):
+        raise ValueError("blind condition cannot contain feedback regions")
+    metrics = {"bank": {"mean_log_density", "mean_location_score"},
+               "residual": {"mean_residual"}, "blind": set()}[mode]
+    for region in regions:
+        if (not isinstance(region, dict) or set(region) != {"axis", "side", "cut", "count"} | metrics
+                or type(region.get("axis")) is not int or region["axis"] < 0
+                or region.get("side") not in {"le", "gt"}
+                or type(region.get("count")) is not int or region["count"] <= 0
+                or any(type(region.get(key)) not in {int, float}
+                       or not np.isfinite(region[key]) for key in {"cut"} | metrics)):
+            raise ValueError("invalid or cross-condition Bank region diagnostic")
+    if rich:
+        inventory = payload["bank_inventory"]
+        if not isinstance(inventory, list) or not inventory:
+            raise ValueError("complete Bank structure inventory required")
+        for row in inventory:
+            if (not isinstance(row, dict) or set(row) != {"structure_id", "expression", "basis_terms"}
+                    or any(not isinstance(row[key], str) or not row[key]
+                           for key in ("structure_id", "expression"))
+                    or not isinstance(row["basis_terms"], list) or not row["basis_terms"]
+                    or any(not isinstance(term, str) or not term for term in row["basis_terms"])):
+                raise ValueError("invalid Bank structure inventory")
+        if (len({row["structure_id"] for row in inventory}) != len(inventory)
+                or payload["bank_inventory_identity"] != _hash(inventory)):
+            raise ValueError("Bank inventory identity mismatch")
+    return rich
+
+
+def validate_feedback_source(feedback, X, y):
+    """Bind an installed diagnostic to the actual generation-fitting arrays."""
+    data = RoleDataset(DataRole.DEVELOPMENT, X, y)
+    if (data.fingerprint != feedback.search_data_identity
+            or len(data.X) != len(feedback.search_row_ids)):
+        raise ValueError("Bank feedback does not match generation fitting rows")
 
 
 def rank_materials(feedback, material_values, *, mode):
@@ -181,6 +280,7 @@ def attach_feedback(context, feedback, *, mode):
         raise ValueError("historical Gap prompts cannot be mixed with Bank-location guidance")
     result = json.loads(json.dumps(context, allow_nan=False))
     result["bank_predictive_search_feedback"] = feedback.prompt_payload(mode)
+    validate_bank_prompt_feedback(result["bank_predictive_search_feedback"])
     assert_generation_context_safe(result)
     return result
 

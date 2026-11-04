@@ -374,6 +374,19 @@ class ProposalRuntime:
             telemetry["provider_error_body_excerpt"] = str(response.text or "")[:500]
             raise RuntimeError(json.dumps(telemetry, sort_keys=True))
         body = response.json()
+        # Missing/malformed usage is unknown, not free computation. Keep only
+        # whitelisted counters; never copy arbitrary provider metadata/secrets.
+        usage = body.get("usage") if isinstance(body, dict) else None
+        usage_fields = ("prompt_tokens", "completion_tokens", "total_tokens")
+        valid_usage = isinstance(usage, dict) and all(
+            type(usage.get(key)) is int and usage[key] >= 0 for key in usage_fields)
+        if valid_usage and usage["total_tokens"] != usage["prompt_tokens"] + usage["completion_tokens"]:
+            valid_usage = False
+        telemetry.update({f"provider_{key}": usage[key] if valid_usage else None
+                          for key in usage_fields})
+        telemetry["provider_usage_reported"] = valid_usage
+        telemetry["provider_usage_status"] = (
+            "reported" if valid_usage else "missing" if usage is None else "invalid")
         choices = body.get("choices") if isinstance(body, dict) else None
         message = choices[0].get("message") if isinstance(choices, list) and choices else None
         content = message.get("content") if isinstance(message, dict) else None
@@ -1264,6 +1277,15 @@ class ProposalRuntime:
         refinements: Sequence[Mapping[str, Any]],
     ) -> dict[str, Any]:
         assert_generation_context_safe(island_context)
+        bank_feedback = island_context.get("bank_predictive_search_feedback")
+        bank_complementary = False
+        if bank_feedback is not None:
+            from .bank_search_feedback import validate_bank_prompt_feedback
+            bank_complementary = validate_bank_prompt_feedback(bank_feedback)
+            if (context.gap_directed or island_context.get("posterior_gap_brief") is not None
+                    or (island_context.get("scientist_orchestration") or {}).get("posterior_gap_brief") is not None
+                    or library_rows or refinements):
+                raise ValueError("Bank feedback requires an isolated proposal context")
         expanded = (
             self.equation_runtime.refit_policy
             == "pcpi-expanded-fixed-inner-v1"
@@ -1291,6 +1313,17 @@ class ProposalRuntime:
                 "refinement-only-neutral"}:
             raise ProtocolError("invalid_diagnostic_instruction_mode")
         diagnostic_instruction = (
+            "Use scientific_context.bank_predictive_search_feedback and its common "
+            "bank_inventory to seek complementary predictive behavior across the "
+            "whole frozen Bank, rather than optimizing only the current parent. "
+            "The Bank is a comparison set, not a list of truths. Diagnostics are "
+            "fallible generation evidence: disagree with or ignore a suggested "
+            "direction if warranted. A parent edit or a complete structure is "
+            "permitted only under the unchanged allowed_actions and quota. "
+            "Explain complementarity in rationale without claiming empirical "
+            "gain, admission or posterior authority. The blind condition receives "
+            "the same inventory and search rights but no diagnostic direction."
+            if bank_complementary else
             "Treat the supplied posterior-gap diagnostic as non-mandatory "
             "search evidence. You may disagree with it or ignore a suggested "
             "direction when the frozen parent and registered covariates support "
@@ -1718,6 +1751,12 @@ class ProposalRuntime:
                 responses.append(selected)
             telemetry = self._response_telemetry(responses, library_rows)
             telemetry["new_skeleton_quota"] = context.new_skeleton_quota
+            bank_feedback = island_context.get("bank_predictive_search_feedback")
+            if bank_feedback is not None:
+                telemetry["bank_feedback_schema"] = bank_feedback["schema"]
+                telemetry["bank_feedback_mode"] = bank_feedback["mode"]
+                telemetry["bank_feedback_signal_identity"] = bank_feedback["signal_identity"]
+                telemetry["bank_feedback_inventory_identity"] = bank_feedback.get("bank_inventory_identity")
             telemetry["valid_new_skeletons"] = sum(
                 candidate.action == "PROPOSE_NEW_SKELETON"
                 for candidate in selected.candidates)
