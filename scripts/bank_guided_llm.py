@@ -148,12 +148,14 @@ def _generate(mode, runtime, feedback, core, fit, budget, root, *,
                                           diagnostic_scope=diagnostic_scope)
             envelope_options = ({"envelope_policy": "request-bound-semantic-v1"}
                                 if implementation_contract == DIRECT_CONTRACT else {})
+            attempts_before = runtime.attempt_count
             batch = runtime.propose(
                 task_name="registered-symbolic-discovery", task_desc="Propose complementary symbolic structures.",
                 round_id=slot, island="composition", parent_hash=parent_hash,
                 island_context=context, library_rows=(), ephemeral_refinements=(),
                 max_candidates=budget.candidates_per_call, allow_protocol_repair=False, **envelope_options)
-            record = {"slot": slot, "parent": parent, "parent_hash": parent_hash,
+            slot_attempts = runtime.attempt_count - attempts_before
+            record = {"slot": slot, "provider_attempts": slot_attempts, "parent": parent, "parent_hash": parent_hash,
                       "feedback": context["bank_predictive_search_feedback"],
                       "protocol_valid": batch.protocol_valid, "protocol_reason": batch.reason,
                       "prompt_hash": batch.prompt_hash, "response_hash": batch.response_hash,
@@ -187,8 +189,10 @@ def _generate(mode, runtime, feedback, core, fit, budget, root, *,
             _publish(root / f"CALL_{slot:04d}.json", record)
             records.append(record)
             transport = record["cost_so_far"]["transport_records"]
-            if (batch.reason == "provider_or_protocol_failure" or not transport
-                    or transport[-1]["failed"]):
+            if envelope_options and slot_attempts != 1:
+                raise RuntimeError("Direct comparison requires exactly one provider attempt per slot")
+            if (batch.reason == "provider_or_protocol_failure" or slot_attempts == 0
+                    or not transport or transport[-1]["failed"]):
                 raise RuntimeError("LLM provider/protocol failed; see preserved request audit")
         audit = {"schema": implementation_contract, "mode": mode, "candidates": candidates,
                  "records": records, "cost": _cost(runtime, time.perf_counter() - started),
@@ -239,6 +243,8 @@ def run_llm_comparison(*, implementation_contract, budget, design, core, fit,
     elif diagnostic_axes is not None:
         raise ValueError("diagnostic axes require the explicit multiscale contract")
     provider = _provider_identity(provider_settings)
+    if direct and provider_settings.attempts != 1:
+        raise ValueError("Direct comparison requires exactly one provider attempt per slot")
     core = json.loads(json.dumps(core, allow_nan=False))
     # Resolve structural validity before any provider call.
     for row in core:

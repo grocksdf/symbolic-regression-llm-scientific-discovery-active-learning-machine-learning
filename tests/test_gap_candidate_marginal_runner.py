@@ -1,12 +1,15 @@
 """Response-free tests for the production shared-E0 experiment adapter."""
 from copy import deepcopy
+from types import SimpleNamespace
+
+import requests
 
 import numpy as np
 import pytest
 import yaml
 
 from scripts.run_gap_candidate_marginal_value import (
-    EXPANDED_REFIT_POLICY, _condition_context, _neutral_brief,
+    _capture_one_proposal, EXPANDED_REFIT_POLICY, _condition_context, _neutral_brief,
     _admission_function, _filter_engine_result_all_domains,
     _placebo_executable_brief,
     _rotate_scalar_leaves, _runtime_config, _score,
@@ -302,3 +305,26 @@ def test_localized_global_protected_config_is_constructible():
     validate_policy(config)
     assert config.localized_gap_refinement
 
+
+
+def test_capture_distinguishes_timeout_from_attempt_budget(monkeypatch, tmp_path):
+    def timeout(*args, **kwargs):
+        raise requests.Timeout("fixture")
+
+    proposal = SimpleNamespace(attempt_count=0)
+
+    def propose(**kwargs):
+        proposal.attempt_count += 1
+        try:
+            requests.post("https://fixture.invalid", json={})
+        except requests.Timeout:
+            return None
+
+    proposal.propose = propose
+    monkeypatch.setattr(requests, "post", timeout)
+    with pytest.raises(RuntimeError, match="transport failed: Timeout; attempts=1, responses=0"):
+        _capture_one_proposal(
+            SimpleNamespace(proposal=proposal), context={}, task_name="fixture",
+            task_desc="", parent=SimpleNamespace(dag=SimpleNamespace(canonical_hash="fixture")),
+            condition="B0", output_dir=tmp_path, allow_protocol_repair=False)
+    assert requests.post is timeout

@@ -350,6 +350,8 @@ def _capture_one_proposal(runtime, *, context, task_name, task_desc,
                           parent, condition, output_dir,
                           allow_protocol_repair):
     captures = []
+    transport_errors = []
+    attempt_start = runtime.proposal.attempt_count
     original_post = requests.post
 
     def capture(url, **kwargs):
@@ -357,7 +359,11 @@ def _capture_one_proposal(runtime, *, context, task_name, task_desc,
         request_bytes = json.dumps(
             request, ensure_ascii=False, sort_keys=True,
             separators=(",", ":")).encode("utf-8")
-        response = original_post(url, **kwargs)
+        try:
+            response = original_post(url, **kwargs)
+        except requests.RequestException as error:
+            transport_errors.append(type(error).__name__)
+            raise
         captures.append({
             "url": str(url),
             "request_bytes": request_bytes,
@@ -378,9 +384,19 @@ def _capture_one_proposal(runtime, *, context, task_name, task_desc,
     finally:
         requests.post = original_post
     maximum_attempts = 2 if allow_protocol_repair else 1
-    if not 1 <= len(captures) <= maximum_attempts:
+    attempts = runtime.proposal.attempt_count - attempt_start
+    if attempts > maximum_attempts:
         raise RuntimeError(
-            f"{condition} exceeded the registered provider attempts")
+            f"{condition} exceeded the registered provider attempts: "
+            f"{attempts}/{maximum_attempts}")
+    if transport_errors:
+        raise RuntimeError(
+            f"{condition} provider transport failed: {','.join(transport_errors)}; "
+            f"attempts={attempts}, responses={len(captures)}")
+    if attempts == 0 or len(captures) != attempts:
+        raise RuntimeError(
+            f"{condition} provider attempt/response mismatch: "
+            f"attempts={attempts}, responses={len(captures)}")
     transcripts = []
     for index, capture_row in enumerate(captures, 1):
         suffix = "" if index == 1 else f"_{index}"
@@ -404,7 +420,7 @@ def _capture_one_proposal(runtime, *, context, task_name, task_desc,
         **first,
         "raw_response_base64": b64encode(
             captures[0]["response_bytes"]).decode("ascii"),
-        "provider_attempt_count": len(transcripts),
+        "provider_attempt_count": attempts,
         "provider_transcripts": transcripts,
         "provider_transcript_identity": identity(transcripts),
     }

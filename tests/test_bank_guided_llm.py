@@ -326,3 +326,19 @@ def test_direct_missing_ancestry_fails_before_provider_or_output(monkeypatch, tm
             provider_settings=provider, read_calibration=None, read_admission=None, read_reporting=None,
             output_root=tmp_path/"invalid", seed=1, diagnostic_axes=(0,))
     assert not (tmp_path/"invalid").exists()
+
+
+def test_direct_rejects_retry_budget_before_transport(monkeypatch, tmp_path):
+    design, fit, _, provider, core = fixture()
+    design = replace(design, tested_mixture_count=4)
+    monkeypatch.setattr("hypothesis_mvp.discovery.proposal_runtime.requests.post",
+                        lambda *a, **k: pytest.fail("transport opened"))
+    with pytest.raises(ValueError, match="exactly one provider attempt"):
+        run_llm_comparison(
+            implementation_contract=DIRECT_CONTRACT, diagnostic_axes=(0,),
+            budget=LLMCompositionBudget(1, 1, 1), design=design, core=core, fit=fit,
+            provider_settings=replace(provider, attempts=2), read_calibration=None,
+            read_admission=None, read_reporting=None, output_root=tmp_path / "invalid",
+            seed=12, fit_row_ids=design.training_ids,
+            core_generation_row_ids=design.training_ids)
+    assert not (tmp_path / "invalid").exists()
