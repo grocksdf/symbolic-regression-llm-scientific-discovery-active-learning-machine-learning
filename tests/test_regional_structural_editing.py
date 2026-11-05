@@ -82,6 +82,16 @@ def test_independent_rows_cannot_supply_attribution_context():
         build_region_site_contexts("x0+x1", RoleDataset(DataRole.VALIDATION, fit.X, fit.y), feedback, **kw)
 
 
+def test_intercept_only_bank_parent_has_explicit_diagnostic_context():
+    fit, feedback, kw = context_fixture()
+    snapshot = build_region_site_contexts("(-4.5)", fit, feedback, **kw)
+    assert snapshot["sites"] and not snapshot["unavailable"]
+    assert snapshot["sites"][0]["variables"] == []
+    parent, subtree, jacobian = subtree_response("(-4.5)", (), fit.X)
+    np.testing.assert_equal(parent, -4.5)
+    np.testing.assert_equal(jacobian, 1.)
+
+
 def test_local_derivative_does_not_discard_valid_region_due_to_outside_cusp():
     fit = RoleDataset(DataRole.DEVELOPMENT, [[0.], [1.], [4.]], [1., 2., 3.])
     feedback = BankSearchFeedback("bank", ("fit:0","fit:1","fit:2"), fit.fingerprint,

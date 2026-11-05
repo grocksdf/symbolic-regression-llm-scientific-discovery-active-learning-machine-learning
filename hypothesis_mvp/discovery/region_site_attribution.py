@@ -14,7 +14,7 @@ import json
 import numpy as np
 
 from hypothesis_mvp.data.roles import DataRole
-from hypothesis_mvp.pcpi.reference.expanded_formula_basis import _parse, _run, _constant
+from hypothesis_mvp.pcpi.reference.expanded_formula_basis import _check, _run, _constant, compile_fixed_formula_support
 from .counterfactual_bank_symbolic_invention import _ast_paths, _node_at_path
 
 
@@ -29,6 +29,16 @@ FEATURE_NAMES = AST_FEATURES + LOCAL_FEATURES + BEHAVIOR_FEATURES + BANK_FEATURE
 
 def digest(value):
     return sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+
+
+def _diagnostic_root(expression, n_features):
+    # A complete bank formula can be intercept-only. The basis-term parser
+    # intentionally requires a covariate and is therefore the wrong entrypoint
+    # here. Validate complete support first, retaining its grammar/node limits.
+    compile_fixed_formula_support(expression, n_features)
+    root = ast.parse(expression, mode="eval").body
+    _check(root, n_features)
+    return root
 
 
 def _rms(values):
@@ -59,7 +69,7 @@ def subtree_response(expression, site_path, inputs):
     x = np.asarray(inputs, dtype=float)
     if x.ndim != 2 or not len(x) or not np.all(np.isfinite(x)):
         raise ValueError("finite fitting inputs required")
-    root = _parse(expression, int(x.shape[1]))
+    root = _diagnostic_root(expression, int(x.shape[1]))
     path = tuple(site_path)
     if path not in _ast_paths(root):
         raise ValueError("site is not an editable expression")
@@ -145,7 +155,7 @@ def build_region_site_contexts(expression, fit, feedback, *, regions,
     if (any(v.shape != (len(x),) or not np.all(np.isfinite(v)) for v in (location, scale, score, density))
             or np.any(scale <= 0) or not 0 <= parent_mass <= 1 or not 0 <= parent_redundancy <= 1):
         raise ValueError("invalid bound Bank behavior")
-    root = _parse(expression, int(x.shape[1]))
+    root = _diagnostic_root(expression, int(x.shape[1]))
     paths, total = _ast_paths(root), len(list(ast.walk(root)))
     residual = fit.y - location
     regions = tuple(regions)
