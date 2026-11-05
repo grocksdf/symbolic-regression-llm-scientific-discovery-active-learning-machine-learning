@@ -22,7 +22,8 @@ def setup():
     fit, left, right = data(0, DataRole.DEVELOPMENT), data(.01), data(.02)
     selection = SimpleNamespace(development=fit, validation=left,
         acquisition_pool=AcquisitionCovariates(DataRole.ACQUISITION_POOL, x+.04, covariate_fingerprint(x+.04)))
-    core = [{"expression":"x0*x1 + sin(x1)", "source":"engine:pysr", "lineage_id":"e"}]
+    core = [{"expression":"x0*x1 + sin(x1)", "source":"engine:pysr", "lineage_id":"e"},
+            {"expression":"(-4.5)", "source":"engine:pysr", "lineage_id":"constant"}]
     archive = CandidateArchive.freeze(core, n_features=2, coefficient_policy=EXPANDED_FORMULA_POLICY)
     ids = {r: tuple(f"{r}:{i}" for i in range(10)) for r in ("fit", "left", "right", "cal", "adm", "report")}
     design = ExpansionDesign(ids["fit"]+ids["left"]+ids["right"], ids["cal"], ids["adm"], ids["report"],
