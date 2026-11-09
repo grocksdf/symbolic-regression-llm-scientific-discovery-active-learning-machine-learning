@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 
 import numpy as np
@@ -13,6 +13,12 @@ from hypothesis_mvp.pcpi.reference import (
     ReferenceBank,
 )
 from hypothesis_mvp.pcpi.reference.basis import design_matrix
+from hypothesis_mvp.pcpi.reference.square_root import (
+    SquareRootStatistics, statistics_identity, initial_rows, factor_rows,
+    append_rows, parameters as qr_parameters, predictive_quadratic, predictive_location,
+    coefficient_root, validated_factor,
+    finite_moment_or_none,
+)
 
 
 @dataclass(frozen=True)
@@ -20,19 +26,23 @@ class CollapsedState:
     """Sufficient statistics for one structure after visible observations."""
 
     observations: int
-    precision: np.ndarray
-    information: np.ndarray
-    y_square_sum: float
+    precision: np.ndarray | None
+    information: np.ndarray | None
+    y_square_sum: float | None
     log_marginal_likelihood: float
+    square_root: SquareRootStatistics | None = None
 
 
 class CollapsedConjugateTracker:
-    """Sequential Normal--Inverse-Gamma integration independent of P1 code.
+    """Sequential Normal--Inverse-Gamma integration with its own SMC weights.
 
     The tracker integrates coefficients and noise variance out of the SMC
     weights.  It therefore targets the exact structure marginal while avoiding
     the high-variance plug-in likelihood weights that caused particle collapse
     in the original P2A implementation.
+    The stable QR linear-algebra primitive is shared with P1; high-precision
+    tests provide the independent numerical oracle, rather than P1 agreement
+    alone being treated as evidence of numerical correctness.
     """
 
     def __init__(self, bank: ReferenceBank) -> None:
@@ -46,7 +56,7 @@ class CollapsedConjugateTracker:
 
     def _initial_state(self, dimension: int) -> CollapsedState:
         prior = self.bank.prior
-        return CollapsedState(
+        state = CollapsedState(
             observations=0,
             precision=np.eye(dimension) * prior.coefficient_precision,
             information=np.full(
@@ -56,20 +66,18 @@ class CollapsedConjugateTracker:
             y_square_sum=0.0,
             log_marginal_likelihood=0.0,
         )
+        return replace(state, square_root=factor_rows(initial_rows(dimension, prior), self._identity(state)))
 
-    def _parameters(self, state: CollapsedState) -> ConditionalPosteriorParameters:
-        mean = np.linalg.solve(state.precision, state.information)
-        covariance = np.linalg.solve(state.precision, np.eye(len(mean)))
-        prior = self.bank.prior
-        prior_mean = np.full(len(mean), prior.coefficient_mean)
-        prior_quadratic = prior.coefficient_precision * float(prior_mean @ prior_mean)
-        posterior_quadratic = float(mean @ state.precision @ mean)
-        shape = prior.noise_shape + 0.5 * state.observations
-        scale = prior.noise_scale + 0.5 * (
-            state.y_square_sum + prior_quadratic - posterior_quadratic
-        )
-        if scale <= 0.0 or not math.isfinite(scale):
-            raise FloatingPointError("invalid collapsed posterior noise scale")
+    def _identity(self, state):
+        return statistics_identity(state.precision, state.information, state.y_square_sum,
+                                   state.observations, self.bank.prior)
+
+    def _parameters(self, state: CollapsedState, *, dense_covariance=True) -> ConditionalPosteriorParameters:
+        if state.square_root is None:
+            raise FloatingPointError("collapsed state lacks square-root statistics; reconstruct from observations")
+        mean, covariance, shape, scale, _ = qr_parameters(
+            state.square_root, self._identity(state), self.bank.prior, state.observations,
+            dense_covariance=dense_covariance)
         return ConditionalPosteriorParameters(mean, covariance, shape, scale)
 
     @staticmethod
@@ -95,10 +103,11 @@ class CollapsedConjugateTracker:
         for identifier in self.structure_ids:
             structure = self._structures[identifier]
             row = design_matrix(action_row, structure.basis_terms)[0]
-            parameters = self._parameters(self._states[identifier])
-            location = float(row @ parameters.mean)
+            state = self._states[identifier]
+            parameters = self._parameters(state, dense_covariance=False)
+            location = float(predictive_location(state.square_root, self._identity(state), row[None, :])[0])
             scale_squared = parameters.noise_scale / parameters.noise_shape * (
-                1.0 + float(row @ parameters.covariance_factor @ row)
+                1.0 + float(predictive_quadratic(state.square_root, self._identity(state), row[None, :])[0])
             )
             values.append(
                 self._student_logpdf(
@@ -131,19 +140,26 @@ class CollapsedConjugateTracker:
         ):
             raise ValueError("collapsed increments must match the structure bank")
         action_row = np.asarray(action, dtype=float).reshape(1, -1)
+        next_states = {}
         for index, identifier in enumerate(self.structure_ids):
             state = self._states[identifier]
             structure = self._structures[identifier]
             row = design_matrix(action_row, structure.basis_terms)[0]
-            self._states[identifier] = CollapsedState(
-                observations=state.observations + 1,
-                precision=state.precision + np.outer(row, row),
-                information=state.information + row * float(target),
-                y_square_sum=state.y_square_sum + float(target) ** 2,
-                log_marginal_likelihood=(
-                    state.log_marginal_likelihood + float(log_increments[index])
-                ),
-            )
+            validated_factor(state.square_root, self._identity(state))
+            with np.errstate(over="ignore", invalid="ignore"):
+                updated = CollapsedState(
+                    observations=state.observations + 1,
+                    precision=(None if state.precision is None else finite_moment_or_none(state.precision + np.outer(row, row))),
+                    information=(None if state.information is None else finite_moment_or_none(state.information + row * float(target))),
+                    y_square_sum=(None if state.y_square_sum is None else finite_moment_or_none(state.y_square_sum + np.float64(target) * target)),
+                    log_marginal_likelihood=(
+                        state.log_marginal_likelihood + float(log_increments[index])
+                    ),
+                )
+            next_states[identifier] = replace(updated, square_root=append_rows(
+                state.square_root, row, float(target), 1., self._identity(updated)))
+        # No partial multi-structure advance on a numerical failure.
+        self._states = next_states
 
     def conditional_parameters(self, structure_id: str) -> ConditionalPosteriorParameters:
         if structure_id not in self._states:
@@ -155,14 +171,15 @@ class CollapsedConjugateTracker:
         structure_id: str,
         rng: np.random.Generator,
     ) -> tuple[np.ndarray, float]:
-        parameters = self.conditional_parameters(structure_id)
+        parameters = self._parameters(self._states[structure_id], dense_covariance=False)
         precision = rng.gamma(
             shape=parameters.noise_shape,
             scale=1.0 / parameters.noise_scale,
         )
         noise_variance = 1.0 / precision
-        cholesky = np.linalg.cholesky(parameters.covariance_factor)
+        state = self._states[structure_id]
+        root = coefficient_root(state.square_root, self._identity(state))
         coefficients = parameters.mean + math.sqrt(noise_variance) * (
-            cholesky @ rng.normal(size=len(parameters.mean))
+            root @ rng.normal(size=len(parameters.mean))
         )
         return np.asarray(coefficients, dtype=float), float(noise_variance)

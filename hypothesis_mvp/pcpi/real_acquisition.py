@@ -345,6 +345,8 @@ def _depowered_sufficient_statistics(
     rows = []
     for member in model.posterior.members:
         state = member.state
+        if any(value is None for value in (state.precision, state.information, state.y_square_sum)):
+            raise FloatingPointError("legacy acquisition requires representable unscaled sufficient statistics")
         dimension = len(state.information)
         prior_precision = np.eye(dimension) * state.prior.coefficient_precision
         prior_information = np.full(
@@ -427,6 +429,8 @@ def _posterior_residual_excess(
     member_excess = []
     for member in posterior.members:
         state = member.state
+        if any(value is None for value in (state.precision, state.information, state.y_square_sum)):
+            raise FloatingPointError("legacy discrepancy profile requires representable unscaled sufficient statistics")
         parameters = engine.conditional_parameters(member)
         if parameters.noise_shape <= 1.0:
             raise FloatingPointError("discrepancy profile requires finite noise mean")

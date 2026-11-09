@@ -185,13 +185,11 @@ def feedback_from_posterior(engine, posterior, search, *, search_row_ids,
         raise ValueError("feedback needs a bound Bank and isolated search rows")
     locations, scales, degrees = [], [], []
     for member in posterior.members:
-        rows = engine.design_rows(search.X, member.structure)
-        params = engine.conditional_parameters(member)
+        location, squared_scale, df = engine.predictive_location_scale(member, search.X)
         with np.errstate(over="raise", invalid="raise", divide="raise"):
-            variance_factor = 1. + np.einsum("ij,jk,ik->i", rows, params.covariance_factor, rows)
-            locations.append(rows @ params.mean)
-            scales.append(np.sqrt(params.noise_scale / params.noise_shape * variance_factor))
-            degrees.append(2. * params.noise_shape)
+            locations.append(location)
+            scales.append(np.sqrt(squared_scale))
+            degrees.append(df)
     lpd, score, residual = mixture_location_feedback(
         np.column_stack(locations), np.column_stack(scales), degrees,
         posterior.log_probabilities, search.y)

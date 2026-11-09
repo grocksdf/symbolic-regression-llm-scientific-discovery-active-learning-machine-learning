@@ -465,14 +465,16 @@ class CalibratedClassPosteriorState:
                 member.probability,
                 member.log_marginal_likelihood,
                 member.state.observations,
-                member.state.y_square_sum,
             ], dtype=np.float64).tobytes())
-            digest.update(np.asarray(
-                member.state.precision, dtype=np.float64
-            ).tobytes())
-            digest.update(np.asarray(
-                member.state.information, dtype=np.float64
-            ).tobytes())
+            for moment in (member.state.y_square_sum, member.state.precision, member.state.information):
+                digest.update(b"unrepresentable" if moment is None else np.asarray(moment, dtype=np.float64).tobytes())
+            factor = member.state.square_root
+            if factor is not None:
+                digest.update(b"augmented-qr-v1")
+                digest.update(factor.statistics_identity.encode("ascii"))
+                digest.update(factor.factor_identity.encode("ascii"))
+                digest.update(factor.triangular.tobytes())
+                digest.update(factor.column_scales.tobytes())
         return digest.hexdigest()
 
 

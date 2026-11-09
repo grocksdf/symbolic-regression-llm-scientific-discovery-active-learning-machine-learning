@@ -16,7 +16,7 @@ from scipy.stats import t as student_t
 from .posterior import (
     ExactPosterior,
     SequentialReferencePosterior,
-    _posterior_parameters,
+    _predictive_parameters,
 )
 
 
@@ -140,11 +140,7 @@ def predictive_cdf(
     mixture = np.zeros(len(target_values), dtype=float)
     for member in posterior.members:
         rows = engine._design(action_values, member.structure)
-        mean, covariance_factor, alpha, beta = _posterior_parameters(member.state)
-        locations = rows @ mean
-        scale_squared = beta / alpha * (
-            1.0 + np.einsum("ij,jk,ik->i", rows, covariance_factor, rows)
-        )
+        locations, scale_squared, alpha = _predictive_parameters(member.state, rows)
         mixture += member.probability * student_t.cdf(
             target_values,
             df=2.0 * alpha,

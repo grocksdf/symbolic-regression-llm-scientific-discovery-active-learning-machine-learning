@@ -14,16 +14,33 @@ from scipy.stats import t as student_t
 
 from .basis import DesignPreconditioner, design_matrix
 from .models import NormalInverseGammaPrior, ReferenceBank, ReferenceStructure
+from .square_root import (SquareRootStatistics, statistics_identity,
+                          initial_rows, factor_rows, append_rows, parameters as qr_parameters,
+                          validated_factor, precision_logdet as qr_logdet,
+                          predictive_quadratic, predictive_location, coefficient_root, finite_moment_or_none)
 
 
 @dataclass(frozen=True)
 class ConjugateState:
     structure: ReferenceStructure
     observations: float
-    precision: np.ndarray
-    information: np.ndarray
-    y_square_sum: float
+    # Unscaled moments are compatibility metadata. None explicitly denotes a
+    # moment outside float64 range; QR consumers never reconstruct from them.
+    precision: np.ndarray | None
+    information: np.ndarray | None
+    y_square_sum: float | None
     prior: NormalInverseGammaPrior
+    square_root: SquareRootStatistics | None = None
+
+
+def _statistics_identity(state):
+    return statistics_identity(state.precision, state.information, state.y_square_sum,
+                               state.observations, state.prior)
+
+
+def _with_factor(state, factor):
+    from dataclasses import replace
+    return replace(state, square_root=factor)
 
 
 @dataclass(frozen=True)
@@ -88,7 +105,7 @@ def _initial_state(
     prior: NormalInverseGammaPrior,
 ) -> ConjugateState:
     dimension = len(structure.basis_terms)
-    return ConjugateState(
+    state = ConjugateState(
         structure=structure,
         observations=0.0,
         precision=np.eye(dimension) * prior.coefficient_precision,
@@ -96,6 +113,7 @@ def _initial_state(
         y_square_sum=0.0,
         prior=prior,
     )
+    return _with_factor(state, factor_rows(initial_rows(dimension, prior), _statistics_identity(state)))
 
 
 def _update_state(
@@ -104,21 +122,45 @@ def _update_state(
     target: float,
     likelihood_power: float,
 ) -> ConjugateState:
-    return ConjugateState(
-        structure=state.structure,
-        observations=state.observations + likelihood_power,
-        precision=state.precision + likelihood_power * np.outer(row, row),
-        information=state.information + likelihood_power * row * target,
-        y_square_sum=state.y_square_sum + likelihood_power * target * target,
-        prior=state.prior,
-    )
+    if state.square_root is not None:
+        validated_factor(state.square_root, _statistics_identity(state))
+    with np.errstate(over="ignore", invalid="ignore"):
+        updated = ConjugateState(
+            structure=state.structure,
+            observations=state.observations + likelihood_power,
+            precision=(None if state.precision is None else finite_moment_or_none(
+                state.precision + likelihood_power * np.outer(row, row))),
+            information=(None if state.information is None else finite_moment_or_none(
+                state.information + likelihood_power * row * target)),
+            y_square_sum=(None if state.y_square_sum is None else finite_moment_or_none(
+                state.y_square_sum + likelihood_power * np.float64(target) * target)),
+            prior=state.prior,
+        )
+    identity = _statistics_identity(updated)
+    if state.square_root is None:
+        # An old state has already lost the original rows; never invent a QR residual.
+        return updated
+    return _with_factor(updated, append_rows(state.square_root, row, target, likelihood_power, identity))
 
 
 def _posterior_parameters(
     state: ConjugateState,
 ) -> tuple[np.ndarray, np.ndarray, float, float]:
-    mean = np.linalg.solve(state.precision, state.information)
-    covariance_factor = np.linalg.inv(state.precision)
+    if state.square_root is not None:
+        return qr_parameters(state.square_root, _statistics_identity(state), state.prior, state.observations)[:4]
+    if any(value is None for value in (state.precision, state.information, state.y_square_sum)):
+        raise FloatingPointError("unscaled conjugate statistics unavailable; refit from original rows")
+    _statistics_identity(state)
+    condition = float(np.linalg.cond(state.precision))
+    if not math.isfinite(condition) or condition * np.finfo(float).eps * len(state.information) >= 1.:
+        raise FloatingPointError("legacy conjugate statistics unresolved; refit from original rows")
+    # Compatibility for old states only. Lost residual information cannot be
+    # reconstructed by adding jitter or manufacturing a new square-root factor.
+    with np.errstate(over="raise", invalid="raise", divide="raise"):
+        cholesky = np.linalg.cholesky(state.precision)
+        mean = np.linalg.solve(cholesky.T, np.linalg.solve(cholesky, state.information))
+        inverse = np.linalg.solve(cholesky, np.eye(len(mean)))
+        covariance_factor = inverse.T @ inverse
     dimension = len(state.information)
     prior_mean = np.full(dimension, state.prior.coefficient_mean)
     prior_quadratic = (
@@ -129,18 +171,26 @@ def _posterior_parameters(
     beta = state.prior.noise_scale + 0.5 * (
         state.y_square_sum + prior_quadratic - posterior_quadratic
     )
-    if beta <= 0 or not math.isfinite(beta):
+    roundoff = (np.finfo(float).eps * 64 * (dimension + state.observations + 1)
+                * (abs(state.y_square_sum) + abs(prior_quadratic) + abs(posterior_quadratic)))
+    if (beta <= roundoff or not math.isfinite(beta)
+            or not np.all(np.isfinite(mean)) or not np.all(np.isfinite(covariance_factor))):
         raise FloatingPointError("invalid conjugate posterior noise scale")
     return mean, covariance_factor, alpha, beta
 
 
+def _posterior_without_dense_covariance(state):
+    if state.square_root is not None:
+        return qr_parameters(state.square_root, _statistics_identity(state), state.prior,
+                             state.observations, dense_covariance=False)[:4]
+    return _posterior_parameters(state)
+
+
 def _log_marginal(state: ConjugateState) -> float:
-    _, _, alpha, beta = _posterior_parameters(state)
-    dimension = len(state.information)
+    _, _, alpha, beta = _posterior_without_dense_covariance(state)
+    dimension = len(state.structure.basis_terms)
     prior_logdet = dimension * math.log(state.prior.coefficient_precision)
-    sign, posterior_logdet = np.linalg.slogdet(state.precision)
-    if sign <= 0:
-        raise FloatingPointError("posterior precision must be positive definite")
+    posterior_logdet = _precision_logdet(state)
     return float(
         -0.5 * state.observations * math.log(2.0 * math.pi)
         + 0.5 * (prior_logdet - posterior_logdet)
@@ -151,6 +201,15 @@ def _log_marginal(state: ConjugateState) -> float:
     )
 
 
+def _precision_logdet(state):
+    if state.square_root is not None:
+        return qr_logdet(state.square_root, _statistics_identity(state))
+    sign, value = np.linalg.slogdet(state.precision)
+    if sign <= 0 or not math.isfinite(value):
+        raise FloatingPointError("posterior precision must be positive definite")
+    return float(value)
+
+
 def _batch_state(
     structure: ReferenceStructure,
     prior: NormalInverseGammaPrior,
@@ -159,26 +218,54 @@ def _batch_state(
     likelihood_power: float,
 ) -> ConjugateState:
     initial = _initial_state(structure, prior)
-    return ConjugateState(
-        structure=structure,
-        observations=likelihood_power * len(y),
-        precision=initial.precision + likelihood_power * (matrix.T @ matrix),
-        information=initial.information + likelihood_power * (matrix.T @ y),
-        y_square_sum=likelihood_power * float(y @ y),
-        prior=prior,
-    )
+    # Raw moments are retained only if representable. Computing the posterior
+    # must not require X'X to fit in float64 when X itself is finite.
+    with np.errstate(over="ignore", invalid="ignore"):
+        state = ConjugateState(
+            structure=structure,
+            observations=likelihood_power * len(y),
+            precision=finite_moment_or_none(initial.precision + likelihood_power * (matrix.T @ matrix)),
+            information=finite_moment_or_none(initial.information + likelihood_power * (matrix.T @ y)),
+            y_square_sum=finite_moment_or_none(likelihood_power * float(y @ y)),
+            prior=prior,
+        )
+    with np.errstate(over="raise", invalid="raise", divide="raise"):
+        rows = np.vstack((initial_rows(len(structure.basis_terms), prior),
+                          math.sqrt(likelihood_power) * np.column_stack((matrix, y))))
+    return _with_factor(state, factor_rows(rows, _statistics_identity(state)))
+
+
+def _coefficient_uncertainty(state, rows, covariance):
+    if state.square_root is not None:
+        return predictive_quadratic(state.square_root, _statistics_identity(state), rows)
+    with np.errstate(over="raise", invalid="raise", divide="raise"):
+        values = np.einsum("ij,jk,ik->i", rows, covariance, rows)
+    if not np.all(np.isfinite(values)) or np.any(values < 0):
+        raise FloatingPointError("invalid predictive coefficient variance")
+    return values
+
+
+def _predictive_parameters(state, rows):
+    mean, covariance_factor, alpha, beta = _posterior_without_dense_covariance(state)
+    with np.errstate(over="raise", invalid="raise", divide="raise"):
+        locations = (predictive_location(state.square_root, _statistics_identity(state), rows)
+                     if state.square_root is not None else rows @ mean)
+        scale_squared = beta / alpha * (
+            1.0 + _coefficient_uncertainty(state, rows, covariance_factor))
+    if (not np.all(np.isfinite(locations)) or not np.all(np.isfinite(scale_squared))
+            or np.any(scale_squared <= 0)):
+        raise FloatingPointError("predictive distribution is not representable in float64")
+    return locations, scale_squared, alpha
 
 
 def _log_predictive(state: ConjugateState, row: np.ndarray, target: float) -> float:
-    mean, covariance_factor, alpha, beta = _posterior_parameters(state)
-    location = float(row @ mean)
-    scale_squared = beta / alpha * (1.0 + float(row @ covariance_factor @ row))
+    locations, scales, alpha = _predictive_parameters(state, row[None, :])
     return float(
         student_t.logpdf(
             target,
             df=2.0 * alpha,
-            loc=location,
-            scale=math.sqrt(scale_squared),
+            loc=locations[0],
+            scale=math.sqrt(scales[0]),
         )
     )
 
@@ -344,12 +431,10 @@ class SequentialReferencePosterior:
             targets,
             self.likelihood_power,
         )
-        _, _, alpha, beta = _posterior_parameters(state)
+        _, _, alpha, beta = _posterior_without_dense_covariance(state)
         dimension = len(structure.basis_terms)
         prior_logdet = dimension * math.log(self.bank.prior.coefficient_precision)
-        sign, posterior_logdet = np.linalg.slogdet(state.precision)
-        if sign <= 0:
-            raise FloatingPointError("posterior precision must be positive definite")
+        posterior_logdet = _precision_logdet(state)
         constant = (
             -0.5 * state.observations * math.log(2.0 * math.pi)
             + 0.5 * (prior_logdet - posterior_logdet)
@@ -370,17 +455,24 @@ class SequentialReferencePosterior:
         centered_log_integrand = -alpha * center - beta * math.exp(-center)
         return float(constant + centered_log_integrand + math.log(integral))
 
+    def predictive_location_scale(self, member, actions):
+        """Student-t location, squared scale (not variance), and degrees of freedom.
+
+        Consumers must use this path rather than expanding x' covariance x:
+        large collinear columns can cancel in the latter even with an accurate
+        coefficient covariance. The square-root norm retains their uncertainty.
+        """
+        rows = self._design(actions, member.structure)
+        locations, squared_scale, alpha = _predictive_parameters(member.state, rows)
+        return locations, squared_scale, 2.0 * alpha
+
     def predictive_moments(
         self,
         member: StructurePosterior,
         actions: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
         rows = self._design(actions, member.structure)
-        mean, covariance_factor, alpha, beta = _posterior_parameters(member.state)
-        locations = rows @ mean
-        scale_squared = beta / alpha * (
-            1.0 + np.einsum("ij,jk,ik->i", rows, covariance_factor, rows)
-        )
+        locations, scale_squared, alpha = _predictive_parameters(member.state, rows)
         variances = scale_squared * (2.0 * alpha) / (2.0 * alpha - 2.0)
         return np.asarray(locations), np.asarray(variances)
 
@@ -393,11 +485,7 @@ class SequentialReferencePosterior:
         if not levels or any(level <= 0.0 or level >= 1.0 for level in levels):
             raise ValueError("predictive quantile levels must lie strictly inside (0, 1)")
         rows = self._design(actions, member.structure)
-        mean, covariance_factor, alpha, beta = _posterior_parameters(member.state)
-        locations = rows @ mean
-        scale_squared = beta / alpha * (
-            1.0 + np.einsum("ij,jk,ik->i", rows, covariance_factor, rows)
-        )
+        locations, scale_squared, alpha = _predictive_parameters(member.state, rows)
         standardized = student_t.ppf(np.asarray(levels), df=2.0 * alpha)
         return locations[:, None] + np.sqrt(scale_squared)[:, None] * standardized[None, :]
 
@@ -413,16 +501,17 @@ class SequentialReferencePosterior:
         member: StructurePosterior,
         rng: np.random.Generator,
     ) -> tuple[np.ndarray, float]:
-        parameters = self.conditional_parameters(member)
+        mean, covariance, alpha, beta = _posterior_without_dense_covariance(member.state)
         precision_draw = rng.gamma(
-            shape=parameters.noise_shape,
-            scale=1.0 / parameters.noise_scale,
+            shape=alpha,
+            scale=1.0 / beta,
         )
         noise_variance = 1.0 / precision_draw
-        coefficients = rng.multivariate_normal(
-            parameters.mean,
-            noise_variance * parameters.covariance_factor,
-        )
+        if member.state.square_root is not None:
+            root = coefficient_root(member.state.square_root, _statistics_identity(member.state))
+            coefficients = mean + math.sqrt(noise_variance) * (root @ rng.normal(size=len(mean)))
+        else:
+            coefficients = rng.multivariate_normal(mean, noise_variance * covariance)
         return np.asarray(coefficients, dtype=float), float(noise_variance)
 
     def predictive_logpdf(
@@ -436,11 +525,7 @@ class SequentialReferencePosterior:
         for member, log_probability in zip(
                 posterior.members, posterior.log_probabilities, strict=True):
             rows = self._design(action_values, member.structure)
-            mean, covariance_factor, alpha, beta = _posterior_parameters(member.state)
-            locations = rows @ mean
-            scale_squared = beta / alpha * (
-                1.0 + np.einsum("ij,jk,ik->i", rows, covariance_factor, rows)
-            )
+            locations, scale_squared, alpha = _predictive_parameters(member.state, rows)
             log_density = student_t.logpdf(
                 target_values,
                 df=2.0 * alpha,
@@ -466,11 +551,11 @@ class SequentialReferencePosterior:
         expected = np.zeros(len(target_values), dtype=float)
         for member in posterior.members:
             rows = self._design(action_values, member.structure)
-            mean, covariance_factor, alpha, beta = _posterior_parameters(member.state)
-            residual_squared = np.square(target_values - rows @ mean)
-            coefficient_uncertainty = np.einsum(
-                "ij,jk,ik->i", rows, covariance_factor, rows
-            )
+            mean, covariance_factor, alpha, beta = _posterior_without_dense_covariance(member.state)
+            locations = (predictive_location(member.state.square_root, _statistics_identity(member.state), rows)
+                         if member.state.square_root is not None else rows @ mean)
+            residual_squared = np.square(target_values - locations)
+            coefficient_uncertainty = _coefficient_uncertainty(member.state, rows, covariance_factor)
             member_loss = 0.5 * (
                 math.log(2.0 * math.pi)
                 + math.log(beta)
