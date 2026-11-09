@@ -226,6 +226,7 @@ def run_regional_site_comparison(*, implementation_contract, E0, archive, select
             seen, candidates, records = set(base_supports), {}, []
             with (root / f"{mode}_ATTEMPTS.jsonl").open("x", encoding="utf-8") as trace:
                 for block in range(blocks_per_arm):
+                    print(f"  {mode} block {block+1}/{blocks_per_arm}", flush=True)
                     parent, region, contrast = opportunities[block % len(opportunities)]
                     rows = project_contexts(contexts[parent], region["id"], mode, seed + block)
                     mask = selection.development.X[:, region["axis"]] <= region["cut"]

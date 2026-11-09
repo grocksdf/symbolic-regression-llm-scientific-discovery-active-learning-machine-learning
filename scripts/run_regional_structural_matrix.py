@@ -39,6 +39,7 @@ def main():
     p.add_argument("--output-root", type=Path)
     p.add_argument("--historical-freeze",type=Path)
     p.add_argument("--blocks-per-arm",type=int,default=16)
+    p.add_argument("--coordinate-index",type=int)
     a = p.parse_args()
     if a.prepare:
         if not a.historical_freeze or a.freeze or a.blocks_per_arm < 2:
@@ -80,6 +81,8 @@ def main():
     write(a.output_root/"FREEZE.json",freeze)
     results=[]
     for i,row in enumerate(freeze["coordinates"]):
+        if a.coordinate_index is not None and i != a.coordinate_index:
+            continue
         print(f"[{i+1}/106] {row['family']}/{row['task']} seed={row['seed']}",flush=True)
         try:
             if hash_file(row["bank"])!=row["bank_sha256"]: raise ValueError("bank identity changed")
