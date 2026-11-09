@@ -116,3 +116,17 @@ def test_generation_failure_preserves_evidence_and_closes_independent_data(monke
             read_admission=lambda:pytest.fail("opened"), read_reporting=lambda:pytest.fail("opened"), output_root=tmp_path/"broken")
     assert (tmp_path/"broken"/"FAILURE.json").exists()
     assert not (tmp_path/"broken"/"GENERATION_FROZEN.json").exists()
+
+
+def test_finite_large_symbolic_feature_survives_actual_crossfit_scorer():
+    # Synthetic correctness only. exp(450*x0) is finite throughout these
+    # registered covariates, but its normal-equation square overflows.
+    from scripts.regional_structural_search import DirectCrossfitBankScorer
+    from scripts.bank_guided_search import _ClosedEvaluation
+    kw, _, _ = setup()
+    scorer = DirectCrossfitBankScorer(kw["E0"], kw["selection"], kw["left"], kw["right"],
+                                     _ClosedEvaluation(), "numerical-fixture", 3)
+    gains = scorer.crossfit_gain("exp(450*x0)")
+    assert len(gains) == 2 and np.all(np.isfinite(gains))
+    assert any(member.state.precision is None for _, posterior in scorer._predictors.values()
+               for member in posterior.members)

@@ -123,11 +123,9 @@ def _prepare(E0, archive, selection, ids, forbidden, axes):
     locations, scales = [], []
     mass = {}
     for member, weight in zip(posterior.members, weights):
-        matrix = engine.design_rows(fit.X, member.structure)
-        parameters = engine.conditional_parameters(member)
-        locations.append(matrix @ parameters.mean)
-        scales.append(parameters.noise_scale / parameters.noise_shape *
-                      (1 + np.einsum("ij,jk,ik->i", matrix, parameters.covariance_factor, matrix)))
+        member_location, member_scale, _ = engine.predictive_location_scale(member, fit.X)
+        locations.append(member_location)
+        scales.append(member_scale)
         support = tuple(sorted(member.structure.basis_terms))
         mass[support] = mass.get(support, 0.) + float(weight)
     location = np.column_stack(locations) @ weights
