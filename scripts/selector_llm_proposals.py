@@ -22,7 +22,8 @@ SYSTEM = ('Return one JSON object with candidates: an array of exactly four obje
 def generate(freeze, shared, fit, regions, output):
     output=Path(output); output.mkdir(parents=True,exist_ok=False)
     settings=ProviderSettings(routes=(ProviderRoute(base_url=freeze['provider_url'],model=freeze['provider_model'],
-        api_key=_key(Path(freeze['provider_env']))),),attempts=1,max_tokens=4096,thinking_type='disabled')
+        api_key=_key(Path(freeze['provider_env']))),),attempts=1,max_tokens=4096,
+        thinking_type=freeze['thinking_type'],reasoning_effort=freeze['reasoning_effort'])
     runtime=ProposalRuntime(EquationRuntime(fit.X.shape[1],refit_policy='pcpi-expanded-fixed-inner-v1'),
                             fit.X.shape[1],settings,4)
     parents=[r['expression'] for r in shared['E0_rows']]

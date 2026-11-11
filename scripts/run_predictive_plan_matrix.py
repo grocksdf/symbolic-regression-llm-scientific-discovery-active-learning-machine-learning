@@ -81,6 +81,7 @@ def main():
            'hdf5_sha256':hash_file(old['hdf5']),'mainline':source(MAIN),'benchmark':source(ROOT),'python':sys.executable,
            'provider_env':str(a.provider_env.resolve()),'provider_env_sha256':hash_file(a.provider_env),
            'provider_url':a.provider_url,'provider_model':a.provider_model,
+           'thinking_type':'enabled','reasoning_effort':'low',
            'retrospective_development':True,'primary':'thompson minus random independently screened reporting log score',
            'blocks_per_arm':8,'minimum_unique_pool':32,'failure_policy':'all failures preserved, no replacement',
            'proposal_calls_per_coordinate':8,'proposals_per_call':4,'frontier':False,

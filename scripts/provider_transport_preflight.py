@@ -39,6 +39,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--model", required=True)
+    parser.add_argument("--max-tokens",type=int,default=64)
     parser.add_argument(
         "--thinking-type", choices=("enabled", "disabled", ""), default="")
     parser.add_argument(
@@ -48,6 +49,7 @@ def main(argv=None):
     parser.add_argument("--provider-env", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args(argv)
+    if args.max_tokens < 1: parser.error('max-tokens must be positive')
     if not args.base_url.startswith("https://"):
         raise ValueError("HTTPS provider required")
     if args.output.exists():
@@ -57,7 +59,7 @@ def main(argv=None):
         endpoint += "/chat/completions"
     payload = {"model": args.model, "messages": [
         {"role": "user", "content": "Return the JSON object {\"ok\":true}."}],
-        "max_tokens": 64, "temperature": 0,
+        "max_tokens": args.max_tokens, "temperature": 0,
         "response_format": {"type": "json_object"}}
     if args.thinking_type:
         payload["thinking"] = {"type": args.thinking_type}
