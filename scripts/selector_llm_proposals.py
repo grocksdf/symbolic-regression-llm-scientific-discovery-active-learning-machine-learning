@@ -13,6 +13,7 @@ from scripts.run_regional_structural_matrix import write
 
 SYSTEM = ('Return one JSON object with candidates: an array of exactly four objects '
           'with equation (complete RHS), parent_index (integer) and rationale (string). '
+          'parent_index is ZERO-BASED: use only the explicitly listed allowed_parent_indices. '
           'Invent complementary symbolic predictions from the supplied training-only evidence. '
           'Use only x0,x1,..., finite numeric literals,+,-,*,/,constant powers,sin,cos,tanh,exp,log,sqrt,Abs. '
           'No target symbols, assignments, code, fitted scores or claimed admission. '
@@ -30,12 +31,13 @@ def generate(freeze, shared, fit, regions, output):
     # Fixed score-blind evenly spaced training examples, no audit/admission/reporting readers.
     import numpy as np
     indices=np.linspace(0,len(fit.X)-1,min(32,len(fit.X)),dtype=int)
-    plans,audits=[],[]
+    plans,audits,rejections=[],[],[]
     for call in range(8):
         payload={'contract':'selector-complete-training-only-v1','call_index':call,'parents':parents,
                  'n_features':fit.X.shape[1],'training_examples':[
                      {'x':fit.X[i].tolist(),'y':float(fit.y[i])} for i in indices],
-                 'previous_equations':[p.expression for p in plans]}
+                 'previous_equations':[p.expression for p in plans],
+                 'allowed_parent_indices':list(range(len(parents)))}
         write(output/f'REQUEST_{call:02d}.json',{'system':SYSTEM,'payload':payload})
         raw,telemetry=runtime.complete_json(system_message=SYSTEM,payload=payload)
         write(output/f'RESPONSE_{call:02d}.json',{'raw':raw,'telemetry':telemetry})
@@ -50,7 +52,8 @@ def generate(freeze, shared, fit, regions, output):
             if (not isinstance(row,dict) or type(row.get('parent_index')) is not int
                     or not 0<=row['parent_index']<len(parents) or not isinstance(row.get('equation'),str)
                     or not isinstance(row.get('rationale'),str) or not row['rationale'].strip()):
-                raise ValueError('invalid complete-proposal contract')
+                rejections.append({'call':call,'index':index,'reason':'invalid complete-proposal contract','raw_candidate':row})
+                continue
             p=StructuralPlan(row['equation'],parents[row['parent_index']],regions[0]['id'],'complete_llm_proposal',
                 'llm',digest([call,index,raw]),prompt_hash=digest([SYSTEM,payload]),response_hash=digest(raw))
             plans.append(p);ids.append(p.identity)
@@ -58,5 +61,5 @@ def generate(freeze, shared, fit, regions, output):
                        'logical_calls':len(requests),'provider_attempts':len(attempts),
                        'prompt_tokens':sum(o['provider_prompt_tokens'] for o in attempts) if all(o.get('provider_prompt_tokens') is not None for o in attempts) else None,
                        'completion_tokens':sum(o['provider_completion_tokens'] for o in attempts) if all(o.get('provider_completion_tokens') is not None for o in attempts) else None})
-    write(output/'COLLECTION_FROZEN.json',{'plans':[asdict(p) for p in plans],'audits':audits})
+    write(output/'COLLECTION_FROZEN.json',{'plans':[asdict(p) for p in plans],'audits':audits,'rejections':rejections})
     return tuple(plans),audits

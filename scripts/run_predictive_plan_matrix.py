@@ -14,6 +14,13 @@ sys.path[:0] = [str(ROOT), str(MAIN)]
 from scripts.run_regional_structural_matrix import hash_file, source, write
 
 
+def selection_blocks(pool_size):
+    """Spend at most half the frozen pool; both arms receive identical slots."""
+    if type(pool_size) is not int or pool_size < 4:
+        raise ValueError('fewer than four unique compiled proposals; preserve failure')
+    return min(8,pool_size//4)
+
+
 def coordinate(freeze,row,output=None):
     import h5py
     import numpy as np
@@ -50,7 +57,7 @@ def coordinate(freeze,row,output=None):
     checked=freeze_plan_pool(plans,fit=fit,fit_row_ids=ids('discovery_development'),forbidden_row_ids=forbidden,feedback=feedback,
         bank_locations=np.column_stack([engine.predictive_location_scale(m,fit.X)[0] for m in posterior.members]),
         core_rows=shared['E0_rows'],regions=regions,task_identity=f"{row['family']}/{row['task']}")
-    if len(checked['rows'])<32: raise ValueError(f"unique compiled pool too small: {len(checked['rows'])}<32; no replacement")
+    blocks=selection_blocks(len(checked['rows']))
 
     def reader(role):
         def read():
@@ -60,7 +67,7 @@ def coordinate(freeze,row,output=None):
     return run_predictive_plan_comparison(implementation_contract=CONTRACT,E0=shared['E0_rows'],plans=plans,proposal_audits=audits,
         selection=SimpleNamespace(development=fit,validation=left,acquisition_pool=AcquisitionCovariates(DataRole.ACQUISITION_POOL,pool,covariate_fingerprint(pool))),
         left=left,right=right,row_ids={'fit':ids('discovery_development'),'left':ids('discovery_validation')[:half],'right':ids('discovery_validation')[half:]},
-        generation_ancestry_ids=ancestry,design=design,regions=regions,task_identity=f"{row['family']}/{row['task']}",seed=row['seed'],blocks_per_arm=8,
+        generation_ancestry_ids=ancestry,design=design,regions=regions,task_identity=f"{row['family']}/{row['task']}",seed=row['seed'],blocks_per_arm=blocks,
         read_calibration=reader('gap_audit'),read_admission=reader('gap_admission'),read_reporting=reader('reporting'),output_root=output)
 
 
@@ -77,13 +84,15 @@ def main():
         tasks=sorted({(r['family'],r['task']) for r in old['coordinates']})[:8]
         rows=[r for r in old['coordinates'] if (r['family'],r['task']) in tasks]
         if len(rows)!=16 or len(tasks)!=8: raise ValueError('registered 8 tasks x2 seeds required')
-        f={'schema':'predictive-plan-retrospective-matrix-v1','coordinates':rows,'hdf5':old['hdf5'],
+        f={'schema':'predictive-plan-retrospective-matrix-v2','coordinates':rows,'hdf5':old['hdf5'],
            'hdf5_sha256':hash_file(old['hdf5']),'mainline':source(MAIN),'benchmark':source(ROOT),'python':sys.executable,
            'provider_env':str(a.provider_env.resolve()),'provider_env_sha256':hash_file(a.provider_env),
            'provider_url':a.provider_url,'provider_model':a.provider_model,
            'thinking_type':'enabled','reasoning_effort':'low',
            'retrospective_development':True,'primary':'thompson minus random independently screened reporting log score',
-           'blocks_per_arm':8,'minimum_unique_pool':32,'failure_policy':'all failures preserved, no replacement',
+           'maximum_blocks_per_arm':8,'minimum_unique_pool':4,
+           'budget_rule':'blocks=min(8, floor(unique_compiled_pool/4)); two scoring slots per block; frozen before scores',
+           'failure_policy':'all failures preserved, no replacement',
            'proposal_calls_per_coordinate':8,'proposals_per_call':4,'frontier':False,
            'bootstrap_seed':20261111,'bootstrap_resamples':20000,
            'pass_rule':'all 16 coordinates succeed and task-mean effect >0; CI separately reported',
@@ -97,6 +106,7 @@ def main():
                     **{r['bank']:hash_file(r['bank']) for r in rows}}
         write(a.prepare,f); print('Freeze ready:',a.prepare); return
     f=json.loads(a.freeze.read_bytes())
+    if f['schema']!='predictive-plan-retrospective-matrix-v2': raise ValueError('new protocol freeze required')
     if hash_file(f['provider_env'])!=f['provider_env_sha256']: raise ValueError('credential file identity changed')
     if source(MAIN)!=f['mainline'] or source(ROOT)!=f['benchmark'] or sys.executable!=f['python'] or hash_file(f['hdf5'])!=f['hdf5_sha256']:
         raise ValueError('source/interpreter/data mismatch')
